@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Read-only traversal, instruction use lists, body-instruction rewriting, block-parameter filtering, matching edge-argument compaction, retained inserted definitions, staged edge splitting, and global dead-code elimination are implemented; arbitrary edge redirection and general CFG-topology rewriting remain open |
-| Scope | Read-only instruction traversal, on-demand use lists, forward instruction rewriting, and topology-preserving parameter/edge-argument compaction in published JIT IR graphs |
-| Owning layers | The CFG owns mutation generation and cached analysis storage; the traversal contract declares observable walk order and required queries; `GraphQueries` owns generation-checked callback access; the use-list builder owns use occurrences; the graph rewriter owns operand substitution, instruction placement, and commit; the instruction schema owns reconstruction; individual passes own matching and semantic legality; CFG editing owns successor and predecessor changes |
-| Validated against | `tests/test_jit_graph_rewrites.cpp` and `tests/test_jit_dead_code_elimination.cpp` |
+| Implementation | Read-only traversal, fixed-point block scheduling, block-parameter joins, instruction use lists, body-instruction rewriting, all block-parameter rewrite outcomes, staged edge splitting, and global dead-code elimination are implemented; arbitrary edge redirection and general CFG-topology rewriting remain open |
+| Scope | Traversal and graph queries, immutable-instruction rewriting, block-parameter joins, atomic parameter/edge-column rewrites, and the narrow staged edge-splitting operation in published JIT IR graphs |
+| Owning layers | The CFG owns entry metadata, mutation generation, join structure, and cached analysis storage; traversal owns ordering and scheduling; `GraphQueries` owns generation-checked callback access; the graph rewriter owns operand substitution, instruction placement, atomic parameter-column mutation, narrow edge splitting, and commit; the instruction schema owns reconstruction; individual passes own matching, lattices, and semantic legality |
+| Validated against | `tests/test_jit_graph_rewrites.cpp`, `tests/test_jit_constant_folding.cpp`, `tests/test_jit_f64_box_simplification.cpp`, `tests/test_jit_core_ir_optimization.cpp`, and `tests/test_jit_dead_code_elimination.cpp` |
 | Supersedes | The incremental mutable-operand rewrite direction in [JIT Instruction Representation](jit-instruction-representation.md) and [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
 JIT IR instructions are immutable. A graph rewrite constructs a replacement
@@ -19,9 +19,11 @@ returns, the rewriter resolves the proposed output in either mode and appends
 the canonical form to a staged instruction stream.
 
 This design covers local instruction rewrites, lowering one instruction to an
-instruction sequence, erasure, topology-preserving block-parameter and
-edge-argument compaction, and passes such as dead-code elimination. It does not
-cover adding, removing, or redirecting CFG edges.
+instruction sequence, erasure, destination materialization, atomic
+block-parameter representation conversion, and passes such as dead-code
+elimination. It also covers the graph rewriter's deliberately narrow staged
+edge-splitting operation. General addition, removal, and redirection of CFG
+edges remain outside this interface.
 
 Read-only traversal, use-list construction, and structural rewriting remain separate
 algorithms. The CFG owns on-demand cached analysis storage because it also owns
@@ -45,10 +47,11 @@ enum class BlockOrder : uint8_t
 std::vector<const Block *>
 ordered_blocks(const ControlFlowGraph &, BlockOrder);
 
-enum class GraphQuery : uint8_t
+enum class GraphQuery
 {
-    None = 0,
-    Uses = 1 << 0,
+    None,
+    Uses,
+    TaggedValueFacts,
 };
 
 class InstructionTraversal
@@ -71,9 +74,10 @@ private:
 };
 ```
 
-The `with_*()` methods return altered copies and leave the original traversal
-unchanged. This allows a pass to derive a local traversal policy from a shared
-default without mutable configuration:
+`GraphQuery` members are combinable flags; their numeric encoding is an
+implementation detail. The `with_*()` methods return altered copies and leave
+the original traversal unchanged. This allows a pass to derive a local
+traversal policy from a shared default without mutable configuration:
 
 ```cpp
 InstructionTraversal traversal =
@@ -85,12 +89,12 @@ InstructionTraversal traversal =
 Program order follows the stored block vector. Forward order is deterministic
 component-wise reverse postorder, rooted first at the normal entry, then the
 registered exception entries, and finally any remaining components in program
-order. Backward order is the reverse of that complete forward order. Every
-order visits every block exactly once. Body instructions within each block are
-visited forward, including the terminator. Block parameters are not part of
-instruction traversal. Code that specifically needs them reads
-`Block::parameters()` directly; a common parameter-traversal option is added
-only when a concrete requirement justifies it.
+order. Backward order is the reverse of that complete forward order. The CFG
+entry metadata and exact ordering rules are specified in
+[JIT Control-Flow Graph](jit-control-flow-graph.md). Every order visits every
+block exactly once. Body instructions within each block are visited forward,
+including the terminator. Block parameters are not part of instruction
+traversal; join-aware code uses `ControlFlowGraph::block_parameter_joins()`.
 
 The read-only API is:
 
@@ -111,6 +115,133 @@ durable placement record; the block supplies local traversal context.
 Early-exit control and reverse instruction order are deferred until a real
 analysis requires them.
 
+### Fixed-point block scheduling
+
+Traversal direction and convergence are separate policies. A monotone analysis
+can use the shared scheduler after defining its own lattice and transfer
+function:
+
+```cpp
+enum class DataflowUpdate : uint8_t
+{
+    Unchanged,
+    Changed,
+};
+
+enum class FixedPointStatus : uint8_t
+{
+    Converged,
+    RevisitLimitReached,
+};
+
+iterate_blocks_to_fixed_point(
+    graph, order, maximum_total_revisits,
+    [&](const Block &block) -> DataflowUpdate {
+        // Changed means information visible to dependants changed.
+    });
+```
+
+The driver first visits every block in the selected order. During that sweep, a
+changed block queues only dependants already visited; an unvisited dependant
+will observe the accumulated state during its guaranteed initial visit. It then
+drains a deduplicating FIFO queue. Forward traversal schedules successors and
+backward traversal schedules predecessors; program order is rejected because
+it defines no dependency direction. The initial sweep does not count against
+the global revisit limit.
+
+`RevisitLimitReached` is a result, not a mandated compilation failure. Each
+caller owns the conservative policy for its domain. Tagged-value fact analysis
+widens all tagged facts to unknown, constant-join analysis abandons its
+constant conclusions, and another caller may choose compilation fallback. No
+caller may consume a partial result as though it had converged.
+
+This scheduler is for monotone movement through a finite-height lattice, or for
+a domain with an explicit widening policy. It is not the driver for repeated
+structural optimization. A committed rewrite invalidates join views and graph
+queries and advances the mutation generation, so an optimization pipeline runs
+fresh passes in bounded rounds and owns its own termination policy. The Core IR
+optimizer accepts the valid graph produced after its defensive round limit;
+the limit is not itself a compilation error.
+
+## Block-Parameter Joins
+
+A block parameter and the argument at the same position on every incoming edge
+form one semantic join. The CFG exposes that relationship directly:
+
+```cpp
+struct IncomingArgument
+{
+    BlockEdgeId edge;
+    ProgramValueRef value;
+};
+
+class BlockParameterJoin
+{
+public:
+    const Block &block() const;
+    Instruction parameter() const;
+    auto incoming_arguments() const;
+    ProgramValueRef argument_from(BlockEdgeId edge) const;
+};
+
+class ControlFlowGraph
+{
+public:
+    auto block_parameter_joins(const Block &) const;
+};
+```
+
+The parameter instruction ID is the join's structural identity. The
+argument-column index is private and is resolved from that ID, so callbacks do
+not observe shifting indexes when several columns change in one transaction.
+The join and its lazy incoming range are ephemeral borrowed views. They must not
+be retained across graph mutation.
+
+This shared read view is used by tagged-value fact propagation, constant join
+folding, dead-code elimination, equivalent-parameter elimination, and F64 join
+conversion. It centralizes CFG structure without centralizing pass semantics:
+analyses still own their lattices and transformations still prove legality.
+
+### Destination-local replacement
+
+Ordinary definitions are block-local. Even if every predecessor supplies an
+apparently equal value, that predecessor definition cannot directly replace a
+destination parameter. A rewrite must either retain another parameter in the
+same destination or materialize a replacement at destination entry.
+
+Constant join folding is the canonical materialization case. Once analysis has
+proved an exact tagged value or exact F64 bit pattern on every incoming path,
+the pass inserts the corresponding constant in the destination, redirects the
+old parameter's uses to it, and removes the parameter's argument column. For a
+boxed object, the new tagged constant refers to the same object; numeric or
+Python equality is insufficient.
+
+A self-edge may be ignored while proving such a constant only after the other
+incoming values establish a destination-materializable result. The result is
+still inserted in the loop block. It does not make a predecessor-local
+definition visible across the edge.
+
+### Atomic representation conversion
+
+Representation conversion changes one complete join relationship atomically.
+For example, F64 box simplification can replace a tagged parameter fed only by
+eligible `BoxF64` results with an F64 parameter, replace every incoming edge
+argument with its available F64 source, insert one `BoxF64` at destination
+entry, and redirect the old tagged uses to that destination box.
+
+The pass proves that discarding the incoming box identities is semantically
+legal. The graph rewriter proves structural completeness: every incoming edge
+is named exactly once, each replacement has the new representation and is
+available in its source block, the destination materialization is well placed,
+and its result can replace all old uses. It rejects the entire request if any
+part fails; it never partially converts a column or inserts source-block work.
+
+A self-edge must name its replacement explicitly. It may use the new parameter
+for an unchanged recurrence or an available compatible body definition. The
+rewriter does not infer a mapping from the removed parameter. This explicit
+rule also permits several converted columns, including cross-column
+recurrences, to be staged without exposing transient indexes.
+
 ## Generation-Checked Graph Queries
 
 The CFG directly owns optional cached analyses. There is no separate public
@@ -121,6 +252,7 @@ class ControlFlowGraph
 {
     uint64_t mutation_generation_;
     mutable std::unique_ptr<UseLists> use_lists_;
+    mutable std::unique_ptr<TaggedValueFactAnalysis> tagged_value_facts_;
 };
 ```
 
@@ -132,11 +264,13 @@ class GraphQueries
 public:
     const ControlFlowGraph &graph() const;
     const Uses &uses_of(const Instruction &) const;
+    const TaggedValueSet &tagged_value_facts_of(ProgramValueRef) const;
 
 private:
     const ControlFlowGraph *graph_;
     GraphQuery requested_;
     const UseLists *use_lists_;
+    const TaggedValueFactAnalysis *tagged_value_facts_;
 };
 ```
 
@@ -159,8 +293,8 @@ GraphQueries queries = graph.prepare_queries(GraphQuery::Uses);
 ```
 
 This keeps query dependencies explicit without putting `uses_of()`,
-`type_of()`, and every future analysis method directly on the structural CFG
-interface.
+`tagged_value_facts_of()`, and every future analysis method directly on the
+structural CFG interface.
 
 ## Use Lists
 
@@ -272,11 +406,12 @@ optimize the rewritten result runs another pass.
 
 This model relies on the current Core IR rule that an ordinary instruction
 result is used only later in the same block. Block parameters are definitions
-available before the instruction stream. A parameter callback may keep or erase
-each parameter; erasure also removes the corresponding argument from every
-incoming edge. Replacing a parameter with an arbitrary definition, changing
-edge targets, or introducing general cross-block SSA values would require a
-broader graph-level renaming or CFG-editing design.
+available before the instruction stream. Parameter callbacks operate on whole
+joins and may keep a column, remove it, replace the parameter with another
+destination parameter, materialize a destination-local replacement, or convert
+the complete column to another representation. They do not introduce general
+cross-block SSA values. Successor replacement and arbitrary edge redirection
+would require a broader CFG-editing design.
 
 ## Rewrite API
 
@@ -316,10 +451,25 @@ BlockParameterRewrite block_parameter(
 
 The ephemeral join identifies the destination block and parameter and exposes
 its incoming edge arguments. The callback returns
-`BlockParameterRewrite::keep()`, `BlockParameterRewrite::erase()`, or
-`BlockParameterRewrite::replace_with_destination_parameter()`. Parameter
-decisions are collected for the whole graph before instruction rewriting so
-every incoming edge can be compacted consistently.
+one of these deliberately distinct outcomes:
+
+```cpp
+BlockParameterRewrite::keep();
+BlockParameterRewrite::erase();
+BlockParameterRewrite::replace_with_destination_parameter(parameter);
+BlockParameterRewrite::materialize_in_destination(insertion, result);
+BlockParameterRewrite::convert_representation(
+    replacement_parameter, incoming_argument_replacements,
+    destination_materialization, materialized_result);
+```
+
+`materialize_in_destination()` removes the old column and emits a replacement
+at the destination entry. `convert_representation()` names the new parameter,
+the complete owned replacement edge column, and the destination result that
+replaces old uses. These are separate legality contracts, not a general
+edge-mutation object. Decisions are collected for the whole graph before
+instruction rewriting so all parameter and edge vectors can be rebuilt
+consistently.
 
 `RewriteContext` also exposes
 `retain_and_pin_value()`. A transformation calls it immediately when creating a
@@ -342,7 +492,7 @@ Result normalization still runs after the callback in both modes. This resolves
 operands on newly emitted instructions and keeps one output contract regardless
 of the selected input view.
 
-Initially, `Normalized` cannot be combined with `GraphQuery::Uses`. Use lists
+`Normalized` cannot be combined with `GraphQuery::Uses`. Use lists
 describe the original published graph, while a normalized callback may receive
 a newly allocated instruction that has no entry in them. If a concrete pass
 eventually needs normalized matching and original use information, it should
@@ -356,7 +506,16 @@ class RewriteContext
 {
 public:
     template <typename T, typename... Args>
-    T *make_instruction(Args &&...args);
+    T make_instruction(Args &&...args);
+
+    template <typename T>
+    T retain_and_pin_value(T value);
+
+    Instruction instruction(InstructionId id) const;
+
+    SideExitRegion *
+    make_side_exit_region(std::span<const InstructionId> parameter_ids,
+                          std::span<const InstructionId> instruction_ids);
 };
 ```
 
@@ -373,21 +532,42 @@ graph. After it returns, the rewriter resolves those operands through
 replacements already established by the walk.
 
 The callback does not mutate the block, attach instructions, or modify operand
-slots. It returns the complete output for the current position.
+slots. Its supported hooks return complete insertions or replacements for
+specific staged positions:
+
+```cpp
+RewriteInsertion at_block_entry(
+    RewriteContext &, const GraphQueries &, const Block &);
+
+RewriteInsertion before_instruction(
+    RewriteContext &, const GraphQueries &, const Block &,
+    const Instruction &);
+
+RewriteResult rewrite_instruction(
+    RewriteContext &, const GraphQueries &, const Block &,
+    const Instruction &);
+```
+
+A callback object may implement any useful combination of these hooks and
+`block_parameter()`. A plain callable remains the concise instruction-only
+form. `RewriteInsertion` represents an instruction sequence plus any explicit
+transfer outputs needed by edge-transfer or side-exit lowering.
 
 The read-only walker and graph rewriter conform to the same observable
 traversal contract but do not share an engine. The rewriter must walk original
 vectors while constructing staged vectors and a replacement map; implementing
 it by invoking the read-only walker would obscure those ownership rules.
 
-The initial summary is:
+The summary is:
 
 ```cpp
 struct RewriteSummary
 {
     bool block_parameters_changed = false;
+    bool blocks_changed = false;
     bool instructions_changed = false;
     bool terminators_changed = false;
+    bool ir_level_changed = false;
     NormalizationRemapping normalization_remapping;
 };
 ```
@@ -562,9 +742,11 @@ The instruction schema generates a generic reconstruction operation:
 ```cpp
 Instruction rebuild_instruction_with_references(
     Instruction &instruction,
-    CompilationStorage &storage,
+    const CompilationStorage &storage,
     const DefResolver &resolver,
-    InstructionFactory &factory);
+    InstructionFactory &factory,
+    InstructionRebuildMode mode =
+        InstructionRebuildMode::ReuseIfUnchanged);
 ```
 
 It reconstructs the same concrete instruction kind with resolved typed operands
@@ -574,7 +756,9 @@ graph rewriter supplies only its old-reference-to-new-reference resolution;
 typed operand adaptation, variadic reconstruction, attribute copying, and the
 generated kind switch belong to the instruction layer. Reconstruction is
 generated from `src/jit/instruction.def`; it does not mutate raw slots or
-introduce handwritten cloning switches.
+introduce handwritten cloning switches. `AlwaysClone` is available when a
+transaction needs a distinct instruction even though its references did not
+change; the default reuses an unchanged instruction.
 
 When reconstruction creates a new instruction, keeping it is still a structural
 replacement. The rewriter records the original definition as mapping to the
@@ -582,16 +766,19 @@ reconstructed definition so the substitution propagates transitively.
 
 ## Traversal Direction
 
-Mutating graph rewrites initially walk forward only. Forward order lets the
-rewriter normalize each callback result using decisions already made for every
+Mutating graph rewrites require program block order and walk instructions
+forward within each block. Forward instruction order lets the rewriter
+normalize each callback result using decisions already made for every
 definition that may legally appear in its operands.
 
 A backward mutating walk cannot provide that guarantee: it visits a use before
 the callback has decided how to rewrite its def. Supporting it would
 require stale callback inputs or a separate decision and reconstruction phase.
 
-Read-only reverse instruction traversal and a backward rewrite driver are
-deferred until a concrete pass establishes their required semantics.
+Read-only block traversal supports backward block order while retaining forward
+instruction order within each block. Reverse instruction traversal and a
+backward rewrite driver are deferred until a concrete pass establishes their
+required semantics.
 
 ## Staging and Commit
 
@@ -606,13 +793,30 @@ struct StagedBlockRewrite
     std::vector<InstructionId> instructions;
     std::vector<InstructionId> removed_originals;
 };
+
+struct StagedBlockParameterRewrite
+{
+    InstructionId original_parameter;
+    BlockParameterRewrite rewrite;
+    std::optional<InstructionId> output_parameter;
+};
 ```
 
 When no parameter callback exists, the original parameter vector is copied
-unchanged. When one exists, the rewriter first records a retention mask for
-every block. It uses the target block's mask to reconstruct incoming edges with
-matching argument vectors and then reconstructs their owning terminators.
-Source block, target block, edge order, and edge count remain unchanged.
+unchanged. When one exists, each original parameter produces an explicit staged
+column with zero or one output parameter and zero or one incoming edge column.
+Keep preserves both; erase, destination-parameter replacement, and destination
+materialization remove both; representation conversion supplies a new
+parameter and a complete new edge column. Destination-parameter vectors and
+incoming-edge vectors are reconstructed from that same plan, so multiple
+simultaneous changes cannot disagree or observe shifting indexes.
+
+Destination materializations are emitted in original parameter order after the
+new parameter vector and before ordinary block-entry insertion. A
+materialization may use definitions available at destination entry but cannot
+smuggle in predecessor-local definitions. For a conversion, each source edge
+argument is checked at the source terminator, including the explicit mapping
+used for a self-edge.
 
 After every block has been traversed:
 
@@ -645,21 +849,31 @@ the selected input view, post-result normalization, and commit rules.
 
 ## Terminators and CFG Changes
 
-Instruction rewriting and general CFG editing remain separate responsibilities.
-
-Initially:
+Instruction rewriting and general CFG editing remain separate responsibilities,
+with one narrow integrated topology operation.
 
 - a terminator cannot be erased;
 - replacing a non-terminator cannot emit a terminator;
 - a sequence replacing a terminator ends in exactly one terminator;
 - a replacement terminator preserves the original successor edges.
 
-Parameter filtering is the narrow exception: it reconstructs each incoming
-edge and its owning terminator with fewer arguments while preserving the
-source, target, order, and number of edges. Changing successors, redirecting
-edges, splitting blocks, and replacing one operation with a multi-block region
-still require a CFG editor. They are not implicit side effects of
-`rewrite_instructions()`.
+Parameter rewriting reconstructs each incoming edge and its owning terminator
+with a matching argument column while normally preserving the source, target,
+order, and number of edges.
+
+`GraphRewriter::stage_edge_splits()` is the implemented exception. Before a
+query-free rewrite, a caller may request pass-through blocks placed explicitly
+after the source or before the target. Each staged block has one
+representation-matched parameter per original edge argument and an outgoing
+edge to the old target. The blocks become visible only with the surrounding
+rewrite commit, allowing block-entry insertions to populate them without an
+intermediate published graph. The operation does not combine edge splitting
+with block-parameter compaction in the same transaction.
+
+General successor replacement, arbitrary edge redirection, adding or removing
+outgoing edges, and replacing an operation with a multi-block region remain
+unimplemented. The CFG guide owns the detailed edge and predecessor-index
+contract.
 
 ## Analysis Interaction
 
@@ -672,10 +886,25 @@ throughout the rewrite walk. The completed structural rewrite then advances the
 graph generation, making that façade and the cached index stale. A later
 traversal requesting uses rebuilds it.
 
-The rewrite summary records at least whether instructions changed and whether
-the terminator changed. Since this API preserves successor edges, ordinary
-instruction rewrites preserve CFG topology even when they invalidate
-instruction-indexed analyses.
+The rewrite summary separately records block-parameter, block-topology,
+instruction, terminator, and IR-level changes. Ordinary instruction rewrites
+preserve CFG topology; a staged edge split reports its block change explicitly.
+
+## Deliberate Boundaries
+
+The shared machinery stops at structure and scheduling. It does not introduce a
+general dataflow framework or declarative edge-pattern language. Passes own
+their semantic domains, transfer functions, matching, and legality. In
+particular, guards, allocations, snapshots, and potentially failing operations
+cannot move through a join merely because incoming instructions have the same
+shape.
+
+F64 join conversion is an instructive client, not policy embedded in the
+rewriter. Its identity and snapshot restrictions belong to F64 box
+simplification. Snapshot-only box sinking into side exits is a different
+Core-to-Machine transformation: it identifies rematerializable cones, lowers
+them into side-exit regions, and relies on Machine IR dead-code elimination for
+the hot-path originals.
 
 ## Related Documents
 

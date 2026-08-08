@@ -1095,12 +1095,13 @@ and return PCs are immutable attributes and are copied unless the pass
 explicitly replaces that instruction.
 
 Graph structure remains mutable. The implemented `GraphRewriter` handles
-published block-body replacement without changing topology. It stages one new
-instruction vector per block, normalizes operands as it walks, swaps all changed
-vectors at one commit, poisons removed originals, and advances the graph
-generation once. Block and edge topology editing remains a future, separate
-interface. Use records are derived metadata rather than a permanently
-maintained graph index.
+published block-body replacement, atomic block-parameter and incoming-argument
+column rewrites, and a narrow staged edge-splitting operation. It stages the
+affected block and instruction vectors, normalizes operands as it walks, swaps
+all changes at one commit, poisons removed originals, and advances the graph
+generation once. General successor replacement, arbitrary edge redirection,
+and adding or removing outgoing edges remain future CFG-editor work. Use
+records are derived metadata rather than a permanently maintained graph index.
 Logical interpreter homes are tracked by FrameStates and Snapshots rather than
 by preserving an SSA result identity across rewrites.
 

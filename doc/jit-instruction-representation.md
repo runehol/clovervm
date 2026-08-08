@@ -6,7 +6,7 @@
 | Status | Accepted |
 | Implementation | The indexed 16-byte instruction entry, schema-generated typed views, compact operands and attributes, typed CFG terminators, generic operand traversal and reconstruction, deterministic textual IR printing, instruction poisoning, and graph-rewriter integration are implemented; representative storage measurement and complete Snapshot recovery encodings remain |
 | Scope | Physical instruction storage, typed instruction access, Core value representations, IR-level legality, phase metadata, effects, matching, and compilation lifetime for Core and Semantic IR |
-| Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged body-instruction replacement and future CFG editing owns topology mutation |
+| Owning layers | The JIT instruction representation owns storage, schema-generated construction, typed access, operand traversal, and reconstruction; the graph builder owns deferred-validation construction; concrete analyses own attached inferred facts and proven-absent effects; the graph rewriter owns staged instruction and parameter-column replacement plus narrow edge splitting; future CFG editing owns general topology mutation |
 | Validated against | `tests/test_jit_storage.cpp`, `tests/test_jit_cfg.cpp`, `tests/test_jit_graph_rewrites.cpp`, and `tests/test_jit_ir_print.cpp` |
 | Supersedes | The open instruction-representation alternatives in [JIT Control-Flow Graph](jit-control-flow-graph.md) and the integer-only instruction reference direction in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
@@ -396,8 +396,11 @@ vectors at one graph-wide commit, poisons erased or replaced instructions, and
 increments the mutation generation once. Optional `UseLists` describe the
 original published generation and are invalidated rather than incrementally
 maintained.
-CFG-topology mutation remains a separate future editor responsibility. Neither
-path is a mandatory route through which an unplaced instruction must be
+The graph rewriter also provides the narrow staged edge-splitting operation
+described in [JIT Control-Flow Graph](jit-control-flow-graph.md). General
+successor replacement, arbitrary edge redirection, and adding or removing
+outgoing edges remain a separate future editor responsibility. Neither builder
+nor rewriter is a mandatory route through which an unplaced instruction must be
 allocated.
 
 Placement and liveness are graph-owned state rather than another physical
