@@ -31,13 +31,19 @@ configuration and pass a generation-checked query façade to callbacks.
 
 ## Shared Traversal Contract
 
-Read-only walks and graph rewrites accept the same traversal value:
+Read-only block walks request a shared block order. Instruction walks carry one
+of those order values together with their requested graph queries:
 
 ```cpp
-enum class BlockWalkOrder : uint8_t
+enum class BlockOrder : uint8_t
 {
-    ProgramOrder,
+    Program,
+    Forward,
+    Backward,
 };
+
+std::vector<const Block *>
+ordered_blocks(const ControlFlowGraph &, BlockOrder);
 
 enum class GraphQuery : uint8_t
 {
@@ -51,16 +57,16 @@ public:
     constexpr InstructionTraversal() = default;
 
     [[nodiscard]] constexpr InstructionTraversal
-    with_block_order(BlockWalkOrder order) const;
+    with_block_order(BlockOrder order) const;
 
     [[nodiscard]] constexpr InstructionTraversal
     with_queries(GraphQuery queries) const;
 
-    constexpr BlockWalkOrder block_order() const;
+    constexpr BlockOrder block_order() const;
     constexpr GraphQuery queries() const;
 
 private:
-    BlockWalkOrder block_order_ = BlockWalkOrder::ProgramOrder;
+    BlockOrder block_order_ = BlockOrder::Program;
     GraphQuery queries_ = GraphQuery::None;
 };
 ```
@@ -72,17 +78,19 @@ default without mutable configuration:
 ```cpp
 InstructionTraversal traversal =
     InstructionTraversal()
-        .with_block_order(BlockWalkOrder::ProgramOrder)
+        .with_block_order(BlockOrder::Forward)
         .with_queries(GraphQuery::Uses);
 ```
 
-Only program block order exists initially. Dominator order is added with the
-dominator-tree analysis it requires; the enum does not advertise an order whose
-required input is undefined. Body instructions within each block are visited
-forward, including the terminator. Block parameters are not part of this
-traversal. Code that specifically needs them reads `Block::parameters()`
-directly; a common parameter-traversal option is added only when a concrete
-requirement justifies it.
+Program order follows the stored block vector. Forward order is deterministic
+component-wise reverse postorder, rooted first at the normal entry, then the
+registered exception entries, and finally any remaining components in program
+order. Backward order is the reverse of that complete forward order. Every
+order visits every block exactly once. Body instructions within each block are
+visited forward, including the terminator. Block parameters are not part of
+instruction traversal. Code that specifically needs them reads
+`Block::parameters()` directly; a common parameter-traversal option is added
+only when a concrete requirement justifies it.
 
 The read-only API is:
 

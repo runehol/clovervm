@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial: normal and exception entry metadata and queries are implemented; block-parameter joins, reusable traversal, fixed-point scheduling, and atomic join conversion are not started |
+| Implementation | Partial: entry metadata and complete block traversal are implemented; block-parameter joins, fixed-point scheduling, and atomic join conversion are not started |
 | Scope | A shared view of block parameters and their incoming edge arguments, reusable block traversal and fixed-point scheduling, and atomic block-parameter rewrites |
 | Owning layers | The CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own lattices and transfer functions; transformation passes own legality; the graph rewriter owns atomic structural mutation |
 | Validated against | N/A |
@@ -183,13 +183,15 @@ Traversal direction and convergence are separate policies. The initial block
 traversals are:
 
 ```cpp
-class BlockTraversal
+enum class BlockOrder : uint8_t
 {
-public:
-    static BlockTraversal program_order();
-    static BlockTraversal forward();
-    static BlockTraversal backward();
+    Program,
+    Forward,
+    Backward,
 };
+
+std::vector<const Block *>
+ordered_blocks(const ControlFlowGraph &, BlockOrder);
 ```
 
 Their initial order and change dependencies are:
@@ -203,7 +205,10 @@ Their initial order and change dependencies are:
 A one-pass walk visits every block exactly once:
 
 ```cpp
-walk_blocks(graph, traversal, callback);
+for(const Block *block: ordered_blocks(graph, order))
+{
+    visit(*block);
+}
 ```
 
 A monotone analysis first performs that complete visit, then revisits dependent

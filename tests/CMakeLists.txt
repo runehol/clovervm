@@ -35,6 +35,7 @@ target_sources(test_clovervm PRIVATE
 	test_transition_program_emitter.cpp
 	test_transition_executor.cpp
 	test_jit_bytecode_state.cpp
+	test_jit_block_order.cpp
 	test_jit_cfg.cpp
 	test_jit_core_bytecode_translator.cpp
 	test_jit_dead_code_elimination.cpp

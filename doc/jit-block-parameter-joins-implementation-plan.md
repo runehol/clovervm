@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: slice 1 is implemented; slices 2 through 9 are not started |
+| Implementation | Partial: slices 1 and 2 are implemented; slices 3 through 9 are not started |
 | Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, constant join folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
@@ -61,16 +61,15 @@ predecessorless block that is not registered as an entry.
 Introduce a read-only traversal value independent of graph rewriting:
 
 ```cpp
-class BlockTraversal
+enum class BlockOrder : uint8_t
 {
-public:
-    static BlockTraversal program_order();
-    static BlockTraversal forward();
-    static BlockTraversal backward();
+    Program,
+    Forward,
+    Backward,
 };
 
-template <typename Callback>
-void walk_blocks(const ControlFlowGraph &, BlockTraversal, Callback &&);
+std::vector<const Block *>
+ordered_blocks(const ControlFlowGraph &, BlockOrder);
 ```
 
 Forward order is deterministic multi-root reverse postorder. The traversal
@@ -110,7 +109,7 @@ enum class FixedPointStatus : uint8_t
 
 template <typename Callback>
 FixedPointStatus iterate_blocks_to_fixed_point(
-    const ControlFlowGraph &, BlockTraversal, size_t maximum_revisits,
+    const ControlFlowGraph &, BlockOrder, size_t maximum_revisits,
     Callback &&);
 ```
 

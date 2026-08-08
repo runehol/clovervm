@@ -273,7 +273,7 @@ namespace cl::jit
         assert(graph_ != nullptr);
         require_rewrite_invariant(graph_->is_published(),
                                   "cannot rewrite an unpublished JIT CFG");
-        assert(traversal.block_order() == BlockWalkOrder::ProgramOrder);
+        assert(traversal.block_order() == BlockOrder::Program);
         require_rewrite_invariant(
             input != RewriteInput::Normalized ||
                 !has_graph_query(traversal.queries(), GraphQuery::Uses),

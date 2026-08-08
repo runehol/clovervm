@@ -39,14 +39,14 @@ namespace cl::jit
         ControlFlowGraph *graph = builder.finalize();
 
         std::vector<std::pair<const Block *, Instruction>> visited;
-        walk_instructions(*graph,
-                          InstructionTraversal().with_block_order(
-                              BlockWalkOrder::ProgramOrder),
-                          [&](const GraphQueries &queries, const Block &block,
-                              const Instruction &instruction) {
-                              EXPECT_EQ(graph, &queries.graph());
-                              visited.emplace_back(&block, instruction);
-                          });
+        walk_instructions(
+            *graph,
+            InstructionTraversal().with_block_order(BlockOrder::Program),
+            [&](const GraphQueries &queries, const Block &block,
+                const Instruction &instruction) {
+                EXPECT_EQ(graph, &queries.graph());
+                visited.emplace_back(&block, instruction);
+            });
 
         ASSERT_EQ(4u, visited.size());
         EXPECT_EQ(std::make_pair(static_cast<const Block *>(entry),

@@ -115,6 +115,8 @@ add_library(libclovervm_objects OBJECT
     jit/allocation_verifier.cpp
     jit/bundle_location_assignments.h
     jit/bundle_splitter.cpp
+    jit/block_order.cpp
+    jit/block_order.h
     jit/cfg_verifier.cpp
     jit/cfg_verifier.h
     jit/compilation_storage.cpp
