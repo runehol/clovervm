@@ -1,6 +1,7 @@
 #ifndef CL_JIT_GRAPH_REWRITER_H
 #define CL_JIT_GRAPH_REWRITER_H
 
+#include "jit/block_parameter_join.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_queries.h"
 #include "jit/instruction_traversal.h"
@@ -145,7 +146,8 @@ namespace cl::jit
             return BlockParameterRewrite(Kind::Erase);
         }
 
-        static BlockParameterRewrite replace_with(ProgramValueRef parameter)
+        static BlockParameterRewrite
+        replace_with_destination_parameter(ProgramValueRef parameter)
         {
             return BlockParameterRewrite(Kind::ReplaceWithParameter,
                                          parameter.instruction_id());
@@ -321,15 +323,13 @@ namespace cl::jit
                         candidate.at_block_entry(context, queries, block)
                     } -> std::same_as<RewriteInsertion>;
                 };
-            constexpr bool HasBlockParameterCallback =
-                requires(CallbackType &candidate, RewriteContext &context,
-                         const GraphQueries &queries, const Block &block,
-                         size_t parameter_index, const Instruction &parameter) {
-                    {
-                        candidate.block_parameter(context, queries, block,
-                                                  parameter_index, parameter)
-                    } -> std::same_as<BlockParameterRewrite>;
-                };
+            constexpr bool HasBlockParameterCallback = requires(
+                CallbackType &candidate, RewriteContext &context,
+                const GraphQueries &queries, const BlockParameterJoin &join) {
+                {
+                    candidate.block_parameter(context, queries, join)
+                } -> std::same_as<BlockParameterRewrite>;
+            };
             constexpr bool HasBeforeInstructionCallback =
                 requires(CallbackType &candidate, RewriteContext &context,
                          const GraphQueries &queries, const Block &block,
@@ -378,12 +378,11 @@ namespace cl::jit
                 {
                     callbacks.block_parameter =
                         [](void *opaque, RewriteContext &context,
-                           const GraphQueries &queries, const Block &block,
-                           size_t parameter_index, const Instruction &parameter)
+                           const GraphQueries &queries,
+                           const BlockParameterJoin &join)
                         -> BlockParameterRewrite {
                         return static_cast<CallbackType *>(opaque)
-                            ->block_parameter(context, queries, block,
-                                              parameter_index, parameter);
+                            ->block_parameter(context, queries, join);
                     };
                 }
                 if constexpr(HasBlockEntryCallback)
@@ -435,8 +434,8 @@ namespace cl::jit
         struct ErasedCallbacks
         {
             BlockParameterRewrite (*block_parameter)(
-                void *, RewriteContext &, const GraphQueries &, const Block &,
-                size_t, const Instruction &) = nullptr;
+                void *, RewriteContext &, const GraphQueries &,
+                const BlockParameterJoin &) = nullptr;
             RewriteInsertion (*at_block_entry)(void *, RewriteContext &,
                                                const GraphQueries &,
                                                const Block &) = nullptr;

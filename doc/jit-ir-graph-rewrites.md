@@ -311,15 +311,15 @@ A callback class may also provide the optional parameter hook:
 BlockParameterRewrite block_parameter(
     RewriteContext &context,
     const GraphQueries &queries,
-    const Block &block,
-    size_t index,
-    const Instruction &parameter);
+    const BlockParameterJoin &join);
 ```
 
-It returns `BlockParameterRewrite::keep()` or
-`BlockParameterRewrite::erase()`. Parameter decisions are collected for the
-whole graph before instruction rewriting so every incoming edge can be
-compacted consistently.
+The ephemeral join identifies the destination block and parameter and exposes
+its incoming edge arguments. The callback returns
+`BlockParameterRewrite::keep()`, `BlockParameterRewrite::erase()`, or
+`BlockParameterRewrite::replace_with_destination_parameter()`. Parameter
+decisions are collected for the whole graph before instruction rewriting so
+every incoming edge can be compacted consistently.
 
 `RewriteContext` also exposes
 `retain_and_pin_value()`. A transformation calls it immediately when creating a

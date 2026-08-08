@@ -391,8 +391,11 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry);
         ParameterInstruction second =
             builder.emplace_parameter<ParameterInstruction>(entry);
-        std::array<ProgramValueRef, 2> arguments = {ProgramValueRef(first),
-                                                    ProgramValueRef(second)};
+        ParameterInstruction third =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 3> arguments = {ProgramValueRef(first),
+                                                    ProgramValueRef(second),
+                                                    ProgramValueRef(third)};
         BlockEdge *old_edge = builder.make_block_edge(entry, exit, arguments);
         builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
                                                                     old_edge);
@@ -400,24 +403,28 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(exit);
         ParameterInstruction exit_second =
             builder.emplace_parameter<ParameterInstruction>(exit);
+        ParameterInstruction exit_third =
+            builder.emplace_parameter<ParameterInstruction>(exit);
         builder.emplace_instruction<BareReturnInstruction>(
-            exit, TaggedValueRef(exit_first));
+            exit, TaggedValueRef(exit_second));
         ControlFlowGraph *graph = builder.finalize();
 
         struct Callback
         {
-            Instruction removed;
+            Instruction first_removed;
+            Instruction second_removed;
 
-            BlockParameterRewrite block_parameter(RewriteContext &,
-                                                  const GraphQueries &,
-                                                  const Block &, size_t,
-                                                  const Instruction &parameter)
+            BlockParameterRewrite
+            block_parameter(RewriteContext &, const GraphQueries &,
+                            const BlockParameterJoin &join)
             {
-                return parameter.id() == removed.id()
+                Instruction parameter = join.parameter();
+                return parameter.id() == first_removed.id() ||
+                               parameter.id() == second_removed.id()
                            ? BlockParameterRewrite::erase()
                            : BlockParameterRewrite::keep();
             }
-        } callback{exit_second};
+        } callback{exit_first, exit_third};
 
         GraphRewriter rewriter(session, *graph);
         RewriteSummary summary =
@@ -426,13 +433,14 @@ namespace cl::jit
         EXPECT_TRUE(summary.block_parameters_changed);
         EXPECT_TRUE(summary.instructions_changed);
         EXPECT_TRUE(summary.terminators_changed);
-        EXPECT_TRUE(exit_second.is_poisoned());
+        EXPECT_TRUE(exit_first.is_poisoned());
+        EXPECT_TRUE(exit_third.is_poisoned());
         ASSERT_EQ(1u, exit->parameters().size());
-        EXPECT_EQ(exit_first, exit->parameter_at(0));
+        EXPECT_EQ(exit_second, exit->parameter_at(0));
         BlockEdge *new_edge = entry->block_successor_edges()[0];
         EXPECT_NE(old_edge, new_edge);
         ASSERT_EQ(1u, new_edge->arguments().size());
-        EXPECT_EQ(first.id(), new_edge->arguments()[0].instruction_id());
+        EXPECT_EQ(second.id(), new_edge->arguments()[0].instruction_id());
         ASSERT_EQ(1u, exit->predecessor_edges().size());
         EXPECT_EQ(new_edge, exit->predecessor_edges()[0]);
     }

@@ -259,9 +259,15 @@ namespace cl::jit
             std::vector<InstructionId> removed_originals;
         };
 
+        struct StagedBlockParameterRewrite
+        {
+            InstructionId parameter;
+            BlockParameterRewrite rewrite;
+        };
+
         using BlockParameterRewrites =
             absl::flat_hash_map<const Block *,
-                                std::vector<BlockParameterRewrite>>;
+                                std::vector<StagedBlockParameterRewrite>>;
     }  // namespace
 
     template <bool HasBlockParameterCallback, bool HasBlockEntryCallback,
@@ -362,30 +368,30 @@ namespace cl::jit
             block_parameter_rewrites.reserve(rewrite_blocks.size());
             for(const Block *block: rewrite_blocks)
             {
-                std::vector<BlockParameterRewrite> rewrites;
+                std::vector<StagedBlockParameterRewrite> rewrites;
                 rewrites.reserve(block->parameter_ids_.size());
-                for(size_t index = 0; index < block->parameter_ids_.size();
-                    ++index)
+                for(BlockParameterJoin join:
+                    graph_->block_parameter_joins(*block))
                 {
                     BlockParameterRewrite rewrite = callbacks.block_parameter(
-                        callback, context, queries, *block, index,
-                        storage_->instruction(block->parameter_ids_[index]));
+                        callback, context, queries, join);
                     summary.block_parameters_changed |=
                         rewrite.kind_ != BlockParameterRewrite::Kind::Keep;
-                    rewrites.push_back(rewrite);
+                    rewrites.push_back(
+                        {join.parameter().id(), std::move(rewrite)});
                 }
                 block_parameter_rewrites.emplace(block, std::move(rewrites));
             }
 
             for(const Block *block: rewrite_blocks)
             {
-                const std::vector<BlockParameterRewrite> &rewrites =
+                const std::vector<StagedBlockParameterRewrite> &rewrites =
                     block_parameter_rewrites.at(block);
                 bool has_replacement = false;
-                for(const BlockParameterRewrite &rewrite: rewrites)
+                for(const StagedBlockParameterRewrite &staged: rewrites)
                 {
                     has_replacement |=
-                        rewrite.kind_ ==
+                        staged.rewrite.kind_ ==
                         BlockParameterRewrite::Kind::ReplaceWithParameter;
                 }
                 if(!has_replacement)
@@ -403,7 +409,12 @@ namespace cl::jit
                 }
                 for(size_t index = 0; index < rewrites.size(); ++index)
                 {
-                    const BlockParameterRewrite &rewrite = rewrites[index];
+                    const StagedBlockParameterRewrite &staged = rewrites[index];
+                    const BlockParameterRewrite &rewrite = staged.rewrite;
+                    require_rewrite_invariant(
+                        staged.parameter == block->parameter_ids_[index],
+                        "a staged JIT block parameter rewrite changed "
+                        "identity");
                     if(rewrite.kind_ !=
                        BlockParameterRewrite::Kind::ReplaceWithParameter)
                     {
@@ -419,12 +430,12 @@ namespace cl::jit
                         "a JIT block parameter replacement is not a parameter "
                         "of the same block");
                     require_rewrite_invariant(
-                        rewrites[replacement->second].kind_ ==
+                        rewrites[replacement->second].rewrite.kind_ ==
                             BlockParameterRewrite::Kind::Keep,
                         "a JIT block parameter replacement is not retained");
                     require_rewrite_invariant(
                         compatible_results(
-                            storage_->instruction(block->parameter_ids_[index]),
+                            storage_->instruction(staged.parameter),
                             storage_->instruction(*rewrite.replacement_)),
                         "a JIT block parameter replacement has an "
                         "incompatible result");
@@ -458,13 +469,17 @@ namespace cl::jit
             staged.instructions.reserve(block->instruction_ids_.size());
             if constexpr(HasBlockParameterCallback)
             {
-                const std::vector<BlockParameterRewrite> &rewrites =
+                const std::vector<StagedBlockParameterRewrite> &rewrites =
                     block_parameter_rewrites.at(block);
                 for(size_t index = 0; index < block->parameter_ids_.size();
                     ++index)
                 {
                     InstructionId parameter_id = block->parameter_ids_[index];
-                    if(rewrites[index].kind_ ==
+                    require_rewrite_invariant(
+                        rewrites[index].parameter == parameter_id,
+                        "a staged JIT block parameter rewrite changed "
+                        "identity");
+                    if(rewrites[index].rewrite.kind_ ==
                        BlockParameterRewrite::Kind::Keep)
                     {
                         staged.parameters.push_back(parameter_id);
@@ -488,21 +503,26 @@ namespace cl::jit
             }
             if constexpr(HasBlockParameterCallback)
             {
-                const std::vector<BlockParameterRewrite> &rewrites =
+                const std::vector<StagedBlockParameterRewrite> &rewrites =
                     block_parameter_rewrites.at(block);
                 for(size_t index = 0; index < rewrites.size(); ++index)
                 {
-                    const BlockParameterRewrite &rewrite = rewrites[index];
+                    const StagedBlockParameterRewrite &staged = rewrites[index];
+                    const BlockParameterRewrite &rewrite = staged.rewrite;
                     if(rewrite.kind_ !=
                        BlockParameterRewrite::Kind::ReplaceWithParameter)
                     {
                         continue;
                     }
-                    InstructionId parameter = block->parameter_ids_[index];
+                    require_rewrite_invariant(
+                        staged.parameter == block->parameter_ids_[index],
+                        "a staged JIT block parameter rewrite changed "
+                        "identity");
                     def_replacements.emplace(
-                        parameter,
+                        staged.parameter,
                         DefReplacement{*rewrite.replacement_, false});
-                    record_normalization(parameter, *rewrite.replacement_);
+                    record_normalization(staged.parameter,
+                                         *rewrite.replacement_);
                 }
             }
 
@@ -633,7 +653,7 @@ namespace cl::jit
                         std::vector<ProgramValueRef> arguments;
                         arguments.reserve(edge->arguments().size());
                         bool changed = false;
-                        const std::vector<BlockParameterRewrite>
+                        const std::vector<StagedBlockParameterRewrite>
                             *parameter_rewrites = nullptr;
                         if constexpr(HasBlockParameterCallback)
                         {
@@ -650,7 +670,12 @@ namespace cl::jit
                         {
                             if constexpr(HasBlockParameterCallback)
                             {
-                                if((*parameter_rewrites)[index].kind_ !=
+                                require_rewrite_invariant(
+                                    (*parameter_rewrites)[index].parameter ==
+                                        edge->target()->parameter_ids_[index],
+                                    "a staged JIT block parameter rewrite "
+                                    "changed identity");
+                                if((*parameter_rewrites)[index].rewrite.kind_ !=
                                    BlockParameterRewrite::Kind::Keep)
                                 {
                                     changed = true;

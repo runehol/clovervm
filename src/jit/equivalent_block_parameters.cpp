@@ -24,18 +24,19 @@ namespace cl::jit
             {
             }
 
-            BlockParameterRewrite block_parameter(RewriteContext &context,
-                                                  const GraphQueries &,
-                                                  const Block &, size_t,
-                                                  const Instruction &parameter)
+            BlockParameterRewrite
+            block_parameter(RewriteContext &context, const GraphQueries &,
+                            const BlockParameterJoin &join)
             {
+                Instruction parameter = join.parameter();
                 auto replacement = replacements_->find(parameter.id());
                 if(replacement == replacements_->end())
                 {
                     return BlockParameterRewrite::keep();
                 }
-                return BlockParameterRewrite::replace_with(
-                    ProgramValueRef(context.instruction(replacement->second)));
+                return BlockParameterRewrite::
+                    replace_with_destination_parameter(ProgramValueRef(
+                        context.instruction(replacement->second)));
             }
 
         private:

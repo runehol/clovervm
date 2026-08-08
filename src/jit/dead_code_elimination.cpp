@@ -30,11 +30,12 @@ namespace cl::jit
             {
             }
 
-            BlockParameterRewrite block_parameter(RewriteContext &,
-                                                  const GraphQueries &,
-                                                  const Block &block, size_t,
-                                                  const Instruction &parameter)
+            BlockParameterRewrite
+            block_parameter(RewriteContext &, const GraphQueries &,
+                            const BlockParameterJoin &join)
             {
+                const Block &block = join.block();
+                Instruction parameter = join.parameter();
                 return &block == graph_->normal_entry_block() ||
                                live_->contains(parameter.id())
                            ? BlockParameterRewrite::keep()
