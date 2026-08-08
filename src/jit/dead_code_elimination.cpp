@@ -41,7 +41,7 @@ namespace cl::jit
                                                   const Block &block, size_t,
                                                   const Instruction &parameter)
             {
-                return &block == graph_->entry_block() ||
+                return &block == graph_->normal_entry_block() ||
                                live_->contains(parameter.id())
                            ? BlockParameterRewrite::keep()
                            : BlockParameterRewrite::erase();

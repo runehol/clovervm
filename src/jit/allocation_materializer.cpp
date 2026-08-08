@@ -996,7 +996,7 @@ namespace cl::jit
         EdgeSplitPlacement edge_split_placement(const ControlFlowGraph &graph,
                                                 const BlockEdge &edge)
         {
-            if(edge.target() == graph.entry_block() ||
+            if(edge.target() == graph.normal_entry_block() ||
                edge.source()->block_successor_edges().size() == 1)
             {
                 return EdgeSplitPlacement::AfterSource;

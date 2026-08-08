@@ -420,7 +420,8 @@ namespace cl::jit
                             ? *override->result_override()
                             : default_result_constraint(
                                   parameter.value_representation());
-                    if(&block != graph_.entry_block() && !has_result_override)
+                    if(&block != graph_.normal_entry_block() &&
+                       !has_result_override)
                     {
                         result_constraint.requirement =
                             LocationRequirement::any_location();

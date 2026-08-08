@@ -2,6 +2,7 @@
 
 #include "jit/cfg_verifier.h"
 
+#include <algorithm>
 #include <cassert>
 
 namespace cl::jit
@@ -25,9 +26,9 @@ namespace cl::jit
         assert(block->graph_ == nullptr);
         block->graph_ = graph_;
         graph_->blocks_.push_back(block);
-        if(graph_->entry_block_ == nullptr)
+        if(graph_->entry_blocks_.empty())
         {
-            graph_->entry_block_ = block;
+            graph_->entry_blocks_.push_back(block);
         }
     }
 
@@ -60,6 +61,17 @@ namespace cl::jit
     {
         assert_can_build();
         return graph_->blocks_.size();
+    }
+
+    void GraphBuilder::register_exception_entry_block(Block *block)
+    {
+        assert_can_mutate(block);
+        assert(graph_->normal_entry_block() != nullptr);
+        assert(block != graph_->normal_entry_block());
+        assert(std::find(graph_->entry_blocks_.begin(),
+                         graph_->entry_blocks_.end(),
+                         block) == graph_->entry_blocks_.end());
+        graph_->entry_blocks_.push_back(block);
     }
 
     void GraphBuilder::set_loop_depth(Block *block, uint32_t loop_depth)

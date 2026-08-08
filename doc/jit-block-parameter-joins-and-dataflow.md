@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Document type | Design |
-| Status | Proposed |
-| Implementation | Not started; the CFG has block parameters and predecessor indexes, while existing analyses and rewrites traverse them with pass-specific code |
+| Status | Accepted |
+| Implementation | Partial: normal and exception entry metadata and queries are implemented; block-parameter joins, reusable traversal, fixed-point scheduling, and atomic join conversion are not started |
 | Scope | A shared view of block parameters and their incoming edge arguments, reusable block traversal and fixed-point scheduling, and atomic block-parameter rewrites |
 | Owning layers | The CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own lattices and transfer functions; transformation passes own legality; the graph rewriter owns atomic structural mutation |
 | Validated against | N/A |
@@ -264,8 +264,8 @@ the CFG. A common query then exposes that information:
 
 ```cpp
 Block *normal_entry_block() const;
-const std::vector<Block *> &exception_entry_blocks() const;
-const std::vector<Block *> &entry_blocks() const;
+std::span<Block *const> exception_entry_blocks() const;
+std::span<Block *const> entry_blocks() const;
 ```
 
 `exception_entry_blocks()` contains only registered exception-handler entries.

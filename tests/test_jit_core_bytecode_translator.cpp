@@ -13,6 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace cl::jit
@@ -115,7 +116,7 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         ASSERT_EQ(1u, graph->blocks().size());
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
 
         std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
@@ -133,6 +134,32 @@ namespace cl::jit
                 .as<ReturnInstruction>();
         EXPECT_EQ(constants[0].id(),
                   return_instruction.return_value().instruction_id());
+    }
+
+    TEST(JitCoreBytecodeTranslator, RegistersExceptionEntryBlocks)
+    {
+        TranslatorFixture fixture;
+        JumpTarget handler(&fixture.code_builder);
+        {
+            ExceptionTableRangeBuilder range(&fixture.code_builder, handler);
+            fixture.code_builder.emit_lda_none(0).value();
+            fixture.code_builder.emit_raise_unwind(0).value();
+            range.close();
+        }
+        handler.resolve().value();
+        fixture.code_builder.emit_lda_none(0).value();
+        fixture.code_builder.emit_return(0).value();
+
+        ControlFlowGraph *graph = fixture.translate();
+        std::span<Block *const> exception_entries =
+            graph->exception_entry_blocks();
+        ASSERT_EQ(1u, exception_entries.size());
+        EXPECT_NE(graph->normal_entry_block(), exception_entries.front());
+
+        std::span<Block *const> entries = graph->entry_blocks();
+        ASSERT_EQ(2u, entries.size());
+        EXPECT_EQ(graph->normal_entry_block(), entries[0]);
+        EXPECT_EQ(exception_entries[0], entries[1]);
     }
 
     TEST(JitCoreBytecodeTranslator, TranslatesIdentityTests)
@@ -160,7 +187,7 @@ namespace cl::jit
         }
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> constants =
             instructions_of_kind(entry, InstructionKind::Const);
         std::vector<Instruction> is_instructions =
@@ -200,7 +227,7 @@ namespace cl::jit
         }
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         std::vector<Instruction> guards =
@@ -265,7 +292,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         EXPECT_TRUE(instructions_of_kind(entry, InstructionKind::InlineTagGuard)
                         .empty());
         EXPECT_TRUE(
@@ -326,7 +353,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         std::vector<Instruction> shape_guards =
@@ -409,7 +436,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> shape_guards =
             instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
         std::vector<Instruction> inline_guards =
@@ -498,7 +525,7 @@ namespace cl::jit
             CoreBytecodeTranslator translator(
                 fixture.context.vm(), *code_object, fixture.graph_builder);
             ControlFlowGraph *graph = translator.translate();
-            Block *entry = graph->entry_block();
+            Block *entry = graph->normal_entry_block();
             std::vector<Instruction> guards = instructions_of_kind(
                 entry, InstructionKind::PointerAndShapeGuard);
             std::vector<Instruction> unboxes =
@@ -556,7 +583,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> guards =
             instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
         std::vector<Instruction> unboxes =
@@ -616,7 +643,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> guards =
             instructions_of_kind(entry, InstructionKind::PointerAndShapeGuard);
 
@@ -685,7 +712,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> guards =
             instructions_of_kind(entry, InstructionKind::InlineTagGuard);
         std::vector<Instruction> calls =
@@ -716,7 +743,7 @@ namespace cl::jit
         fixture.code_builder.emit_return(0).value();
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         std::vector<Instruction> guards =
@@ -766,7 +793,7 @@ namespace cl::jit
         fixture.code_builder.emit_return(0).value();
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> guards =
             instructions_of_kind(entry, InstructionKind::InlineTagGuard);
         ASSERT_EQ(2u, guards.size());
@@ -817,7 +844,7 @@ namespace cl::jit
         }
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> subtracts =
             instructions_of_kind(entry, InstructionKind::SubSMI);
         ASSERT_EQ(2u, subtracts.size());
@@ -877,7 +904,7 @@ namespace cl::jit
         }
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         EXPECT_EQ(2u,
                   instructions_of_kind(entry, InstructionKind::AndSMI).size());
         EXPECT_EQ(2u,
@@ -921,7 +948,7 @@ namespace cl::jit
         CoreBytecodeTranslator translator(fixture.context.vm(), *code_object,
                                           fixture.graph_builder);
         ControlFlowGraph *graph = translator.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         std::vector<Instruction> resumes =
@@ -973,7 +1000,7 @@ namespace cl::jit
         }
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<BinaryComparisonSMISubkind> actual_subkinds;
         for(Instruction instruction: entry->instructions())
         {
@@ -1167,7 +1194,7 @@ namespace cl::jit
         fixture.code_builder.emit_return(0).value();
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         std::vector<Instruction> resumes =
@@ -1209,7 +1236,7 @@ namespace cl::jit
         fixture.code_builder.emit_return(0).value();
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         ASSERT_EQ(1u + FrameHeaderSize, entry->parameters().size());
         Instruction parameter = entry->parameter_at(0);
         EXPECT_EQ(InstructionKind::Parameter, parameter.kind());
@@ -1257,7 +1284,7 @@ namespace cl::jit
         fixture.code_builder.emit_return(0).value();
 
         ControlFlowGraph *graph = fixture.translate();
-        Block *entry = graph->entry_block();
+        Block *entry = graph->normal_entry_block();
         std::vector<Instruction> resumes =
             instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
         ASSERT_EQ(1u, resumes.size());

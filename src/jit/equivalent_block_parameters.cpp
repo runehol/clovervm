@@ -49,7 +49,7 @@ namespace cl::jit
         ParameterReplacements replacements;
         for(const Block *block: graph.blocks())
         {
-            if(block == graph.entry_block())
+            if(block == graph.normal_entry_block())
             {
                 continue;
             }

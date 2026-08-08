@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Document type | Implementation plan |
-| Status | Proposed |
-| Implementation | Not started |
+| Status | Accepted |
+| Implementation | Partial: slice 1 is implemented; slices 2 through 9 are not started |
 | Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, constant join folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
@@ -35,15 +35,17 @@ class ControlFlowGraph
 {
 public:
     Block *normal_entry_block() const;
-    const std::vector<Block *> &exception_entry_blocks() const;
-    const std::vector<Block *> &entry_blocks() const;
+    std::span<Block *const> exception_entry_blocks() const;
+    std::span<Block *const> entry_blocks() const;
 };
 ```
 
-The first graph block remains the normal entry. `exception_entry_blocks()`
-contains only exception-handler entries in the decoder's deterministic order.
-`entry_blocks()` contains the normal entry first, followed by those exception
-entries. `CoreBytecodeTranslator` registers every block named by
+One authoritative entry vector stores the normal entry first followed by the
+exception entries. The two range queries return spans over the complete vector
+and its exception-only suffix, so the partition cannot drift out of sync. The
+first graph block remains the normal entry. Exception entries retain the
+decoder's deterministic order. `CoreBytecodeTranslator` registers every block
+named by
 `BytecodeDecoder::exception_handler_block_ids()` after allocating the graph
 blocks and before publication.
 

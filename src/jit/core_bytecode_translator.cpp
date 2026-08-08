@@ -23,6 +23,10 @@ namespace cl::jit
 
         builder_.set_bytecode_state_order(state_tracker_.order());
         builder_.emplace_n_blocks(bytecode_blocks.size());
+        for(BytecodeBlockId handler: decoder_.exception_handler_block_ids())
+        {
+            builder_.register_exception_entry_block(builder_.block_at(handler));
+        }
         for(const BytecodeBlock &bytecode_block: bytecode_blocks)
         {
             translate_block(bytecode_block);

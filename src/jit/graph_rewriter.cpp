@@ -59,7 +59,7 @@ namespace cl::jit
                 "one CFG edge cannot be split more than once");
             require_rewrite_invariant(
                 request.placement != EdgeSplitPlacement::BeforeTarget ||
-                    edge->target() != graph_->entry_block(),
+                    edge->target() != graph_->normal_entry_block(),
                 "an edge split cannot be placed before the entry block");
 
             bool owned_by_terminator = false;

@@ -290,11 +290,11 @@ namespace cl::jit
         {
             return invalid("control-flow graph has no blocks");
         }
-        if(graph.entry_block() == nullptr)
+        if(graph.normal_entry_block() == nullptr)
         {
             return invalid("control-flow graph has no entry block");
         }
-        if(graph.entry_block() != blocks.front())
+        if(graph.normal_entry_block() != blocks.front())
         {
             return invalid("control-flow graph entry is not its first block");
         }
@@ -313,10 +313,19 @@ namespace cl::jit
                                " occurs more than once in graph block order");
             }
         }
-        if(block_set.find(graph.entry_block()) == block_set.end())
+        absl::flat_hash_set<const Block *> entry_set;
+        for(const Block *entry: graph.entry_blocks())
         {
-            return invalid("control-flow graph entry does not belong to the "
-                           "graph");
+            if(block_set.find(entry) == block_set.end())
+            {
+                return invalid("control-flow graph entry does not belong to "
+                               "the graph");
+            }
+            if(!entry_set.insert(entry).second)
+            {
+                return invalid("control-flow graph contains a duplicate entry "
+                               "block");
+            }
         }
 
         absl::flat_hash_set<InstructionId> instruction_set;

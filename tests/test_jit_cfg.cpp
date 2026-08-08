@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <span>
 #include <string>
@@ -85,12 +86,47 @@ namespace cl::jit
         ASSERT_EQ(2u, join->predecessor_edges().size());
         EXPECT_EQ(true_edge, join->predecessor_edges()[0]);
         EXPECT_EQ(false_edge, join->predecessor_edges()[1]);
-        EXPECT_EQ(entry, graph->entry_block());
+        EXPECT_EQ(entry, graph->normal_entry_block());
         ASSERT_EQ(2u, graph->blocks().size());
         EXPECT_EQ(entry, graph->blocks()[0]);
         EXPECT_EQ(join, graph->blocks()[1]);
         EXPECT_TRUE(graph->is_published());
         EXPECT_EQ(IRLevel::Core, graph->ir_level());
+    }
+
+    TEST(JitCfg, EntryQueriesPartitionNormalAndExceptionEntries)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *normal = builder.emplace_block();
+        Block *first_exception = builder.emplace_block();
+        Block *ordinary = builder.emplace_block();
+        Block *second_exception = builder.emplace_block();
+
+        builder.register_exception_entry_block(first_exception);
+        builder.register_exception_entry_block(second_exception);
+        for(Block *block: {normal, first_exception, ordinary, second_exception})
+        {
+            builder.emplace_instruction<BareReturnInstruction>(
+                block, emplace_constant(builder, block, Value::None()));
+        }
+
+        ControlFlowGraph *graph = builder.finalize();
+        EXPECT_EQ(normal, graph->normal_entry_block());
+
+        std::span<Block *const> exception_entries =
+            graph->exception_entry_blocks();
+        ASSERT_EQ(2u, exception_entries.size());
+        EXPECT_EQ(first_exception, exception_entries[0]);
+        EXPECT_EQ(second_exception, exception_entries[1]);
+
+        std::span<Block *const> entries = graph->entry_blocks();
+        ASSERT_EQ(3u, entries.size());
+        EXPECT_EQ(normal, entries[0]);
+        EXPECT_EQ(first_exception, entries[1]);
+        EXPECT_EQ(second_exception, entries[2]);
+        EXPECT_EQ(entries.end(),
+                  std::find(entries.begin(), entries.end(), ordinary));
     }
 
     TEST(JitCfg, RejectsInstructionsOutsideDeclaredIRLevel)

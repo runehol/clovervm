@@ -452,7 +452,7 @@ namespace cl::jit
         assert(graph.is_published());
         assert(graph.ir_level() == IRLevel::Machine);
 
-        const Block *entry = graph.entry_block();
+        const Block *entry = graph.normal_entry_block();
         assert(entry != nullptr);
         assert(graph.blocks()[0] == entry);
         assert(entry->predecessor_edges().empty());

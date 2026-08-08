@@ -84,7 +84,7 @@ namespace cl::jit
             return true;
         };
 
-        for(Instruction parameter: graph.entry_block()->parameters())
+        for(Instruction parameter: graph.normal_entry_block()->parameters())
         {
             if(parameter.result_class() == ResultClass::ProgramValue &&
                parameter.value_representation() ==
@@ -97,9 +97,9 @@ namespace cl::jit
         absl::flat_hash_set<const Block *> reachable;
         absl::flat_hash_set<const Block *> queued;
         std::vector<const Block *> worklist;
-        reachable.insert(graph.entry_block());
-        queued.insert(graph.entry_block());
-        worklist.push_back(graph.entry_block());
+        reachable.insert(graph.normal_entry_block());
+        queued.insert(graph.normal_entry_block());
+        worklist.push_back(graph.normal_entry_block());
 
         auto instruction_facts = [&](Instruction instruction) {
             switch(instruction_family_kind(instruction.kind()))

@@ -185,7 +185,19 @@ namespace cl::jit
         const CompilationStorage *storage() const { return storage_; }
         IRLevel ir_level() const { return ir_level_; }
         ThreadState &thread_state() const { return thread_; }
-        Block *entry_block() const { return entry_block_; }
+        Block *normal_entry_block() const
+        {
+            return entry_blocks_.empty() ? nullptr : entry_blocks_.front();
+        }
+        std::span<Block *const> exception_entry_blocks() const
+        {
+            std::span<Block *const> entries(entry_blocks_);
+            return entries.empty() ? entries : entries.subspan(1);
+        }
+        std::span<Block *const> entry_blocks() const
+        {
+            return std::span<Block *const>(entry_blocks_);
+        }
         const std::vector<Block *> &blocks() const { return blocks_; }
         bool is_published() const { return published_; }
         uint64_t mutation_generation() const { return mutation_generation_; }
@@ -208,7 +220,7 @@ namespace cl::jit
         CompilationStorage *storage_;
         ThreadState &thread_;
         IRLevel ir_level_;
-        Block *entry_block_ = nullptr;
+        std::vector<Block *> entry_blocks_;
         std::vector<Block *> blocks_;
         std::optional<BytecodeStateOrder> bytecode_state_order_;
         bool published_ = false;

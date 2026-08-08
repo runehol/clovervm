@@ -58,7 +58,7 @@ namespace cl::jit
                 return RewriteInsertion::insert({context.make_instruction<
                     RestoreLinkRegisterFromFrameInstruction>()});
             }
-        } callback{graph.entry_block()};
+        } callback{graph.normal_entry_block()};
 
         GraphRewriter rewriter(session, graph);
         return rewriter.rewrite_instructions(
