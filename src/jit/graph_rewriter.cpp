@@ -505,10 +505,6 @@ namespace cl::jit
                             block->predecessor_edges().size());
                         for(const BlockEdge *edge: block->predecessor_edges())
                         {
-                            require_rewrite_invariant(
-                                edge->source() != block,
-                                "a JIT block parameter representation "
-                                "conversion may not include a self-edge");
                             expected_edges.insert(edge->id());
                         }
 

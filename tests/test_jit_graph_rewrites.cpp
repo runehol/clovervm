@@ -927,6 +927,233 @@ namespace cl::jit
     }
 
     TEST(JitGraphRewriter,
+         StagesSimultaneousConversionsWithEveryParameterOutcome)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *first = builder.emplace_block();
+        Block *second = builder.emplace_block();
+        Block *destination = builder.emplace_block();
+
+        auto make_source_parameters = [&](Block *block) {
+            std::vector<ParameterInstruction> tagged;
+            std::vector<ParameterF64Instruction> f64;
+            tagged.reserve(7);
+            f64.reserve(7);
+            for(size_t column = 0; column < 7; ++column)
+            {
+                tagged.push_back(
+                    builder.emplace_parameter<ParameterInstruction>(block));
+                f64.push_back(
+                    builder.emplace_parameter<ParameterF64Instruction>(block));
+            }
+            return std::pair(std::move(tagged), std::move(f64));
+        };
+        auto [first_tagged, first_f64] = make_source_parameters(first);
+        auto [second_tagged, second_f64] = make_source_parameters(second);
+        auto make_arguments =
+            [](const std::vector<ParameterInstruction> &parameters) {
+                std::vector<ProgramValueRef> arguments;
+                arguments.reserve(parameters.size());
+                for(ParameterInstruction parameter: parameters)
+                {
+                    arguments.emplace_back(parameter);
+                }
+                return arguments;
+            };
+        std::vector<ProgramValueRef> first_arguments =
+            make_arguments(first_tagged);
+        std::vector<ProgramValueRef> second_arguments =
+            make_arguments(second_tagged);
+        BlockEdge *first_edge =
+            builder.make_block_edge(first, destination, first_arguments);
+        BlockEdge *second_edge =
+            builder.make_block_edge(second, destination, second_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(first,
+                                                                    first_edge);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            second, second_edge);
+
+        std::vector<ParameterInstruction> parameters;
+        parameters.reserve(7);
+        for(size_t column = 0; column < 7; ++column)
+        {
+            parameters.push_back(
+                builder.emplace_parameter<ParameterInstruction>(destination));
+        }
+        std::array<ProgramValueRef, 6> captured = {
+            ProgramValueRef(parameters[0]), ProgramValueRef(parameters[1]),
+            ProgramValueRef(parameters[2]), ProgramValueRef(parameters[4]),
+            ProgramValueRef(parameters[5]), ProgramValueRef(parameters[6])};
+        SnapshotInstruction old_snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                destination, captured, BytecodePCOffset{21});
+        BareReturnInstruction old_return =
+            builder.emplace_instruction<BareReturnInstruction>(
+                destination, TaggedValueRef(parameters[0]));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            std::vector<ParameterInstruction> parameters;
+            std::vector<ParameterF64Instruction> first_f64;
+            std::vector<ParameterF64Instruction> second_f64;
+            BlockEdge *first_edge;
+            BlockEdge *second_edge;
+            std::array<std::optional<ParameterF64Instruction>, 7> replacements;
+            std::array<std::optional<BoxF64Instruction>, 7> boxes;
+            std::optional<ConstInstruction> materialized;
+
+            BlockParameterRewrite
+            block_parameter(RewriteContext &context, const GraphQueries &,
+                            const BlockParameterJoin &join)
+            {
+                size_t column = parameters.size();
+                for(size_t index = 0; index < parameters.size(); ++index)
+                {
+                    if(join.parameter().id() == parameters[index].id())
+                    {
+                        column = index;
+                        break;
+                    }
+                }
+                if(column == parameters.size())
+                {
+                    return BlockParameterRewrite::keep();
+                }
+
+                switch(column)
+                {
+                    case 0:
+                        return BlockParameterRewrite::keep();
+                    case 1:
+                    case 2:
+                    case 5:
+                        {
+                            replacements[column] = context.make_instruction<
+                                ParameterF64Instruction>();
+                            boxes[column] =
+                                context.make_instruction<BoxF64Instruction>(
+                                    F64Ref(*replacements[column]));
+                            std::array<IncomingArgumentReplacement, 2>
+                                incoming = {
+                                    IncomingArgumentReplacement{
+                                        first_edge->id(),
+                                        ProgramValueRef(first_f64[column])},
+                                    IncomingArgumentReplacement{
+                                        second_edge->id(),
+                                        ProgramValueRef(second_f64[column])}};
+                            return BlockParameterRewrite::
+                                convert_representation(
+                                    *replacements[column], incoming,
+                                    RewriteInsertion::insert({*boxes[column]}),
+                                    ProgramValueRef(*boxes[column]));
+                        }
+                    case 3:
+                        return BlockParameterRewrite::erase();
+                    case 4:
+                        materialized =
+                            context.make_instruction<ConstInstruction>(
+                                Value::False());
+                        return BlockParameterRewrite::
+                            materialize_in_destination(
+                                RewriteInsertion::insert({*materialized}),
+                                ProgramValueRef(*materialized));
+                    case 6:
+                        return BlockParameterRewrite::
+                            replace_with_destination_parameter(
+                                ProgramValueRef(parameters[0]));
+                }
+                assert(false);
+                return BlockParameterRewrite::keep();
+            }
+        } callback{parameters,  first_f64, second_f64, first_edge,
+                   second_edge, {},        {},         {}};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        ASSERT_TRUE(callback.replacements[1].has_value());
+        ASSERT_TRUE(callback.replacements[2].has_value());
+        ASSERT_TRUE(callback.replacements[5].has_value());
+        ASSERT_TRUE(callback.boxes[1].has_value());
+        ASSERT_TRUE(callback.boxes[2].has_value());
+        ASSERT_TRUE(callback.boxes[5].has_value());
+        ASSERT_TRUE(callback.materialized.has_value());
+        EXPECT_TRUE(summary.block_parameters_changed);
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        ASSERT_EQ(4u, destination->parameters().size());
+        EXPECT_EQ(parameters[0], destination->parameter_at(0));
+        EXPECT_EQ(*callback.replacements[1], destination->parameter_at(1));
+        EXPECT_EQ(*callback.replacements[2], destination->parameter_at(2));
+        EXPECT_EQ(*callback.replacements[5], destination->parameter_at(3));
+        for(size_t column:
+            {size_t{1}, size_t{2}, size_t{3}, size_t{4}, size_t{5}, size_t{6}})
+        {
+            EXPECT_TRUE(parameters[column].is_poisoned());
+        }
+
+        ASSERT_EQ(6u, destination->instructions().size());
+        EXPECT_EQ(*callback.boxes[1], destination->instruction_at(0));
+        EXPECT_EQ(*callback.boxes[2], destination->instruction_at(1));
+        EXPECT_EQ(*callback.materialized, destination->instruction_at(2));
+        EXPECT_EQ(*callback.boxes[5], destination->instruction_at(3));
+        SnapshotInstruction snapshot =
+            destination->instruction_at(4).as<SnapshotInstruction>();
+        ASSERT_EQ(6u, snapshot.captured_values().size());
+        EXPECT_EQ(parameters[0].id(),
+                  snapshot.captured_values()[0].instruction_id());
+        EXPECT_EQ(callback.boxes[1]->id(),
+                  snapshot.captured_values()[1].instruction_id());
+        EXPECT_EQ(callback.boxes[2]->id(),
+                  snapshot.captured_values()[2].instruction_id());
+        EXPECT_EQ(callback.materialized->id(),
+                  snapshot.captured_values()[3].instruction_id());
+        EXPECT_EQ(callback.boxes[5]->id(),
+                  snapshot.captured_values()[4].instruction_id());
+        EXPECT_EQ(parameters[0].id(),
+                  snapshot.captured_values()[5].instruction_id());
+        EXPECT_EQ(parameters[0].id(), destination->instruction_at(5)
+                                          .as<BareReturnInstruction>()
+                                          .return_value()
+                                          .instruction_id());
+        EXPECT_TRUE(old_snapshot.is_poisoned());
+        EXPECT_EQ(old_return, destination->instruction_at(5));
+        EXPECT_FALSE(old_return.is_poisoned());
+
+        for(size_t column: {size_t{1}, size_t{2}, size_t{5}})
+        {
+            EXPECT_EQ(
+                callback.boxes[column]->id(),
+                summary.normalization_remapping.at(parameters[column].id()));
+        }
+        EXPECT_EQ(callback.materialized->id(),
+                  summary.normalization_remapping.at(parameters[4].id()));
+        EXPECT_EQ(parameters[0].id(),
+                  summary.normalization_remapping.at(parameters[6].id()));
+
+        BlockEdge *new_first_edge = first->block_successor_edges()[0];
+        BlockEdge *new_second_edge = second->block_successor_edges()[0];
+        ASSERT_EQ(4u, new_first_edge->arguments().size());
+        ASSERT_EQ(4u, new_second_edge->arguments().size());
+        EXPECT_EQ(first_tagged[0].id(),
+                  new_first_edge->arguments()[0].instruction_id());
+        EXPECT_EQ(second_tagged[0].id(),
+                  new_second_edge->arguments()[0].instruction_id());
+        std::array<size_t, 3> converted_columns = {1, 2, 5};
+        for(size_t index = 0; index < converted_columns.size(); ++index)
+        {
+            size_t column = converted_columns[index];
+            EXPECT_EQ(first_f64[column].id(),
+                      new_first_edge->arguments()[index + 1].instruction_id());
+            EXPECT_EQ(second_f64[column].id(),
+                      new_second_edge->arguments()[index + 1].instruction_id());
+        }
+    }
+
+    TEST(JitGraphRewriter,
          RejectsInvalidNonSelfRepresentationConversionContracts)
     {
         struct InvalidCase
@@ -1017,76 +1244,139 @@ namespace cl::jit
             "representation");
     }
 
-    TEST(JitGraphRewriter, RejectsRepresentationConversionWithASelfEdge)
+    TEST(JitGraphRewriter,
+         ConvertsUnchangedAndUpdatedSelfEdgeRecurrencesTogether)
     {
-        EXPECT_DEATH(
-            ([] {
-                CompilationSession session{test::compiler_thread()};
-                GraphBuilder builder(session, IRLevel::Core);
-                Block *entry = builder.emplace_block();
-                Block *loop = builder.emplace_block();
-                ParameterInstruction entry_tagged =
-                    builder.emplace_parameter<ParameterInstruction>(entry);
-                ParameterF64Instruction entry_f64 =
-                    builder.emplace_parameter<ParameterF64Instruction>(entry);
-                std::array<ProgramValueRef, 2> entry_arguments = {
-                    ProgramValueRef(entry_tagged), ProgramValueRef(entry_f64)};
-                BlockEdge *entry_edge =
-                    builder.make_block_edge(entry, loop, entry_arguments);
-                builder.emplace_instruction<UnconditionalBranchInstruction>(
-                    entry, entry_edge);
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *loop = builder.emplace_block();
 
-                ParameterInstruction loop_tagged =
-                    builder.emplace_parameter<ParameterInstruction>(loop);
-                ParameterF64Instruction loop_f64 =
-                    builder.emplace_parameter<ParameterF64Instruction>(loop);
-                std::array<ProgramValueRef, 2> backedge_arguments = {
-                    ProgramValueRef(loop_tagged), ProgramValueRef(loop_f64)};
-                BlockEdge *backedge =
-                    builder.make_block_edge(loop, loop, backedge_arguments);
-                builder.emplace_instruction<UnconditionalBranchInstruction>(
-                    loop, backedge);
-                ControlFlowGraph *graph = builder.finalize();
+        std::array<ParameterInstruction, 2> entry_tagged = {
+            builder.emplace_parameter<ParameterInstruction>(entry),
+            builder.emplace_parameter<ParameterInstruction>(entry)};
+        std::array<ParameterF64Instruction, 2> entry_f64 = {
+            builder.emplace_parameter<ParameterF64Instruction>(entry),
+            builder.emplace_parameter<ParameterF64Instruction>(entry)};
+        std::array<ProgramValueRef, 2> entry_arguments = {
+            ProgramValueRef(entry_tagged[0]), ProgramValueRef(entry_tagged[1])};
+        BlockEdge *entry_edge =
+            builder.make_block_edge(entry, loop, entry_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(entry,
+                                                                    entry_edge);
 
-                struct Callback
+        std::array<ParameterInstruction, 2> loop_parameters = {
+            builder.emplace_parameter<ParameterInstruction>(loop),
+            builder.emplace_parameter<ParameterInstruction>(loop)};
+        UnboxF64Instruction old_unbox =
+            builder.emplace_instruction<UnboxF64Instruction>(
+                loop, TaggedValueRef(loop_parameters[1]));
+        NegF64Instruction old_next =
+            builder.emplace_instruction<NegF64Instruction>(loop,
+                                                           F64Ref(old_unbox));
+        BoxF64Instruction old_boxed_next =
+            builder.emplace_instruction<BoxF64Instruction>(loop,
+                                                           F64Ref(old_next));
+        std::array<ProgramValueRef, 2> backedge_arguments = {
+            ProgramValueRef(loop_parameters[0]),
+            ProgramValueRef(old_boxed_next)};
+        BlockEdge *old_backedge =
+            builder.make_block_edge(loop, loop, backedge_arguments);
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            loop, old_backedge);
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            std::array<ParameterInstruction, 2> parameters;
+            std::array<ParameterF64Instruction, 2> entry_f64;
+            NegF64Instruction next;
+            BlockEdge *entry_edge;
+            BlockEdge *backedge;
+            std::vector<ParameterF64Instruction> replacements;
+            std::vector<BoxF64Instruction> boxes;
+
+            BlockParameterRewrite
+            block_parameter(RewriteContext &context, const GraphQueries &,
+                            const BlockParameterJoin &join)
+            {
+                size_t column;
+                if(join.parameter().id() == parameters[0].id())
                 {
-                    ParameterInstruction parameter;
-                    ParameterF64Instruction entry_f64;
-                    ParameterF64Instruction loop_f64;
-                    BlockEdge *entry_edge;
-                    BlockEdge *backedge;
+                    column = 0;
+                }
+                else if(join.parameter().id() == parameters[1].id())
+                {
+                    column = 1;
+                }
+                else
+                {
+                    return BlockParameterRewrite::keep();
+                }
 
-                    BlockParameterRewrite
-                    block_parameter(RewriteContext &context,
-                                    const GraphQueries &,
-                                    const BlockParameterJoin &join)
-                    {
-                        if(join.parameter().id() != parameter.id())
-                        {
-                            return BlockParameterRewrite::keep();
-                        }
-                        ParameterF64Instruction replacement =
-                            context.make_instruction<ParameterF64Instruction>();
-                        BoxF64Instruction box =
-                            context.make_instruction<BoxF64Instruction>(
-                                F64Ref(replacement));
-                        std::array<IncomingArgumentReplacement, 2> incoming = {
-                            IncomingArgumentReplacement{
-                                entry_edge->id(), ProgramValueRef(entry_f64)},
-                            IncomingArgumentReplacement{
-                                backedge->id(), ProgramValueRef(loop_f64)}};
-                        return BlockParameterRewrite::convert_representation(
-                            replacement, incoming,
-                            RewriteInsertion::insert({box}),
-                            ProgramValueRef(box));
-                    }
-                } callback{loop_tagged, entry_f64, loop_f64, entry_edge,
-                           backedge};
+                ParameterF64Instruction replacement =
+                    context.make_instruction<ParameterF64Instruction>();
+                BoxF64Instruction box =
+                    context.make_instruction<BoxF64Instruction>(
+                        F64Ref(replacement));
+                replacements.push_back(replacement);
+                boxes.push_back(box);
+                ProgramValueRef backedge_value =
+                    column == 0 ? ProgramValueRef(replacement)
+                                : ProgramValueRef(next);
+                std::array<IncomingArgumentReplacement, 2> incoming = {
+                    IncomingArgumentReplacement{
+                        entry_edge->id(), ProgramValueRef(entry_f64[column])},
+                    IncomingArgumentReplacement{backedge->id(),
+                                                backedge_value}};
+                return BlockParameterRewrite::convert_representation(
+                    replacement, incoming, RewriteInsertion::insert({box}),
+                    ProgramValueRef(box));
+            }
+        } callback{loop_parameters, entry_f64, old_next, entry_edge,
+                   old_backedge,    {},        {}};
 
-                GraphRewriter rewriter(session, *graph);
-                rewriter.rewrite_instructions(InstructionTraversal(), callback);
-            }()),
-            "may not include a self-edge");
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        ASSERT_EQ(2u, callback.replacements.size());
+        ASSERT_EQ(2u, callback.boxes.size());
+        EXPECT_TRUE(summary.block_parameters_changed);
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(loop_parameters[0].is_poisoned());
+        EXPECT_TRUE(loop_parameters[1].is_poisoned());
+        ASSERT_EQ(2u, loop->parameters().size());
+        EXPECT_EQ(callback.replacements[0], loop->parameter_at(0));
+        EXPECT_EQ(callback.replacements[1], loop->parameter_at(1));
+        EXPECT_EQ(callback.boxes[0], loop->instruction_at(0));
+        EXPECT_EQ(callback.boxes[1], loop->instruction_at(1));
+        EXPECT_EQ(callback.boxes[0].id(),
+                  summary.normalization_remapping.at(loop_parameters[0].id()));
+        EXPECT_EQ(callback.boxes[1].id(),
+                  summary.normalization_remapping.at(loop_parameters[1].id()));
+
+        UnboxF64Instruction unbox =
+            loop->instruction_at(2).as<UnboxF64Instruction>();
+        NegF64Instruction next =
+            loop->instruction_at(3).as<NegF64Instruction>();
+        BoxF64Instruction boxed_next =
+            loop->instruction_at(4).as<BoxF64Instruction>();
+        EXPECT_EQ(callback.boxes[1].id(), unbox.source().instruction_id());
+        EXPECT_EQ(unbox.id(), next.source().instruction_id());
+        EXPECT_EQ(next.id(), boxed_next.source().instruction_id());
+
+        BlockEdge *backedge = loop->block_successor_edges()[0];
+        EXPECT_NE(old_backedge, backedge);
+        ASSERT_EQ(2u, backedge->arguments().size());
+        EXPECT_EQ(callback.replacements[0].id(),
+                  backedge->arguments()[0].instruction_id());
+        EXPECT_EQ(next.id(), backedge->arguments()[1].instruction_id());
+        ASSERT_EQ(2u, loop->predecessor_edges().size());
+        EXPECT_EQ(entry->block_successor_edges()[0],
+                  loop->predecessor_edges()[0]);
+        EXPECT_EQ(backedge, loop->predecessor_edges()[1]);
     }
 
     TEST(JitGraphRewriter,

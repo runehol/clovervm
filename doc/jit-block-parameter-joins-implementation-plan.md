@@ -448,7 +448,8 @@ verification.
 
 ### Slice 9C: Add Self-Edges and Simultaneous Conversion Hardening
 
-A self-edge must explicitly name the new parameter as its replacement argument:
+A self-edge must explicitly name an available, representation-compatible
+replacement argument. An unchanged recurrence names the new parameter:
 
 ```text
 entry ---- x ----------+
@@ -456,16 +457,19 @@ entry ---- x ----------+
 backedge -- new_parameter
 ```
 
-The rewriter permits a proposed incoming value to reference a new parameter
-only when that parameter is available at the source block's entry. It never
-infers the mapping from the removed old parameter. Supplying the old parameter
-on the self-edge is invalid.
+An updated recurrence may instead name a compatible definition produced in the
+loop body before the terminator. Cross-column recurrences may name another new
+parameter. The rewriter applies the ordinary source-availability and
+representation checks; the transformation pass remains responsible for proving
+that its explicit recurrence preserves meaning. The rewriter never infers a
+mapping from the removed old parameter.
 
 Then cover several conversions in one block, adjacent and non-adjacent
 conversions, conversions mixed with every existing parameter rewrite outcome,
 shifting columns, duplicate new parameters, destination insertion order, and
-multiple loop conversions. Every successful case ends with complete CFG
-verification.
+multiple loop conversions. The loop case covers both an unchanged recurrence
+through its new parameter and an updated recurrence through a body-local value.
+Every successful case ends with complete CFG verification.
 
 ## Slice 10: Implement the Restricted Cross-Edge F64 Rewrite
 
