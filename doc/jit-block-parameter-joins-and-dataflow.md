@@ -180,9 +180,10 @@ BlockParameterRewrite::materialize_in_destination(...);
 BlockParameterRewrite::convert_representation(...);
 ```
 
-The exact C++ builder surface remains to be fixed by the implementation
-readiness review. These names describe separate legality contracts, not one
-unrestricted mutation object.
+`materialize_in_destination()` takes a `RewriteInsertion` and the result it
+emits. The representation-conversion surface remains to be fixed by its later
+implementation readiness review. These names describe separate legality
+contracts, not one unrestricted mutation object.
 
 ## Block Traversal
 

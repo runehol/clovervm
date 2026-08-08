@@ -4,8 +4,8 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: slices 1 through 5 are implemented; slices 6 through 9 are not started |
-| Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, constant join folding, and restricted cross-edge F64 conversion |
+| Implementation | Partial: slices 1 through 6 are implemented; slices 7 through 11 are not started |
+| Scope | Staged implementation of block-entry metadata, block traversal, fixed-point scheduling, block-parameter joins, destination-only join rewriting, generic constant folding, and restricted cross-edge F64 conversion |
 | Owning layers | `Value::operator==` defines CloverVM tagged-identity comparison; bytecode lowering registers CFG entries; the CFG owns entry metadata and join structure; traversal owns ordering and scheduling; analyses own transfer and conservative fallback; `GraphRewriter` owns atomic join mutation; optimization passes own semantic legality |
 | Validated against | N/A |
 | Supersedes | N/A |
@@ -212,7 +212,7 @@ the callback.
 This slice changes no representation and inserts no instructions. Existing
 rewriter, DCE, and equivalent-parameter tests prove compatibility.
 
-## Slice 6: Add Destination Materialization and Constant Join Folding
+## Slice 6: Add Destination Materialization Mechanics
 
 Extend a parameter rewrite with a destination-local replacement:
 
@@ -227,7 +227,46 @@ parameter and its argument column are removed atomically. The insertion may
 reference retained destination parameters but never predecessor-local
 definitions.
 
-Implement constant join folding on top:
+Materializations are emitted in original parameter order before the ordinary
+block-entry insertion. The result must be emitted exactly once by its own
+insertion and have the same result class and value representation as the
+removed parameter. A materialization cannot transfer unrelated definitions or
+refer to another parameter materialization from the same rewrite transaction.
+
+Mechanical tests cover simultaneous non-adjacent materializations, argument
+column compaction, use redirection, deterministic placement, and rejection of
+predecessor-local operands. This slice adds no constant-specific behavior.
+
+## Slice 7: Add ConstF64
+
+Add an F64 constant instruction that is valid in Core and Machine IR. Its
+attribute stores the exact `double` payload. Constant comparison uses its bit
+representation so signed zero and NaN payloads remain distinct.
+
+Teach allocation constraints and the AArch64 emitter to materialize arbitrary
+F64 constants without boxing. The emitter places the exact bits in the
+untagged constant-pool area, obtains the pool address through a temporary GPR,
+and loads the value into the assigned SIMD register.
+
+Storage, allocation, emission, and execution tests cover ordinary values,
+signed zero, infinities, and a non-canonical NaN payload.
+
+## Slice 8: Add Generic Constant Folding
+
+Introduce one general Core IR constant-folding pass:
+
+```cpp
+Result<bool, JitCompilationError>
+fold_constants(CompilationSession &, ControlFlowGraph &);
+```
+
+Its graph-rewriter callback owns both instruction folding and block-parameter
+folding. Initial instruction rules are:
+
+- `UnboxF64(Const(exact Float)) -> ConstF64`;
+- `NegF64(ConstF64) -> ConstF64`.
+
+Its initial block-parameter rule is:
 
 - ignore incoming references to the parameter itself;
 - require at least one non-self incoming value;
@@ -250,9 +289,11 @@ fold to remove dead predecessor constants.
 
 Tests cover exact tagged identity, distinct equal heap objects, SMI identity,
 self-only cycles, a constant plus self-backedge, mixed constants, multiple
-simultaneous parameter removals, and destination locality verification.
+simultaneous parameter removals, destination locality verification, tagged
+Float unboxing, F64 negation, signed zero, and NaN payload preservation. Later
+constant rules extend this pass rather than adding operation-specific passes.
 
-## Slice 7: Add Atomic Representation Conversion Mechanics
+## Slice 9: Add Atomic Representation Conversion Mechanics
 
 Add a separate rewrite result for changing one join's representation:
 
@@ -290,7 +331,7 @@ shifting argument columns, missing and duplicate edge replacements,
 representation mismatch, unavailable predecessor values, self-edges,
 destination insertion order, and complete CFG verification after commit.
 
-## Slice 8: Implement the Restricted Cross-Edge F64 Rewrite
+## Slice 10: Implement the Restricted Cross-Edge F64 Rewrite
 
 The first semantic client intentionally handles only joins whose complete
 incoming column is already expressed as identity-discardable `BoxF64` results:
@@ -328,13 +369,13 @@ This restricted slice is not expected to optimize a loop whose initial edge is
 a boxed Float literal. That limitation is accepted for the first
 implementation.
 
-## Slice 9: Integrate and Verify the Optimization Pipeline
+## Slice 11: Integrate and Verify the Optimization Pipeline
 
 Place the passes in a canonical direction that cannot recreate their inputs:
 
 1. tagged-value fact propagation and guard simplification;
 2. local F64 box/unbox simplification;
-3. constant join folding;
+3. generic constant folding, including constant joins;
 4. restricted F64 join conversion;
 5. local simplification again for newly adjacent operations;
 6. equivalent-parameter elimination;

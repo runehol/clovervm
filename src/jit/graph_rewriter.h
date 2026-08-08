@@ -153,14 +153,29 @@ namespace cl::jit
                                          parameter.instruction_id());
         }
 
+        static BlockParameterRewrite
+        materialize_in_destination(RewriteInsertion insertion,
+                                   ProgramValueRef result)
+        {
+            return BlockParameterRewrite(DestinationMaterialization{
+                std::move(insertion), result.instruction_id()});
+        }
+
     private:
         friend class GraphRewriter;
+
+        struct DestinationMaterialization
+        {
+            RewriteInsertion insertion;
+            InstructionId result;
+        };
 
         enum class Kind : uint8_t
         {
             Keep,
             Erase,
             ReplaceWithParameter,
+            MaterializeInDestination,
         };
 
         explicit BlockParameterRewrite(
@@ -169,8 +184,16 @@ namespace cl::jit
         {
         }
 
+        explicit BlockParameterRewrite(
+            DestinationMaterialization materialization)
+            : kind_(Kind::MaterializeInDestination),
+              destination_materialization_(std::move(materialization))
+        {
+        }
+
         Kind kind_;
         std::optional<InstructionId> replacement_;
+        std::optional<DestinationMaterialization> destination_materialization_;
     };
 
     class RewriteResult

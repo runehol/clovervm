@@ -446,6 +446,177 @@ namespace cl::jit
     }
 
     TEST(JitGraphRewriter,
+         MaterializesBlockParameterReplacementsAtTheDestination)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        Block *entry = builder.emplace_block();
+        Block *exit = builder.emplace_block();
+        ParameterInstruction first =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction second =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        ParameterInstruction third =
+            builder.emplace_parameter<ParameterInstruction>(entry);
+        std::array<ProgramValueRef, 3> arguments = {ProgramValueRef(first),
+                                                    ProgramValueRef(second),
+                                                    ProgramValueRef(third)};
+        builder.emplace_instruction<UnconditionalBranchInstruction>(
+            entry, builder.make_block_edge(entry, exit, arguments));
+        ParameterInstruction exit_first =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ParameterInstruction exit_second =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        ParameterInstruction exit_third =
+            builder.emplace_parameter<ParameterInstruction>(exit);
+        std::array<ProgramValueRef, 3> captured = {ProgramValueRef(exit_first),
+                                                   ProgramValueRef(exit_second),
+                                                   ProgramValueRef(exit_third)};
+        SnapshotInstruction old_snapshot =
+            builder.emplace_instruction<SnapshotInstruction>(
+                exit, captured, BytecodePCOffset{11});
+        builder.emplace_instruction<BareReturnInstruction>(
+            exit, TaggedValueRef(exit_second));
+        ControlFlowGraph *graph = builder.finalize();
+
+        struct Callback
+        {
+            Block *destination;
+            Instruction first;
+            Instruction third;
+            std::optional<ConstInstruction> first_materialized;
+            std::optional<ConstInstruction> third_materialized;
+            std::optional<MovInstruction> block_entry_move;
+
+            BlockParameterRewrite
+            block_parameter(RewriteContext &context, const GraphQueries &,
+                            const BlockParameterJoin &join)
+            {
+                Instruction parameter = join.parameter();
+                if(parameter.id() == first.id())
+                {
+                    first_materialized =
+                        context.make_instruction<ConstInstruction>(
+                            Value::True());
+                    return BlockParameterRewrite::materialize_in_destination(
+                        RewriteInsertion::insert({*first_materialized}),
+                        ProgramValueRef(*first_materialized));
+                }
+                if(parameter.id() == third.id())
+                {
+                    third_materialized =
+                        context.make_instruction<ConstInstruction>(
+                            Value::False());
+                    return BlockParameterRewrite::materialize_in_destination(
+                        RewriteInsertion::insert({*third_materialized}),
+                        ProgramValueRef(*third_materialized));
+                }
+                return BlockParameterRewrite::keep();
+            }
+
+            RewriteInsertion at_block_entry(RewriteContext &context,
+                                            const GraphQueries &,
+                                            const Block &block)
+            {
+                if(&block != destination)
+                {
+                    return RewriteInsertion::none();
+                }
+                assert(first_materialized.has_value());
+                block_entry_move = context.make_instruction<MovInstruction>(
+                    TaggedValueRef(*first_materialized));
+                return RewriteInsertion::insert({*block_entry_move});
+            }
+        } callback{exit, exit_first, exit_third, {}, {}, {}};
+
+        GraphRewriter rewriter(session, *graph);
+        RewriteSummary summary =
+            rewriter.rewrite_instructions(InstructionTraversal(), callback);
+
+        EXPECT_TRUE(summary.block_parameters_changed);
+        EXPECT_TRUE(summary.instructions_changed);
+        EXPECT_TRUE(summary.terminators_changed);
+        EXPECT_TRUE(exit_first.is_poisoned());
+        EXPECT_TRUE(exit_third.is_poisoned());
+        EXPECT_TRUE(old_snapshot.is_poisoned());
+        ASSERT_EQ(1u, exit->parameters().size());
+        EXPECT_EQ(exit_second, exit->parameter_at(0));
+
+        ASSERT_TRUE(callback.first_materialized.has_value());
+        ASSERT_TRUE(callback.third_materialized.has_value());
+        ASSERT_TRUE(callback.block_entry_move.has_value());
+        ASSERT_EQ(5u, exit->instructions().size());
+        EXPECT_EQ(*callback.first_materialized, exit->instruction_at(0));
+        EXPECT_EQ(*callback.third_materialized, exit->instruction_at(1));
+        EXPECT_EQ(*callback.block_entry_move, exit->instruction_at(2));
+        SnapshotInstruction snapshot =
+            exit->instruction_at(3).as<SnapshotInstruction>();
+        ASSERT_EQ(3u, snapshot.captured_values().size());
+        EXPECT_EQ(callback.first_materialized->id(),
+                  snapshot.captured_values()[0].instruction_id());
+        EXPECT_EQ(exit_second.id(),
+                  snapshot.captured_values()[1].instruction_id());
+        EXPECT_EQ(callback.third_materialized->id(),
+                  snapshot.captured_values()[2].instruction_id());
+
+        BlockEdge *new_edge = entry->block_successor_edges()[0];
+        ASSERT_EQ(1u, new_edge->arguments().size());
+        EXPECT_EQ(second.id(), new_edge->arguments()[0].instruction_id());
+    }
+
+    TEST(JitGraphRewriter,
+         RejectsPredecessorLocalDestinationMaterializationOperands)
+    {
+        EXPECT_DEATH(
+            ([] {
+                CompilationSession session{test::compiler_thread()};
+                GraphBuilder builder(session, IRLevel::Core);
+                Block *entry = builder.emplace_block();
+                Block *exit = builder.emplace_block();
+                ConstInstruction predecessor_value =
+                    builder.emplace_instruction<ConstInstruction>(
+                        entry, Value::True());
+                std::array<ProgramValueRef, 1> arguments = {
+                    ProgramValueRef(predecessor_value)};
+                builder.emplace_instruction<UnconditionalBranchInstruction>(
+                    entry, builder.make_block_edge(entry, exit, arguments));
+                ParameterInstruction parameter =
+                    builder.emplace_parameter<ParameterInstruction>(exit);
+                builder.emplace_instruction<BareReturnInstruction>(
+                    exit, TaggedValueRef(parameter));
+                ControlFlowGraph *graph = builder.finalize();
+
+                struct Callback
+                {
+                    ParameterInstruction parameter;
+                    ConstInstruction predecessor_value;
+
+                    BlockParameterRewrite
+                    block_parameter(RewriteContext &context,
+                                    const GraphQueries &,
+                                    const BlockParameterJoin &join)
+                    {
+                        if(join.parameter().id() != parameter.id())
+                        {
+                            return BlockParameterRewrite::keep();
+                        }
+                        MovInstruction move =
+                            context.make_instruction<MovInstruction>(
+                                TaggedValueRef(predecessor_value));
+                        return BlockParameterRewrite::
+                            materialize_in_destination(
+                                RewriteInsertion::insert({move}),
+                                ProgramValueRef(move));
+                    }
+                } callback{parameter, predecessor_value};
+
+                GraphRewriter rewriter(session, *graph);
+                rewriter.rewrite_instructions(InstructionTraversal(), callback);
+            }()),
+            "outside its block or before its definition");
+    }
+
+    TEST(JitGraphRewriter,
          StructuralTransfersRedirectDefinitionsFromTheirInsertionPoint)
     {
         CompilationSession session{test::compiler_thread()};

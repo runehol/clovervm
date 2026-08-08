@@ -387,14 +387,22 @@ namespace cl::jit
             {
                 const std::vector<StagedBlockParameterRewrite> &rewrites =
                     block_parameter_rewrites.at(block);
-                bool has_replacement = false;
+                bool has_validated_rewrite = false;
                 for(const StagedBlockParameterRewrite &staged: rewrites)
                 {
-                    has_replacement |=
-                        staged.rewrite.kind_ ==
-                        BlockParameterRewrite::Kind::ReplaceWithParameter;
+                    switch(staged.rewrite.kind_)
+                    {
+                        case BlockParameterRewrite::Kind::Keep:
+                        case BlockParameterRewrite::Kind::Erase:
+                            break;
+                        case BlockParameterRewrite::Kind::ReplaceWithParameter:
+                        case BlockParameterRewrite::Kind::
+                            MaterializeInDestination:
+                            has_validated_rewrite = true;
+                            break;
+                    }
                 }
-                if(!has_replacement)
+                if(!has_validated_rewrite)
                 {
                     continue;
                 }
@@ -415,6 +423,39 @@ namespace cl::jit
                         staged.parameter == block->parameter_ids_[index],
                         "a staged JIT block parameter rewrite changed "
                         "identity");
+                    if(rewrite.kind_ ==
+                       BlockParameterRewrite::Kind::MaterializeInDestination)
+                    {
+                        require_rewrite_invariant(
+                            rewrite.destination_materialization_.has_value(),
+                            "a JIT block parameter materialization has no "
+                            "description");
+                        const BlockParameterRewrite::DestinationMaterialization
+                            &materialization =
+                                *rewrite.destination_materialization_;
+                        require_rewrite_invariant(
+                            materialization.insertion.transfer_outputs_.empty(),
+                            "a JIT block parameter materialization may not "
+                            "transfer unrelated definitions");
+                        size_t result_occurrences = 0;
+                        for(Instruction instruction:
+                            materialization.insertion.instructions_)
+                        {
+                            result_occurrences +=
+                                instruction.id() == materialization.result;
+                        }
+                        require_rewrite_invariant(
+                            result_occurrences == 1,
+                            "a JIT block parameter materialization result must "
+                            "be emitted exactly once by its insertion");
+                        require_rewrite_invariant(
+                            compatible_results(
+                                storage_->instruction(staged.parameter),
+                                storage_->instruction(materialization.result)),
+                            "a JIT block parameter materialization has an "
+                            "incompatible result");
+                        continue;
+                    }
                     if(rewrite.kind_ !=
                        BlockParameterRewrite::Kind::ReplaceWithParameter)
                     {
@@ -526,7 +567,13 @@ namespace cl::jit
                 }
             }
 
-            auto process_insertion = [&](RewriteInsertion insertion) {
+            auto process_insertion = [&](RewriteInsertion insertion,
+                                         const absl::flat_hash_set<
+                                             InstructionId>
+                                             *allowed_external_defs = nullptr) {
+                absl::flat_hash_set<InstructionId> insertion_available_defs =
+                    allowed_external_defs == nullptr ? available_defs
+                                                     : *allowed_external_defs;
                 absl::flat_hash_set<InstructionId> transfer_sources;
                 SequenceReplacements no_sequence_replacements;
                 DefResolver existing_resolver(def_replacements,
@@ -542,7 +589,7 @@ namespace cl::jit
                     InstructionId active_source =
                         existing_resolver.resolve(transfer.source());
                     require_rewrite_invariant(
-                        available_defs.contains(active_source),
+                        insertion_available_defs.contains(active_source),
                         "JIT rewrite insertion transfers a source not "
                         "available at the insertion point");
                 }
@@ -583,11 +630,12 @@ namespace cl::jit
                                                   normalized.id());
                     record_normalization(proposed.id(), normalized.id());
                     validate_available_operands(*storage_, normalized,
-                                                available_defs);
+                                                insertion_available_defs);
                     staged.instructions.push_back(normalized.id());
                     if(normalized.result_class() != ResultClass::None)
                     {
                         available_defs.insert(normalized.id());
+                        insertion_available_defs.insert(normalized.id());
                         auto [position, inserted] = def_replacements.emplace(
                             proposed.id(),
                             DefReplacement{normalized.id(), false});
@@ -626,6 +674,49 @@ namespace cl::jit
                     summary.instructions_changed = true;
                 }
             };
+
+            if constexpr(HasBlockParameterCallback)
+            {
+                const absl::flat_hash_set<InstructionId>
+                    destination_materialization_inputs = available_defs;
+                const std::vector<StagedBlockParameterRewrite> &rewrites =
+                    block_parameter_rewrites.at(block);
+                for(const StagedBlockParameterRewrite &staged_parameter:
+                    rewrites)
+                {
+                    const BlockParameterRewrite &rewrite =
+                        staged_parameter.rewrite;
+                    if(rewrite.kind_ !=
+                       BlockParameterRewrite::Kind::MaterializeInDestination)
+                    {
+                        continue;
+                    }
+                    const BlockParameterRewrite::DestinationMaterialization &
+                        materialization = *rewrite.destination_materialization_;
+                    process_insertion(materialization.insertion,
+                                      &destination_materialization_inputs);
+                    auto normalized_result =
+                        def_replacements.find(materialization.result);
+                    require_rewrite_invariant(
+                        normalized_result != def_replacements.end() &&
+                            normalized_result->second.def.has_value() &&
+                            !normalized_result->second.erased,
+                        "a JIT block parameter materialization result was not "
+                        "inserted");
+                    InstructionId replacement = *normalized_result->second.def;
+                    bool inserted =
+                        def_replacements
+                            .emplace(staged_parameter.parameter,
+                                     DefReplacement{replacement, false})
+                            .second;
+                    require_rewrite_invariant(
+                        inserted,
+                        "a JIT block parameter materialization has more than "
+                        "one replacement");
+                    record_normalization(staged_parameter.parameter,
+                                         replacement);
+                }
+            }
 
             if constexpr(HasBlockEntryCallback)
             {
