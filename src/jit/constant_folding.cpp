@@ -276,9 +276,9 @@ namespace cl::jit
                                        const Instruction &instruction)
         {
             // clang-format off
-            CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
+            CL_JIT_INSTRUCTION_SWITCH(instruction)
             {
-                CL_JIT_CORE_INSTRUCTION_CASE(UnboxF64, unbox)
+                CL_JIT_INSTRUCTION_CASE(UnboxF64, unbox)
                 {
                     Instruction source = context.instruction(
                         unbox.source().instruction_id());
@@ -298,8 +298,7 @@ namespace cl::jit
                             std::bit_cast<uint64_t>(floating));
                     return RewriteResult::replace(replacement);
                 }
-                CL_JIT_CORE_INSTRUCTION_FAMILY_CASE(UnaryArithmeticF64,
-                                                    arithmetic)
+                CL_JIT_INSTRUCTION_FAMILY_CASE(UnaryArithmeticF64, arithmetic)
                 {
                     switch(arithmetic.subkind())
                     {
@@ -384,7 +383,6 @@ namespace cl::jit
     Result<bool, JitCompilationError>
     fold_constants(CompilationSession &session, ControlFlowGraph &graph)
     {
-        assert(graph.ir_level() == IRLevel::Core);
         Shape *exact_float_shape =
             graph.thread_state()
                 .class_for_native_layout(NativeLayoutId::Float)

@@ -281,49 +281,55 @@ namespace cl::jit
                                           .instruction_id());
     }
 
-    TEST(JitConstantFolding, FoldsProducersAndJoinExposedConsumers)
+    TEST(JitConstantFolding,
+         FoldsProducersAndJoinExposedConsumersAcrossIRLevels)
     {
         constexpr uint64_t input_bits = 0x3ff8000000000000;
-        CompilationSession session{test::compiler_thread()};
-        GraphBuilder builder(session, IRLevel::Core);
-        Block *entry = builder.emplace_block();
-        Block *exit = builder.emplace_block();
+        for(IRLevel level: {IRLevel::Core, IRLevel::Machine})
+        {
+            CompilationSession session{test::compiler_thread()};
+            GraphBuilder builder(session, level);
+            Block *entry = builder.emplace_block();
+            Block *exit = builder.emplace_block();
 
-        ConstF64Instruction constant =
-            builder.emplace_instruction<ConstF64Instruction>(entry, input_bits);
-        NegF64Instruction producer =
-            builder.emplace_instruction<NegF64Instruction>(entry,
-                                                           F64Ref(constant));
-        std::array<ProgramValueRef, 1> arguments = {ProgramValueRef(producer)};
-        builder.emplace_instruction<UnconditionalBranchInstruction>(
-            entry, builder.make_block_edge(entry, exit, arguments));
+            ConstF64Instruction constant =
+                builder.emplace_instruction<ConstF64Instruction>(entry,
+                                                                 input_bits);
+            NegF64Instruction producer =
+                builder.emplace_instruction<NegF64Instruction>(
+                    entry, F64Ref(constant));
+            std::array<ProgramValueRef, 1> arguments = {
+                ProgramValueRef(producer)};
+            builder.emplace_instruction<UnconditionalBranchInstruction>(
+                entry, builder.make_block_edge(entry, exit, arguments));
 
-        ParameterF64Instruction parameter =
-            builder.emplace_parameter<ParameterF64Instruction>(exit);
-        NegF64Instruction consumer =
-            builder.emplace_instruction<NegF64Instruction>(exit,
-                                                           F64Ref(parameter));
-        BoxF64Instruction boxed =
-            builder.emplace_instruction<BoxF64Instruction>(exit,
-                                                           F64Ref(consumer));
-        builder.emplace_instruction<BareReturnInstruction>(
-            exit, TaggedValueRef(boxed));
-        ControlFlowGraph *graph = builder.finalize();
+            ParameterF64Instruction parameter =
+                builder.emplace_parameter<ParameterF64Instruction>(exit);
+            NegF64Instruction consumer =
+                builder.emplace_instruction<NegF64Instruction>(
+                    exit, F64Ref(parameter));
+            BoxF64Instruction boxed =
+                builder.emplace_instruction<BoxF64Instruction>(
+                    exit, F64Ref(consumer));
+            builder.emplace_instruction<BareReturnInstruction>(
+                exit, TaggedValueRef(boxed));
+            ControlFlowGraph *graph = builder.finalize();
 
-        auto folding = fold_constants(session, *graph);
+            auto folding = fold_constants(session, *graph);
 
-        ASSERT_TRUE(folding);
-        EXPECT_TRUE(std::move(folding).value());
-        EXPECT_TRUE(producer.is_poisoned());
-        EXPECT_TRUE(parameter.is_poisoned());
-        EXPECT_TRUE(consumer.is_poisoned());
-        ConstF64Instruction result =
-            exit->instruction_at(1).as<ConstF64Instruction>();
-        EXPECT_EQ(input_bits, result.bits());
-        EXPECT_EQ(result.id(), exit->instruction_at(2)
-                                   .as<BoxF64Instruction>()
-                                   .source()
-                                   .instruction_id());
+            ASSERT_TRUE(folding);
+            EXPECT_TRUE(std::move(folding).value());
+            EXPECT_TRUE(producer.is_poisoned());
+            EXPECT_TRUE(parameter.is_poisoned());
+            EXPECT_TRUE(consumer.is_poisoned());
+            ConstF64Instruction result =
+                exit->instruction_at(1).as<ConstF64Instruction>();
+            EXPECT_EQ(input_bits, result.bits());
+            EXPECT_EQ(result.id(), exit->instruction_at(2)
+                                       .as<BoxF64Instruction>()
+                                       .source()
+                                       .instruction_id());
+        }
     }
 
     TEST(JitConstantFolding, FoldsF64JoinsOnlyForIdenticalBits)

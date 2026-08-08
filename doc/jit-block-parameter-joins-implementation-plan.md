@@ -261,7 +261,7 @@ signed zero, infinities, and a non-canonical NaN payload.
 
 ## Slice 8: Add Generic Constant Folding
 
-Introduce one general Core IR constant-folding pass:
+Introduce one general constant-folding pass that operates across CFG IR levels:
 
 ```cpp
 Result<bool, JitCompilationError>
@@ -299,6 +299,10 @@ Initial instruction rules are:
 
 - `UnboxF64(Const(exact Float)) -> ConstF64`;
 - `NegF64(ConstF64) -> ConstF64`.
+
+The pass itself is IR-level-neutral, like dead-code elimination. Individual
+folding rules remain constrained by the instruction schema: these initial F64
+instructions and their replacements are valid in Core and Machine IR.
 
 The exact Float rule compares the constant object's shape with the builtin
 Float root shape; it does not fold a Float subclass. Negation applies native
