@@ -427,6 +427,47 @@ namespace cl::jit
         EXPECT_EQ(rhs.id(), is_not.rhs().instruction_id());
     }
 
+    TEST(JitInstructionSchema, SwitchMacrosBindConcreteAndFamilyInstructions)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Core);
+        ParameterInstruction parameter =
+            builder.make_instruction<ParameterInstruction>();
+        IsNotInstruction comparison =
+            builder.make_instruction<IsNotInstruction>(
+                TaggedValueRef(parameter), TaggedValueRef(parameter));
+
+        auto concrete_id = [](Instruction instruction) {
+            // clang-format off
+            CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
+            {
+                CL_JIT_CORE_INSTRUCTION_CASE(Parameter, concrete)
+                {
+                    return concrete.id();
+                }
+                default:
+                    return InstructionId(0);
+            }
+            // clang-format on
+        };
+        auto comparison_subkind = [](Instruction instruction) {
+            // clang-format off
+            CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
+            {
+                CL_JIT_CORE_INSTRUCTION_FAMILY_CASE(IsComparison, family)
+                {
+                    return family.subkind();
+                }
+                default:
+                    return IsComparisonSubkind::Is;
+            }
+            // clang-format on
+        };
+
+        EXPECT_EQ(parameter.id(), concrete_id(parameter));
+        EXPECT_EQ(IsComparisonSubkind::IsNot, comparison_subkind(comparison));
+    }
+
     TEST(JitInstructionSchema, GeneratesConcreteTypedInstructionClasses)
     {
         static_assert(std::is_base_of_v<Instruction, AddSMIInstruction>);

@@ -278,7 +278,7 @@ namespace cl::jit
             // clang-format off
             CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
             {
-                case CL_JIT_CORE_INSTRUCTION_CASE(UnboxF64Instruction, unbox)
+                CL_JIT_CORE_INSTRUCTION_CASE(UnboxF64, unbox)
                 {
                     Instruction source = context.instruction(
                         unbox.source().instruction_id());

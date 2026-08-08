@@ -426,20 +426,19 @@ namespace cl::jit
                         verify_side_exit_owner(owner);
                         break;
                     }
-                    case CL_JIT_INSTRUCTION_CASE(
-                        ValidityCellGuardWithSideExitInstruction, owner)
+                    CL_JIT_INSTRUCTION_CASE(ValidityCellGuardWithSideExit,
+                                            owner)
                     {
                         verify_side_exit_owner(owner);
                         break;
                     }
-                    case CL_JIT_INSTRUCTION_CASE(
-                        InlineTagGuardWithSideExitInstruction, owner)
+                    CL_JIT_INSTRUCTION_CASE(InlineTagGuardWithSideExit, owner)
                     {
                         verify_side_exit_owner(owner);
                         break;
                     }
-                    case CL_JIT_INSTRUCTION_CASE(
-                        ResumeInInterpreterWithSideExitInstruction, owner)
+                    CL_JIT_INSTRUCTION_CASE(ResumeInInterpreterWithSideExit,
+                                            owner)
                     {
                         verify_side_exit_owner(owner);
                         break;

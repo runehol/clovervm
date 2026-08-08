@@ -381,8 +381,8 @@ namespace cl::jit
                         break;
                     }
 
-                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                        ReturnInstruction, return_instruction)
+                    CL_JIT_MACHINE_INSTRUCTION_CASE(Return,
+                                                    return_instruction)
                     {
                         overrides.push_back(return_constraints(
                             return_instruction,
@@ -390,8 +390,8 @@ namespace cl::jit
                         break;
                     }
 
-                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                        BareReturnInstruction, return_instruction)
+                    CL_JIT_MACHINE_INSTRUCTION_CASE(BareReturn,
+                                                    return_instruction)
                     {
                         overrides.push_back(bare_return_constraints(
                             return_instruction,
@@ -399,16 +399,15 @@ namespace cl::jit
                         break;
                     }
 
-                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                        TrustedHandlerCallInstruction, call_instruction)
+                    CL_JIT_MACHINE_INSTRUCTION_CASE(TrustedHandlerCall,
+                                                    call_instruction)
                     {
                         overrides.push_back(trusted_handler_call_constraints(
                             call_instruction, std::move(input_overrides)));
                         break;
                     }
 
-                    case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                        BoxF64Instruction, box_instruction)
+                    CL_JIT_MACHINE_INSTRUCTION_CASE(BoxF64, box_instruction)
                     {
                         overrides.push_back(
                             box_f64_call_constraints(box_instruction));

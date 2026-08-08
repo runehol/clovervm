@@ -156,10 +156,9 @@ namespace cl::jit
                 assigned_register(locations, logical.rhs()));
         }
 
-        void
-        emit_unary_arithmetic_f64(AArch64MacroAssembler &assembler,
-                                  const LocationAssignments &locations,
-                                  UnaryArithmeticF64Instruction arithmetic)
+        void emit_unary_arithmetic_f64(AArch64MacroAssembler &assembler,
+                                       const LocationAssignments &locations,
+                                       UnaryArithmeticF64Instruction arithmetic)
         {
             FPUnaryOp operation = [&] {
                 switch(arithmetic.subkind())
@@ -495,8 +494,7 @@ namespace cl::jit
                 case MachineInstructionKind::Uninitialized:
                     break;
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ConstInstruction, constant_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(Const, constant_instruction)
                 {
                     Value constant = constant_instruction.constant();
                     XRegister destination =
@@ -515,8 +513,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ConstF64Instruction, constant_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(ConstF64,
+                                                constant_instruction)
                 {
                     uint64_t bits = constant_instruction.bits();
                     DRegister destination = assigned_f64_register(
@@ -540,8 +538,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    UnboxF64Instruction, unbox_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(UnboxF64, unbox_instruction)
                 {
                     assembler.ldr(
                         assigned_f64_register(locations,
@@ -608,8 +605,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    MovInstruction, move_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(Mov, move_instruction)
                 {
                     assembler.mov(
                         assigned_register(locations,
@@ -619,8 +615,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    MovF64Instruction, move_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(MovF64, move_instruction)
                 {
                     assembler.emit_fp_unary(
                         FPUnaryOp::Mov,
@@ -631,8 +626,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    MovPointerInstruction, move_pointer_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(MovPointer,
+                                                move_pointer_instruction)
                 {
                     assembler.mov(
                         assigned_register(locations,
@@ -643,8 +638,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    LoadStackInstruction, load_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(LoadStack, load_instruction)
                 {
                     assembler.ldr(
                         assigned_register(locations,
@@ -655,8 +649,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    LoadStackPointerInstruction, load_pointer_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(LoadStackPointer,
+                                                load_pointer_instruction)
                 {
                     assembler.ldr(
                         assigned_register(locations,
@@ -668,8 +662,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    LoadStackF64Instruction, load_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(LoadStackF64,
+                                                load_instruction)
                 {
                     assembler.ldr(
                         assigned_f64_register(locations,
@@ -681,8 +675,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    StoreStackInstruction, store_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(StoreStack,
+                                                store_instruction)
                 {
                     assembler.str(
                         assigned_register(locations,
@@ -693,8 +687,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    StoreStackPointerInstruction,
+                CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    StoreStackPointer,
                     store_pointer_instruction)
                 {
                     assembler.str(
@@ -707,8 +701,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    StoreStackF64Instruction, store_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(StoreStackF64,
+                                                store_instruction)
                 {
                     assembler.str(
                         assigned_f64_register(locations,
@@ -731,8 +725,8 @@ namespace cl::jit
                         FrameHeaderCompiledReturnPcOffset * sizeof(Value));
                     break;
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    TrustedHandlerCallInstruction, call_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(TrustedHandlerCall,
+                                                call_instruction)
                 {
                     assert(assigned_register(
                                locations, ProgramValueRef(call_instruction))
@@ -751,8 +745,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(BoxF64Instruction,
-                                                     box_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(BoxF64, box_instruction)
                 {
                     (void)box_instruction;
                     assert(assigned_f64_register(locations,
@@ -766,8 +759,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    AddSMIWithSideExitInstruction, add_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(AddSMIWithSideExit,
+                                                add_instruction)
                 {
                     assembler.emit_arithmetic_reg(
                         ArithmeticOp::Adds,
@@ -782,8 +775,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    SubSMIWithSideExitInstruction, sub_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(SubSMIWithSideExit,
+                                                sub_instruction)
                 {
                     assembler.emit_arithmetic_reg(
                         ArithmeticOp::Subs,
@@ -798,8 +791,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    MulSMIWithSideExitInstruction, mul_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(MulSMIWithSideExit,
+                                                mul_instruction)
                 {
                     XRegister result = assigned_register(
                         locations, ProgramValueRef(mul_instruction));
@@ -851,8 +844,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ValidityCellGuardWithSideExitInstruction,
+                CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ValidityCellGuardWithSideExit,
                     guard_instruction)
                 {
                     assembler.ldr(XRegister(16),
@@ -867,8 +860,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    InlineTagGuardWithSideExitInstruction,
+                CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    InlineTagGuardWithSideExit,
                     guard_instruction)
                 {
                     XRegister input =
@@ -883,8 +876,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ConditionalBranchInstruction, branch_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(ConditionalBranch,
+                                                branch_instruction)
                 {
                     const Block *true_target =
                         branch_instruction.true_edge()->target();
@@ -902,8 +895,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    UnconditionalBranchInstruction, branch_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(UnconditionalBranch,
+                                                branch_instruction)
                 {
                     const Block *target =
                         branch_instruction.edge()->target();
@@ -914,8 +907,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ResumeInInterpreterWithSideExitInstruction,
+                CL_JIT_MACHINE_INSTRUCTION_CASE(
+                    ResumeInInterpreterWithSideExit,
                     resume_instruction)
                 {
                     assembler.b(side_exit_target(
@@ -923,8 +916,7 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    ReturnInstruction, return_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(Return, return_instruction)
                 {
                     assert(assigned_register(
                                locations, return_instruction.return_value())
@@ -965,8 +957,8 @@ namespace cl::jit
                     break;
                 }
 
-                case CL_JIT_MACHINE_INSTRUCTION_CASE(
-                    BareReturnInstruction, return_instruction)
+                CL_JIT_MACHINE_INSTRUCTION_CASE(BareReturn,
+                                                return_instruction)
                 {
                     (void)assigned_register(
                         locations, return_instruction.return_value());
@@ -978,7 +970,7 @@ namespace cl::jit
                     assert(false);
             }
             // clang-format on
-};
+        };
 
         auto emit_instruction = [&](Instruction instruction,
                                     std::optional<Instruction> next_instruction,
