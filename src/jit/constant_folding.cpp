@@ -275,20 +275,20 @@ namespace cl::jit
                                        Shape *exact_float_shape,
                                        const Instruction &instruction)
         {
-            // clang-format off
-            CL_JIT_INSTRUCTION_SWITCH(instruction)
+            switch(CL_JIT_INSTRUCTION_MATCH(instruction))
             {
                 CL_JIT_INSTRUCTION_CASE(UnboxF64, unbox)
                 {
-                    Instruction source = context.instruction(
-                        unbox.source().instruction_id());
+                    Instruction source =
+                        context.instruction(unbox.source().instruction_id());
                     if(source.kind() != InstructionKind::Const)
                     {
                         return RewriteResult::keep();
                     }
                     Value value = source.as<ConstInstruction>().constant();
                     if(!value.is_ptr() ||
-                       value.get_ptr<Object>()->get_shape() != exact_float_shape)
+                       value.get_ptr<Object>()->get_shape() !=
+                           exact_float_shape)
                     {
                         return RewriteResult::keep();
                     }
@@ -322,7 +322,6 @@ namespace cl::jit
                 default:
                     return RewriteResult::keep();
             }
-            // clang-format on
         }
 
         class ConstantJoinRewrite

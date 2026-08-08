@@ -859,7 +859,7 @@ and `TransitionInstructionKind`; each contains only the kinds declared for
 that level while retaining the shared physical `InstructionKind` value.
 Level-specific dispatch checks the stored kind's metadata mask, converts it to
 the filtered enum, and switches exhaustively. The
-`CL_JIT_<LEVEL>_INSTRUCTION_SWITCH` and
+`CL_JIT_<LEVEL>_INSTRUCTION_MATCH` and
 `CL_JIT_<LEVEL>_INSTRUCTION_CASE` helpers require the dispatching IR explicitly
 and reject a concrete case type that is not declared for that level.
 
@@ -1159,19 +1159,18 @@ Compiler passes are organized as direct switches rather than visitor methods.
 This keeps one pass reviewable as one body of code and lets related instruction
 kinds remain adjacent or share grouped cases.
 
-Carbon-style macros retain a real compiler-visible `switch` and bind a typed
-read-only view in each case:
+The match macro supplies a native switch's init-statement and condition. Case
+macros retain real compiler-visible labels and bind a typed read-only view:
 
 ```cpp
-#define CL_JIT_INSTRUCTION_SWITCH(instruction)                         \
-    switch (const auto &cl_jit_instruction_switch_value =             \
-                (instruction);                                        \
-            cl_jit_instruction_switch_value.kind())
+#define CL_JIT_INSTRUCTION_MATCH(instruction)                          \
+    const auto &cl_jit_instruction_switch_value = (instruction);       \
+    instruction_kind(cl_jit_instruction_switch_value.kind())
 
-#define CL_JIT_INSTRUCTION_CASE(Type, variable)                        \
-    Type::Kind:                                                        \
-    if (const Type variable =                                         \
-            cl_jit_instruction_switch_value.as<Type>();               \
+#define CL_JIT_INSTRUCTION_CASE(name, variable)                        \
+    case instruction_kind<name##Instruction>():                        \
+    if (const name##Instruction variable =                             \
+            cl_jit_instruction_switch_value.as<name##Instruction>();   \
         false)                                                        \
     {                                                                 \
     }                                                                 \
@@ -1181,30 +1180,30 @@ read-only view in each case:
 A code-generation pass then reads as an ordinary match:
 
 ```cpp
-CL_JIT_INSTRUCTION_SWITCH(instruction)
+switch(CL_JIT_INSTRUCTION_MATCH(instruction))
 {
     // Arithmetic.
-    case CL_JIT_INSTRUCTION_CASE(AddInstruction, add)
+    CL_JIT_INSTRUCTION_CASE(Add, add)
     {
         emit_add(add.lhs(), add.rhs());
         break;
     }
 
-    case CL_JIT_INSTRUCTION_CASE(SubtractInstruction, subtract)
+    CL_JIT_INSTRUCTION_CASE(Subtract, subtract)
     {
         emit_subtract(subtract.lhs(), subtract.rhs());
         break;
     }
 
     // Calls and exits.
-    case CL_JIT_INSTRUCTION_CASE(CallInstruction, call)
+    CL_JIT_INSTRUCTION_CASE(Call, call)
     {
         prepare_arguments(call.arguments());
         emit_call(call.target());
         break;
     }
 
-    case CL_JIT_INSTRUCTION_CASE(ReturnInstruction, return_instruction)
+    CL_JIT_INSTRUCTION_CASE(Return, return_instruction)
     {
         emit_return(return_instruction.return_value());
         break;
@@ -1212,7 +1211,11 @@ CL_JIT_INSTRUCTION_SWITCH(instruction)
 }
 ```
 
-The macros expand to real `case Type::Kind` labels. Exhaustive JIT switches do
+An unbound `CL_JIT_<LEVEL>_INSTRUCTION_KIND_CASE` supports cases that need no
+typed view and grouped labels with a shared braced body. A switch uses either
+the instruction matching macros or bare case labels, never both.
+
+The case macros expand to real kind labels. Exhaustive JIT switches do
 not contain a `default`, and the build enables the compiler's missing-enum-case
 warnings, including `-Wswitch` and `-Wswitch-enum` where supported. Adding an
 `InstructionKind` therefore produces a warning in each exhaustive pass that

@@ -438,8 +438,7 @@ namespace cl::jit
                 TaggedValueRef(parameter), TaggedValueRef(parameter));
 
         auto concrete_id = [](Instruction instruction) {
-            // clang-format off
-            CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
+            switch(CL_JIT_CORE_INSTRUCTION_MATCH(instruction))
             {
                 CL_JIT_CORE_INSTRUCTION_CASE(Parameter, concrete)
                 {
@@ -448,11 +447,9 @@ namespace cl::jit
                 default:
                     return InstructionId(0);
             }
-            // clang-format on
         };
         auto comparison_subkind = [](Instruction instruction) {
-            // clang-format off
-            CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)
+            switch(CL_JIT_CORE_INSTRUCTION_MATCH(instruction))
             {
                 CL_JIT_CORE_INSTRUCTION_FAMILY_CASE(IsComparison, family)
                 {
@@ -461,7 +458,6 @@ namespace cl::jit
                 default:
                     return IsComparisonSubkind::Is;
             }
-            // clang-format on
         };
 
         EXPECT_EQ(parameter.id(), concrete_id(parameter));

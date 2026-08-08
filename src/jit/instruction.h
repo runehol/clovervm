@@ -1827,12 +1827,15 @@ namespace cl::jit
 #undef CL_JIT_JOIN_INNER
     // clang-format on
 
-// Preserve a compiler-visible, IR-specific switch while binding each case to
-// the checked, read-only concrete instruction type named by that case.
+// Supply a native switch with an IR-specific discriminator while binding each
+// typed case to the checked, read-only instruction type named by that case.
 // clang-format off
-#define CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, convert_kind)             \
-    switch(const auto &cl_jit_instruction_switch_value = (instruction);        \
-           convert_kind(cl_jit_instruction_switch_value.kind()))
+#define CL_JIT_LEVEL_INSTRUCTION_MATCH(instruction, convert_kind)              \
+    const auto &cl_jit_instruction_switch_value = (instruction);               \
+    convert_kind(cl_jit_instruction_switch_value.kind())
+
+#define CL_JIT_LEVEL_INSTRUCTION_KIND_CASE(name, convert_kind)                 \
+    case convert_kind<name##Instruction>():
 
 #define CL_JIT_LEVEL_INSTRUCTION_CASE(name, variable, convert_kind)            \
     case convert_kind<name##Instruction>():                                    \
@@ -1857,15 +1860,19 @@ namespace cl::jit
     }                                                                          \
     else
 
-#define CL_JIT_INSTRUCTION_SWITCH(instruction)                                \
-    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, instruction_kind)
+#define CL_JIT_INSTRUCTION_MATCH(instruction)                                 \
+    CL_JIT_LEVEL_INSTRUCTION_MATCH(instruction, instruction_kind)
+#define CL_JIT_INSTRUCTION_KIND_CASE(name)                                    \
+    CL_JIT_LEVEL_INSTRUCTION_KIND_CASE(name, instruction_kind)
 #define CL_JIT_INSTRUCTION_CASE(name, variable)                               \
     CL_JIT_LEVEL_INSTRUCTION_CASE(name, variable, instruction_kind)
 #define CL_JIT_INSTRUCTION_FAMILY_CASE(family, variable)                      \
     CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(family, variable, instruction_kind)
 
-#define CL_JIT_SEMANTIC_INSTRUCTION_SWITCH(instruction)                        \
-    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, semantic_instruction_kind)
+#define CL_JIT_SEMANTIC_INSTRUCTION_MATCH(instruction)                         \
+    CL_JIT_LEVEL_INSTRUCTION_MATCH(instruction, semantic_instruction_kind)
+#define CL_JIT_SEMANTIC_INSTRUCTION_KIND_CASE(name)                            \
+    CL_JIT_LEVEL_INSTRUCTION_KIND_CASE(name, semantic_instruction_kind)
 #define CL_JIT_SEMANTIC_INSTRUCTION_CASE(name, variable)                       \
     CL_JIT_LEVEL_INSTRUCTION_CASE(                                             \
         name, variable, semantic_instruction_kind)
@@ -1873,16 +1880,20 @@ namespace cl::jit
     CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(                                      \
         family, variable, semantic_instruction_kind)
 
-#define CL_JIT_CORE_INSTRUCTION_SWITCH(instruction)                            \
-    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, core_instruction_kind)
+#define CL_JIT_CORE_INSTRUCTION_MATCH(instruction)                             \
+    CL_JIT_LEVEL_INSTRUCTION_MATCH(instruction, core_instruction_kind)
+#define CL_JIT_CORE_INSTRUCTION_KIND_CASE(name)                                \
+    CL_JIT_LEVEL_INSTRUCTION_KIND_CASE(name, core_instruction_kind)
 #define CL_JIT_CORE_INSTRUCTION_CASE(name, variable)                           \
     CL_JIT_LEVEL_INSTRUCTION_CASE(name, variable, core_instruction_kind)
 #define CL_JIT_CORE_INSTRUCTION_FAMILY_CASE(family, variable)                  \
     CL_JIT_LEVEL_INSTRUCTION_FAMILY_CASE(                                      \
         family, variable, core_instruction_kind)
 
-#define CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)                         \
-    CL_JIT_LEVEL_INSTRUCTION_SWITCH(instruction, machine_instruction_kind)
+#define CL_JIT_MACHINE_INSTRUCTION_MATCH(instruction)                          \
+    CL_JIT_LEVEL_INSTRUCTION_MATCH(instruction, machine_instruction_kind)
+#define CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(name)                             \
+    CL_JIT_LEVEL_INSTRUCTION_KIND_CASE(name, machine_instruction_kind)
 #define CL_JIT_MACHINE_INSTRUCTION_CASE(name, variable)                        \
     CL_JIT_LEVEL_INSTRUCTION_CASE(name, variable, machine_instruction_kind)
 #define CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(family, variable)               \

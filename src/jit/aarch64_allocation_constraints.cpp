@@ -264,44 +264,49 @@ namespace cl::jit
             {
                 std::vector<ProgramValueUseConstraint> input_overrides =
                     side_exit_argument_constraints(instruction);
-                // clang-format off
-                CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)
+                switch(CL_JIT_MACHINE_INSTRUCTION_MATCH(instruction))
                 {
-                    case MachineInstructionKind::Const:
-                    case MachineInstructionKind::ConstF64:
-                    case MachineInstructionKind::Uninitialized:
-                    case MachineInstructionKind::MovF64:
-                    case MachineInstructionKind::LoadStackF64:
-                    case MachineInstructionKind::StoreStackF64:
-                    case MachineInstructionKind::UnboxF64:
-                    case MachineInstructionKind::AddSMIWithSideExit:
-                    case MachineInstructionKind::SubSMIWithSideExit:
-                    case MachineInstructionKind::MovPointer:
-                    case MachineInstructionKind::LoadStackPointer:
-                    case MachineInstructionKind::StoreStackPointer:
-                    case MachineInstructionKind::ValidityCellGuardWithSideExit:
-                    case MachineInstructionKind::InlineTagGuardWithSideExit:
-                    case MachineInstructionKind::ResumeInInterpreterWithSideExit:
-                    case MachineInstructionKind::ExitToInterpreter:
-                    case MachineInstructionKind::ConditionalBranch:
-                    case MachineInstructionKind::UnconditionalBranch:
-                    case MachineInstructionKind::SaveLinkRegisterToFrame:
-                    case MachineInstructionKind::RestoreLinkRegisterFromFrame:
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(Const)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(ConstF64)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(Uninitialized)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(MovF64)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(LoadStackF64)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(StoreStackF64)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(UnboxF64)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(AddSMIWithSideExit)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(SubSMIWithSideExit)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(MovPointer)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(LoadStackPointer)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(StoreStackPointer)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(
+                        ValidityCellGuardWithSideExit)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(
+                        InlineTagGuardWithSideExit)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(
+                        ResumeInInterpreterWithSideExit)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(ExitToInterpreter)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(ConditionalBranch)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(UnconditionalBranch)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(
+                        SaveLinkRegisterToFrame)
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(
+                        RestoreLinkRegisterFromFrame)
+                    {
                         if(!input_overrides.empty())
                         {
                             overrides.emplace_back(instruction,
                                                    std::move(input_overrides));
                         }
                         break;
+                    }
 
-                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
-                        BinaryLogicalSMI, logical_instruction)
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(BinaryLogicalSMI,
+                                                           logical_instruction)
                     {
                         if(!input_overrides.empty())
                         {
-                            overrides.emplace_back(
-                                logical_instruction,
-                                std::move(input_overrides));
+                            overrides.emplace_back(logical_instruction,
+                                                   std::move(input_overrides));
                         }
                         break;
                     }
@@ -311,9 +316,8 @@ namespace cl::jit
                     {
                         if(!input_overrides.empty())
                         {
-                            overrides.emplace_back(
-                                arithmetic_instruction,
-                                std::move(input_overrides));
+                            overrides.emplace_back(arithmetic_instruction,
+                                                   std::move(input_overrides));
                         }
                         break;
                     }
@@ -323,9 +327,8 @@ namespace cl::jit
                     {
                         if(!input_overrides.empty())
                         {
-                            overrides.emplace_back(
-                                arithmetic_instruction,
-                                std::move(input_overrides));
+                            overrides.emplace_back(arithmetic_instruction,
+                                                   std::move(input_overrides));
                         }
                         break;
                     }
@@ -335,14 +338,14 @@ namespace cl::jit
                     {
                         if(!input_overrides.empty())
                         {
-                            overrides.emplace_back(
-                                guard_instruction,
-                                std::move(input_overrides));
+                            overrides.emplace_back(guard_instruction,
+                                                   std::move(input_overrides));
                         }
                         break;
                     }
 
-                    case MachineInstructionKind::MulSMIWithSideExit:
+                    CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(MulSMIWithSideExit)
+                    {
                         input_overrides.emplace_back(
                             MulSMIWithSideExitInstruction::lhs_operand_index,
                             AccessTiming::Late,
@@ -356,37 +359,36 @@ namespace cl::jit
                         overrides.push_back(gpr_temporary_constraints(
                             instruction, std::move(input_overrides)));
                         break;
+                    }
 
-                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
-                        IsComparison, comparison)
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(IsComparison,
+                                                           comparison)
                     {
                         overrides.push_back(gpr_temporary_constraints(
                             comparison, std::move(input_overrides)));
                         break;
                     }
 
-                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
-                        BinaryComparisonSMI, comparison)
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(BinaryComparisonSMI,
+                                                           comparison)
                     {
                         overrides.push_back(gpr_temporary_constraints(
                             comparison, std::move(input_overrides)));
                         break;
                     }
 
-                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(
-                        BinaryComparisonF64, comparison)
+                    CL_JIT_MACHINE_INSTRUCTION_FAMILY_CASE(BinaryComparisonF64,
+                                                           comparison)
                     {
                         overrides.push_back(gpr_temporary_constraints(
                             comparison, std::move(input_overrides)));
                         break;
                     }
 
-                    CL_JIT_MACHINE_INSTRUCTION_CASE(Return,
-                                                    return_instruction)
+                    CL_JIT_MACHINE_INSTRUCTION_CASE(Return, return_instruction)
                     {
                         overrides.push_back(return_constraints(
-                            return_instruction,
-                            std::move(input_overrides)));
+                            return_instruction, std::move(input_overrides)));
                         break;
                     }
 
@@ -394,8 +396,7 @@ namespace cl::jit
                                                     return_instruction)
                     {
                         overrides.push_back(bare_return_constraints(
-                            return_instruction,
-                            std::move(input_overrides)));
+                            return_instruction, std::move(input_overrides)));
                         break;
                     }
 
@@ -417,7 +418,6 @@ namespace cl::jit
                     default:
                         unsupported_instruction(instruction.kind());
                 }
-                // clang-format on
             }
         }
 

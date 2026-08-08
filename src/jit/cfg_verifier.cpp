@@ -411,8 +411,7 @@ namespace cl::jit
                             owner.side_exit_region());
                     }
                 };
-                // clang-format off
-                CL_JIT_INSTRUCTION_SWITCH(instruction)
+                switch(CL_JIT_INSTRUCTION_MATCH(instruction))
                 {
                     CL_JIT_INSTRUCTION_FAMILY_CASE(
                         BinaryArithmeticSMIWithSideExit, owner)
@@ -420,8 +419,8 @@ namespace cl::jit
                         verify_side_exit_owner(owner);
                         break;
                     }
-                    CL_JIT_INSTRUCTION_FAMILY_CASE(
-                        ShapeGuardWithSideExit, owner)
+                    CL_JIT_INSTRUCTION_FAMILY_CASE(ShapeGuardWithSideExit,
+                                                   owner)
                     {
                         verify_side_exit_owner(owner);
                         break;
@@ -446,7 +445,6 @@ namespace cl::jit
                     default:
                         break;
                 }
-                // clang-format on
                 if(!side_exit_verification.valid)
                 {
                     return side_exit_verification;
