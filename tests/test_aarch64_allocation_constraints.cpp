@@ -391,37 +391,6 @@ namespace cl::jit
         EXPECT_FALSE(clobbers.contains(v(31)));
     }
 
-    TEST(AArch64AllocationConstraints, GivesConstF64AGPRTemporary)
-    {
-        CompilationSession session{test::compiler_thread()};
-        GraphBuilder builder(session, IRLevel::Machine);
-        Block *entry = builder.emplace_block();
-        ConstF64Instruction constant =
-            builder.emplace_instruction<ConstF64Instruction>(
-                entry, uint64_t{0x3ff8000000000000});
-        BoxF64Instruction boxed =
-            builder.emplace_instruction<BoxF64Instruction>(entry,
-                                                           F64Ref(constant));
-        builder.emplace_instruction<BareReturnInstruction>(
-            entry, TaggedValueRef(boxed));
-        ControlFlowGraph *graph = builder.finalize();
-
-        AllocationConstraints constraints =
-            make_aarch64_allocation_constraints(*graph);
-        ASSERT_TRUE(prepare_register_allocation(*graph, constraints));
-
-        const InstructionAllocationConstraints *constant_constraints =
-            find_override(constraints, constant);
-        ASSERT_NE(nullptr, constant_constraints);
-        EXPECT_TRUE(constant_constraints->input_overrides().empty());
-        EXPECT_FALSE(constant_constraints->result_override().has_value());
-        ASSERT_EQ(1u, constant_constraints->temporaries().size());
-        const LocationRequirement &temporary =
-            constant_constraints->temporaries()[0].requirement;
-        EXPECT_EQ(LocationRequirement::Kind::AnyRegister, temporary.kind());
-        EXPECT_EQ(RegisterClass::GPR, temporary.register_class());
-    }
-
     TEST(AArch64AllocationConstraints, OmitsOrdinaryInstructionsAndBranches)
     {
         CompilationSession session{test::compiler_thread()};

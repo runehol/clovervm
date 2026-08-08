@@ -236,6 +236,51 @@ namespace cl::jit
         EXPECT_EQ(0x1e6043dfu, instructions[13]);
     }
 
+    TEST(AArch64Assembler, EncodesF64Immediates)
+    {
+        uint32_t instructions[7] = {};
+        AArch64BufferAssembler assembler(instructions);
+
+        assembler.emit_fmov_immediate(DRegister(0), 0x70);
+        assembler.emit_fmov_immediate(DRegister(1), 0x00);
+        assembler.emit_fmov_immediate(DRegister(2), 0x60);
+        assembler.emit_fmov_immediate(DRegister(3), 0xf0);
+        assembler.emit_fmov_immediate(DRegister(4), 0x78);
+        assembler.emit_fmov_immediate(DRegister(5), 0x40);
+        assembler.emit_fmov_immediate(DRegister(6), 0x3f);
+
+        EXPECT_EQ(0x1e6e1000u, instructions[0]);
+        EXPECT_EQ(0x1e601001u, instructions[1]);
+        EXPECT_EQ(0x1e6c1002u, instructions[2]);
+        EXPECT_EQ(0x1e7e1003u, instructions[3]);
+        EXPECT_EQ(0x1e6f1004u, instructions[4]);
+        EXPECT_EQ(0x1e681005u, instructions[5]);
+        EXPECT_EQ(0x1e67f006u, instructions[6]);
+    }
+
+    TEST(AArch64Assembler, RecognizesExactlyExpandedF64Immediates)
+    {
+        for(uint16_t immediate = 0; immediate <= UINT8_MAX; ++immediate)
+        {
+            uint8_t imm8 = static_cast<uint8_t>(immediate);
+            EXPECT_EQ(imm8, aarch64_detail::try_encode_f64_immediate(
+                                aarch64_detail::expand_f64_immediate(imm8)));
+        }
+
+        EXPECT_FALSE(aarch64_detail::try_encode_f64_immediate(
+            uint64_t{0x0000000000000000}));
+        EXPECT_FALSE(aarch64_detail::try_encode_f64_immediate(
+            uint64_t{0x8000000000000000}));
+        EXPECT_FALSE(aarch64_detail::try_encode_f64_immediate(
+            uint64_t{0x7ff0000000000000}));
+        EXPECT_FALSE(aarch64_detail::try_encode_f64_immediate(
+            uint64_t{0x7ff8000000000000}));
+        EXPECT_FALSE(aarch64_detail::try_encode_f64_immediate(
+            uint64_t{0x3fb999999999999a}));
+        EXPECT_FALSE(aarch64_detail::try_encode_f64_immediate(
+            uint64_t{0x3fe3333333333333}));
+    }
+
     TEST(AArch64Assembler, EncodesScalarFloatingPointComparisons)
     {
         uint32_t instructions[7] = {};

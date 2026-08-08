@@ -268,6 +268,7 @@ namespace cl::jit
                 CL_JIT_MACHINE_INSTRUCTION_SWITCH(instruction)
                 {
                     case MachineInstructionKind::Const:
+                    case MachineInstructionKind::ConstF64:
                     case MachineInstructionKind::Uninitialized:
                     case MachineInstructionKind::MovF64:
                     case MachineInstructionKind::LoadStackF64:
@@ -379,11 +380,6 @@ namespace cl::jit
                             comparison, std::move(input_overrides)));
                         break;
                     }
-
-                    case MachineInstructionKind::ConstF64:
-                        overrides.push_back(gpr_temporary_constraints(
-                            instruction, std::move(input_overrides)));
-                        break;
 
                     case CL_JIT_MACHINE_INSTRUCTION_CASE(
                         ReturnInstruction, return_instruction)

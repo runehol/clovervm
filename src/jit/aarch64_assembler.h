@@ -378,6 +378,29 @@ namespace cl::jit
             return static_cast<uint32_t>(encoding);
         }
 
+        constexpr uint64_t expand_f64_immediate(uint8_t immediate)
+        {
+            uint64_t sign = static_cast<uint64_t>(immediate & 0x80) << 56;
+            uint64_t repeated_exponent_bit = (immediate & 0x40) == 0 ? 0 : 0xff;
+            uint64_t exponent = (((immediate & 0x40) == 0 ? 1u : 0u) << 10) |
+                                (repeated_exponent_bit << 2) |
+                                ((immediate >> 4) & 0x3);
+            uint64_t fraction = static_cast<uint64_t>(immediate & 0xf) << 48;
+            return sign | (exponent << 52) | fraction;
+        }
+
+        constexpr std::optional<uint8_t> try_encode_f64_immediate(uint64_t bits)
+        {
+            uint8_t candidate = static_cast<uint8_t>(((bits >> 56) & 0x80) |
+                                                     ((bits >> 55) & 0x40) |
+                                                     ((bits >> 48) & 0x3f));
+            if(expand_f64_immediate(candidate) != bits)
+            {
+                return std::nullopt;
+            }
+            return candidate;
+        }
+
         template <GPRWidth Width> consteval uint32_t gpr_sf_bits()
         {
             if constexpr(Width == GPRWidth::Bits32)
@@ -765,6 +788,13 @@ namespace cl::jit
                 aarch64_detail::encoding_bits(operation) |
                 aarch64_detail::register_field(source.encoding(), 5) |
                 destination.encoding());
+        }
+
+        void emit_fmov_immediate(DRegister destination, uint8_t immediate)
+        {
+            write_instruction(0x1e601000 |
+                              (static_cast<uint32_t>(immediate) << 13) |
+                              destination.encoding());
         }
 
         template <SIMDElementWidth Width>

@@ -28,6 +28,9 @@ namespace cl::jit
 {
     namespace
     {
+        constexpr XRegister Scratch0(16);
+        constexpr XRegister Scratch1(17);
+
         struct PendingSideExit
         {
             Label label;
@@ -338,8 +341,6 @@ namespace cl::jit
                                                XRegister lhs, XRegister rhs,
                                                TaggedValueClass expected_class)
         {
-            constexpr XRegister Scratch0(16);
-            constexpr XRegister Scratch1(17);
             assert(expected_class.kind() == TaggedValueClassKind::MaskedEqual);
             if(lhs.encoding() == rhs.encoding())
             {
@@ -518,16 +519,19 @@ namespace cl::jit
                     ConstF64Instruction, constant_instruction)
                 {
                     uint64_t bits = constant_instruction.bits();
+                    DRegister destination = assigned_f64_register(
+                        locations, F64Ref(constant_instruction));
+                    if(std::optional<uint8_t> immediate =
+                           aarch64_detail::try_encode_f64_immediate(bits))
+                    {
+                        assembler.emit_fmov_immediate(destination, *immediate);
+                        break;
+                    }
                     ConstantPoolEntry entry =
                         assembler.emitter().add_data_to_constant_pool(
                             std::as_bytes(std::span(&bits, 1)));
-                    XRegister scratch =
-                        assigned_temporary(locations, instruction, 0);
-                    assembler.adr(scratch, entry);
-                    assembler.ldr(
-                        assigned_f64_register(locations,
-                                              F64Ref(constant_instruction)),
-                        scratch, 0);
+                    assembler.adr(Scratch0, entry);
+                    assembler.ldr(destination, Scratch0, 0);
                     break;
                 }
 
@@ -969,7 +973,7 @@ namespace cl::jit
                     assert(false);
             }
             // clang-format on
-        };
+};
 
         auto emit_instruction = [&](Instruction instruction,
                                     std::optional<Instruction> next_instruction,

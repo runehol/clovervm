@@ -510,6 +510,21 @@ namespace cl::jit
             ASSERT_TRUE(emission);
             PublishedCode code = std::move(emission).value();
 
+            if(bits == uint64_t{0x3ff8000000000000})
+            {
+                EXPECT_TRUE(code.constant_pool().empty());
+                EXPECT_EQ(24u, code.encoded_code_size());
+                const void *instructions = reinterpret_cast<const void *>(
+                    code.entry().bits_for_indirect_target());
+                EXPECT_EQ(0x1e6f1000u, instruction_at(instructions, 1));
+            }
+            else if(bits == uint64_t{0x0000000000000000} ||
+                    bits == uint64_t{0x8000000000000000})
+            {
+                EXPECT_EQ(8u, code.constant_pool().size());
+                EXPECT_EQ(28u, code.encoded_code_size());
+            }
+
             Value result;
             result.as.integer = static_cast<int64_t>(
                 execute_published_jit(code, {}, context.thread()));
