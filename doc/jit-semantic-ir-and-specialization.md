@@ -5,12 +5,13 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | Optional Semantic IR, type evidence, correlated partitions, contextual inlining, and lowering into Core IR |
+| Scope | Optimizing-tier Semantic IR, type evidence, correlated partitions, contextual inlining, and lowering into Core IR |
 | Owning layers | Semantic IR owns high-level inference and specialization planning; Core IR owns executable checks, effects, Snapshots, and recovery |
 | Validated against | N/A |
 | Supersedes | Optional Semantic IR material formerly embedded in [JIT Compiler and IR](jit-compiler-and-ir.md) |
 
-Semantic IR is an optional optimization frontend for the clovervm JIT. It
+Semantic IR is the optional higher-effort, second-tier optimization frontend
+for the clovervm JIT. It
 preserves atomic bytecode semantics long enough to perform type inference,
 caller-context-sensitive inlining, and correlated polymorphic reasoning before
 lowering into explicit Core IR checks and actions.
@@ -29,6 +30,12 @@ Both paths produce the same Core IR and use the same Snapshot, effect,
 representation, and recovery contracts. This document records a plausible
 future design so that the direct compiler does not preclude it. Complexity
 budgets and some representations remain deliberately unsettled.
+
+Semantic values remain representation-free so that this tier can select light
+primitive or virtual forms before lowering commits to allocations and concrete
+Core representations. The companion
+[Semantic IR Virtual Representations](jit-semantic-ir-virtual-representations.md)
+document owns that representation and materialization design.
 
 ## Semantic Operations and Feedback
 
@@ -474,4 +481,5 @@ requires:
 ## Related Documents
 
 - [JIT Compiler and IR](jit-compiler-and-ir.md)
+- [Semantic IR Virtual Representations](jit-semantic-ir-virtual-representations.md)
 - [Decision Log](decision-log.md)

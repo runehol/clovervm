@@ -251,6 +251,7 @@ Detailed docs:
 - [JIT Transition Programs](jit-transition-program.md)
 - [Trusted Handler Declarations](trusted-handler-declarations.md)
 - [Semantic IR and Specialization](jit-semantic-ir-and-specialization.md)
+- [Semantic IR Virtual Representations](jit-semantic-ir-virtual-representations.md)
 - [Optimization Ideas](optimization-ideas.md)
 - [Exception Transport And Protocols](exception-transport-and-protocols.md),
   especially "JIT Direction"
