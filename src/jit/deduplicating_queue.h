@@ -29,6 +29,7 @@ namespace cl::jit
             queue_.pop_front();
             size_t erased = queued_.erase(value);
             assert(erased == 1);
+            (void)erased;
             return value;
         }
 

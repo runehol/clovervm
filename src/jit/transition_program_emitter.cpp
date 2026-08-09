@@ -76,6 +76,7 @@ namespace cl::jit
                 bool inserted =
                     value_locations_.emplace(box.id(), result).second;
                 assert(inserted);
+                (void)inserted;
             }
 
             void append_exit_to_interpreter(
