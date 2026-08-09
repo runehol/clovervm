@@ -37,9 +37,11 @@ bundle and the carrier state at that exact point.
   Transfer and fixed-copy instructions are additional definitions.
 - A use is resolved by its occurrence, not by globally normalizing its original
   `InstructionId`.
-- The script assigns its own dense definition IDs to cloned parameters,
-  instruction results, and physical-transfer results. Graph construction only
-  translates those script IDs into fresh `InstructionId`s.
+- The script assigns compilation-local definition IDs to cloned parameters,
+  instruction results, and physical-transfer results. These are planned
+  physical-carrier identities, not `CompilationStorage` identities. Graph
+  construction translates them into fresh `InstructionId`s only when it emits
+  the new graph.
 - Each output operand is defined in its block or supplied through a block
   parameter according to the CFG's existing locality rules.
 - The output CFG is not published until it verifies successfully.
@@ -82,22 +84,44 @@ The precise storage layout may be adjusted while implementing, but the script
 must express the following structure:
 
 ```cpp
-struct MaterializationScript
+using ScriptDefinitionId = DenseId<ScriptDefinition>;
+
+struct ScriptDefinition
 {
-    IRLevel ir_level;
-    std::optional<BytecodeStateOrder> bytecode_state_order;
-    std::vector<BlockScript> blocks;
-    uint32_t managed_frame_spill_extent;
+    ValueRepresentation representation;
+    PhysicalLocation location;
+    ScriptDefinitionOrigin origin;
 };
 
-struct BlockScript
+struct MaterializationProvenance
 {
-    std::variant<OriginalBlockScript, EdgeTransferBlockScript> origin;
-    uint32_t loop_depth;
-    EntryBlockKind entry_kind;
-    std::vector<ParameterScript> parameters;
-    std::vector<InstructionScript> body;
-    TerminatorScript terminator;
+    MaterializationInputKind kind;
+    size_t set_index;
+    size_t element_index;
+};
+
+struct PlannedMove
+{
+    OrderedMoveSource source;
+    PhysicalLocation source_location;
+    PhysicalLocation destination;
+    RegisterClass register_class;
+    ScriptDefinitionId output;
+};
+
+struct BoundaryProgram
+{
+    std::vector<ScriptDefinitionId> assignment_sources;
+    std::vector<PlannedMove> moves;
+    std::vector<BoundaryBinding> bindings;
+    std::vector<MaterializationProvenance> consumed_inputs;
+};
+
+struct OperandScript
+{
+    uint32_t operand_index;
+    OccurrenceId occurrence;
+    ScriptDefinitionId source;
 };
 
 struct InstructionScript
@@ -117,29 +141,30 @@ struct EdgeScript
     std::vector<BundleId> outgoing_bundles;
 };
 
-using ScriptDefinitionId = DenseId<ScriptDefinition>;
-
-struct OperandScript
+struct TerminatorScript
 {
-    uint32_t operand_index;
-    OccurrenceId occurrence;
-    ScriptDefinitionId source;
+    InstructionScript instruction;
+    std::vector<EdgeScript> edges;
 };
 
-struct PlannedMove
+struct BlockScript
 {
-    OrderedMoveSource source;
-    PhysicalLocation source_location;
-    PhysicalLocation destination;
-    RegisterClass register_class;
-    ScriptDefinitionId output;
+    std::variant<OriginalBlockScript, EdgeTransferBlockScript> origin;
+    uint32_t loop_depth;
+    EntryBlockKind entry_kind;
+    std::vector<ParameterScript> parameters;
+    BoundaryProgram entry;
+    std::vector<InstructionScript> body;
+    TerminatorScript terminator;
 };
 
-struct BoundaryProgram
+struct MaterializationScript
 {
-    std::vector<ScriptDefinitionId> assignment_sources;
-    std::vector<PlannedMove> moves;
-    std::vector<BoundaryBinding> bindings;
+    IRLevel ir_level;
+    std::optional<BytecodeStateOrder> bytecode_state_order;
+    std::vector<ScriptDefinition> definitions;
+    std::vector<BlockScript> blocks;
+    uint32_t managed_frame_spill_extent;
 };
 ```
 
@@ -150,11 +175,31 @@ positions validate and merge allocator events into instruction-boundary slots;
 the executor does not sort an undifferentiated collection of events and infer
 what they mean.
 
-`ScriptDefinitionId` is local to the immutable script. Every planned move that
-will emit an SSA definition receives one, as does every cloned ProgramValue
-parameter or result. Each original parallel assignment also names its result
-definition. For a physical no-op that result is its existing source definition;
-it does not invent an instruction.
+`ScriptDefinitionId` is local to one immutable materialization script. It is a
+typed dense index only so planning can name definitions before the corresponding
+output instructions exist and construction can use an indexed translation
+table. It is not allocated by, stored in, or meaningful to
+`CompilationStorage`, and it does not survive materialization.
+
+A script definition identifies one planned physical carrier, not the abstract
+logical value by itself. The same logical value may therefore have several
+script definitions simultaneously: for example, its ordinary carrier in `d3`,
+a spill carrier in `spill[-4]`, and an ABI argument carrier in `d0`. This is the
+representation that lets planning preserve a value in one location while
+creating another usable copy of it. Conversely, when a physical no-op aliases
+two bundles, both may name the same script definition.
+
+Every planned move that will emit an SSA definition receives a new script
+definition, as does every cloned ProgramValue parameter or result. Each
+original parallel assignment also names its result definition. For a physical
+no-op that result is its existing source definition; it does not invent an
+instruction or a new script definition.
+
+Every script definition records its representation and physical location.
+Register class alone is insufficient because tagged values and raw pointers
+both occupy GPRs but require different transfer instruction families. Its
+origin identifies the parameter, original instruction result, helper
+parameter, or planned move that creates it.
 
 Occurrences and transfers retain different authority:
 
@@ -170,6 +215,17 @@ copies. A `BoundaryBinding` labels an assignment result as a destination-bundle
 carrier or as an override for one operand of the following instruction. Graph
 construction does not rerun the parallel-assignment resolver or decide the
 relative order of these operations.
+
+A `BoundaryProgram` is a sequential program produced from one or more ordered
+parallel phases, not a claim that every contained move is simultaneous. Later
+phases may name definitions produced by earlier phases. Phase-local
+`OrderedMoveSource` indices are resolved or rebased while the script is built,
+so the executor receives an unambiguous dependency order.
+
+Every planned action retains its coordinate in the allocation product: transfer
+set and element index, fixed-copy index, or reused-input-fixup index. Script
+validation accounts for these coordinates with dense consumed-bit vectors;
+structurally identical transfers are not treated as interchangeable.
 
 The materialized input is Machine IR. Snapshot instructions and Snapshot
 operands have already been removed by side-exit lowering, so every main-CFG
@@ -245,10 +301,11 @@ Construction follows the same broad shape as bytecode-to-CFG construction:
    program order, loop depth, the normal entry block, and all exception entry
    blocks.
 3. Walk the block scripts one at a time. Create that block's parameters, emit
-   its already planned boundary programs and cloned body instructions, create
-   its outgoing edges, and finally create its terminator. All possible targets
-   already have block skeletons, while every edge argument is available from
-   the completed source body.
+   its entry boundary program, then emit each instruction prelude and cloned
+   body instruction. Emit the terminator prelude, create its outgoing edges,
+   and finally clone or create the terminator. All possible targets already
+   have block skeletons, while every edge argument is available from the
+   completed source body and terminator prelude.
 4. When cloning an instruction that owns a side exit, clone or retrieve its
    side-exit region through the construction memo before creating the owner.
 5. Finalize `LocationAssignments`, verify and publish the new CFG, and return
@@ -319,12 +376,80 @@ The side-exit argument used by the transition program resolves through the
 bundle carried by `%204`; the `BoxF64` operand occurrence resolves through the
 bundle carried by `%205`. Neither transfer globally replaces `%203`.
 
-## Reused Inputs
+## Prelude Carrier Reservations
 
-`SameAsInput` must be supported by the completed design. Successful affinity
-coalescing requires no materialization. When the input and result cannot share
-one bundle, allocation records an explicit reused-input fixup rather than
-returning `RequiresConstraintFixup`:
+Materialization copies execute before their owning instruction. Their
+destinations must therefore be represented in allocation liveness; a script
+cannot safely copy into a location that the allocator considers available only
+at the instruction's Late boundary.
+
+### Fixed operand copies
+
+Each `FixedOperandCopy` creates a conditional physical-register reservation for
+the interval `[Early, Late)`. The reservation excludes every live bundle and
+temporary except the bundle containing that copy's source occurrence:
+
+```cpp
+struct FixedOperandCopyReservation
+{
+    InstructionId instruction;
+    OccurrenceId permitted_source;
+    PhysicalRegister destination;
+    LivenessRange range;
+};
+```
+
+If the source bundle is assigned the destination register, the operand already
+has its required carrier and no copy is emitted. Otherwise the reserved
+register is guaranteed not to hold another Early operand, and the script may
+copy the source into it before the instruction. Constraint validation rejects
+two fixed-copy operands requiring the same destination for different semantic
+values; identical values may share the one carrier.
+
+This reservation is separate from the instruction's Late clobber. The
+reservation protects the copy at instruction entry; the clobber permits the
+instruction to destroy it after its Early use.
+
+### Reused inputs
+
+`SameAsInput` must be supported by the completed design. Its contract is an
+Early ProgramValue input and a Late result. Constraint validation rejects other
+timing combinations until a concrete instruction establishes a need for them.
+
+Successful affinity coalescing requires no materialization: the dying input and
+result already occupy one physical carrier. Same-as-input affinities are
+processed before ordinary block-edge affinities. When one cannot be coalesced,
+the result's physical live range is extended back to the instruction's Early
+boundary and given an instruction-spanning carrier occurrence. This
+pre-definition portion reserves the eventual result location while containing
+the copied input bits:
+
+```text
+reused-input carrier       [Early, Late)
+actual result              [Late, NextEarly)
+protected physical range   [Early, NextEarly)
+```
+
+The protected range cannot be split at Late. It forces the result bundle to
+interfere with every other Early operand and temporary while keeping one
+location across the copied input and destructive result. This is explicitly a
+physical-carrier range: before the instruction it contains the selected input;
+after the instruction it contains the result. It does not claim that the SSA
+result is semantically defined at Early.
+
+Initial bundle construction therefore proceeds in this order:
+
+1. Build ordinary SSA live ranges and one initial bundle per range.
+2. Process all `SameAsInput` affinities and coalesce the legal ones.
+3. For each unresolved affinity, extend the result live range and its current
+   bundle fragment to Early, add the carrier occurrence, and record the fixup.
+4. Process block-edge affinities against these protected bundles.
+
+Later normalization and pressure splitting must treat the carrier occurrence's
+minimum coverage like any other irreducible occurrence coverage, so they cannot
+separate the prelude carrier from the result.
+
+Allocation also records the materialization contract:
 
 ```cpp
 struct ReusedInputFixup
@@ -336,12 +461,21 @@ struct ReusedInputFixup
 };
 ```
 
-Script creation adds a pre-instruction assignment from the source carrier to
-the result bundle's physical location. That assignment is planned together
+The prepared problem represents this with
+`OccurrenceKind::ReusedInputCarrier` and an
+`OccurrenceAnchor::reused_input_carrier(instruction, operand_index)`. It is
+attached to the result live range at Early with minimum coverage
+`[Early, NextEarly)`. It is not an SSA definition and receives no
+`LocationAssignment`; its coverage exists to keep the carrier and result in one
+unsplittable physical range. Allocation verification checks that it belongs to
+the named result live range and has a matching `ReusedInputFixup`.
+
+Script creation then adds a pre-instruction assignment from the source carrier
+to the protected result-bundle location. That assignment is planned together
 with every ordinary transfer and fixed operand copy at the boundary. Its result
 becomes an operand override for the destructive input; it does not become the
 instruction result. Cloning the instruction subsequently assigns the fresh
-result definition to that same physical location and binds the result bundle.
+result definition to that same physical location and rebinds the result bundle.
 The original source carrier remains available if its live range continues.
 
 This sequence preserves the distinction between access timing and list order:
@@ -368,7 +502,10 @@ It checks two classes of invariant:
    - every allocator transfer, fixed operand copy, and reused-input fixup is
      consumed exactly once;
    - every script definition is introduced once and used only where it is
-     available.
+     available;
+   - a definition from one block appears in another block only as an outgoing
+     edge argument; helper bodies use their own parameters rather than source
+     definitions directly.
 2. Physical flow:
    - every operand's script definition has the representation and physical
      location assigned to its occurrence's bundle;
@@ -390,6 +527,16 @@ physical transfers preserve one, and block parameters begin a block with
 abstract symbolic inputs. This lets it detect a stale bundle-to-definition
 binding after its physical location has been overwritten without complicating
 the construction executor.
+
+Block parameters are symbolic rebinding boundaries. Validation does not seek a
+fixed point or require all predecessors of a loop to carry one symbolic
+identity. Instead, it checks each incoming edge independently: the source or
+helper output must have the destination parameter's representation and assigned
+physical location at the matching argument index. The destination block then
+starts with a fresh abstract identity for that parameter. This covers joins,
+self-edges, and exception-free normal predecessors without path-sensitive
+symbolic execution; normal and exception entry parameters are checked directly
+against their entry constraints because they have no CFG predecessor.
 
 After construction, ordinary CFG verification checks the published graph. A
 small realization audit additionally checks that every script definition which
@@ -429,6 +576,23 @@ discarded after script execution.
 
 ## Implementation Slices
 
+### 0. Prelude-carrier allocation prerequisites
+
+- Restrict `SameAsInput` to an Early input and Late result.
+- Add conditional `[Early, Late)` fixed-copy register reservations which permit
+  only the copied source bundle to occupy the destination.
+- Process same-as-input affinities first; extend unresolved result ranges to
+  Early with `ReusedInputCarrier` occurrences and record
+  `ReusedInputFixup`s.
+- Preserve the instruction-spanning carrier coverage through constraint and
+  pressure splitting.
+- Extend allocation verification for reservation conflicts, carrier/fixup
+  correspondence, and unsplittable coverage.
+- Cover a reused-input result whose preferred register was formerly occupied
+  by another Early operand, a source that remains live after the instruction,
+  fixed copies whose source is already in the destination, and conflicting
+  fixed-copy destinations.
+
 ### 1. Product and cloning foundation
 
 - Add a test-only fresh-graph cloning foundation that clones blocks,
@@ -456,6 +620,8 @@ discarded after script execution.
   phases, in deterministic graph/instruction order.
 - Plan ordinary transfers, scratch moves, fixed operand copies, and
   reused-input copies into unified boundary programs.
+- Retain source-product coordinates for exact action accounting and record
+  representation, location, and origin for every script definition.
 - Validate structural accounting and symbolic physical flow before graph
   construction.
 - Unit-test scripts directly, without depending on generated instruction IDs.
@@ -535,6 +701,10 @@ Tests should establish:
   carriers;
 - fixed operand copies and reused-input copies affect only their selected
   operands, and destructive results reuse the copied location;
+- prelude-copy destinations cannot overwrite a different Early operand or
+  temporary, while an already correctly located copy source remains legal;
+- block-entry and pre-terminator boundary programs are neither dropped nor
+  emitted at an adjacent instruction;
 - edge transfers remain path-specific on branches and compose correctly at
   joins and loops;
 - stack cycles use legal scratch sequences;
@@ -542,6 +712,12 @@ Tests should establish:
   physical definitions and temporaries have locations;
 - backend observation and emission consume the fresh graph;
 - failed planning never publishes or mutates a graph.
+
+Adversarial allocation tests include a destructive result whose Late register
+would otherwise alias another Early operand, a reused source that remains live,
+duplicate fixed-copy destinations, block-entry reloads, return-ABI transfers,
+and loops whose backedge carries a different symbolic identity into one block
+parameter.
 
 The existing allocation materializer and AArch64 execution tests provide the
 behavioral cases. New script tests should additionally make planning failures
