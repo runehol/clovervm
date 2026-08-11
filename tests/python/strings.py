@@ -78,6 +78,10 @@ assert "value.txt".removesuffix(".py") == "value.txt"
 assert "prefix-value".removeprefix(prefix="prefix-") == "value"
 assert "value.txt".removesuffix(suffix=".txt") == "value"
 
+assert isinstance("a,b,c".split(","), list)
+assert isinstance("a,b,c".rsplit(","), list)
+assert isinstance("a=b=c".partition("="), tuple)
+assert isinstance("a=b=c".rpartition("="), tuple)
 assert_items("a,b,c".split(","), "a", "b", "c")
 assert_items("a,b,c".split(",", 1), "a", "b,c")
 assert_items("a,b,c".split(sep=",", maxsplit=1), "a", "b,c")
