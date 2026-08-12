@@ -529,7 +529,6 @@ whose stable identity materially simplifies both the JIT and collector.
 - `doc/jit-compiler-and-ir.md`
 - `doc/jit-machine-code-emission.md`
 - `doc/generational-copying-gc.md`
-- `doc/generational-copying-gc-implementation-plan.md`
 
 ## D-0008: Preserve Separate Managed and Host Stacks During JIT Bring-up
 

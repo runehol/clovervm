@@ -48,9 +48,6 @@ The native API sections are part of the GC design because a moving collector
 must know every root and must be able to update every reference to moved
 objects. They are not the main collector policy.
 
-Implementation staging belongs in
-[Generational Copying GC Implementation Plan](generational-copying-gc-implementation-plan.md).
-
 ## Collector Model
 
 The collector assumed by this proposal is generational, moving, and
