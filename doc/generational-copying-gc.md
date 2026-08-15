@@ -385,12 +385,10 @@ interop design:
 - a stable wrapper for a VM object contains an updateable reference to the
   movable managed target;
 - positive native wrapper references act as strong collector roots;
-- extension-owned bodies are non-moving GC participants whose outgoing managed
-  references are precisely traceable;
-- stores from stable wrappers or extension-owned bodies into the nursery obey
-  the remembered-set/barrier contract;
-- cycles crossing movable and stable participants require a deliberate tracing
-  and clearing policy.
+- extension-owned bodies contain stable `PyObject *` references rather than
+  direct pointers to movable managed objects;
+- the collector traces and updates wrapper target slots, without scanning or
+  applying Clover write barriers inside opaque extension-owned bodies.
 
 The wrapper ABI, canonical identity table, native refcount mechanics, and call
 adapters live in
@@ -415,8 +413,9 @@ exposure lifetime.
 Objects that require stable addresses are not outside GC. They remain trace
 sources and targets, may require remembered-set barriers for nursery references,
 and may be collectible by a non-moving policy. Examples include native handle
-storage, pinned or permanently stable backing storage, and future
-extension-owned objects.
+storage and pinned or permanently stable backing storage. CPython
+extension-owned bodies are different: their managed indirection terminates at
+stable `PyObject *` wrappers, as specified in the separate wrapper design.
 
 ### Exported Storage
 

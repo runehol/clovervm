@@ -101,10 +101,17 @@ Objects whose body layout is controlled by a native extension cannot move,
 because the extension may store fields at fixed offsets inside its allocation.
 These objects live in stable storage.
 
-They still participate in GC. Such objects need tracing hooks for references
-back into movable VM objects, remembered-set/barrier handling for stores into the
-nursery, and a deliberate clearing/finalization policy for cycles crossing the
-stable and moving heaps.
+The collector cannot trace arbitrary fields inside an extension-owned body, and
+the Limited API does not require that capability. References stored by the
+extension are stable `PyObject *` values, not direct pointers to movable Clover
+objects. For a VM-owned target, the `PyObject *` identifies a stable wrapper
+whose updateable target slot is visible to the collector. Normal
+`Py_INCREF`/`Py_DECREF` ownership keeps that wrapper live.
+
+Consequently, an extension-owned field never creates a direct
+stable-body-to-nursery edge. CloverVM does not apply its generational write
+barrier to stores inside the opaque extension body; it traces the wrapper target
+instead.
 
 ## Canonical Wrapper Table
 
@@ -212,12 +219,14 @@ the target slot.
 Extension-owned object to movable object:
 
 ```text
-stable extension object field -> VM object
+stable extension object field
+  -> stable PyObject * wrapper
+       -> movable VM object
 ```
 
-Extension-owned objects expose references through tracing hooks equivalent in
-spirit to `tp_traverse`. Writes into young/movable generations use the
-collector's barrier policy.
+The extension owns the stable wrapper through CPython reference counting. The
+collector neither scans the opaque extension field nor barriers its store. It
+scans and updates the wrapper's target slot.
 
 Movable object to stable object:
 
@@ -229,8 +238,9 @@ Managed tracing understands stable objects as heap references. Stable objects
 may be non-moving, but their liveness remains part of the object graph unless a
 specific category is immortal or explicitly outside collection.
 
-Cycles crossing movable and extension-owned stable objects require a deliberate
-policy; native refcounts alone do not collect such cycles.
+The supported cycle semantics are therefore constrained by the Limited API and
+wrapper-refcount contract; the collector must not assume it can discover
+otherwise opaque extension-owned fields.
 
 ## Relationship To Pinning
 
@@ -252,7 +262,8 @@ body or backing store rather than an opaque `PyObject *`.
   identity map?
 - How does the canonical wrapper table key a movable object across collections?
 - When are zero-refcount wrappers removed?
-- How do extension-owned stable objects participate in cycle collection,
-  finalization, resurrection, and weak references?
+- What cycle, finalization, resurrection, and weak-reference semantics can be
+  supported when extension-owned fields are opaque and only their stable
+  wrapper references are visible?
 - How are native-call adapter frames represented so GC can scan in-progress
   argument and return conversion safely?
