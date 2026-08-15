@@ -187,6 +187,7 @@ Detailed docs:
 - [Refcounting and Reclamation](refcounting-and-reclamation.md)
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 - [Generational Copying GC Design Notes](generational-copying-gc.md)
+- [CPython Limited API Stable Wrappers](cpython-limited-api-stable-wrappers.md)
 
 ## Exceptions And Control Flow
 

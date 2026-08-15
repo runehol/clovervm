@@ -5,14 +5,14 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | Generational moving collection, root and slot rewriting, stable native objects, and native API compatibility |
+| Scope | Generational moving collection, root and slot rewriting, pinning, stable GC participants, and CloverVM native handles |
 | Owning layers | The memory manager owns collection; object layouts, root publication, and native APIs provide trace/update boundaries |
-| Validated against | `ad0a158` (2026-07-18) |
+| Validated against | `d99f5e99` (2026-08-12) |
 | Supersedes | Earlier non-moving generational mark-sweep direction |
 
 This document sketches an alternative garbage-collection direction for CloverVM:
 a generational, moving collector that copies ordinary VM objects and handles
-native API boundaries through explicit handles or stable wrappers.
+native boundaries through updateable roots, pinning, and stable storage.
 
 This design supersedes the earlier non-moving generational mark-sweep direction.
 It allows ordinary VM objects to move, so it is incompatible with a collector
@@ -33,20 +33,14 @@ Native API support follows from that collector choice:
 - native code that uses CloverVM's own C extension API sees opaque
   `clover_handle` values that can survive collections through VM-managed
   indirection, but do not guarantee stable handle identity;
-- native code that uses a CPython Limited API / Stable ABI style surface sees
-  stable, opaque `PyObject *` values with CPython-style reference lifetime
-  rules;
-- the stable `PyObject *` values are VM-owned native wrappers, not raw pointers
-  to movable VM object bodies;
-- extension-owned object bodies live on a stable heap and participate in the
-  same opaque-pointer interface;
-- raw storage exports such as buffers and string/bytes data use specialized
-  pinning or stable-storage rules rather than making arbitrary objects
-  non-moving.
+- CloverVM C API operations that expose raw object or backing-storage addresses
+  establish scoped pins or use stable storage;
+- non-moving objects still participate in tracing and remembered-set policy.
 
-The native API sections are part of the GC design because a moving collector
-must know every root and must be able to update every reference to moved
-objects. They are not the main collector policy.
+The proposed CPython Limited API wrapper system is specified separately in
+[CPython Limited API Stable Wrappers](cpython-limited-api-stable-wrappers.md).
+It is a prospective client of the collector's stable-storage and trace/update
+contracts, not part of the collector itself.
 
 ## Collector Model
 
@@ -54,15 +48,9 @@ The collector assumed by this proposal is generational, moving, and
 stop-the-world. It is not concurrent or incremental in the initial design.
 
 During a collection, mutator threads and native extension execution are stopped
-at safepoints. The collector may copy movable VM objects, update managed roots,
-repair managed heap references, update native wrapper target slots, and clean
-dead zero-refcount wrappers before mutators resume.
-
-This pause model is important for the stable-wrapper design. Native wrappers do
-not need concurrent forwarding logic or read barriers merely to preserve
-`PyObject *` stability. While native code is running, the wrapper's address is
-stable. While the collector is running, native code is stopped and the VM can
-rewrite wrapper target slots directly.
+at safepoints. The collector may copy movable VM objects, update roots, repair
+managed heap references, and trace non-moving participants before mutators
+resume.
 
 ## Copying Collection Shape
 
@@ -93,8 +81,7 @@ discover object identities:
 - ordinary object fields and backing arrays;
 - remembered old-to-young references for minor collections;
 - CloverVM C API handle storage;
-- CPython Limited API wrapper target slots;
-- extension-owned stable objects that expose tracing hooks.
+- pinned and stable objects that expose trace/update hooks.
 
 Objects in stable storage are not copied by this ordinary evacuation path. They
 are still part of the traced object graph if they can reference or be referenced
@@ -119,6 +106,19 @@ The GC-specific object state needed for ordinary copied objects is much smaller:
 
 - normal versus forwarded state;
 - forwarding target when the object has been evacuated.
+
+The current eight-byte header is occupied by deferred-refcount and native-layout
+state. Collector migration must not remove that state before its replacement is
+working. The transition therefore accepts an oversized header carrying both the
+existing refcount/lifecycle fields and the new GC fields. Once tracing is the
+lifetime authority and the ZCT is retired, the refcount fields can be removed
+and the final header repacked.
+
+The GC header must represent at least generation/remembered state and whether an
+otherwise movable object is pinned. The exact pin-count or pin-flag encoding is
+not yet selected. Allocation space supplies the normal movement policy, but is
+not sufficient by itself: a pinned object in a normally moving space must not be
+evacuated until its pin is released.
 
 The forwarding target can be written into the from-space object itself after
 the object has been copied. A reference repair path can then recognize a
@@ -327,7 +327,7 @@ ordinary movable objects.
 
 ## Native API Layers
 
-There are three native-facing APIs with different contracts. They should not be
+There are two current native-facing APIs with different contracts. They should not be
 collapsed into one handle model.
 
 ### Intrinsic API
@@ -376,67 +376,27 @@ Ordinary `clover_handle` values are transitory handles, valid only for the
 active API entry that produced or received them. Persistent native roots are
 explicitly deferred and are not specified by this design.
 
-### CPython Limited C API
+### Prospective CPython Limited API
 
-The CPython Limited API / Stable ABI compatibility layer is the heaviest native
-surface. It uses stable, opaque `PyObject *` values and CPython-style refcount
-lifetime rules.
+The collector must support the following requirements without owning the full
+interop design:
 
-This layer needs stable wrapper identity for C-visible `PyObject *` values.
-Unlike `clover_handle`, a `PyObject *` may be compared, increfed, decrefed, and
-held according to CPython's reference rules. That requires a canonical stable
-wrapper or stable extension object while native references exist.
+- a C-visible `PyObject *` has stable identity for its promised native lifetime;
+- a stable wrapper for a VM object contains an updateable reference to the
+  movable managed target;
+- positive native wrapper references act as strong collector roots;
+- extension-owned bodies are non-moving GC participants whose outgoing managed
+  references are precisely traceable;
+- stores from stable wrappers or extension-owned bodies into the nursery obey
+  the remembered-set/barrier contract;
+- cycles crossing movable and stable participants require a deliberate tracing
+  and clearing policy.
 
-The CPython Limited API layer remains restricted: downcasts to CPython internal
-object layouts and direct field access are unsupported.
+The wrapper ABI, canonical identity table, native refcount mechanics, and call
+adapters live in
+[CPython Limited API Stable Wrappers](cpython-limited-api-stable-wrappers.md).
 
-CloverVM presents a CPython Limited API with a compatible `PyObject` header, but
-for VM-owned objects that header is only a shell. The authoritative object state
-lives in the Clover object reached through the wrapper. An explicit wrapper flag
-distinguishes VM-object proxies from real extension-owned objects, and CPython
-type information for proxies is computed only on demand. The CPython C API
-remains correct but intentionally slower; native Clover interfaces are the fast
-path.
-
-## Compatibility Target
-
-The intended native compatibility target is closer to CPython's Limited API /
-Stable ABI than to the unrestricted CPython C API.
-
-Supported direction:
-
-```text
-extension code
-  holds PyObject *
-  uses supported refcount and type API over a compatible PyObject header
-  calls other supported API functions/macros
-  never relies on object body layout
-```
-
-Unsupported direction:
-
-```text
-extension code
-  casts PyObject * to PyLongObject *, PyTupleObject *, ...
-  reads or writes CPython object fields
-  assumes PyObject * points at a CPython-shaped object body
-```
-
-The important invariant is:
-
-```text
-A PyObject * value observed by Limited-API native code remains stable for the
-lifetime promised by refcount and borrowed-reference rules, but it does not
-imply that the underlying VM object has a stable address or CPython-compatible
-layout.
-```
-
-The external pointer is opaque. Internally, it may be an indirection cell whose
-target is updated by the collector.
-
-## Object Categories
-
-This design separates four object/storage categories.
+## Object And Storage Categories
 
 ### Movable VM Objects
 
@@ -446,64 +406,17 @@ young-generation collection may copy them and update all managed references
 before execution resumes.
 
 Interpreter and VM-internal code may use direct managed object references while
-the object is protected by ordinary managed-root rules. Those direct addresses
-must not escape to Limited-API native code as `PyObject *`.
+the object is protected by ordinary managed-root rules. A direct address exposed
+outside managed execution requires a pin or stable placement for the complete
+exposure lifetime.
 
-### Stable Native Wrappers
+### Stable GC Participants
 
-A stable native wrapper is the C-visible representation of a managed VM object.
-It is allocated in VM-controlled stable memory and has a stable address. Native
-Limited-API code sees a pointer to this wrapper as `PyObject *`.
-
-Conceptually:
-
-```text
-PyObject * observed by native code
-  -> stable native wrapper
-       target -> movable VM object
-```
-
-The wrapper behaves like an implementation-private cell: the wrapper identity is
-stable, while the target slot may be rewritten when the target object moves.
-This is similar to CPython closure cells as an indirection pattern, but the
-wrapper is not a Python-visible `cell` object and must not expose cell semantics.
-
-Every C-visible `PyObject *` allocation starts with a CPython-compatible object
-header. For VM-object proxies, that header is the prefix of the stable native
-wrapper. For extension-owned objects, it is the prefix of the extension-owned
-allocation. The header should contain:
-
-- a native-visible refcount, with the exact width still TBD; 64 bits may be
-  necessary to match CPython's practical ABI expectations;
-- a flags field. The initial required flag distinguishes VM-object proxies from
-  extension-owned objects;
-- a pointer to a Python type object. For VM-object proxies this pointer remains
-  null permanently. For extension-owned objects it points at the real Python
-  type object.
-
-For VM-object proxies, `Py_TYPE` must not fill or cache the header type pointer.
-It should dereference the wrapped Clover value each time, inspect the value's
-current shape, read the class from that shape, and materialize a CPython type
-wrapper for that Clover class object as needed. The class observed through a
-shape can change, so caching the result in the proxy header would create stale
-type information and require invalidation machinery.
-
-Materialized CPython type wrappers still need stable identity. The VM should
-keep a canonical mapping from Clover class objects to their CPython type wrapper
-objects, so repeated materialization of the same Clover class produces the same
-C-visible type object while that wrapper identity is live.
-
-### Extension-Owned Objects
-
-Objects whose body layout is controlled by a native extension cannot move,
-because the extension may store fields at fixed offsets inside its own object
-allocation. These objects live on a stable heap.
-
-They still participate in the same external opaque-pointer interface: native
-code receives a stable `PyObject *`, and VM API calls understand that this
-pointer denotes an extension-owned object. Such objects need tracing hooks for
-references back into movable VM objects, and refcount/lifetime rules for their
-extension-controlled memory.
+Objects that require stable addresses are not outside GC. They remain trace
+sources and targets, may require remembered-set barriers for nursery references,
+and may be collectible by a non-moving policy. Examples include native handle
+storage, pinned or permanently stable backing storage, and future
+extension-owned objects.
 
 ### Exported Storage
 
@@ -515,8 +428,7 @@ Some APIs expose raw memory rather than just object identity. Examples include:
 - memoryviews;
 - internal native fast paths that temporarily need a direct storage address.
 
-These cases should not use general-purpose "pin any object" semantics. They
-should use explicit storage export rules:
+These cases use explicit storage export and pinning rules:
 
 ```text
 object
@@ -525,65 +437,9 @@ object
        movable normally, but non-moving or stable while exported
 ```
 
-An active export may pin the backing storage, allocate it directly in stable
-storage, or prevent resizing until the export is released. Pinning the entire
-Python object should be a rare implementation detail, not the default native
-interop mechanism.
-
-## CPython Stable Wrapper Table
-
-For the CPython Limited API layer, the VM maintains a canonical table from
-managed object identity to stable native wrapper:
-
-```text
-VM object identity -> NativeWrapper *
-```
-
-This table is for ordinary VM objects exposed as `PyObject *`. It is distinct
-from the Clover-class to CPython-type-wrapper identity map used by `Py_TYPE` for
-VM-object proxies.
-
-Looking up the same VM object for CPython Limited API exposure must return the
-same wrapper while a live native reference to that wrapper exists. This
-preserves `PyObject *` identity observations such as pointer equality for
-simultaneously exposed values.
-
-The table entry is an identity cache, not a permanent root. A wrapper with a
-positive refcount is externally live and traces its target strongly. A wrapper
-with refcount zero may remain in the table until a GC cleanup pass, but it does
-not by itself keep the target object alive.
-
-Wrapper states:
-
-```text
-refcount > 0:
-  externally live
-  trace target strongly
-  update target if the object moves
-
-refcount == 0:
-  not externally live
-  may remain cached temporarily
-  does not by itself keep target alive
-  removable during GC table cleanup
-```
-
-During collection, the VM should:
-
-1. Treat positive-refcount native wrappers as roots.
-2. Copy or mark their targets according to the managed heap policy.
-3. Update wrapper target slots after object movement.
-4. Remove zero-refcount wrappers from the identity table.
-5. Free or recycle removed wrapper memory.
-
-If a VM object remains alive after its zero-refcount wrapper is removed, a later
-CPython Limited API exposure may create a different `PyObject *`. That is
-acceptable because no native code may legally retain the old pointer after its
-refcount or borrowed-reference lifetime has ended.
-
-This table is not required for the CloverVM C API. `clover_handle` values do
-not promise stable identity, so the VM can use cheaper per-context or
-per-native-call handle storage.
+An active export may pin the backing storage or object, allocate it directly in
+stable storage, and prevent resizing until the export is released. Which unit is
+pinned follows the address actually exposed by the C API.
 
 ## CloverVM C API Handles
 
@@ -641,71 +497,7 @@ object behavior rather than comparing handle pointer values.
 Native code must not rely on transitory handles surviving after the current API
 entry returns. Persistent native roots remain deferred.
 
-## CPython Limited API Call Frames
-
-Boundary bookkeeping should be centralized in a native-call adapter frame rather
-than spread across individual call sites.
-
-When managed code calls native Limited-API code, the adapter frame owns:
-
-- the temporary `PyObject *` argument array or slots;
-- temporary increfs that keep borrowed call arguments valid for the duration of
-  the call;
-- roots for any managed values needed while converting arguments or return
-  values;
-- cleanup records for decref on return or failure.
-
-Conceptually:
-
-```text
-VM Value[] args
-  -> NativeCallFrame
-       expose each Value as canonical PyObject *
-       incref wrappers needed for call lifetime
-       call native function
-       convert return value
-       decref temporary wrappers in reverse order
-```
-
-Even when the native API says an argument is borrowed, the VM may internally
-hold a temporary wrapper reference for the duration of the call. From the
-extension's point of view the argument is borrowed; from the VM's point of view
-the wrapper and target are protected across the native boundary.
-
-This adapter also preserves identity for duplicate arguments. If two managed
-arguments are the same object, exposing both through the frame must produce the
-same stable wrapper pointer.
-
-## CPython Wrapper Refcounts
-
-Native wrapper refcounts describe the lifetime of the C-visible opaque pointer.
-They do not imply that the movable target object itself is refcounted in the
-same way.
-
-The target's managed lifetime is determined by tracing:
-
-```text
-positive wrapper refcount
-  -> wrapper is a native root
-  -> wrapper traces target
-  -> target remains live
-```
-
-`Py_INCREF` and `Py_DECREF` operate on the wrapper or stable extension object
-seen by native code. If a `Py_DECREF` drops a wrapper to zero, the wrapper may be
-eligible for identity-table cleanup at a later collection.
-
-The design should avoid making every wrapper ever created a permanent strong
-root. Otherwise repeated native exposure of short-lived values would leak object
-graphs through the wrapper table.
-
-`clover_handle` values do not use this refcount contract. Their lifetime is
-owned by the active CloverVM C API context. A future persistent-root mechanism
-is separate work.
-
-## Cross-Heap References
-
-This hybrid design has several important cross-boundary reference directions.
+## Cross-Space References
 
 CloverVM C API handle to movable object:
 
@@ -717,74 +509,59 @@ Live CloverVM C API handles are scanned as native roots. If a target moves, the
 handle's value slot is updated. The handle itself does not need to be canonical
 for the target object.
 
-Stable wrapper to movable object:
+Stable participant to movable object:
 
 ```text
-wrapper.target -> movable VM object
+stable object field -> movable VM object
 ```
 
-Positive-refcount wrappers are scanned as roots. If the target moves, the target
-slot is updated.
-
-Extension-owned object to movable object:
-
-```text
-stable extension object field -> VM object
-```
-
-Extension-owned objects need tracing hooks, equivalent in spirit to
-`tp_traverse`, so the collector can discover references into moving heaps.
-Writes from stable extension objects into young/movable generations also need
-whatever remembered-set or barrier policy the chosen collector requires.
+Stable objects expose updateable trace slots so the collector can discover and
+repair references into moving spaces. Writes from stable objects into the
+nursery obey the remembered-set/barrier policy.
 
 Movable object to stable object:
 
 ```text
-VM object field -> stable extension object or wrapper-visible object
+movable object field -> stable object
 ```
 
 Managed tracing must understand stable objects as heap references. Stable
 objects may be non-moving, but their liveness is still part of the object graph
 unless they are immortal or otherwise explicitly outside collection.
 
-Cycles that cross movable VM objects and extension-owned stable objects require
-a deliberate policy. Refcounts alone are not enough for cycles that include
-both heaps.
+Cycles that cross movable and stable participants remain part of one tracing
+graph unless a particular stable category defines a different lifetime policy.
 
 ## Pinning Policy
 
-Pinning is not the mechanism that makes `PyObject *` stable. Stable native
-wrappers provide that property.
+Pinning is required when CloverVM's C API or an internal native operation exposes
+a raw address into an otherwise movable object or backing store. A
+`clover_handle` alone does not pin its target because the handle denotes an
+updateable slot rather than the target address.
 
-Pinning is only needed when native code has a raw address into an object body or
-backing storage. The preferred policies are:
+The policies are:
 
 - expose raw storage through explicit export objects;
 - count active exports;
 - prevent movement or resizing of exported storage while the export is live;
 - allocate frequently exported storage in a stable storage class if needed;
-- keep arbitrary object-body pinning internal, scoped, and rare.
+- make pin acquisition and release scoped and nestable;
+- keep long-lived pins uncommon and move frequently exported storage into a
+  stable class when that is cheaper.
 
-The design should avoid a public API that lets extensions request and retain
-raw addresses for arbitrary object bodies. That would reintroduce the
-unrestricted CPython C API's layout and address-stability assumptions.
+Pinning overrides the normal movement policy implied by generation and
+allocation space. A collection must retain a pinned object at its current
+address, while still tracing and updating its outgoing references. The header
+must contain enough state to answer whether the object may move; the precise
+pin-count or flag representation remains open.
 
 ## Open Questions
 
-- What exact Limited API / Stable ABI version or subset is targeted first?
-- Which macros are supported, and which are rejected because they imply layout
-  access?
-- What is the concrete CPython-compatible wrapper header layout: refcount width
-  and flags packing?
-- What lifetime and cleanup rules should the Clover-class to CPython-type-wrapper
-  identity map use?
-- How does the identity table key movable objects across copying collections:
-  direct old address with forwarding repair, stable object ID, or side identity
-  cell?
-- When are zero-refcount wrappers swept: every collection, major collections
-  only, or on wrapper-table pressure?
-- How do extension-owned stable objects participate in cycle collection?
+- What is the transitional and final packed GC header layout?
+- Is pinning represented by an in-header count, an in-header flag with external
+  accounting, or another scheme?
+- How are pinned nursery objects handled when the rest of the nursery is
+  evacuated?
 - Which storage classes support raw exports, and when do they pin versus move
   to stable storage?
-- How are native-call adapter frames represented so GC can scan in-progress
-  argument conversion and return conversion safely?
+- What major-collection policy applies to old and stable participants?
