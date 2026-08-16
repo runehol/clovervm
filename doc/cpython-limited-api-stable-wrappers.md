@@ -5,14 +5,16 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | Stable `PyObject *` identity, wrapper lifetime, extension-owned objects, and CPython Limited API call boundaries |
+| Scope | Source compatibility with a CPython Limited API subset, stable `PyObject *` identity, wrapper lifetime, extension-owned objects, and native call boundaries |
 | Owning layers | CPython compatibility API, native call adapters, stable storage, and GC root publication |
 | Validated against | `d99f5e99` (2026-08-12) |
 | Supersedes | CPython-wrapper sections formerly contained in `generational-copying-gc.md` |
 
-This document describes a prospective CPython Limited API / Stable ABI
-compatibility layer over CloverVM's moving managed heap. The collector-facing
-requirements remain summarized in
+This document describes a prospective source-compatibility layer for a selected
+subset of the CPython Limited API over CloverVM's moving managed heap.
+Extensions must be rebuilt against CloverVM's compatibility headers; CloverVM
+does not promise that CPython Stable ABI or `abi3` extension binaries can be
+loaded unchanged. The collector-facing requirements remain summarized in
 [Generational Copying GC Design Notes](generational-copying-gc.md); this document
 owns the wrapper representation and native compatibility mechanics.
 
@@ -22,15 +24,19 @@ in [Switchable Indirect Native Handles](indirect-native-handles.md).
 
 ## Compatibility Target
 
-The intended compatibility target is closer to CPython's Limited API / Stable
-ABI than to the unrestricted CPython C API.
+The intended target is source compatibility with a selected subset of CPython's
+Limited API, not binary compatibility with CPython's Stable ABI. Extension code
+is compiled against CloverVM-provided compatibility headers, which may implement
+API operations differently from CPython and define a CloverVM-owned object
+header layout.
 
 Supported direction:
 
 ```text
 extension code
+  is rebuilt against CloverVM's compatibility headers
   holds PyObject *
-  uses supported refcount and type API over a compatible PyObject header
+  uses supported refcount and type API through those headers
   calls other supported API functions/macros
   never relies on object body layout
 ```
@@ -39,9 +45,10 @@ Unsupported direction:
 
 ```text
 extension code
+  is loaded as an unchanged CPython Stable ABI or abi3 binary
   casts PyObject * to PyLongObject *, PyTupleObject *, ...
   reads or writes CPython object fields
-  assumes PyObject * points at a CPython-shaped object body
+  assumes PyObject * has CPython's binary header or object-body layout
 ```
 
 The important invariant is:
@@ -50,7 +57,7 @@ The important invariant is:
 A PyObject * value observed by Limited-API native code remains stable for the
 lifetime promised by refcount and borrowed-reference rules, but it does not
 imply that the underlying VM object has a stable address or CPython-compatible
-layout.
+binary layout.
 ```
 
 The external pointer is opaque. Internally, it may be an indirection cell whose
@@ -75,20 +82,23 @@ stable, while the target slot may be rewritten when the target object moves.
 The wrapper is not a Python-visible `cell` object and does not expose cell
 semantics.
 
-Every C-visible `PyObject *` allocation starts with a CPython-compatible object
-header. For VM-object proxies, that header is the prefix of the stable native
-wrapper. For extension-owned objects, it is the prefix of the extension-owned
-allocation. The header contains:
+Every C-visible `PyObject *` allocation starts with the object header defined by
+CloverVM's compatibility headers. This preserves source-level uses of
+`PyObject`, `PyObject_HEAD`, and supported accessors without requiring CPython's
+binary layout. For VM-object proxies, the header is the prefix of the stable
+native wrapper. For extension-owned objects, it is the prefix of the
+extension-owned allocation. The header contains:
 
 - a native-visible refcount, with the exact width still to be selected;
 - a flags field distinguishing VM-object proxies from extension-owned objects;
 - a pointer to a Python type object. For VM-object proxies this remains null;
   for extension-owned objects it points at the real Python type object.
 
-For VM-object proxies, `Py_TYPE` does not fill or cache the header type pointer.
-It dereferences the wrapped Clover value, inspects its current shape and class,
-and materializes the corresponding CPython type wrapper. Caching that result in
-the proxy header would require invalidation when the observed class changes.
+For VM-object proxies, the `Py_TYPE` accessor supplied by CloverVM's
+compatibility headers does not fill or cache the header type pointer. It
+dereferences the wrapped Clover value, inspects its current shape and class, and
+materializes the corresponding CPython type wrapper. Caching that result in the
+proxy header would require invalidation when the observed class changes.
 
 Materialized CPython type wrappers need stable identity. The VM keeps a canonical
 mapping from Clover class objects to their CPython type wrapper objects, so
@@ -251,13 +261,14 @@ body or backing store rather than an opaque `PyObject *`.
 
 ## Open Questions
 
-- What exact Limited API / Stable ABI version or subset is targeted first?
-- Which macros are supported, and which imply unsupported layout access?
-- What exact ABI-compatible prefix and private wrapper fields are used?
-- How is proxy-versus-extension-owned state represented without violating the
-  selected ABI?
-- What type pointer must a VM-object proxy expose, and how is it kept consistent
-  with the target's class?
+- What exact Limited API source subset is targeted first?
+- Which source-level macros are supported, and which imply unsupported layout
+  access?
+- What exact CloverVM object-header prefix and private wrapper fields are used?
+- How is proxy-versus-extension-owned state represented through the
+  compatibility headers?
+- What type object must `Py_TYPE` expose for a VM-object proxy, and how is it kept
+  consistent with the target's class?
 - What lifetime and cleanup rules govern the Clover-class to CPython-type-wrapper
   identity map?
 - How does the canonical wrapper table key a movable object across collections?
