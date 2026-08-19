@@ -41,8 +41,11 @@ JIT machine code
 ```
 
 The cache would be a disposable optimization, not a compatibility ABI or a
-security boundary. Any stale, unsupported, or malformed cache must be ignored
-in favor of compiling the source normally.
+security boundary. Any stale or unsupported cache, or any cache that fails the
+eager identity, integrity, or envelope checks, must be ignored in favor of
+compiling the source normally. A structurally malformed deferred record that
+passes those eager checks may instead be discovered after module execution has
+begun; that case follows the poisoning and exception policy below.
 
 ## Motivation
 
@@ -69,11 +72,14 @@ until execution or introspection requires them.
   analyzing, and compiling the corresponding source.
 - Keep persistent-format validation linear in the amount of data validated,
   with bounded allocations and no runtime pointers.
+- Detect accidental cache-file corruption before module execution and fall back
+  to source compilation.
 - Preserve normal Python module execution and function-definition semantics.
-- Avoid materializing execution bytecode and runtime metadata for unused
-  ordinary function bodies.
-- Permit unused cached code pages to remain non-resident where the validation
-  strategy allows it.
+- Avoid lowering persistent records into execution bytecode or constructing
+  runtime metadata for unused ordinary function bodies.
+- Make no initial promise that unused code pages remain non-resident, because
+  the whole-file integrity digest reads them. A future storage-integrity
+  mechanism may permit stronger demand paging.
 - Allow execution bytecode and inline-cache details to evolve without
   automatically changing the persistent format.
 - Treat every cache file as untrusted and make cache rejection safe and cheap.
@@ -95,6 +101,7 @@ A cache entry must identify more than the source contents. At minimum, cache
 selection needs to account for:
 
 - a content hash of the exact source bytes;
+- an integrity digest covering the complete cache-file contents;
 - persistent cache format version;
 - compiler semantic version or compatibility identifier;
 - language mode and compilation options that affect semantics;
@@ -111,6 +118,20 @@ reported to Python code. A deployment that treats malicious cache replacement
 as in scope needs trusted cache-file permissions or authenticated artifacts in
 addition to structural validation.
 
+The cache-file integrity digest has a narrower purpose: it detects accidental
+corruption, truncation, and incomplete publication of the exact bytes produced
+by the cache writer. The loader must verify it before executing module code and
+must treat a mismatch as an ordinary cache miss. The digest may live in a
+fixed header field excluded from its own input, or use another unambiguous
+canonical encoding selected with the file format.
+
+The digest does not establish provenance, source equivalence, or structural
+validity. Someone who can replace the cache can also replace an unkeyed digest,
+and a buggy producer can write a structurally invalid file with a matching
+digest. Signing or authenticated artifacts are only needed if malicious cache
+replacement is in scope. Regardless of integrity checking, every record must
+still pass structural validation before it is lowered.
+
 Cache publication should use a temporary file followed by an atomic rename so
 readers observe either the previous complete cache or the new complete cache.
 The mapping should refer to an immutable file instance for its lifetime; a
@@ -119,6 +140,14 @@ the bytes that were originally validated. The loader should retain enough file
 identity to avoid deleting a different cache that another process has since
 published at the same path.
 
+Integrity verification also relies on the mapped file not being modified in
+place after its digest is checked. Atomic replacement of the path is harmless
+because an existing mapping continues to identify the opened file instance,
+but mutation or truncation of that instance would invalidate the earlier
+integrity result. The cache writer must never modify a published file in place,
+and deployments that cannot enforce that rule need a stronger immutable-file
+mechanism or must copy verified bytes into owned storage.
+
 ## Persistent Representation
 
 The initial format should be a small, explicitly bounded record format rather
@@ -126,6 +155,7 @@ than a serialization of C++ objects. A likely envelope contains:
 
 - magic bytes, format version, byte order, and total file size;
 - source identity and compilation compatibility fields;
+- a whole-file integrity digest with precisely specified coverage;
 - a bounded section directory;
 - typed records with explicit sizes;
 - string, name, constant, and code-record tables;
@@ -175,22 +205,30 @@ failure discards the mapping and provisional state and performs a normal source
 compilation. A deferred validation failure follows the poisoning, deletion, and
 exception policy below because module execution has already occurred.
 
-Cryptographic hashes or signatures may establish integrity or provenance under
-a separate policy, but do not replace structural validation.
+The eager integrity digest detects accidental byte corruption but does not
+replace structural validation. Signatures may establish provenance under a
+separate deployment policy, but are not required by the initial cache design.
 
 ### Validation versus demand paging
 
-There is an unavoidable tension between complete eager validation and the
-strongest mmap benefit. Walking every instruction, constant, control-flow
-target, and exception range at import time will fault in pages for function
-bodies that are never used. Conversely, validating only the file envelope
-cannot make an unvisited function record safe to lower later.
+There is an unavoidable tension between eager integrity checking and validation
+on one side and the strongest mmap benefit on the other. Computing a digest
+over the complete cache necessarily reads every cache byte, even if the loader
+does not retain or lower the corresponding records. Walking every instruction,
+constant, control-flow target, and exception range at import time would add
+further work and may allocate validation state for function bodies that are
+never used. Conversely, validating only the file envelope cannot make an
+unvisited function record safe to lower later.
 
-The proposed policy is to validate the envelope, section directory, record
-index, global resource limits, and the module-level code needed for import
-execution eagerly. Each nested code record remains untrusted and is fully
-validated immediately before it is materialized. This preserves demand paging,
-but every access path must distinguish indexed records from validated records.
+The proposed policy is to verify the whole-file integrity digest and validate
+the envelope, section directory, record index, global resource limits, and the
+module-level code needed for import execution eagerly. Each nested code record
+remains structurally untrusted and is fully validated immediately before it is
+materialized. This avoids eager lowering and runtime-object construction, but
+whole-file integrity verification means the initial design does not promise
+that pages containing unused function bodies remain non-resident. Every access
+path must still distinguish indexed records from structurally validated
+records.
 
 The state transition is:
 
@@ -206,7 +244,11 @@ rejected mapping again.
 
 This policy needs a precise state machine and fuzz-tested reader before
 adoption. In particular, successful envelope validation must not be described
-as validating deferred code records.
+as validating deferred code records. A deferred structural failure after a
+matching integrity digest indicates malicious replacement or a cache-producer
+defect rather than accidental file corruption. Under the selected threat model,
+that case is allowed to break cache transparency and follows the late-failure
+policy below.
 
 ## Lazy Materialization
 
@@ -254,11 +296,11 @@ runtime CodeObject
 interpreter, then existing JIT tiering
 ```
 
-Materialization can fail because the record is malformed or because allocation
-fails. Cache corruption discovered after module execution has begun cannot
-transparently restart the import from source without repeating arbitrary
-Python-visible side effects. CloverVM will not attempt to repair the record,
-recompile the source in-process, or restart module execution.
+Materialization can fail because the record is structurally invalid or because
+allocation fails. A deferred structural failure discovered after module
+execution has begun cannot transparently restart the import from source without
+repeating arbitrary Python-visible side effects. CloverVM will not attempt to
+repair the record, recompile the source in-process, or restart module execution.
 
 On deferred validation failure, the loader must:
 
@@ -311,12 +353,12 @@ mapped module cache
     +-- unused function -----> remains only in the mapping
 ```
 
-This can reduce allocation, initialization, and resident memory. It is not
-guaranteed: envelope validation, source hashing, filesystem I/O, page-cache
-behavior, mapping metadata, and retained mappings all have costs. A cache file
-with scattered shared metadata may also fault in pages despite lazy code
-records. File layout should therefore cluster independently materialized code
-and avoid forcing traversal of body payloads during index validation.
+This can reduce heap allocation and initialization. Lower startup resident
+memory is not guaranteed: the whole-file integrity scan reads every cache page,
+and source hashing, filesystem I/O, page-cache behavior, mapping metadata, and
+retained mappings all have costs. Clean cache pages may later be evicted, so
+clustering independently materialized code is still useful for subsequent
+locality and residency.
 
 The proposal should advance only if benchmarks on representative import-heavy
 applications show meaningful improvements over both source compilation and an
@@ -338,18 +380,19 @@ safe.
 ## Failure and Recovery Rules
 
 - A missing, stale, unsupported, or eagerly rejected cache compiles from source.
-- Cache lookup, compatibility, and eager validation failures are not exposed to
-  Python when fallback source compilation succeeds.
+- Cache lookup, compatibility, integrity, and eager validation failures are not
+  exposed to Python when fallback source compilation succeeds.
 - A source compilation failure is reported normally and must not be hidden by a
   stale cache.
-- A cache producer writes complete files atomically and never mutates a
-  published cache in place.
+- A cache producer writes the integrity digest into a complete temporary file,
+  publishes the file atomically, and never mutates it in place.
 - The loader places strict configurable limits on file size, section counts,
   record counts, nesting depth, and allocation derived from cached values.
 - Eager cache rejection must occur before module execution and must not leave a
   partially published runtime object graph.
-- Corruption discovered during later materialization poisons the mapping,
-  triggers identity-checked best-effort cache deletion, and raises an exception.
+- A deferred structural failure after a matching integrity digest is treated as
+  malicious input or a cache-producer defect. It poisons the mapping, triggers
+  identity-checked best-effort cache deletion, and raises an exception.
 - CloverVM does not repair a rejected cache or recompile its source in-process.
 - Failure to delete a rejected cache never masks the validation exception.
 
@@ -370,12 +413,14 @@ fixes even when the binary layout is unchanged.
 
 1. Measure current import compilation time, code-object allocation, retained
    code memory, and the fraction of imported functions executed.
-2. Define a minimal semantic code record and losslessly round-trip a compiled
-   module without mmap or laziness.
+2. Define a minimal semantic code record, whole-file digest coverage, and
+   canonical integrity encoding, then losslessly round-trip a compiled module
+   without mmap or laziness.
 3. Build a standalone checked reader with adversarial unit tests, mutation
    tests, truncation tests, overflow tests, and coverage-guided fuzzing.
-4. Add eager cache loading and compare it with source compilation. This
-   isolates format and lowering value from lazy-materialization complexity.
+4. Add eager integrity verification and cache loading, then compare them with
+   source compilation. This isolates digest, format, and lowering costs from
+   lazy-materialization complexity.
 5. Specify the runtime code-provider representation, mapping ownership,
    publication and poisoning rules, pending-exception behavior, exception type,
    and introspection forcing points before changing `Function`.
@@ -402,8 +447,9 @@ Each stage should retain source fallback and can be rejected independently.
   synchronized with cache mapping and materialization state?
 - Which Python exception type and diagnostic context should a deferred
   validation failure expose?
-- Is content hashing on every import cheaper than compilation for the target
-  workloads, or is a separately specified metadata fast path needed?
+- Are source-content hashing plus a complete cache integrity scan cheaper than
+  compilation for the target workloads, or is a separately specified metadata
+  fast path or stronger storage-integrity mechanism needed?
 - What cache-size and eviction policy prevents mapped or stored caches from
   becoming an unbounded resource cost?
 
