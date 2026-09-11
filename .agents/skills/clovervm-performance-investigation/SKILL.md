@@ -1,6 +1,6 @@
 ---
 name: clovervm-performance-investigation
-description: Measure, profile, benchmark, or review an implemented clovervm change for performance. Use when a request asks for a performance investigation, before-and-after comparison, profile, regression analysis, or validation of hot-path frame and musttail constraints. Do not use for speculative architecture, design, or documentation work merely because it mentions inline caches, JIT compilation, dispatch, object layout, or another performance-sensitive mechanism.
+description: Measure or profile implemented clovervm changes, including opcode-frame constraints. Use for performance investigations, not speculative design.
 ---
 
 # clovervm Performance Investigation

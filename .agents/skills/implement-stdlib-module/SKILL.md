@@ -1,6 +1,6 @@
 ---
 name: implement-stdlib-module
-description: Implement or expand a standard library module in clovervm or another Python-compatible repository. Use when Codex is asked to fill out modules like math/time/os/random/builtins, inspect local Python help/signatures, compare CPython source and tests, handle positional-only/keyword-only/*args/**kwargs behavior, split native primitives from Python policy, adapt tests with license attribution, update stdlib bringup status, and verify repo checks.
+description: Implement or expand a clovervm standard-library module against CPython behavior.
 ---
 
 # Implement Stdlib Module

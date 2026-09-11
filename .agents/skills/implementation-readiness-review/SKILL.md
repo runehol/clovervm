@@ -1,6 +1,6 @@
 ---
 name: implementation-readiness-review
-description: Establish a shared concrete implementation direction before coding in CloverVM. Use before implementing a nontrivial new subsystem, compiler pass, runtime mechanism, representation, ownership model, public API, or cross-layer change when an equivalent code sketch has not already been agreed, and when the user asks for an implementation-readiness review, class sketch, code sketch, or readiness check.
+description: Agree on a concrete sketch before a nontrivial clovervm design is implemented, or when explicitly asked for a readiness review. Reuse an agreed sketch.
 ---
 
 # Implementation Readiness Review

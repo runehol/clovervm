@@ -4,44 +4,49 @@ This repository contains clovervm, a Python VM.
 
 # Collaboration style
 
-- Treat collaboration as engineering review, not automatic agreement. Challenge assumptions when they seem wrong or under-supported.
-- If the user states a preference that conflicts with maintainability, performance evidence, Python semantics, or the existing codebase, push back clearly and explain the specific risk.
-- When uncertain, say what would change your mind instead of agreeing provisionally.
-- Implement agreed work autonomously within its established design. Stop and ask
-  before deciding a material gap the plan did not settle, especially one involving
-  public API shape, Python-visible semantics, error behavior, cache invalidation,
-  object layout, ownership/lifetime, cross-layer coupling, or VM invariants. Do
-  not quietly add compatibility machinery, metadata, special cases, fallback
-  behavior, or inferred policy to keep moving.
-- Before implementing a nontrivial new design, present a compact implementation
-  sketch when an equivalent sketch has not already been agreed in the current
-  conversation. Use the `implementation-readiness-review` project skill. The
-  sketch exists to confirm shared understanding of the intended types,
-  responsibilities, ownership, and main call flow. It must make the complete
-  intended implementation shape visible without recapping the full design
-  history or ordinary method bodies. Once agreed, implement to that direction
-  and stop if implementation reveals a material deviation.
+- Treat collaboration as engineering review. Challenge proposals that conflict
+  with maintainability, performance evidence, Python semantics, or the codebase;
+  explain the risk and what evidence would resolve uncertainty.
+- Before a nontrivial new design, use `implementation-readiness-review` to agree
+  on a compact sketch unless an equivalent sketch is already agreed. Keep sketch
+  details in that skill rather than repeating them here.
+- Complete agreed work autonomously, including verification and fixes caused by
+  the change. Stop to discuss unresolved material decisions or deviations in
+  public API, Python-visible semantics, error behavior, cache invalidation,
+  object layout, ownership/lifetime, subsystem boundaries, or VM invariants.
+  Routine implementation choices within the agreed design do not need approval.
 
 # Architecture and layering
 
-- Keep behavior in the layer that owns it. Parser and AST code should describe syntax and source structure; codegen should lower Python-visible semantics into bytecode; opcode handlers should execute bytecode while preserving dispatch shape; runtime object helpers should own object semantics, allocation, descriptors, and type behavior; native modules should expose Python behavior without reaching into interpreter frame machinery.
-- Before introducing a new helper, type, enum, opcode, AST node, cache structure,
-  ownership pattern, or subsystem boundary, inspect nearby existing code and
-  follow the closest local pattern. If no good pattern exists, treat that as a
-  material design gap under the collaboration rule above.
-- For changes touching more than one subsystem, first state which layer owns the behavior, which existing pattern the change follows, what invariants must remain true, and what tests or checks will prove the behavior.
-- Do not solve layering friction by adding broad compatibility paths, new metadata, or cross-layer shortcuts unless that design has been explicitly agreed. In this greenfield repository, prefer updating all in-repo users to match the chosen design.
-- For new builtin dunder methods and trusted handlers, keep type-specific coercion, receiver checks, result construction, and trusted resolver logic in the owning builtin type file. Use the `clovervm-builtin-dunder-handlers` project skill for the established float/int operator-template pattern.
-- New abstractions must earn their weight by removing real complexity, preserving a VM invariant, or matching an established project pattern. Do not add a helper or framework solely to reduce one or two local call sites.
-- Keep Python-visible semantics out of convenience code whose layer should only represent structure or mechanics, such as parser/AST plumbing, inline opcode classification helpers, or low-level unchecked primitives.
-- Before finalizing a nontrivial change, check that it follows an existing local pattern, that any new abstraction is justified, that ownership and pending-exception contracts remain explicit, that Python-visible semantics are covered by interpreter-level tests where appropriate, and that verification matches the touched subsystem.
+- Parser/AST owns syntax and source structure; codegen lowers Python-visible
+  semantics into bytecode; opcode handlers execute bytecode while preserving
+  dispatch shape; runtime object helpers own object semantics, allocation,
+  descriptors, and type behavior. Native modules must not reach into interpreter
+  frame machinery. Keep unchecked primitives free of Python-visible policy.
+- Follow nearby patterns when introducing helpers, types, opcodes, AST nodes,
+  cache structures, or ownership patterns. The absence of a local pattern alone
+  does not require approval; a material design decision under the rule above does.
+- For cross-subsystem designs, make the owning layer, existing pattern,
+  preserved invariants, and verification visible in the implementation sketch.
+- Prefer updating all in-repo users over adding compatibility machinery for old
+  internal APIs. New metadata, fallback paths, and cross-layer shortcuts that
+  change the agreed design require discussion.
+- New abstractions should remove real complexity, preserve a VM invariant, or
+  follow an established project pattern, rather than only reduce one or two
+  local call sites.
+- For builtin dunder methods and trusted handlers, use
+  `clovervm-builtin-dunder-handlers` for type-specific implementation and resolver
+  contracts. For interpreter dispatch changes, follow `src/runtime/AGENTS.md`.
 
 # Changing code
 
 - Run `clang-format -i` on every touched C++ source or header file so it matches the repository's `.clang-format`. Never run `clang-format` on `CMakeLists.txt` files.
 - Use `build-debug/` for local builds. This project requires Clang for correct tail-call behavior in the interpreter (`MUSTTAIL`), so configure debug builds with `cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++`. Use `cmake --fresh -G Ninja -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++` when a clean reconfigure is needed.
 - Use `build-release/` for benchmark runs. If it is missing, configured with the wrong generator, or appears stale after dependency changes, reconfigure it with `cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release`.
-- After making changes, run `ninja -C build-debug all check`.
+- For implementation or build changes, run `ninja -C build-debug all check`
+  before finalizing. Use focused checks during iteration; repeat verification
+  when subsequent changes affect it. Documentation/instruction-only edits need
+  relevant content, link, and format checks, not a VM build.
 - Before every push, run `ninja -C build-release all check` at the exact HEAD
   being pushed.
 - Run benchmarks with `cmake --build build-release --target run_benchmark`.

@@ -1,6 +1,6 @@
 ---
 name: clovervm-builtin-dunder-handlers
-description: Use when adding, refactoring, or reviewing clovervm builtin type dunder methods, trusted method handlers, trusted operator resolvers, builtin numeric operator boilerplate, reflected operator implementations, NotImplemented behavior, or cache-replayable builtin fast paths. Applies especially to work in src/builtin_types/*.cpp that installs intrinsic methods with trusted handler resolvers.
+description: Implement or review clovervm builtin dunder methods and their trusted resolvers and cache-replay handlers.
 ---
 
 # clovervm Builtin Dunder and Trusted Handlers

@@ -23,8 +23,7 @@ control-flow-sensitive.
 - Add new hot-path opcode handlers to
   `benchmark/hot_path_opcode_handlers.txt`; update that file when renaming a
   listed handler.
-- After touching `src/runtime/interpreter.cpp`, run
-  `ninja -C build-debug all check`. For frame-sensitive changes, also run
+- For frame-sensitive changes, also run
   `cmake --build build-release --target check_opcode_frames`; for broader
   performance changes, consider
   `cmake --build build-release --target run_benchmark`.

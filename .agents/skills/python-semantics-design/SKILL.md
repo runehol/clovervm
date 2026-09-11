@@ -1,6 +1,6 @@
 ---
 name: python-semantics-design
-description: Design or review clovervm features against Python-visible semantics. Use when a request asks how Python or CPython handles syntax, calls, descriptors, binding, object construction, exceptions, evaluation order, bytecode behavior, or other language semantics, then needs a clovervm design, plan, or implementation boundary.
+description: Resolve Python-visible semantic questions to design clovervm features. Use when behavior or its implementation boundary remains unsettled.
 ---
 
 # Python Semantics Design

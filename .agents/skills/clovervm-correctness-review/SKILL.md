@@ -1,6 +1,6 @@
 ---
 name: clovervm-correctness-review
-description: Review clovervm changes for likely correctness bugs. Use when asked to review a commit, diff, branch, PR, recent changes, automation scan, or risky implementation area for regressions involving Python semantics, pending exceptions, ownership/lifetime, GC metadata, integer bounds, release-only behavior, interpreter invariants, parser/codegen lowering, or VM object-model consistency.
+description: Review clovervm diffs or specified runtime/compiler areas for correctness bugs and regressions.
 ---
 
 # clovervm Correctness Review
