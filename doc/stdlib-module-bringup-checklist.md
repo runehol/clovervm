@@ -81,7 +81,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [~] | `time` | Clocks and sleeps used by tests, retry loops, logging, benchmarks. | Expanded native `_time` and public `time.py` cover clocks, sleep, `gmtime`, `localtime`, `asctime`, `ctime`, `strftime`, `mktime`, CPU clocks, timezone constants, and clock constants. `ninja -C build-debug all check` passed with 813 tests. Full nanosecond clock coverage depends on arbitrary-size integer support. |
 | [ ] | `datetime` | Dates, times, timedeltas, parsing/formatting basics. | Not started / not assessed. |
 | [ ] | `calendar` | Date helpers used by `datetime`-adjacent code. | Not started / not assessed. |
-| [~] | `math` | Numeric functions and constants. | Native `_math` plus Python wrapper exists with tests; confirm remaining CPython APIs, signatures, errors, and edge cases before marking complete. |
+| [~] | `math` | Numeric functions and constants. | Native `_math` plus Python wrapper exists with tests. `factorial`, `comb`, `perm`, `isqrt`, `gcd`, and `lcm` validate builtin ints/bools and normalize bools to int; custom `__index__` coercion is deferred. `gcd` uses an explicit integer zero comparison because bigint truthiness is not supported by the VM. Confirm remaining CPython APIs, signatures, errors, and edge cases before marking complete. |
 | [ ] | `random` | Tests, IDs, sampling, backoff, simple simulations. | Not started / not assessed. |
 | [ ] | `statistics` | Basic statistical helpers. | Not started / not assessed. |
 | [ ] | `decimal` | Decimal arithmetic for data and finance code. | Large numeric surface; not started / not assessed. |

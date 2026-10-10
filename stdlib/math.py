@@ -53,10 +53,15 @@ def _abs(x):
     return x
 
 
-def _check_nonnegative_int(name, value):
+def _as_builtin_int(value):
+    if not isinstance(value, int):
+        raise TypeError
+    return int(value)
+
+
+def _require_nonnegative(value):
     if value < 0:
         raise ValueError
-    return value
 
 
 def degrees(x):
@@ -126,7 +131,8 @@ def nextafter(x, y, steps=None):
 
 
 def factorial(n):
-    _check_nonnegative_int("n", n)
+    n = _as_builtin_int(n)
+    _require_nonnegative(n)
     result = 1
     for i in range(2, n + 1):
         result = result * i
@@ -134,8 +140,10 @@ def factorial(n):
 
 
 def comb(n, k):
-    _check_nonnegative_int("n", n)
-    _check_nonnegative_int("k", k)
+    n = _as_builtin_int(n)
+    k = _as_builtin_int(k)
+    _require_nonnegative(n)
+    _require_nonnegative(k)
     if k > n:
         return 0
     other = n - k
@@ -148,10 +156,13 @@ def comb(n, k):
 
 
 def perm(n, k=None):
-    _check_nonnegative_int("n", n)
+    n = _as_builtin_int(n)
     if k is None:
         k = n
-    _check_nonnegative_int("k", k)
+    else:
+        k = _as_builtin_int(k)
+    _require_nonnegative(n)
+    _require_nonnegative(k)
     if k > n:
         return 0
     result = 1
@@ -165,8 +176,9 @@ def perm(n, k=None):
 def gcd(*integers):
     result = 0
     for value in integers:
+        value = _as_builtin_int(value)
         value = _abs(value)
-        while value:
+        while value != 0:
             tmp = result % value
             result = value
             value = tmp
@@ -176,6 +188,7 @@ def gcd(*integers):
 def lcm(*integers):
     result = 1
     for value in integers:
+        value = _as_builtin_int(value)
         value = _abs(value)
         if result == 0 or value == 0:
             result = 0
@@ -187,7 +200,8 @@ def lcm(*integers):
 
 
 def isqrt(n):
-    _check_nonnegative_int("n", n)
+    n = _as_builtin_int(n)
+    _require_nonnegative(n)
     if n < 2:
         return n
     low = 1
