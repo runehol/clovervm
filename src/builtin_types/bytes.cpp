@@ -527,16 +527,15 @@ namespace cl
         {
             return 0;
         }
-        if(value > length)
-        {
-            return static_cast<size_t>(length);
-        }
         return static_cast<size_t>(value);
     }
 
-    static Value normalize_bytes_range(Value self, Value start_value,
-                                       Value end_value, size_t &start,
-                                       size_t &end)
+    // Preserve starts beyond the end and reversed ranges as no-match ranges.
+    // The end is bounded by the bytes length; start may exceed end.
+    [[nodiscard]] static Value normalize_bytes_range(Value self,
+                                                     Value start_value,
+                                                     Value end_value,
+                                                     size_t &start, size_t &end)
     {
         int64_t length = self.get_ptr<Bytes>()->count.extract();
         int64_t py_start = 0;
@@ -552,11 +551,8 @@ namespace cl
                 end_value, L"slice indices must be integers", py_end));
         }
         start = normalize_bytes_bound(py_start, length);
-        end = normalize_bytes_bound(py_end, length);
-        if(end < start)
-        {
-            end = start;
-        }
+        end = std::min(normalize_bytes_bound(py_end, length),
+                       static_cast<size_t>(length));
         return Value::None();
     }
 
@@ -837,6 +833,11 @@ namespace cl
 
     bool Bytes::startswith(const Bytes *prefix, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return false;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> prefix_view(prefix->data,
                                              size_t(prefix->count.extract()));
@@ -853,6 +854,11 @@ namespace cl
 
     bool Bytes::endswith(const Bytes *suffix, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return false;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> suffix_view(suffix->data,
                                              size_t(suffix->count.extract()));
@@ -869,6 +875,11 @@ namespace cl
 
     int64_t Bytes::find(const Bytes *needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return -1;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> needle_view(needle->data,
                                              size_t(needle->count.extract()));
@@ -893,6 +904,11 @@ namespace cl
 
     int64_t Bytes::find_byte(uint8_t needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return -1;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> range = str.subspan(start, end - start);
         auto found = std::find(range.begin(), range.end(), needle);
@@ -910,6 +926,11 @@ namespace cl
 
     int64_t Bytes::rfind(const Bytes *needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return -1;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> needle_view(needle->data,
                                              size_t(needle->count.extract()));
@@ -946,6 +967,11 @@ namespace cl
 
     int64_t Bytes::rfind_byte(uint8_t needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return -1;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> range = str.subspan(start, end - start);
         auto found = std::find(range.rbegin(), range.rend(), needle);
@@ -1030,6 +1056,11 @@ namespace cl
     int64_t Bytes::count_subsequence(const Bytes *needle, size_t start,
                                      size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return 0;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> needle_view(needle->data,
                                              size_t(needle->count.extract()));
@@ -1061,6 +1092,11 @@ namespace cl
 
     int64_t Bytes::count_byte(uint8_t needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return 0;
+        }
         std::span<const uint8_t> str(data, size_t(count.extract()));
         std::span<const uint8_t> range = str.subspan(start, end - start);
         return static_cast<int64_t>(

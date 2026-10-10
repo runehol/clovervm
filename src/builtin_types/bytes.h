@@ -46,6 +46,8 @@ namespace cl
         get_slice(ThreadState *thread,
                   const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] TValue<Bytes> concat(const Bytes *other) const;
+        // Bounded searches require end <= length. A start greater than end
+        // means no match; equal bounds form a valid empty search range.
         bool startswith(const Bytes *prefix) const;
         bool startswith(const Bytes *prefix, size_t start, size_t end) const;
         bool endswith(const Bytes *suffix) const;
