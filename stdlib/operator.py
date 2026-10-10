@@ -36,7 +36,7 @@ def contains(a, b):
 def countOf(a, b):
     count = 0
     for item in a:
-        if item == b:
+        if item is b or item == b:
             count += 1
     return count
 
@@ -106,7 +106,7 @@ def index(a):
 def indexOf(a, b):
     idx = 0
     for item in a:
-        if item == b:
+        if item is b or item == b:
             return idx
         idx += 1
     raise ValueError

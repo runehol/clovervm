@@ -4,6 +4,43 @@
 # copy CPython test code.
 
 import operator
+import math
+
+
+class NeverEqual:
+    def __eq__(self, other):
+        return False
+
+
+class RaisingEqual:
+    def __eq__(self, other):
+        raise ValueError
+
+
+for item in (math.nan, NeverEqual(), RaisingEqual()):
+    assert operator.countOf([item, item], item) == 2
+    assert operator.indexOf([item], item) == 0
+    assert operator.countOf((item, item), item) == 2
+    assert operator.indexOf((item,), item) == 0
+
+item = NeverEqual()
+assert operator.indexOf([NeverEqual(), item], item) == 1
+
+assert operator.countOf([NeverEqual()], NeverEqual()) == 0
+raised = False
+try:
+    operator.indexOf([NeverEqual()], NeverEqual())
+except ValueError:
+    raised = True
+assert raised
+
+for function in (operator.countOf, operator.indexOf):
+    raised = False
+    try:
+        function([RaisingEqual()], RaisingEqual())
+    except ValueError:
+        raised = True
+    assert raised
 
 
 assert operator.add(2, 5) == 7
