@@ -83,6 +83,31 @@ assert callable(CallableMarker())
 assert not callable(obj)
 
 
+def instance_call_probe():
+    return 42
+
+
+obj.__call__ = instance_call_probe
+assert callable(instance_call_probe)
+assert not callable(obj)
+del obj.__call__
+
+
+class InheritedCallableMarker(CallableMarker):
+    pass
+
+
+class NonCallableCallAttribute:
+    __call__ = None
+
+
+assert callable(InheritedCallableMarker())
+assert callable(NonCallableCallAttribute())
+class_callable = CallableMarker()
+class_callable.__call__ = None
+assert callable(class_callable)
+
+
 def contains(seq, expected):
     for item in seq:
         if item == expected:

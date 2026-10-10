@@ -170,7 +170,7 @@ namespace cl
             return Value::True();
         }
         TValue<String> call_name = interned_string(L"__call__");
-        return resolve_attr_read_descriptor(obj, call_name).is_found()
+        return resolve_special_method_read_descriptor(obj, call_name).is_found()
                    ? Value::True()
                    : Value::False();
     }
