@@ -50,9 +50,17 @@ assert os.path.commonprefix(("alpha", "beta")) == ""
 assert os.path.commonpath(("a/b", "a/c")) == "a"
 assert os.path.commonpath(("a", "b")) == ""
 assert os.path.commonpath(("/a/b", "/a/c")) == "/a"
+assert os.path.commonpath(("a/../b", "b/c")) == ""
+assert os.path.commonpath(("a/..", "a/../b")) == "a/.."
+assert os.path.commonpath(("a/./b", "a//c")) == "a"
+assert os.path.commonpath(("/a/../b", "/b/c")) == "/"
+assert os.path.commonpath((".", "./")) == ""
+assert os.path.commonpath(("//a//b/", "/a/c")) == "/a"
 assert os.path.relpath("/a/b", "/a/c") == "../b"
 assert os.path.relpath("/a/b", "/a/b") == "."
 assert os.path.relpath("a/b", ".") == "a/b"
+assert os.path.relpath("/a/../b/c", "/b/d/..") == "c"
+assert os.path.relpath("a/../b/c", "b/d/..") == "c"
 
 try:
     os.path.commonpath(("a", "/a"))

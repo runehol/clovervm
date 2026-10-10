@@ -25,11 +25,12 @@ def normcase(path):
 
 
 def _path_parts(path):
-    normalized = normpath(path)
-    stripped = normalized.strip(sep)
-    if stripped == "":
-        return []
-    return stripped.split(sep)
+    # Keep '..' lexical; relpath normalizes through abspath before calling.
+    parts = []
+    for part in path.split(sep):
+        if part != "" and part != curdir:
+            parts.append(part)
+    return parts
 
 
 def _prefix(parts, n):
