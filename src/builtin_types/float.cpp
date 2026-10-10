@@ -269,6 +269,11 @@ namespace cl
         return thread->make_object_value<Float>(-value).raw_value();
     }
 
+    static Value float_abs(ThreadState *thread, double value)
+    {
+        return thread->make_object_value<Float>(std::fabs(value)).raw_value();
+    }
+
     using FloatBinaryFunction = Value (*)(ThreadState *, double, double);
 
     template <typename Operation, TrustedHandlerEffects Effects,
@@ -623,6 +628,9 @@ namespace cl
     using FloatGeResolver =
         FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers>;
 
+    using FloatAbsOperation =
+        FloatUnaryOperation<float_abs,
+                            L"float.__abs__ expects a float receiver">;
     using FloatNegOperation =
         FloatUnaryOperation<float_negate,
                             L"float.__neg__ expects a float receiver">;
@@ -655,6 +663,9 @@ namespace cl
                   TrustedHandlerSemantics Semantics>
         using Handler = TrustedHandlerDefinition<trusted, Effects, Semantics>;
     };
+    using FloatAbsHandler =
+        FloatAbsOperation::Handler<TrustedHandlerEffects::Allocate,
+                                   TrustedHandlerSemantics::Generic>;
     using FloatNegHandler =
         FloatNegOperation::Handler<TrustedHandlerEffects::Allocate,
                                    TrustedHandlerSemantics::Neg>;
@@ -693,6 +704,7 @@ namespace cl
         }
     };
 
+    using FloatAbsResolver = FloatUnaryResolver<FloatAbsHandler>;
     using FloatNegResolver = FloatUnaryResolver<FloatNegHandler>;
     using FloatPosResolver = FloatUnaryResolver<FloatPosHandler>;
 
@@ -791,6 +803,10 @@ namespace cl
                 vm,
                 builtin_intrinsic_method(L"__neg__", FloatNegOperation::native,
                                          L"Return -self.")),
+            with_trusted_handler_resolver<FloatAbsResolver>(
+                vm,
+                builtin_intrinsic_method(L"__abs__", FloatAbsOperation::native,
+                                         L"Return abs(self).")),
             with_trusted_handler_resolver<FloatPosResolver>(
                 vm,
                 builtin_intrinsic_method(L"__pos__", FloatPosOperation::native,

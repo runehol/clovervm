@@ -1202,6 +1202,43 @@ namespace cl
         }
     };
 
+    struct SMIAbsOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__abs__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, int64_t value) const
+        {
+            return value < 0 ? SMINegOperator{}(thread, value)
+                             : Value::from_smi(value);
+        }
+    };
+
+    static Value trusted_bigint_abs(ThreadState *thread, Value self)
+    {
+        BigInt *bigint = self.get_ptr<BigInt>();
+        if(bigint->view().signum < 0)
+        {
+            return CL_TRY(bigint_negate(thread, bigint->view()));
+        }
+        return self;
+    }
+
+    static Value native_int_abs(ThreadState *thread, Value self)
+    {
+        int64_t value;
+        if(try_get_smi_or_bool(self, &value))
+        {
+            return SMIAbsOperator{}(thread, value);
+        }
+        if(can_convert_to<BigInt>(self))
+        {
+            return trusted_bigint_abs(thread, self);
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", SMIAbsOperator::receiver_error);
+    }
+
     struct SMIPosOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -1607,6 +1644,38 @@ namespace cl
                ShapeKey::from_shape(vm->int_class()->get_instance_root_shape());
     }
 
+    using SMIAbsHandler =
+        TrustedHandlerDefinition<trusted_intlike_unary_operator<SMIAbsOperator>,
+                                 TrustedHandlerEffects::Allocate |
+                                     TrustedHandlerEffects::Raise,
+                                 TrustedHandlerSemantics::Generic>;
+    using BigIntAbsHandler =
+        TrustedHandlerDefinition<trusted_bigint_abs,
+                                 TrustedHandlerEffects::Allocate |
+                                     TrustedHandlerEffects::Raise,
+                                 TrustedHandlerSemantics::Generic>;
+
+    static TrustedResolution resolve_trusted_int_abs_handler(
+        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
+        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
+    {
+        (void)operand1_key;
+        (void)order;
+        if(requested_arity != TrustedHandlerArity::Unary)
+        {
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+        if(is_smi_or_bool_shape_key(operand0_key))
+        {
+            return SMIAbsHandler::resolution();
+        }
+        if(is_bigint_shape_key(vm, operand0_key))
+        {
+            return BigIntAbsHandler::resolution();
+        }
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
     static TrustedResolution resolve_trusted_int_hash_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
         TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
@@ -1848,6 +1917,8 @@ namespace cl
 
     void install_int_class_methods(VirtualMachine *vm)
     {
+        SMIAbsHandler::register_with(*vm);
+        BigIntAbsHandler::register_with(*vm);
         Owned<TValue<Tuple>> int_new_defaults(
             active_thread()->make_object_value<Tuple>(1));
         int_new_defaults.extract()->initialize_item_unchecked(
@@ -2060,6 +2131,10 @@ namespace cl
                 builtin_intrinsic_method(L"__neg__", native_int_neg,
                                          L"Return -self."),
                 resolve_trusted_int_unary_handler<SMINegOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__abs__", native_int_abs,
+                                         L"Return abs(self)."),
+                resolve_trusted_int_abs_handler),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__pos__", native_int_pos,
                                          L"Return +self."),

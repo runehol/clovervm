@@ -6,15 +6,15 @@ protocol-heavy helpers explicit rather than pretending unsupported dunder
 dispatch exists.
 """
 
+from builtins import abs as _builtin_abs
+
 
 def _unsupported():
     raise UnimplementedError
 
 
 def abs(a):
-    if a < 0:
-        return -a
-    return a
+    return _builtin_abs(a)
 
 
 def add(a, b):

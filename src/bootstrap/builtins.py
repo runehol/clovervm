@@ -1,3 +1,10 @@
+def abs(obj):
+    """Return the absolute value of the argument."""
+    return __clover_call_special__(
+        obj, "__abs__", TypeError, "bad operand type for abs()"
+    )
+
+
 def iter(obj):
     """iter(iterable) -> iterator
 iter(callable, sentinel) -> iterator

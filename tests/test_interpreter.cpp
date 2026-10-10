@@ -1376,6 +1376,68 @@ TEST(Interpreter, unary_float_handler_has_registered_metadata)
     EXPECT_EQ(TrustedHandlerSemantics::Neg, metadata->semantics);
 }
 
+TEST(Interpreter, builtin_abs_caches_trusted_unary_handlers)
+{
+    for(const wchar_t *source:
+        {L"abs(-(10**30))\nabs(-(10**31))\n", L"abs(-1.5)\nabs(-2.5)\n"})
+    {
+        SCOPED_TRACE(source);
+        test::VmTestContext test_context;
+        ThreadState::ActivationScope activation_scope(test_context.thread());
+        Value actual = test_context.run_file(source);
+        ASSERT_FALSE(actual.is_exception_marker());
+
+        Value abs_function = test_context.vm()
+                                 .global_builtins_module()
+                                 .extract()
+                                 ->get_own_property(interned_string(L"abs"));
+        ASSERT_TRUE(can_convert_to<Function>(abs_function));
+        CodeObject *abs_code =
+            abs_function.get_ptr<Function>()->code_object.extract();
+        ASSERT_EQ(1u, abs_code->inline_caches.operator_caches.size());
+        const OperatorInlineCache &cache =
+            abs_code->inline_caches.operator_caches[0];
+        ASSERT_FALSE(cache.trusted_handler.is_null());
+
+        std::optional<TrustedHandlerMetadata> metadata =
+            test_context.vm().trusted_handler_metadata(
+                cache.trusted_handler.target(TrustedHandlerArity::Unary));
+        ASSERT_TRUE(metadata.has_value());
+        EXPECT_EQ(TrustedHandlerArity::Unary, metadata->arity);
+        EXPECT_TRUE(has_trusted_handler_effects(
+            metadata->effects, TrustedHandlerEffects::Allocate));
+        EXPECT_EQ(TrustedHandlerSemantics::Generic, metadata->semantics);
+    }
+}
+
+TEST(Interpreter, int_abs_resolver_selects_trusted_smi_and_bool_handlers)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value method = load_attr(Value::from_oop(test_context.vm().int_class()),
+                             interned_string(L"__abs__"));
+    ASSERT_TRUE(can_convert_to<Function>(method));
+    CodeObject *method_code = method.get_ptr<Function>()->code_object.extract();
+    ASSERT_NE(nullptr, method_code->trusted_handler_resolver);
+    for(Value value: {Value::from_smi(-3), Value::True(), Value::False()})
+    {
+        TrustedResolution resolution = method_code->trusted_handler_resolver(
+            &test_context.vm(), ShapeKey::from_value(value),
+            ShapeKey::from_value(Value::not_present()),
+            TrustedHandlerOperandOrder::Normal, TrustedHandlerArity::Unary);
+        ASSERT_TRUE(resolution.has_trusted_handler());
+        EXPECT_EQ(TrustedHandlerArity::Unary, resolution.arity);
+        Value result = resolution.unary(test_context.thread(), value);
+        EXPECT_EQ(value.is_smi() ? Value::from_smi(3)
+                                 : Value::from_smi(value == Value::True()),
+                  result);
+        ASSERT_TRUE(test_context.vm()
+                        .trusted_handler_metadata(
+                            erase_trusted_handler_target(resolution.unary))
+                        .has_value());
+    }
+}
+
 TEST(Interpreter, unary_positive_float_preserves_exact_identity)
 {
     test::VmTestContext test_context;
