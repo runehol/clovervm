@@ -8,7 +8,7 @@
 
 static clover_handle math_float_result(clover_context *ctx, double result)
 {
-    if(errno == EDOM || (isnan(result) && errno != ERANGE))
+    if(errno == EDOM)
     {
         return clover_raise_value_error(ctx, "math domain error");
     }
@@ -191,6 +191,11 @@ static clover_handle math_fma(clover_context *ctx, clover_handle x,
     }
     errno = 0;
     double result = fma(x_number, y_number, z_number);
+    if(isnan(result) && !isnan(x_number) && !isnan(y_number) &&
+       !isnan(z_number))
+    {
+        errno = EDOM;
+    }
     if(isinf(result) && isfinite(x_number) && isfinite(y_number) &&
        isfinite(z_number))
     {
