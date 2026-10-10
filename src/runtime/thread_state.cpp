@@ -327,18 +327,20 @@ namespace cl
                                                     TValue<String> message)
     {
         return set_pending_exception_object(
-            make_exception_object(this, type, message));
+            make_exception_object_with_arg(this, type, message.raw_value()));
     }
 
     Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
                                                     const wchar_t *message)
     {
-        return set_pending_exception_string(type, string_value(this, message));
+        return set_pending_exception_object(
+            make_exception_object_with_string(this, type, message));
     }
 
     Value ThreadState::set_pending_exception_none(TValue<ClassObject> type)
     {
-        return set_pending_exception_string(type, L"");
+        return set_pending_exception_object(
+            make_exception_object_no_args(this, type));
     }
 
     Value
@@ -361,7 +363,8 @@ namespace cl
     Value
     ThreadState::set_pending_builtin_exception_none(const wchar_t *type_name)
     {
-        return set_pending_builtin_exception_string(type_name, L"");
+        return set_pending_exception_none(
+            TValue<ClassObject>::from_oop(class_for_builtin_name(type_name)));
     }
 
     Value ThreadState::set_pending_stop_iteration_value(Value value)

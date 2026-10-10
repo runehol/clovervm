@@ -159,38 +159,6 @@ namespace
         return result;
     }
 
-    std::wstring cl_string_to_wstring(cl::TValue<cl::String> string)
-    {
-        cl::String *str = string.extract();
-        return std::wstring(str->data, size_t(str->count.extract()));
-    }
-
-    std::wstring format_pending_python_exception(cl::ThreadState *thread)
-    {
-        if(thread->pending_exception_kind() ==
-           cl::PendingExceptionKind::StopIteration)
-        {
-            return L"StopIteration";
-        }
-        if(thread->pending_exception_kind() != cl::PendingExceptionKind::Object)
-        {
-            return L"InternalError: exception marker without pending exception";
-        }
-
-        cl::TValue<cl::Exception> exception =
-            thread->pending_exception_object();
-        std::wstring result = cl_string_to_wstring(
-            exception.extract()->get_shape()->get_class()->get_name());
-        std::wstring message =
-            cl_string_to_wstring(exception.extract()->message.value());
-        if(!message.empty())
-        {
-            result += L": ";
-            result += message;
-        }
-        return result;
-    }
-
     std::optional<SourceInput> read_source(const CommandLine &command_line)
     {
         if(command_line.has_command)
@@ -494,7 +462,7 @@ int main(int argc, const char *argv[])
             : thread->compile(input->source.c_str(), cl::StartRule::File);
     if(compilation.has_exception())
     {
-        std::wcerr << format_pending_python_exception(thread) << L"\n";
+        std::wcerr << cl::format_pending_python_exception(thread) << L"\n";
         return 1;
     }
 
@@ -504,7 +472,7 @@ int main(int argc, const char *argv[])
         thread->run_clovervm_code_object(compilation.value());
     if(execution_result.is_exception_marker())
     {
-        std::wcerr << format_pending_python_exception(thread) << L"\n";
+        std::wcerr << cl::format_pending_python_exception(thread) << L"\n";
         return 1;
     }
 

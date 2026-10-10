@@ -36,32 +36,6 @@ namespace cl
         return std::wstring(str->data, size_t(str->count.extract()));
     }
 
-    static std::wstring format_pending_python_exception(ThreadState *thread)
-    {
-        if(thread->pending_exception_kind() ==
-           PendingExceptionKind::StopIteration)
-        {
-            return L"StopIteration";
-        }
-
-        if(thread->pending_exception_kind() != PendingExceptionKind::Object)
-        {
-            return L"InternalError: exception marker without pending exception";
-        }
-
-        TValue<Exception> exception = thread->pending_exception_object();
-        std::wstring result = cl_string_to_wstring(
-            exception.extract()->get_shape()->get_class()->get_name());
-        std::wstring message =
-            cl_string_to_wstring(exception.extract()->message.value());
-        if(!message.empty())
-        {
-            result += L": ";
-            result += message;
-        }
-        return result;
-    }
-
     static void print_pending_exception_and_clear(ThreadState *thread)
     {
         std::wcerr << format_pending_python_exception(thread) << L"\n";

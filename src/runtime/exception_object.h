@@ -5,9 +5,11 @@
 #include "object_model/object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
+#include <string>
 
 namespace cl
 {
+    class Tuple;
     class ClassObject;
     class ThreadState;
     class VirtualMachine;
@@ -17,30 +19,30 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Exception;
-        static constexpr uint32_t kMessageSlot = 0;
+        static constexpr uint32_t kArgsSlot = 0;
         static constexpr uint32_t kInlineSlotCount = 1;
 
-        ExceptionObject(ClassObject *cls, TValue<String> message)
-            : ExceptionObject(cls, native_layout, message)
+        ExceptionObject(ClassObject *cls, TValue<Tuple> args)
+            : ExceptionObject(cls, native_layout, args)
         {
         }
 
-        Member<TValue<String>> message;
+        Member<TValue<Tuple>> args;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, SlotObject, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(ExceptionObject);
 
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
-                        TValue<String> message)
-            : SlotObject(cls, layout_id), message(message)
+                        TValue<Tuple> args)
+            : SlotObject(cls, layout_id), args(args)
         {
         }
     };
 
-    static_assert(CL_OFFSETOF(ExceptionObject, message) ==
+    static_assert(CL_OFFSETOF(ExceptionObject, args) ==
                   sizeof(SlotObject) +
-                      ExceptionObject::kMessageSlot * sizeof(Value));
+                      ExceptionObject::kArgsSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ExceptionObject>);
 
     class StopIterationObject : public ExceptionObject
@@ -51,10 +53,7 @@ namespace cl
         static constexpr uint32_t kValueSlot = 1;
         static constexpr uint32_t kInlineSlotCount = 2;
 
-        StopIterationObject(ClassObject *cls,
-                            Value value = Value::not_present());
-        StopIterationObject(ClassObject *cls, TValue<String> message,
-                            Value value = Value::not_present());
+        StopIterationObject(ClassObject *cls, TValue<Tuple> args);
 
         Member<Value> value;
 
@@ -96,6 +95,8 @@ namespace cl
         static const wchar_t *target_type_name() { return L"BaseException"; }
     };
 
+    void install_exception_class_methods(VirtualMachine *vm);
+
     BuiltinClassDefinition make_base_exception_class(VirtualMachine *vm);
     BuiltinClassDefinition make_exception_class(VirtualMachine *vm,
                                                 ClassObject *base);
@@ -105,22 +106,31 @@ namespace cl
     BuiltinClassDefinition make_stop_iteration_class(VirtualMachine *vm,
                                                      ClassObject *base);
 
-    TValue<Exception> make_exception_object(TValue<ClassObject> type,
-                                            TValue<String> message);
+    // Internal factories: cls must have a compatible native exception shape.
+    // User-subclass shape inheritance is handled in the constructor follow-up.
+    // No Python callbacks.
     TValue<Exception> make_exception_object(ThreadState *thread,
-                                            TValue<ClassObject> type,
-                                            TValue<String> message);
-    TValue<Exception> make_exception_object(TValue<ClassObject> type,
-                                            const wchar_t *message);
-    TValue<Exception> make_exception_object(ThreadState *thread,
-                                            TValue<ClassObject> type,
-                                            const wchar_t *message);
+                                            TValue<ClassObject> cls,
+                                            TValue<Tuple> args);
+    TValue<Exception> make_exception_object_no_args(ThreadState *thread,
+                                                    TValue<ClassObject> cls);
+    TValue<Exception> make_exception_object_with_arg(ThreadState *thread,
+                                                     TValue<ClassObject> cls,
+                                                     Value arg);
+    TValue<Exception> make_exception_object_with_string(ThreadState *thread,
+                                                        TValue<ClassObject> cls,
+                                                        const wchar_t *message);
     TValue<StopIterationObject>
-    make_stop_iteration_object(TValue<ClassObject> type,
-                               Value value = Value::not_present());
+    make_stop_iteration_object_no_value(ThreadState *thread,
+                                        TValue<ClassObject> cls);
     TValue<StopIterationObject>
-    make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
-                               Value value = Value::not_present());
+    make_stop_iteration_object_with_value(ThreadState *thread,
+                                          TValue<ClassObject> cls, Value value);
+
+    [[nodiscard]] Value exception_args_to_string(ThreadState *thread,
+                                                 TValue<Exception> exception);
+    // Handles string conversion failures locally and restores pending state.
+    std::wstring format_pending_python_exception(ThreadState *thread);
 
 }  // namespace cl
 

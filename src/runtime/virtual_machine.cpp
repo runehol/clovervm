@@ -76,39 +76,6 @@ namespace cl
         return entry->second;
     }
 
-    static std::wstring vm_string_to_wstring(TValue<String> string)
-    {
-        String *str = string.extract();
-        return std::wstring(str->data, size_t(str->count.extract()));
-    }
-
-    static std::wstring
-    format_bootstrap_pending_python_exception(ThreadState *thread)
-    {
-        if(thread->pending_exception_kind() ==
-           PendingExceptionKind::StopIteration)
-        {
-            return L"StopIteration";
-        }
-
-        if(thread->pending_exception_kind() != PendingExceptionKind::Object)
-        {
-            return L"InternalError: exception marker without pending exception";
-        }
-
-        TValue<Exception> exception = thread->pending_exception_object();
-        std::wstring result = vm_string_to_wstring(
-            exception.extract()->get_shape()->get_class()->get_name());
-        std::wstring message =
-            vm_string_to_wstring(exception.extract()->message.value());
-        if(!message.empty())
-        {
-            result += L": ";
-            result += message;
-        }
-        return result;
-    }
-
     [[noreturn]] void fatal_bootstrap_python_exception(ThreadState *thread,
                                                        const char *context)
     {
@@ -119,8 +86,8 @@ namespace cl
             message += context;
         }
         message += ": ";
-        message += unicode::encode_utf8(
-            format_bootstrap_pending_python_exception(thread));
+        message +=
+            unicode::encode_utf8(format_pending_python_exception(thread));
         fatal(message);
     }
 
@@ -1133,6 +1100,7 @@ namespace cl
         register_builtin_class(make_stop_iteration_class(this, exception));
 
         install_object_class_methods(this);
+        install_exception_class_methods(this);
         install_str_class_methods(this);
         install_bytes_class_methods(this);
         install_int_class_methods(this);

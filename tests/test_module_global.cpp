@@ -26,7 +26,7 @@ static std::wstring module_global_pending_python_error(ThreadState *thread)
     std::wstring result = module_global_test_string_to_wstring(
         exception.extract()->get_shape()->get_class()->get_name());
     std::wstring message = module_global_test_string_to_wstring(
-        exception.extract()->message.value());
+        cl::test::native_exception_message(exception));
     if(!message.empty())
     {
         result += L": ";

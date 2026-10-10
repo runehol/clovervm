@@ -287,7 +287,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenSysModulesValueIsNone)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'assignment'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteReturnsSysModulesReplacementAfterExec)
@@ -444,7 +444,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesModuleNotFoundForMiss)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'notpresent'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
@@ -468,7 +468,7 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenParentIsNotPackage)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'pkg.mod'; 'pkg' is not a package",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
     EXPECT_TRUE(sys_modules_contains(context, module_name(context, L"pkg")));
     EXPECT_FALSE(
         sys_modules_contains(context, module_name(context, L"pkg.mod")));
@@ -650,7 +650,7 @@ TEST(ImportSystem, BuiltinImportRejectsNonStringName)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"__import__ name must be str",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, BuiltinImportRelativeImportWithoutPackageRaisesImportError)
@@ -667,7 +667,7 @@ TEST(ImportSystem, BuiltinImportRelativeImportWithoutPackageRaisesImportError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"attempted relative import with no known parent package",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, BuiltinImportRelativeUsesSpecParentWhenPackageIsNone)
@@ -746,7 +746,7 @@ TEST(ImportSystem, BuiltinImportRelativeDoesNotOverrideEmptyPackageFromSpec)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"attempted relative import with no known parent package",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, BuiltinImportRelativeRejectsNonStringPackage)
@@ -765,7 +765,7 @@ TEST(ImportSystem, BuiltinImportRelativeRejectsNonStringPackage)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"package must be a string",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, ImportStatementLoadsModuleAndStoresBinding)
@@ -1078,7 +1078,7 @@ TEST(ImportSystem, ImportStatementRejectsNonModuleBuiltinsBinding)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"__builtins__ must be a module",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportStatementLoadsNames)
@@ -1159,7 +1159,7 @@ TEST(ImportSystem, FromImportMissingModuleRaisesModuleNotFound)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'notpresent'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportMissingNameRaisesImportError)
@@ -1176,7 +1176,7 @@ TEST(ImportSystem, FromImportMissingNameRaisesImportError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"cannot import name 'notpresent' from 'assignment'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportPreservesMissingTransitiveDependency)
@@ -1200,7 +1200,7 @@ TEST(ImportSystem, FromImportPreservesMissingTransitiveDependency)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'missing_transitive_dependency_r2'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportMissingPackageChildRaisesImportError)
@@ -1222,7 +1222,7 @@ TEST(ImportSystem, FromImportMissingPackageChildRaisesImportError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"cannot import name 'child' from 'pkg'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem,
@@ -1249,7 +1249,7 @@ TEST(ImportSystem,
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"No module named 'pkg.child'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportPassesFullFromlistToImportHook)
@@ -1288,7 +1288,7 @@ TEST(ImportSystem, FromImportNonModuleHookReturnRaisesImportError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"cannot import name 'marker' from '<unknown>'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportStarLoadsPublicNamesWithoutAll)
@@ -1354,7 +1354,7 @@ TEST(ImportSystem, FromImportStarMissingAllNameRaisesAttributeError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"AttributeError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"module 'mod' has no attribute 'missing'",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportStarAllCanImportPackageSubmodule)
@@ -1393,7 +1393,7 @@ TEST(ImportSystem, FromImportStarRejectsBadAllItem)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"Item in mod.__all__ must be str, not int",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }
 
 TEST(ImportSystem, FromImportStarPassesStarFromlistToImportHook)
@@ -1497,5 +1497,5 @@ TEST(ImportSystem, RelativeFromImportWithoutPackageRaisesImportError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"attempted relative import with no known parent package",
-              value_as_wstring(exception.extract()->message.value()));
+              value_as_wstring(cl::test::native_exception_message(exception)));
 }

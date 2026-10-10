@@ -25,7 +25,9 @@ namespace
                                      ->get_name()
                                      .extract()
                                      ->data);
-        EXPECT_STREQ(message, exception.extract()->message.extract()->data);
+        EXPECT_STREQ(
+            message,
+            cl::test::native_exception_message(exception).extract()->data);
     }
 
     static Value require_smi_for_test(Value value)
@@ -263,8 +265,8 @@ TEST(TValue, CheckedExceptionConstructionAcceptsExceptionObjects)
     ThreadState::ActivationScope activation_scope(context.thread());
     TValue<ClassObject> base_exception = TValue<ClassObject>::from_oop(
         context.vm().class_for_native_layout(NativeLayoutId::Exception));
-    TValue<Exception> exception =
-        make_exception_object(base_exception, L"boom");
+    TValue<Exception> exception = make_exception_object_with_string(
+        active_thread(), base_exception, L"boom");
 
     Expected<TValue<Exception>> checked =
         TValue<Exception>::from_value_checked(exception.raw_value());

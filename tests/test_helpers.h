@@ -3,6 +3,7 @@
 
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
 #include "bytecode/code_object.h"
 #include "compiler/compilation_unit.h"
 #include "compiler/parser.h"
@@ -22,6 +23,27 @@ namespace cl::test
     {
         static VirtualMachine vm;
         return *vm.get_default_thread();
+    }
+
+    inline TValue<String> native_exception_message(TValue<Exception> exception)
+    {
+        Tuple *args = exception.extract()->args.extract();
+        EXPECT_LE(args->size(), 1u);
+        if(args->empty())
+        {
+            return compiler_thread()
+                .get_machine()
+                ->get_or_create_interned_string_value(L"");
+        }
+        Value arg = args->item_unchecked(0);
+        EXPECT_TRUE(can_convert_to<String>(arg));
+        if(!can_convert_to<String>(arg))
+        {
+            return compiler_thread()
+                .get_machine()
+                ->get_or_create_interned_string_value(L"");
+        }
+        return TValue<String>::from_value_assumed(arg);
     }
 
     class VmTestContext
@@ -96,7 +118,7 @@ namespace cl::test
         if(expected_message != nullptr)
         {
             EXPECT_EQ(std::wstring(expected_message),
-                      string_as_wchar_t(exception.extract()->message.value()));
+                      string_as_wchar_t(native_exception_message(exception)));
         }
         return exception;
     }

@@ -30,7 +30,9 @@ namespace
                                      ->get_name()
                                      .extract()
                                      ->data);
-        EXPECT_STREQ(message, exception.extract()->message.extract()->data);
+        EXPECT_STREQ(
+            message,
+            cl::test::native_exception_message(exception).extract()->data);
     }
 }  // namespace
 

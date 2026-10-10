@@ -120,7 +120,8 @@ static void expect_thread_python_error(ThreadState *thread,
               cl_test_string_to_wstring(
                   exception.extract()->get_shape()->get_class()->get_name()));
     EXPECT_EQ(std::wstring(expected_message),
-              cl_test_string_to_wstring(exception.extract()->message.value()));
+              cl_test_string_to_wstring(
+                  cl::test::native_exception_message(exception)));
 }
 
 static void expect_python_error(const wchar_t *source,
@@ -4325,7 +4326,8 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"StopIteration", L"");
+    EXPECT_EQ(L"StopIteration: 123",
+              format_pending_python_exception(test_context.thread()));
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -4353,7 +4355,8 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"StopIteration", L"");
+    EXPECT_EQ(L"StopIteration: 123",
+              format_pending_python_exception(test_context.thread()));
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -4483,6 +4486,39 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
               exception.extract()->get_shape()->get_class());
 }
 
+TEST(Interpreter,
+     exception_argument_formatting_is_deferred_and_preserves_pending_error)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    CodeObject *code = context.compile_file(L"class Argument:\n"
+                                            L"    def __init__(self):\n"
+                                            L"        self.calls = 0\n"
+                                            L"    def __str__(self):\n"
+                                            L"        self.calls += 1\n"
+                                            L"        raise ValueError\n"
+                                            L"arg = Argument()\n");
+    ASSERT_FALSE(thread->run_clovervm_code_object(code).is_exception_marker());
+    Value arg = load_global_from_module_for_test(code, interned_string(L"arg"));
+    TValue<ClassObject> cls = TValue<ClassObject>::from_oop(
+        thread->class_for_builtin_name(L"TypeError"));
+    Owned<TValue<Exception>> exception(
+        make_exception_object_with_arg(thread, cls, arg));
+    EXPECT_EQ(Value::from_smi(0), load_attr(arg, interned_string(L"calls")));
+    EXPECT_EQ(arg, exception.extract()->args.extract()->item_unchecked(0));
+    EXPECT_FALSE(thread->has_pending_exception());
+    (void)thread->set_pending_exception_object(exception.value());
+    EXPECT_EQ(L"TypeError: <exception str() failed>",
+              format_pending_python_exception(thread));
+    EXPECT_EQ(Value::from_smi(1), load_attr(arg, interned_string(L"calls")));
+    ASSERT_EQ(PendingExceptionKind::Object, thread->pending_exception_kind());
+    EXPECT_EQ(exception.value(), thread->pending_exception_object());
+    EXPECT_EQ(L"TypeError: <exception str() failed>",
+              format_pending_python_exception(thread));
+    EXPECT_EQ(exception.value(), thread->pending_exception_object());
+}
+
 TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
 {
     test::VmTestContext test_context;
@@ -4535,7 +4571,8 @@ TEST(Interpreter, raise_unwind_raises_exception_object)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<Exception> exception = make_exception_object(
+    TValue<Exception> exception = make_exception_object_with_string(
+        active_thread(),
         TValue<ClassObject>::from_oop(
             test_context.thread()->class_for_builtin_name(L"ValueError")),
         L"boom");

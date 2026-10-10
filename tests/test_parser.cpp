@@ -62,7 +62,7 @@ static void expect_parse_error(const wchar_t *source,
     std::wstring actual = string_as_wchar_t(
         exception.extract()->get_shape()->get_class()->get_name());
     actual += L": ";
-    actual += string_as_wchar_t(exception.extract()->message.value());
+    actual += string_as_wchar_t(cl::test::native_exception_message(exception));
     std::string expected(expected_message);
     if(expected.rfind("SyntaxError: ", 0) == 0 ||
        expected.rfind("IndentationError: ", 0) == 0 ||
@@ -72,8 +72,9 @@ static void expect_parse_error(const wchar_t *source,
     }
     else
     {
-        EXPECT_EQ(expected, unicode::encode_utf8(string_as_wchar_t(
-                                exception.extract()->message.value())));
+        EXPECT_EQ(expected,
+                  unicode::encode_utf8(string_as_wchar_t(
+                      cl::test::native_exception_message(exception))));
     }
 }
 

@@ -185,9 +185,9 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(
-        L"value cannot be converted to float",
-        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_EQ(L"value cannot be converted to float",
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
     context.thread()->clear_pending_exception();
 
     TValue<String> tuple2_name =
@@ -241,7 +241,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
               bad_tuple_exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"native extension tuple items must not be null",
               std::wstring(string_as_wchar_t(
-                  bad_tuple_exception.extract()->message.value())));
+                  cl::test::native_exception_message(bad_tuple_exception))));
     context.thread()->clear_pending_exception();
 
     auto expect_sum_result = [&](const wchar_t *function_name, double expected,
@@ -318,9 +318,9 @@ TEST(NativeModuleBuild, TimeSleepRejectsNegativeValues)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ValueError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(
-        L"sleep length must be non-negative",
-        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_EQ(L"sleep length must be non-negative",
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
 }
 
 TEST(NativeModuleBuild, TimeFormatsEpochTuples)
@@ -372,7 +372,7 @@ TEST(NativeModuleBuild, NativeMathSqrtReportsErrors)
               negative_exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"math domain error",
               std::wstring(string_as_wchar_t(
-                  negative_exception.extract()->message.value())));
+                  cl::test::native_exception_message(negative_exception))));
     context.thread()->clear_pending_exception();
 
     Value type_result = context.run_file(L"import _math\n"
@@ -386,7 +386,7 @@ TEST(NativeModuleBuild, NativeMathSqrtReportsErrors)
               type_exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"value cannot be converted to float",
               std::wstring(string_as_wchar_t(
-                  type_exception.extract()->message.value())));
+                  cl::test::native_exception_message(type_exception))));
 }
 
 TEST(NativeModuleBuild, StdlibMathWrapperUsesTrustedSqrt)
@@ -418,7 +418,7 @@ TEST(NativeModuleBuild, StdlibMathSqrtReportsTrustedErrors)
               negative_exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"math domain error",
               std::wstring(string_as_wchar_t(
-                  negative_exception.extract()->message.value())));
+                  cl::test::native_exception_message(negative_exception))));
     context.thread()->clear_pending_exception();
 
     Value type_result = context.run_file(L"import math\n"
@@ -432,7 +432,7 @@ TEST(NativeModuleBuild, StdlibMathSqrtReportsTrustedErrors)
               type_exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"value cannot be converted to float",
               std::wstring(string_as_wchar_t(
-                  type_exception.extract()->message.value())));
+                  cl::test::native_exception_message(type_exception))));
 }
 
 TEST(NativeModuleBuild, DictionaryCApiCoreOperations)
@@ -625,8 +625,9 @@ expect_native_import_error_and_uncached(test::VmTestContext &context,
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(expected_message, std::wstring(string_as_wchar_t(
-                                    exception.extract()->message.value())));
+    EXPECT_EQ(expected_message,
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
@@ -644,10 +645,10 @@ TEST(NativeModuleBuild, ImportingNativeExtensionWithoutInitSymbolRaises)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(
-        L"native module '_test_native_missing_symbol' does not export "
-        L"'clover_module_init__test_native_missing_symbol'",
-        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_EQ(L"native module '_test_native_missing_symbol' does not export "
+              L"'clover_module_init__test_native_missing_symbol'",
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
@@ -665,9 +666,9 @@ TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"OverflowError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(
-        L"test native overflow",
-        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_EQ(L"test native overflow",
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
 
@@ -693,9 +694,9 @@ TEST(NativeModuleBuild, ValueConsumersPreservePropagatedErrorHandles)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"OverflowError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(
-        L"test native overflow",
-        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_EQ(L"test native overflow",
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
 }
 
 TEST(NativeModuleBuild, InitFailureWithoutExceptionRaisesImportError)
@@ -723,10 +724,10 @@ TEST(NativeModuleBuild, InitSuccessWithExceptionRaisesSystemError)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"SystemError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(
-        L"native module init returned success with an exception set for "
-        L"'_test_native_success_with_exception'",
-        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_EQ(L"native module init returned success with an exception set for "
+              L"'_test_native_success_with_exception'",
+              std::wstring(string_as_wchar_t(
+                  cl::test::native_exception_message(exception))));
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
 

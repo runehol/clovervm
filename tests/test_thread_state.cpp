@@ -7,6 +7,7 @@
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
 #include "object_model/shape_key.h"
+#include "object_model/value_string.h"
 #include "runtime/exception_object.h"
 
 #include <gtest/gtest.h>
@@ -426,6 +427,110 @@ namespace cl
         expect_pending_exception(thread, L"TypeError");
     }
 
+    TEST(ThreadState, ExceptionFactoriesDistinguishNoArgsFromEmptyString)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        TValue<ClassObject> cls = TValue<ClassObject>::from_oop(
+            thread->class_for_builtin_name(L"ValueError"));
+        Owned<TValue<Exception>> empty(
+            make_exception_object_no_args(thread, cls));
+        Owned<TValue<Exception>> explicit_empty(
+            make_exception_object_with_string(thread, cls, L""));
+        EXPECT_TRUE(empty.extract()->args.extract()->empty());
+        ASSERT_EQ(1u, explicit_empty.extract()->args.extract()->size());
+        EXPECT_STREQ(L"", explicit_empty.extract()
+                              ->args.extract()
+                              ->item_unchecked(0)
+                              .get_ptr<String>()
+                              ->data);
+        EXPECT_FALSE(thread->has_pending_exception());
+        EXPECT_EQ(cls.extract(), empty.extract()->get_shape()->get_class());
+    }
+
+    TEST(ThreadState, ExceptionFactoryKeepsArgumentsWithoutConvertingThem)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        TValue<ClassObject> cls = TValue<ClassObject>::from_oop(
+            thread->class_for_builtin_name(L"ValueError"));
+        Owned<TValue<Tuple>> args(thread->make_object_value<Tuple>(2));
+        args.extract()->initialize_item_unchecked(
+            0, interned_string(L"bad").raw_value());
+        args.extract()->initialize_item_unchecked(1, Value::from_smi(42));
+        Owned<TValue<Exception>> exception(
+            make_exception_object(thread, cls, args.value()));
+        EXPECT_EQ(args.value(), exception.extract()->args.value());
+        Value text = exception_args_to_string(thread, exception.value());
+        ASSERT_FALSE(text.is_exception_marker());
+        EXPECT_STREQ(L"('bad', 42)", text.get_ptr<String>()->data);
+        Value representation = value_to_repr_string(exception.raw_value());
+        ASSERT_FALSE(representation.is_exception_marker());
+        EXPECT_STREQ(L"ValueError('bad', 42)",
+                     representation.get_ptr<String>()->data);
+        Owned<TValue<Exception>> single(
+            make_exception_object_with_arg(thread, cls, Value::from_smi(7)));
+        ASSERT_EQ(1u, single.extract()->args.extract()->size());
+        EXPECT_EQ(Value::from_smi(7),
+                  single.extract()->args.extract()->item_unchecked(0));
+        text = exception_args_to_string(thread, single.value());
+        ASSERT_FALSE(text.is_exception_marker());
+        EXPECT_STREQ(L"7", text.get_ptr<String>()->data);
+        EXPECT_FALSE(thread->has_pending_exception());
+    }
+
+    TEST(ThreadState, GenericExceptionFactorySelectsStopIterationLayout)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        TValue<ClassObject> cls = TValue<ClassObject>::from_oop(
+            thread->class_for_native_layout(NativeLayoutId::StopIteration));
+        Owned<TValue<Exception>> empty(
+            make_exception_object_no_args(thread, cls));
+        Owned<TValue<Exception>> none(
+            make_exception_object_with_arg(thread, cls, Value::None()));
+        Owned<TValue<Exception>> number(
+            make_exception_object_with_arg(thread, cls, Value::from_smi(42)));
+        ASSERT_TRUE(can_convert_to<StopIterationObject>(empty.raw_value()));
+        ASSERT_TRUE(can_convert_to<StopIterationObject>(none.raw_value()));
+        ASSERT_TRUE(can_convert_to<StopIterationObject>(number.raw_value()));
+        EXPECT_TRUE(empty.extract()->args.extract()->empty());
+        EXPECT_EQ(1u, none.extract()->args.extract()->size());
+        EXPECT_EQ(Value::None(),
+                  empty.raw_value().get_ptr<StopIterationObject>()->value);
+        EXPECT_EQ(Value::None(),
+                  none.raw_value().get_ptr<StopIterationObject>()->value);
+        EXPECT_EQ(Value::from_smi(42),
+                  number.raw_value().get_ptr<StopIterationObject>()->value);
+    }
+
+    TEST(ThreadState, ExceptionFormattingRestoresCompactPendingState)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        (void)thread->set_pending_stop_iteration_no_value();
+        EXPECT_EQ(L"StopIteration", format_pending_python_exception(thread));
+        EXPECT_EQ(PendingExceptionKind::StopIteration,
+                  thread->pending_exception_kind());
+        EXPECT_TRUE(thread->pending_stop_iteration_value().is_not_present());
+        (void)thread->set_pending_stop_iteration_value(Value::None());
+        EXPECT_EQ(L"StopIteration: None",
+                  format_pending_python_exception(thread));
+        EXPECT_EQ(PendingExceptionKind::StopIteration,
+                  thread->pending_exception_kind());
+        EXPECT_EQ(Value::None(), thread->pending_stop_iteration_value());
+        (void)thread->set_pending_stop_iteration_value(Value::from_smi(42));
+        EXPECT_EQ(L"StopIteration: 42",
+                  format_pending_python_exception(thread));
+        EXPECT_EQ(PendingExceptionKind::StopIteration,
+                  thread->pending_exception_kind());
+        EXPECT_EQ(Value::from_smi(42), thread->pending_stop_iteration_value());
+    }
+
     TEST(ThreadState, PendingExceptionObjectStoresTypedObject)
     {
         test::VmTestContext context;
@@ -433,8 +538,8 @@ namespace cl
         ClassObject *base_exception =
             context.vm().class_for_native_layout(NativeLayoutId::Exception);
         ThreadState::ActivationScope active_thread(thread);
-        TValue<Exception> exception = make_exception_object(
-            TValue<ClassObject>::from_oop(base_exception), L"boom");
+        TValue<Exception> exception = make_exception_object_with_string(
+            thread, TValue<ClassObject>::from_oop(base_exception), L"boom");
 
         EXPECT_TRUE(thread->set_pending_exception_object(exception)
                         .is_exception_marker());
@@ -508,7 +613,9 @@ namespace cl
         TValue<Exception> exception = thread->pending_exception_object();
         EXPECT_EQ(base_exception,
                   exception.extract()->get_shape()->get_class());
-        EXPECT_STREQ(L"boom", exception.extract()->message.extract()->data);
+        EXPECT_STREQ(
+            L"boom",
+            cl::test::native_exception_message(exception).extract()->data);
     }
 
     TEST(ThreadState, StopIterationObjectStoresValueSlot)
@@ -519,17 +626,21 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::StopIteration);
         ThreadState::ActivationScope active_thread(thread);
 
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
-            TValue<ClassObject>::from_oop(stop_iteration), Value::from_smi(42));
+        TValue<StopIterationObject> exception =
+            make_stop_iteration_object_with_value(
+                thread, TValue<ClassObject>::from_oop(stop_iteration),
+                Value::from_smi(42));
 
         EXPECT_EQ(Value::from_smi(42), exception.extract()->value);
-        EXPECT_STREQ(L"", exception.extract()->message.extract()->data);
+        ASSERT_EQ(1u, exception.extract()->args.extract()->size());
+        EXPECT_EQ(Value::from_smi(42),
+                  exception.extract()->args.extract()->item_unchecked(0));
         TValue<Exception> base_exception =
             TValue<Exception>::from_value_assumed(exception.raw_value());
         EXPECT_EQ(exception.raw_value(), base_exception.raw_value());
     }
 
-    TEST(ThreadState, StopIterationObjectDefaultsValueToNotPresent)
+    TEST(ThreadState, StopIterationObjectDefaultsValueToNone)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -537,10 +648,29 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::StopIteration);
         ThreadState::ActivationScope active_thread(thread);
 
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
-            TValue<ClassObject>::from_oop(stop_iteration));
+        TValue<StopIterationObject> exception =
+            make_stop_iteration_object_no_value(
+                thread, TValue<ClassObject>::from_oop(stop_iteration));
 
-        EXPECT_TRUE(exception.extract()->value.value().is_not_present());
+        EXPECT_TRUE(exception.extract()->value.value().is_none());
+        EXPECT_TRUE(exception.extract()->args.extract()->empty());
+    }
+
+    TEST(ThreadState, StopIterationObjectPreservesExplicitNoneArgument)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        TValue<StopIterationObject> exception =
+            make_stop_iteration_object_with_value(
+                thread,
+                TValue<ClassObject>::from_oop(thread->class_for_native_layout(
+                    NativeLayoutId::StopIteration)),
+                Value::None());
+        EXPECT_TRUE(exception.extract()->value.value().is_none());
+        ASSERT_EQ(1u, exception.extract()->args.extract()->size());
+        EXPECT_EQ(Value::None(),
+                  exception.extract()->args.extract()->item_unchecked(0));
     }
 
     TEST(ThreadState, ShapeKeyMapsPointerAndInlineValues)

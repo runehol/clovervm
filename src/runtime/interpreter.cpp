@@ -694,11 +694,13 @@ namespace cl
 
     NOINLINE INTERP_CC Value assertion_error_with_message(PARAMS)
     {
-        (void)thread->set_pending_exception_object(make_exception_object(
-            thread,
-            TValue<ClassObject>::from_oop(
-                thread->class_for_builtin_name(L"AssertionError")),
-            INTERP_TRY(TValue<String>::from_value_checked(accumulator))));
+        (void)thread->set_pending_exception_object(
+            make_exception_object_with_arg(
+                thread,
+                TValue<ClassObject>::from_oop(
+                    thread->class_for_builtin_name(L"AssertionError")),
+                INTERP_TRY(TValue<String>::from_value_checked(accumulator))
+                    .raw_value()));
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
@@ -713,10 +715,13 @@ namespace cl
         Value value = thread->pending_stop_iteration_value();
         ClassObject *stop_iteration =
             thread->class_for_native_layout(NativeLayoutId::StopIteration);
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
-            thread, TValue<ClassObject>::from_oop(stop_iteration), value);
+        TValue<ClassObject> cls = TValue<ClassObject>::from_oop(stop_iteration);
+        TValue<StopIterationObject> exception =
+            value.is_not_present()
+                ? make_stop_iteration_object_no_value(thread, cls)
+                : make_stop_iteration_object_with_value(thread, cls, value);
         (void)thread->set_pending_exception_object(
-            TValue<Exception>::from_value_unchecked(exception.raw_value()));
+            TValue<Exception>::from_value_assumed(exception.raw_value()));
     }
 
     static INTERP_CC Value op_lda_active_exception(PARAMS)
@@ -838,26 +843,18 @@ namespace cl
             if(!is_subclass_of(cls, thread->class_for_native_layout(
                                         NativeLayoutId::Exception)))
             {
-                return make_exception_object(
+                return make_exception_object_with_string(
                     thread,
                     TValue<ClassObject>::from_oop(
                         thread->class_for_builtin_name(L"TypeError")),
                     L"exceptions must derive from BaseException");
             }
-            if(cls ==
-               thread->class_for_native_layout(NativeLayoutId::StopIteration))
-            {
-                return TValue<Exception>::from_value_unchecked(
-                    make_stop_iteration_object(
-                        thread, TValue<ClassObject>::from_oop(cls))
-                        .raw_value());
-            }
 
-            return make_exception_object(
-                thread, TValue<ClassObject>::from_oop(cls), L"");
+            return make_exception_object_no_args(
+                thread, TValue<ClassObject>::from_oop(cls));
         }
 
-        return make_exception_object(
+        return make_exception_object_with_string(
             thread,
             TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"TypeError")),

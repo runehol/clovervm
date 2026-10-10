@@ -46,8 +46,8 @@ namespace cl
             .add_slot(descriptors[2].name, Slice::kStepSlot, slice_slot_flags())
             .install(immutable_shape_flags());
         Shape *general_shape = cls->get_instance_root_shape();
-        Shape *step_none_shape = Shape::make_root_with_descriptors(
-            TValue<ClassObject>::from_oop(cls), descriptors,
+        Shape *step_none_shape = Shape::make_immortal_root_with_descriptors(
+            vm, TValue<ClassObject>::from_oop(cls), descriptors,
             std::size(descriptors), general_shape->get_next_slot_index(),
             general_shape->present_count(),
             general_shape->get_inline_slot_count(), immutable_shape_flags());

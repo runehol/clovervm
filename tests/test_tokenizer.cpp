@@ -45,7 +45,7 @@ static void expect_tokenize_error(const wchar_t *source,
               string_as_wchar_t(
                   exception.extract()->get_shape()->get_class()->get_name()));
     EXPECT_EQ(std::wstring(expected_message),
-              string_as_wchar_t(exception.extract()->message.value()));
+              string_as_wchar_t(cl::test::native_exception_message(exception)));
 }
 
 TEST(Tokenizer, simple)
