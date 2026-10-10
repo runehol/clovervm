@@ -2,419 +2,239 @@
 
 | Field | Value |
 |---|---|
-| Document type | Investigation |
-| Status | Proposed |
+| Document type | Design |
+| Status | Accepted |
 | Implementation | Not started |
-| Scope | Storage and construction options for Python subclasses of native builtin types |
-| Owning layers | Runtime object model, native layouts, allocation, class construction, and extension API |
-| Validated against | N/A |
-| Supersedes | N/A |
+| Scope | Physical storage for Python subclasses of native builtin types; explicit Python slot declarations remain deferred |
+| Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
+| Validated against | `e0c3248e` (2026-10-10), for current-code constraints; the accepted storage changes are not implemented |
+| Supersedes | The previous investigation in this document |
 
-This note records the design problem around subclassing native builtin types.
-It is intentionally not a decision. The immediate dictionary-shape work should
-not solve this problem by accident.
+The accepted direction is a common overflow-storage pointer in every
+Python-visible heap `Object`, native heap integer storage for `int` subclasses,
+and overflow-only additional attributes for builtin families that currently
+lack `SlotObject` storage. Existing `SlotObject` families retain their regular
+storage mechanism. This decision was agreed on 2026-10-10.
 
-## Problem
+## Common Storage
 
-Some Python builtin values are represented by compact native layouts in
-CloverVM. Exact builtin instances can be fast and small because their storage is
-known up front:
+Move the overflow-storage pointer into `Object`. `SlotObject` must reuse that
+pointer rather than contain a second one. Rename `SlotObject` to an
+inline-capable base, provisionally `InlineSlotObject`, to make its remaining
+responsibility explicit: it marks the physical presence of inline `Value`
+slots. Overflow access must no longer require casting to that base. Internal
+heap records that do not have Python object identity, such as Shape records,
+do not acquire the common pointer. The pointer is initially null; allocate
+overflow storage only when needed.
 
-- small `int` values are inline SMIs;
-- `bool` values are inline singletons/tags;
-- `str`, `list`, and `dict` are heap native objects with type-specific payloads;
-- ordinary instance attributes use `SlotObject` storage, with the overflow
-  pointer placed before the subclass payload.
+A layout without the inline-capable base must declare zero inline attribute
+capacity in its instance Shape. Root-shape construction, transitions, and clones
+must preserve that invariant. A positive capacity would let attribute access
+overwrite native fields. Existing inline-capable layouts must likewise keep
+Shape capacity within the actual physical slot region.
 
-Subclassing native builtins introduces a different requirement. A subtype
-instance needs Python object identity and class identity from the subtype, while
-also behaving like the builtin base type. It may also need instance attributes
-or slots. For inline values such as SMIs there is nowhere to attach a class
-pointer, `__dict__`, or slot storage. For heap native objects, adding a slot
-pointer to every exact builtin instance may be too expensive.
+Current user-class creation gives every class the same default of ten inline
+slots, without inheriting or adding the base class's capacity. Instance allocation
+uses that class's root Shape capacity. When the selected native layout cannot
+hold inline attribute slots, subclass creation must override this generic default
+with zero. The inheritance-aware capacity-selection details are deferred to a
+later implementation sketch.
 
-The central question is where subtype attribute storage lives without taxing
-exact builtin values or creating a cross product of native classes.
+Conceptually:
 
-Construction exposes the same question from another direction. A class call
-needs to distinguish:
+```text
+Object:
+    heap header
+    shape pointer
+    overflow-storage pointer
 
-- Python-visible construction policy in `__new__` and `__init__`;
-- internal physical allocation for the concrete requested class;
-- the instance layout and tracing metadata consumed by the collector.
-
-CPython represents these separately with `tp_new`, `tp_init`, and the
-non-Python-visible `tp_alloc` slot. A native `tp_new` normally asks the concrete
-class's `tp_alloc` to allocate storage, so an inherited constructor can allocate
-a subtype rather than an exact base object. CloverVM does not need to copy those
-slots directly, but a builtin `__new__` that hard-codes allocation of an exact
-C++ type would leave the same subtype problem unresolved.
-
-## CPython Behavior
-
-CPython permits ordinary instance attributes on plain subclasses of several
-native builtin types:
-
-```python
-class D(dict):
-    pass
-
-d = D(a=1)
-d.x = 42
+native builtin:
+    Object
+    native fields and payload
 ```
 
-`d["x"]` and `d.x` are separate storage systems. The mapping entries remain in
-the `dict` payload, while `d.x` lives in the subtype instance attribute storage.
+Native layout identity still describes the builtin payload. The Shape supplies
+Python class identity and attribute locations. Subclassing must not replace a
+native payload with a generic `Instance`, or turn a subclass instance into an
+exact builtin value where class identity remains observable.
 
-Observed behavior on CPython:
+For native families currently lacking slot storage, such as `String`, `Dict`,
+and `List`, additional subclass attributes all use `OverflowSlots`. Do not
+append an inline attribute region after the native payload. String length,
+tuple length, or integer digit count must not become attribute-shape
+polymorphism: otherwise-equivalent instances of the same subclass should share
+a Shape regardless of payload length.
 
-- `class D(dict): pass` gets an instance `__dict__`.
-- `class L(list): pass` gets an instance `__dict__`.
-- `class S(str): pass` gets an instance `__dict__`.
-- `class I(int): pass` gets an instance `__dict__`; CPython represents ints as
-  heap objects, so this is not the same representation problem as CloverVM's
-  inline SMIs.
-- `class T(tuple): pass` gets an instance `__dict__`.
-- `bool` is a subclass of `int`, but `bool` itself is not subclassable.
-- Nonempty `__slots__` are accepted for `str`, `list`, and `dict` subtypes, but
-  rejected for `int` and `tuple` subtypes.
+This rule does not remove native fields or existing predefined inline slots.
+Exceptions retain `.args`, and StopIteration retains `.value`, in their native
+inline locations. These existing `SlotObject` families continue using their
+regular shape/slot mechanism. Ordinary user classes based on `object` likewise
+keep their current automatic inline slots; all classes ultimately inherit from
+`object`, so native payload ancestry is the relevant distinction.
 
-CPython makes this work with subtype layout machinery around `PyObject` and
-`PyTypeObject`. Builtin payloads such as `PyDictObject` remain the C-level
-prefix of suitable subtype instances, while managed instance dictionaries or
-extra slot storage are attached by the type system. CloverVM does not need to
-copy this architecture, but it must preserve the visible distinction between
-payload state and subtype attributes if it supports these subclasses.
+Exact builtins do not automatically become attribute-mutable merely because
+space for the overflow pointer exists. Shape permissions continue to determine
+whether an instance accepts user attributes. A subclass of an immutable native
+builtin may have mutable attribute Shapes while the native payload remains
+immutable; do not copy the exact builtin's attribute-immutability restrictions
+onto that subclass. Dictionary payload entries and subclass attributes remain
+separate: `d["x"]` and `d.x` are different storage.
+
+## Integer Subclasses And Immediate Values
+
+An `int` subclass must always be a heap object, including for values that fit in
+an SMI. Use native BigInt storage with the requested subclass identity. Its
+constructor must not pass through a result-normalization path that returns an
+SMI and discards that identity. A generic wrapper containing an exact builtin
+payload is not required by this design.
+
+Ordinary exact integers retain the existing SMI representation and result
+normalization. `finalize_bigint` checks whether a result fits an SMI before
+allocating, so disabling normalization would introduce heap allocations where
+none are currently needed. Any change to that policy needs separate performance
+evidence.
+
+The complete current immediate inventory and local CPython 3.14.5 subclass
+probes are:
+
+| Clover immediate value | Python type | CPython permits subclasses? |
+|---|---|---|
+| SMI | `int` | Yes |
+| `False`, `True` | `bool` | No |
+| `None` | `NoneType` | No |
+| `NotImplemented` | `NotImplementedType` | No |
+| `Ellipsis` | `ellipsis` | No |
+| Not-present marker | Internal VM sentinel | Not applicable |
+| Exception marker | Internal VM sentinel | Not applicable |
+
+Interned pointers and refcounted pointers are not immediate objects. Floats and
+large integers already have heap representations. Among the Python-visible
+immediate types, only `int` requires a subclass representation.
+
+Native layout checks and exact-type checks must remain distinct. For example,
+`is_exact_int_value` currently accepts any BigInt layout; supporting native
+integer subclasses requires auditing that assumption. Payload-compatible
+operations must preserve normal Python method resolution and subclass overrides.
+Result identity is operation-specific: constructing the requested subclass
+preserves its identity, while an explicit `int(x)` conversion or ordinary
+inherited integer arithmetic can produce an exact builtin integer. Existing
+reuse paths must not return a subclass object where the operation requires an
+exact result.
+
+## Constant-Offset Attribute Access
+
+An attribute cache guards the receiver Shape and relevant lookup validity,
+then applies a resolved physical location. The target access forms are:
+
+```text
+inline:   load Value at object + constant attribute offset
+overflow: load OverflowSlots pointer at object + constant anchor offset,
+          then access a constant element offset in that storage
+```
+
+The common pointer makes the overflow anchor independent of native payload
+length. Cached access must not execute a payload-size recipe, inspect length to
+find attribute storage, or cache a raw field address. Shape metadata may supply
+resolved offsets when populating a cache; cache hits and future AArch64 lowering
+should use constants after their guards.
+
+Current cache plans store a storage kind and index relative to the existing
+fixed slot base. Their final offset encoding is an implementation detail still
+to be sketched. Shape transitions and clones must preserve physical storage
+interpretation, and tracing must use the same interpretation as attribute
+reads, writes, and deletion.
+
+## Allocation, Reclamation, And Construction
+
+The common pointer adds one eight-byte field to layouts that currently inherit
+only `Object`. Existing `SlotObject` layouts must not pay for a duplicate field.
+Native member offsets, size descriptors, release descriptors, and offset
+assertions must be updated together. The allocator rounds extents to a
+32-byte granularity, so the physical allocation increase depends on the size
+boundary crossed; it is not necessarily eight additional allocated bytes for
+every instance.
+
+Reclamation must observe and release the common overflow pointer for all
+Python-visible heap layouts. Native payload extent remains recoverable from
+native layout descriptors and object-local counts. Overflow storage is a
+separate allocation, avoiding a second variable-sized tail on a native object.
+The planned copying collector must likewise recover extent without following
+Shape or ClassObject metadata awaiting relocation.
+
+Every builtin class must supply or inherit an allocation-correct `__new__`.
+For an instantiable native builtin family, this method allocates a valid native
+object for the requested class, including user subclasses; it must not hard-code
+exact builtin identity. Non-instantiable builtin classes must reject construction
+rather than fall through to generic `Instance` allocation. Class construction
+must validate compatible native ancestry and prepare matching metadata, but
+builtin payload initialization remains owned by the builtin family. This note
+does not choose a new allocation-plan API or a constructor-thunk implementation.
+It does not reinstate the reverted exception-specific layout selection in
+`class_object.cpp`.
+
+Subclass eligibility is separate from storage and construction capability.
+Having an overflow pointer does not make `bool`, `NoneType`, or the other
+non-subclassable singleton types legal bases. Native payload compatibility must
+also be validated independently: ordinary Python mixins can coexist with a
+compatible native storage lineage, but conflicting native payload requirements
+must be rejected before an instance is allocated. The generic metadata and
+validation API still need a concrete implementation sketch.
+
+The existing constructor machinery supports `__new__`-only or `__init__`-only
+class calls, but not the combination. Supporting both is an explicit prerequisite
+for the builtin constructor work. The combined path calls `__new__` first and
+calls initialization only when the returned object is an instance of the
+requested class, preserving the original arguments and requiring `__init__` to
+return `None`. Constructor caches must remain guarded against replacement of
+either method. This is constructor-protocol work, not builtin payload policy.
+
+## Explicit Python Slot Declarations
+
+Clover already uses Shapes and ordinary slot storage without requiring a Python
+`__slots__` declaration. Keep that automatic mechanism as the storage model.
+For now, `__slots__` remains an ordinary class attribute; do not implement
+restricted names, slot descriptors, or CPython's physical layout machinery in
+this work. This is an intentional compatibility limitation.
+
+Future semantic enforcement can build on predefined stable locations,
+uninitialized values, latent descriptors, and shape permissions. Declared names
+would need assignment, deletion, and reassignment at the same location while
+rejecting undeclared attributes where required. Inheritance and class-level
+descriptor behavior require their own review when that work is requested.
+
+Local CPython 3.14.5 probes confirmed that ordinary subclasses of `int`, `tuple`,
+`bytes`, `str`, `list`, and `dict` accept attributes. Nonempty explicit
+`__slots__` are rejected for `int`, `tuple`, and `bytes`, but accepted for `str`,
+`list`, and `dict`. These Python-visible rules do not dictate Clover's physical
+attribute storage.
+
+## Alternatives And Revisit Conditions
+
+A subtype-only tail after a variable native payload gives instance-dependent
+attribute offsets. Encoding actual payload length into Shapes introduces
+unwanted polymorphism; calculating the tail location on each cache hit violates
+the constant-offset access requirement. It is not the selected representation,
+even though a fixed-size native prefix could support constant tail offsets.
+
+A subtype-only preheader at a fixed negative offset could preserve exact builtin
+sizes and constant-offset access. CPython's managed dictionary machinery uses a
+related approach. Clover's tagged pointer positions and object-header bitmap
+share a 32-byte grid, and construction currently returns the allocation start.
+Simply adding one word and shifting the returned pointer would violate those
+invariants. Supporting a hidden prefix requires deliberate allocation,
+discovery, size, reclamation, and future relocation changes. Revisit this only
+if measured exact-builtin memory cost justifies that machinery.
+
+Separate slot-capable native variants or generic wrappers could avoid the
+common-pointer cost, but add payload-access boundaries, layout variants, and
+identity risks across builtin operations and trusted handlers. They are not the
+initial direction. A future extension-type API may require a separate storage
+and tracing contract; this decision does not settle that API.
 
 References:
 
-- CPython `PyDictObject` definition:
-  <https://github.com/python/cpython/blob/main/Include/cpython/dictobject.h>
-- CPython dictionary implementation:
-  <https://github.com/python/cpython/blob/main/Objects/dictobject.c>
-- CPython type and subtype layout machinery:
-  <https://github.com/python/cpython/blob/main/Objects/typeobject.c>
-
-## CloverVM Constraints
-
-Inline values cannot carry subtype state. An `int` subclass instance cannot be
-an SMI, because it needs heap identity, a subtype class pointer, and possibly
-attribute storage. Exact SMIs can remain exact `int` values, but `MyInt(5)` must
-be represented by a heap object if `MyInt` is a Python subclass.
-
-Heap native values have a different tradeoff. `str`, `list`, and `dict` could
-carry `SlotObject` storage directly, but that would add an overflow-storage
-pointer to every exact instance. For `str` this is especially unattractive: exact
-strings are pervasive, and future UCS1/UCS2/UCS4 string layouts would multiply
-any slot-capable subclass variants.
-
-CloverVM already has a useful precedent: one Python-level type relationship does
-not have to mean one native layout. Exact fast paths can guard exact shapes or
-native layouts, while semantic paths can accept a broader Python-level family.
-That pattern may be the right foundation for native subtypes.
-
-## Candidate Construction Boundary
-
-One possible boundary is an internal instance-allocation plan stored on every
-`ClassObject`. All class objects would retain the same C++ representation; the
-plan would describe future instances of that class. Conceptually it could
-answer:
-
-- whether the class is instantiable;
-- which allocator constructs its native payload;
-- whether and how the layout may be extended by a subtype;
-- where Python-visible attribute storage may live;
-- how allocation extent and managed fields are reported to the collector.
-
-Python-visible `__new__` could call this internal allocator, while Python code
-would have no direct `__alloc__`-like operation. This is an option rather than a
-settled API. In particular, it remains open whether the plan belongs directly
-on `ClassObject`, in a reusable instance-layout record, or in existing metadata
-extended for this purpose.
-
-`NativeLayoutId` should not silently serve as this plan. It identifies how to
-interpret an object that already exists, but does not by itself state whether
-the class is instantiable, how arguments establish a valid initial state, or
-how a subtype extends the payload.
-
-## Shape-Relative Physical Storage
-
-Shapes are tied to physical object layout. This permits an attribute cache to
-guard the exact Shape and cache a resolved physical access plan rather than a
-logical slot number relative to one universal `SlotObject` base. Candidate
-plans include:
-
-```text
-direct:   Value at receiver + byte_offset
-overflow: OverflowSlots pointer at receiver + anchor_offset, then element_index
-```
-
-This could allow fixed-size native objects to place direct slots and an
-overflow anchor wherever their finalized layout permits. The hot path would
-reload the receiver and apply cached offsets; it must not cache a raw field
-address that movement would invalidate.
-
-An exact Shape guard is sufficient only while every Shape belongs to one
-physical instance layout. Reusing a Shape across layouts with different offsets
-would require a separate layout guard and would weaken this option.
-
-## Option 1: Make Heap Native Builtins Slot-Capable
-
-Change native heap classes such as `Dict`, `List`, and `String` to inherit from
-`SlotObject`, probably with zero inline slots for exact builtin instances and
-lazy overflow storage.
-
-Advantages:
-
-- One native class per builtin family.
-- Subtype instances reuse the exact same payload implementation.
-- Attribute lookup uses the existing shape and slot machinery.
-- Exact/subtype distinction can be mostly shape-based.
-
-Costs:
-
-- Every exact instance pays for the slot/overflow-storage pointer.
-- Exact builtin object sizes change on hot types.
-- It does not solve inline types such as SMI-backed `int`.
-- It may become awkward for future multiple string payload layouts.
-
-This option is simple locally, but it taxes the common case.
-
-It does have one implementation advantage: the existing common slot base and
-overflow-anchor position remain available to attribute access and tracing. The
-memory cost should therefore be weighed against the extra layout and GC
-machinery required by the alternatives, rather than dismissed in isolation.
-
-## Option 2: Separate Slot-Capable Native Subtype Layouts
-
-Keep exact native builtin layouts compact. Add subtype-specific native layouts,
-for example `DictSubtypeInstance`, `ListSubtypeInstance`, and
-`StringSubtypeInstance`, each with slot storage plus the relevant native payload.
-
-Advantages:
-
-- Exact builtins stay compact.
-- Native subtype support is explicit and easy to guard.
-- Exact fast paths remain exact-layout checks.
-
-Costs:
-
-- Duplicates payload classes or requires shared payload structs.
-- Creates a cross product with future representation variants, especially for
-  strings.
-- C++ APIs must distinguish exact payload layouts from Python-level compatibility
-  layouts.
-
-This option is attractive for preserving exact builtin performance, but the
-class explosion risk is real.
-
-One variant avoids a separate C++ subclass for every fixed-size native family.
-The concrete class's instance-layout plan could allocate extra tail bytes after
-the ordinary native prefix:
-
-```text
-[fixed native payload][overflow anchor][direct Value slots]
-```
-
-The native prefix remains usable by existing builtin operations, while the
-Shape records physical offsets into the tail. Exact builtin instances retain a
-smaller allocation. This variant still needs object-local extent metadata and a
-trace/update plan for the appended references. It applies only when the native
-payload has a fixed end.
-
-## Option 3: Generic Native Subtype Wrapper
-
-Represent native subtype instances with one generic slot-capable wrapper:
-
-```cpp
-class NativeSubtypeInstance : public SlotObject
-{
-    Value payload;
-};
-```
-
-The wrapper owns Python identity, shape, class, and attributes. The payload owns
-the exact builtin representation:
-
-- `MyInt(5)` payload could be `Value::from_smi(5)`;
-- `MyStr("x")` payload could be an exact `String`;
-- `MyDict({...})` payload could be an exact `Dict`;
-- `MyList([...])` payload could be an exact `List`.
-
-Advantages:
-
-- One generic system handles inline and heap native bases.
-- Exact builtin layouts stay compact.
-- Avoids `SlotCapableUCS1String`, `SlotCapableUCS2String`, etc.
-- The subtype tax is paid only for subtype instances.
-
-Costs:
-
-- Every operation must preserve the wrapper when object identity or class
-  matters.
-- Payload extraction becomes dangerous if helper names are too casual.
-- Native operations must decide deliberately whether they accept exact payloads
-  only or native subtype wrappers too.
-- Mutable payloads such as list and dict need clear ownership and mutation
-  rules through the wrapper.
-- C API and internal helper boundaries become more explicit.
-
-This is the most general option, but it is also the easiest to get subtly wrong.
-The API must make wrapper-versus-payload boundaries impossible to miss.
-
-Wrappers may be particularly relevant for native representations with a
-variable inline tail. For an allocation such as:
-
-```text
-[Tuple header][N inline tuple items]
-```
-
-storage appended after the native payload has an instance-dependent offset, so
-one Shape cannot cache a constant positive offset to it. A wrapper or a
-family-specific subtype representation can instead keep attribute storage at
-fixed offsets and reference an exact immutable tuple, string, or inline-value
-payload. This preserves compact exact values but introduces subtype-aware
-payload access throughout the owning builtin family.
-
-## Option 4: Side Storage for Native Subtypes
-
-Keep exact native object layouts unchanged and attach subtype attributes through
-external side storage keyed by object identity.
-
-Advantages:
-
-- Exact object layouts stay compact.
-- Native payload objects remain direct instances of their existing C++ classes.
-- Avoids a payload wrapper for heap-native subtype instances.
-
-Costs:
-
-- Requires side-table lifetime, GC, and reclamation integration.
-- Adds attribute lookup indirection.
-- Does not naturally handle inline SMIs unless they are boxed first.
-- Makes object identity and side-storage cleanup a cross-cutting concern.
-
-This option avoids per-object layout cost, but the lifetime machinery is likely
-too invasive to be a quick solution.
-
-## Option 5: Prefix Storage Before Variable Native Payloads
-
-Another representation would reserve subtype-only storage before the native
-object pointer:
-
-```text
-[subtype slots or overflow anchor][native header][variable native payload]
-                                    ^ object pointer
-```
-
-This gives attribute storage constant negative offsets without adding fields to
-exact builtin instances. CPython's managed dictionary storage uses a related
-preheader technique.
-
-For CloverVM this conflicts with important current and planned memory-system
-invariants. The heap currently treats `HeapObject *` as the allocation and
-bitmap object start, pointer tagging requires strong alignment, and a copying
-collector benefits from copying and forwarding an allocation beginning at that
-same address. Supporting an interior object pointer would require allocation,
-discovery, object-size, reclamation, forwarding, and relocation paths to recover
-the hidden prefix. This remains an option, but its cross-cutting cost makes it
-unattractive unless other designs fail.
-
-## Variable Allocation And GC Extent
-
-Native subtype storage also affects the copying-GC extent contract. The
-collector must recover the complete allocation extent from the object header,
-fields in the same allocation, and immutable descriptor tables. It must not
-follow `Shape` or `ClassObject` while deciding how many bytes to copy: those
-objects may themselves be awaiting relocation or repair.
-
-This leaves several possible extent representations:
-
-1. Store an exact allocated size in every movable object. This makes evacuation
-   simple but grows the common header, needs a policy for sizes beyond the
-   compact encoding, and partly recreates CloverVM's older compact/expanded
-   layout-and-size header scheme. It still does not describe tracing or custom
-   relocation by itself.
-2. Continue deriving extent from `NativeLayoutId` descriptors plus object-local
-   counts. Static layouts use a constant; ordinary dynamic layouts use an
-   affine formula such as `base + stride * count`; unusual layouts use a custom
-   local query. This avoids a universal size field but constrains how native
-   payload and subtype storage may be composed.
-3. Record another compact physical-layout or size-class discriminator in the
-   object. This may reduce common header cost, but it introduces another layout
-   identity whose relationship with `NativeLayoutId` and Shape must remain
-   explicit.
-
-The existing descriptor direction favors option 2, but native subtypes are a
-forcing input rather than a settled confirmation. A useful simplifying rule
-would be to avoid two independently variable tails in one movable allocation.
-Exact tuple storage could remain variable-sized, for example, while tuple
-subtypes use a wrapper or remain unsupported. Fixed-size native prefixes could
-use locally counted tail storage. Whether that restriction is preferable to an
-exact size field remains open.
-
-Tracing is a separate concern from byte extent. Appended subtype fields may not
-be contiguous with the native prefix's existing owned `Value` fields, so the
-collector may need an additional subtype span or a custom visitor even when the
-allocation size is easy to derive. An exact-size header alone would not solve
-that problem.
-
-## Extension-Type Declaration Options
-
-A future extension-type API may need to declare more than native layout
-identity. Possible declarations include:
-
-- fixed-size and tail-extensible, allowing CloverVM to append subtype storage;
-- variable-sized with an extension-supplied subtype allocator and trace policy;
-- stable and extension-owned, participating through explicit tracing without
-  ordinary nursery evacuation;
-- non-subclassable until a compatible subtype representation exists.
-
-Class creation should reject an unsupported native base rather than silently
-give its instances the ordinary `Instance` layout. The exact declaration and
-validation API remain open.
-
-## Naming and API Hazards
-
-Any design that separates wrapper identity from native payload needs sharp C++
-names:
-
-- exact checks should say exact, such as `is_exact_dict`;
-- semantic compatibility checks should say compatible or subtype-aware;
-- payload extraction should be visibly dangerous, such as
-  `extract_native_payload_for_arithmetic` or a similarly explicit local name;
-- operations that may drop subtype identity must not be used for object identity,
-  attribute lookup, or `type(...)`.
-
-The most important bug to avoid is accidentally replacing a subtype object with
-its exact payload. For example, `MyInt(5)` must not silently become the SMI `5`
-in any path where identity, type, attributes, or method dispatch remain
-observable.
-
-## Open Questions
-
-- Should `ClassObject` store a reusable internal instance-allocation plan, and
-  what minimum information belongs in it?
-- Should cached attribute locations become direct byte/word offsets plus an
-  overflow-anchor offset, replacing the assumption of one inline slot base?
-- Can fixed-size native subtypes use appended storage without making GC trace
-  descriptors too irregular?
-- Should movable objects store an exact allocation size, continue using local
-  extent formulas, or carry a compact physical-layout discriminator?
-- Which variable-tail native types should use wrappers, and which should remain
-  temporarily non-subclassable?
-- Should CloverVM initially reject subclassing of some native builtins, matching
-  CPython only where the implementation is straightforward?
-- Should `int` subclasses be implemented first as the forcing case for inline
-  payload wrappers?
-- Do mutable native subtype wrappers own their payload exclusively, or can the
-  payload be shared with another object?
-- Which APIs should mean exact native layout, and which should mean
-  Python-level builtin compatibility?
-- How should C API entry points expose exact payload access versus
-  subtype-compatible behavior?
-- Should nonempty `__slots__` on native subtypes be supported separately from
-  ordinary instance `__dict__` storage?
-
-For now, exact builtin shape work should not depend on this design. Native
-subtype storage is a separate object-model problem.
+- [Value representation](value-representation.md)
+- [Builtin object model](builtin-object-model.md)
+- [Native layout descriptors](native-layout-descriptors.md)
+- [Refcounting and reclamation](refcounting-and-reclamation.md)
+- [CPython managed dictionary preheader](https://github.com/python/cpython/blob/v3.14.5/Include/internal/pycore_object.h#L851-L883)

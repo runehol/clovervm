@@ -62,6 +62,7 @@ rationale that remains clear from those sources.
 | D-0010 | Use indexed compact JIT instruction storage | Accepted |
 | D-0011 | Use compact transition programs across execution boundaries | Accepted |
 | D-0012 | Retain the native stack and use interpreter-aligned JIT context registers | Accepted |
+| D-0013 | Use common overflow storage for native builtin subclasses | Accepted |
 
 ## D-0001: Compile Whole Functions Rather Than Hot Traces
 
@@ -930,3 +931,48 @@ must use the adapter.
 - `doc/aarch64-jit-calling-convention.md`
 - `doc/function-calling-convention.md`
 - `doc/native-managed-boundaries.md`
+
+## D-0013: Use Common Overflow Storage For Native Builtin Subclasses
+
+**Status:** Accepted
+
+**Date:** 2026-10-10
+
+### Decision
+
+Put one overflow-storage pointer in every Python-visible heap `Object`, reusing
+it in existing `SlotObject` layouts. Rename that base to an inline-capable
+base, provisionally `InlineSlotObject`; other layouts must declare zero inline
+attribute capacity. Additional attributes of native builtin families currently
+lacking slot storage use overflow storage. Existing
+`SlotObject` families retain their inline fields and regular slot mechanism;
+ordinary user classes retain automatic inline slots.
+
+Integer subclasses always use native heap BigInt storage, even for small values.
+Exact integer normalization remains unchanged. Every builtin class must supply
+or inherit an allocation-correct `__new__`; native families must not fall through
+to generic `Instance` allocation. Combined `__new__`/`__init__` class calls are a
+constructor-protocol prerequisite. Attribute caches must resolve to constant
+offsets after their guards, independent of native payload length. Explicit Python
+`__slots__` semantics remain deferred.
+
+### Context And Consequences
+
+The common pointer accepts a field-size cost on exact native builtins to avoid
+subtype wrappers, variant layouts, payload-length-dependent Shapes, and runtime
+storage-location recipes. Native payload identity, subclass identity, allocation
+extent, attribute access, and reclamation must agree. The design is accepted but
+not implemented; constructor and allocation APIs still require a concrete sketch.
+
+A subtype-only negative-offset preheader was considered and deferred because it
+would change the allocation-start and object-pointer relationship used by
+pointer tagging, object discovery, reclamation, and future relocation.
+
+### Revisit When
+
+Measured exact-builtin memory cost justifies the allocator and GC complexity of
+an alternative, or extension types need a different explicit storage contract.
+
+### References
+
+- [Native Subtype Storage](native-subtype-storage.md)
