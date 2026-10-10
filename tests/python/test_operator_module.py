@@ -116,6 +116,18 @@ assert operator.indexOf(["a", "b", "c"], "b") == 1
 assert operator.length_hint([1, 2, 3]) == 3
 assert operator.length_hint(42, 9) == 9
 assert operator.index(12) == 12
+for value in (True, False, 0, -12, 10**30):
+    result = operator.index(value)
+    assert result == int(value)
+    assert result.__class__ is int
+
+for value in (2.0, "2", None, NeverEqual()):
+    raised = False
+    try:
+        operator.index(value)
+    except TypeError:
+        raised = True
+    assert raised
 
 
 assert operator.__all__[0] == "abs"

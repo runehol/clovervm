@@ -99,7 +99,7 @@ def imul(a, b):
 
 def index(a):
     if isinstance(a, int):
-        return a
+        return int(a)
     raise TypeError
 
 
