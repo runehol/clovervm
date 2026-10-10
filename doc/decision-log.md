@@ -938,6 +938,8 @@ must use the adapter.
 
 **Date:** 2026-10-10
 
+**Refined:** 2026-10-11 (class-creation validation and constructor specialization)
+
 ### Decision
 
 Put one overflow-storage pointer in every Python-visible heap `Object`, reusing
@@ -955,6 +957,17 @@ to generic `Instance` allocation. Combined `__new__`/`__init__` class calls are 
 constructor-protocol prerequisite. Attribute caches must resolve to constant
 offsets after their guards, independent of native payload length. Explicit Python
 `__slots__` semantics remain deferred.
+
+Validate native payload ancestry while walking the MRO at class creation,
+before installing the instance root Shape. Reject conflicting native layouts
+there and select zero, fixed native, or dynamic `Instance` inline capacity to
+match physical storage. Constructor thunks specialize resolved known builtin
+`__new__` methods through trusted-handler semantics, guarded by existing
+constructor lookup invalidation; native layout alone does not define allocation
+semantics. General allocation results use the existing known-class instance
+test, including its exact-class fast path, without another type-test cache.
+Initialization resolves against the actual returned class after allocation,
+with independent binding of the original arguments for both method calls.
 
 ### Context And Consequences
 

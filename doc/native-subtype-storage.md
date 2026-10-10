@@ -5,16 +5,17 @@
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Not started |
-| Scope | Physical storage for Python subclasses of native builtin types; explicit Python slot declarations remain deferred |
+| Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `e0c3248e` (2026-10-10), for current-code constraints; the accepted storage changes are not implemented |
+| Validated against | `78f7490a` (2026-10-11), for current-code constraints and local CPython 3.14.5 probes; the accepted changes are not implemented |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
 Python-visible heap `Object`, native heap integer storage for `int` subclasses,
 and overflow-only additional attributes for builtin families that currently
 lack `SlotObject` storage. Existing `SlotObject` families retain their regular
-storage mechanism. This decision was agreed on 2026-10-10.
+storage mechanism. This decision was agreed on 2026-10-10. Class-creation
+validation and constructor specialization were refined on 2026-10-11.
 
 ## Common Storage
 
@@ -34,11 +35,32 @@ overwrite native fields. Existing inline-capable layouts must likewise keep
 Shape capacity within the actual physical slot region.
 
 Current user-class creation gives every class the same default of ten inline
-slots, without inheriting or adding the base class's capacity. Instance allocation
-uses that class's root Shape capacity. When the selected native layout cannot
-hold inline attribute slots, subclass creation must override this generic default
-with zero. The inheritance-aware capacity-selection details are deferred to a
-later implementation sketch.
+slots, without inheriting or adding the base class's capacity. Replace that
+unconditional choice with native-lineage validation at class creation, before
+installing the instance root Shape. Walk the class MRO and inspect each base's
+instance native layout, not the C++ layout of the `ClassObject` record.
+Resolve compatible native payload ancestry and reject conflicting requirements
+with `TypeError` during class creation, rather than at instance allocation.
+For example, `dict` and `list` cannot both supply the payload. Ordinary Python
+mixins and sibling subclasses sharing a compatible native lineage need not
+conflict. Subclass eligibility is validated separately.
+
+The resulting physical layout determines the Shape's inline capacity:
+
+- Native layouts without inline attribute storage, including `Dict`, declare
+  zero inline capacity. Additional attributes use overflow storage.
+- Native inline-capable layouts retain their fixed physical capacity and
+  predefined descriptors. For example, exception subclasses retain `.args`
+  and StopIteration subclasses retain `.value`; additional attributes overflow.
+- Ordinary `Instance` layouts retain dynamically allocated automatic inline
+  slots. The universal `object` base maps to this slot-capable layout and does
+  not force native subclasses to adopt generic `Instance` storage.
+
+Root-shape construction, transitions, and clones preserve the selected storage
+interpretation. Allocators assert that the requested class's root Shape is
+compatible with the allocation's native layout and physical capacity. The
+metadata API for expressing native compatibility still needs an implementation
+sketch; the validation phase and capacity rules are settled here.
 
 Conceptually:
 
@@ -161,32 +183,99 @@ separate allocation, avoiding a second variable-sized tail on a native object.
 The planned copying collector must likewise recover extent without following
 Shape or ClassObject metadata awaiting relocation.
 
+## Constructor Thunk Specialization
+
 Every builtin class must supply or inherit an allocation-correct `__new__`.
 For an instantiable native builtin family, this method allocates a valid native
 object for the requested class, including user subclasses; it must not hard-code
 exact builtin identity. Non-instantiable builtin classes must reject construction
-rather than fall through to generic `Instance` allocation. Class construction
-must validate compatible native ancestry and prepare matching metadata, but
-builtin payload initialization remains owned by the builtin family. This note
-does not choose a new allocation-plan API or a constructor-thunk implementation.
-It does not reinstate the reverted exception-specific layout selection in
-`class_object.cpp`.
+rather than fall through to generic `Instance` allocation. A fresh native
+allocation uses the requested class's instance root Shape: `dict.__new__`
+called for a dict subclass produces `Dict` native storage with that subclass's
+Shape. Builtin payload construction remains owned by the builtin family.
 
 Subclass eligibility is separate from storage and construction capability.
 Having an overflow pointer does not make `bool`, `NoneType`, or the other
 non-subclassable singleton types legal bases. Native payload compatibility must
-also be validated independently: ordinary Python mixins can coexist with a
-compatible native storage lineage, but conflicting native payload requirements
-must be rejected before an instance is allocated. The generic metadata and
-validation API still need a concrete implementation sketch.
+also be validated independently during class creation, as described above.
+
+When building a constructor thunk, resolve `__new__` through the existing
+lookup machinery. Recognize supported builtin implementations through the
+trusted-handler system and its semantics metadata, then emit equivalent
+specialized allocation bytecode. Specialization depends on the resolved
+trusted method and its applicability contract, not merely its name, the
+absence of `__new__`, or the class's native layout. Allocator-specific semantics
+tags and bytecode lowering still need a concrete implementation sketch; the
+current `TrustedHandlerSemantics` enum does not yet describe these allocators.
+
+The specialization must preserve argument validation, payload construction,
+requested subclass identity, exception behavior, and coordinated default
+`object.__new__`/`object.__init__` argument rules. A trusted allocator whose
+contract proves that it returns the requested class can omit the post-allocation
+type check. Methods without a supported trusted allocation contract use the
+general call path. Keep family-specific construction policy in the owning
+builtin implementation; the thunk builder selects known lowering rather than
+inventing a native-layout-based fallback allocator.
+
+Constructor thunks and their call caches retain the existing MRO-and-contents
+validity guard. Replacing, adding, or deleting `__new__` or `__init__`, including
+inherited methods, invalidates the affected constructor lookup. Invalidation
+protects subsequent calls; it does not cancel a thunk already executing.
 
 The existing constructor machinery supports `__new__`-only or `__init__`-only
-class calls, but not the combination. Supporting both is an explicit prerequisite
-for the builtin constructor work. The combined path calls `__new__` first and
-calls initialization only when the returned object is an instance of the
-requested class, preserving the original arguments and requiring `__init__` to
-return `None`. Constructor caches must remain guarded against replacement of
-either method. This is constructor-protocol work, not builtin payload policy.
+class calls, but not the combination. The `__new__`-only thunk currently returns
+its result directly; this also misses initialization when the requested class
+has no initializer but `__new__` returns a subclass instance whose class does.
+Supporting post-allocation initialization is a prerequisite for the builtin
+constructor work.
+
+For general `__new__` calls, use the existing `is_instance_of_known_class`
+bytecode operation on the returned value. Its class-identity comparison handles
+the common exact-class result immediately; only a different actual class
+requires an MRO subtype check. Do not add another inline cache for this test.
+Subclass-returning allocators are supported through that fallback without
+optimizing them as a common case. A failed check is not an error: return the
+allocation result and skip initialization.
+
+When the check passes, resolve `__init__` by special-method lookup using the
+returned object's actual class and MRO. Ignore instance attributes and custom
+instance attribute-access hooks. Preserve descriptor binding and require the
+initializer to return `None`. Lookup or cache validation occurs after `__new__`
+returns, so it observes a different returned subclass or an initializer replaced
+during allocation. Existing special-method and call caches can avoid repeated
+lookup without pinning the initializer selected at constructor entry.
+
+### Argument Binding
+
+Current thunks copy the selected method's signature, defaults, and keyword
+remapping into the thunk, then forward normalized parameters. That is suitable
+for the current single-method paths but cannot generally serve two independent
+calls: normalization loses which arguments were omitted and may apply defaults
+that belong only to `__new__`.
+
+The combined path must preserve the original constructor arguments and bind
+them independently for allocation and initialization. Do not forward
+`__new__`'s normalized frame as `__init__`'s input. In particular, each method
+must apply its own defaults and argument-validation rules, and initialization
+must not be validated or called when the returned object fails the type check.
+
+Preserving the call does not inherently require an unconditional `*args`/
+`**kwargs` tuple-and-dict wrapper. Existing register-based calls, keyword-name
+metadata, and cached argument-binding plans are inputs to an implementation
+sketch for keeping original arguments live and rooted across allocation.
+Actual variadic parameters may still require their usual collection objects.
+The original-argument representation, thunk signature, and forwarding mechanism
+remain to be designed; this document does not claim that the current thunk ABI
+already preserves them. This is constructor-protocol work, not builtin payload
+policy.
+
+Verification must cover class-definition-time layout conflicts and compatible
+mixins, zero/fixed/dynamic inline capacities, native allocation with subclass
+Shapes, replacement of specialized methods, unrelated and subclass `__new__`
+results, initializer replacement during allocation, independent defaults and
+keyword binding, and non-`None` initializer results. Performance verification
+must include ordinary exact-class construction and known builtin allocation
+without forcing every call through variadic collection objects.
 
 ## Explicit Python Slot Declarations
 
