@@ -94,6 +94,33 @@ assert fnmatch.translate("[!]-b]") == "(?s:[^\\]-b])\\z"
 assert fnmatch.translate("[]-Z]") == "(?s:(?!))\\z"
 assert fnmatch.translate("[!]-Z]") == "(?s:.)\\z"
 
+# Descending ranges remove only their own members, before negation is applied.
+# Expected translations and matches were checked with local CPython probes.
+range_cases = (
+    ("[!z-aq]", "[^q]", ("a", "z", "x"), ("q",)),
+    ("[z-aq]", "[q]", ("q",), ("a", "z", "x")),
+    ("[!qz-a]", "[^q]", ("a", "z"), ("q",)),
+    ("[qz-a]", "[q]", ("q",), ("a", "z")),
+    ("[!z-a0-9]", "[^0-9]", ("a", "z", "q"), ("0", "5", "9")),
+    ("[z-a0-9]", "[0-9]", ("0", "5", "9"), ("a", "z", "q")),
+    ("[!z-a]", ".", ("a", "z", "q", "\n"), ()),
+    ("[z-a]", "(?!)", (), ("a", "z", "q")),
+    ("[!]-Zq]", "[^q]", ("]", "Z", "a"), ("q",)),
+    ("[]-Zq]", "[q]", ("q",), ("]", "Z", "a")),
+    ("[a--b]", "[b]", ("b",), ("a", "-")),
+    ("[a-b-c]", "[a-b\\-c]", ("a", "b", "-", "c"), ("d",)),
+    ("[--a]", "[\\--a]", ("-", "]", "a"), ("b",)),
+    ("[z-a-]", "[\\-]", ("-",), ("a", "z")),
+    ("[z-a^]", "[\\^]", ("^",), ("a", "z")),
+    ("[z-a\\]", "[\\\\]", ("\\",), ("a", "z")),
+)
+for case in range_cases:
+    assert fnmatch.translate(case[0]) == "(?s:" + case[1] + ")\\z"
+    for name in case[2]:
+        assert fnmatch.fnmatchcase(name, case[0])
+    for name in case[3]:
+        assert not fnmatch.fnmatchcase(name, case[0])
+
 try:
     fnmatch.fnmatchcase(b"a", "*")
     assert False

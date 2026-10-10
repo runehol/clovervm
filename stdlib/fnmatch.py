@@ -199,40 +199,33 @@ def _translate_class(pat, start, end):
         return "\\[\\]"
 
     stuff = ""
-    if negate:
-        stuff = "^"
-
-    previous = None
-    if idx < end and pat[idx] == "]":
-        stuff = stuff + "\\]"
-        previous = "]"
-        idx += 1
-
     while idx < end:
-        ch = pat[idx]
-        if ch == "\\":
-            stuff = stuff + "\\\\"
-        elif ch == "-" and (idx == start + 1 or idx == end - 1):
-            stuff = stuff + "\\-"
-        elif ch == "-" and previous is not None and idx + 1 < end:
-            next_ch = pat[idx + 1]
-            if previous > next_ch:
-                if negate:
-                    return "."
-                return "(?!)"
-            stuff = stuff + "-"
-        elif ch == "[":
-            stuff = stuff + "\\["
-        elif ch == "^":
-            stuff = stuff + "\\^"
+        first = pat[idx]
+        if idx + 2 < end and pat[idx + 1] == "-":
+            last = pat[idx + 2]
+            if first <= last:
+                stuff = (
+                    stuff + _class_regex_escape(first) + "-" + _class_regex_escape(last)
+                )
+            # A descending range is empty; preserve the other class members.
+            idx += 3
         else:
-            stuff = stuff + ch
-        previous = ch
-        idx += 1
+            stuff = stuff + _class_regex_escape(first)
+            idx += 1
 
-    if stuff == "^":
-        return "."
+    if stuff == "":
+        if negate:
+            return "."
+        return "(?!)"
+    if negate:
+        stuff = "^" + stuff
     return "[" + stuff + "]"
+
+
+def _class_regex_escape(ch):
+    if ch in "\\-][^&~|":
+        return "\\" + ch
+    return ch
 
 
 def _regex_escape(ch):
