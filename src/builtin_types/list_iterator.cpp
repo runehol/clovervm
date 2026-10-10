@@ -27,6 +27,9 @@ namespace cl
         List *list = iterator->list.extract();
         if(index >= list->size())
         {
+            // VM array sizes cannot exceed value_smi_max, so this index
+            // remains out of bounds even if the list grows after exhaustion.
+            iterator->index = TValue<SMI>::from_smi(value_smi_max);
             return active_thread()->set_pending_stop_iteration_no_value();
         }
 

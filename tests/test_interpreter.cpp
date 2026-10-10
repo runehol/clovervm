@@ -5198,6 +5198,53 @@ TEST(Interpreter, python_defined_next_builtin_rejects_multiple_defaults)
     expect_python_error(L"next(iter(()), 42, 43)\n", L"TypeError", L"");
 }
 
+TEST(Interpreter, list_iterator_stays_exhausted_after_append)
+{
+    test::VmTestContext test_context;
+    Value result =
+        test_context.run_file(L"items = []\n"
+                              L"iterator = iter(items)\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"items.append(1)\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"items = [1]\n"
+                              L"iterator = iter(items)\n"
+                              L"assert next(iterator) == 1\n"
+                              L"items.append(2)\n"
+                              L"assert next(iterator) == 2\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"items.append(3)\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"assert iter(iterator) is iterator\n"
+                              L"for item in iterator:\n"
+                              L"    assert False\n"
+                              L"None\n");
+    EXPECT_EQ(Value::None(), result);
+}
+
+TEST(Interpreter, list_iterator_stays_exhausted_after_shrink_and_regrow)
+{
+    test::VmTestContext test_context;
+    Value result =
+        test_context.run_file(L"items = [1, 2]\n"
+                              L"iterator = iter(items)\n"
+                              L"assert next(iterator) == 1\n"
+                              L"items.clear()\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"items.append(3)\n"
+                              L"items.append(4)\n"
+                              L"assert next(iterator, None) is None\n"
+                              L"try:\n"
+                              L"    iterator.__next__()\n"
+                              L"except StopIteration:\n"
+                              L"    pass\n"
+                              L"else:\n"
+                              L"    assert False\n"
+                              L"None\n");
+    EXPECT_EQ(Value::None(), result);
+}
+
 TEST(Interpreter, python_defined_len_builtin_missing_method_error)
 {
     expect_python_error(L"len(1)\n", L"TypeError", L"object has no len()");
