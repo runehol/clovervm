@@ -1,0 +1,86 @@
+CloverVM full benchmark suite
+Commit: 4371ac51
+Machine: Apple M4 (Mac16,10), 16 GB RAM, macOS 26.6.2
+Build: Release, Ninja, CLOVERVM_ENABLE_JIT=OFF
+Command: cmake --build build-release --target run_benchmark
+
+[0/2] cd /Users/runehol/projects/clovervm/build-release/benchmark && /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 /Users/runehol/projects/clovervm/tools/check_opcode_frames.py --binary /Users/runehol/projects/clovervm/build-release/src/CMakeFiles/libclovervm_objects.dir/./runtime/interpreter.cpp.o --required-list /Users/runehol/projects/clovervm/benchmark/hot_path_opcode_handlers.txt --nm /usr/bin/nm --objdump /usr/bin/objdump --warn-only
+[1/2] cd /Users/runehol/projects/clovervm/build-release/benchmark && /Users/runehol/projects/clovervm/build-release/benchmark/bench_clovervm --benchmark_min_time=1s --benchmark_counters_tabular=true
+Unable to determine clock rate from sysctl: hw.cpufrequency: No such file or directory
+This does not affect benchmark measurements, only the metadata output.
+***WARNING*** Failed to set thread affinity. Estimated CPU frequency may be incorrect.
+2026-10-10T19:01:54+02:00
+Running /Users/runehol/projects/clovervm/build-release/benchmark/bench_clovervm
+Run on (10 X 24 MHz CPU s)
+CPU Caches:
+  L1 Data 64 KiB
+  L1 Instruction 128 KiB
+  L2 Unified 4096 KiB (x10)
+Load Average: 7.44, 5.08, 3.44
+CPython: CPython 3.14.5
+---------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                Time             CPU   Iterations items_per_second     vs_cpp vs_cpython
+---------------------------------------------------------------------------------------------------------------------------------
+BM_RecursiveFibonacci/25                           1652063 ns      1651294 ns          837       147.027M/s     0.0723       2.83
+BM_IterativeFibonacci/100000                      49455655 ns     49433750 ns           28       161.833M/s      0.048       3.07
+BM_Mandelbrot/100                                 27285067 ns     27265255 ns           51       9.25409M/s     0.0118      0.483
+BM_WhileLoop/100000                                 502573 ns       502431 ns         2793       199.032M/s      0.049        3.5
+BM_ForLoop/100000                                   290509 ns       290428 ns         4808       344.319M/s     0.0815       4.59
+BM_GetItemList/100000                              1007805 ns      1007500 ns         1367       99.2556M/s     0.0736       2.86
+BM_GetItemTuple/100000                             1081155 ns      1080892 ns         1306       92.5162M/s     0.0715       2.76
+BM_GetItemDictStringKeyed/100000                    674270 ns       673968 ns         2079       148.375M/s      8.99m       2.61
+BM_GetItemDictGeneral/100000                       2059629 ns      2059068 ns          676       48.5657M/s      2.89m      0.712
+BM_GetItemStr/100000                               1728783 ns      1728156 ns          810       57.8652M/s     0.0137       1.05
+BM_GetItemUser/100000                              1270945 ns      1270335 ns         1105       78.7194M/s     0.0594       2.95
+BM_GetSliceListNonstrided/100000                   7052015 ns      7050084 ns          202       14.1842M/s      0.234      0.675
+BM_GetSliceListGeneral/100000                      7275403 ns      7273846 ns          195       13.7479M/s      0.757      0.823
+BM_GetSliceTupleNonstrided/100000                  5053884 ns      5052733 ns          277       19.7913M/s     0.0101       0.99
+BM_GetSliceTupleGeneral/100000                     5369274 ns      5367866 ns          262       18.6294M/s       9.4m       1.04
+BM_GetSliceStrNonstrided/100000                    4243790 ns      4242332 ns          331       23.5719M/s      0.011       1.15
+BM_GetSliceStrGeneral/100000                       4594360 ns      4584744 ns          312       21.8115M/s     0.0138       1.09
+BM_SetItemList/100000                              1171708 ns      1171415 ns         1193       85.3668M/s     0.0663        1.6
+BM_SetItemDictStringKeyed/100000                    912755 ns       912115 ns         1537       109.635M/s     0.0126       1.81
+BM_SetItemDictGeneral/100000                       3171713 ns      3170861 ns          433       31.5372M/s      3.61m       0.51
+BM_SetItemUser/100000                              1541615 ns      1541219 ns          903       64.8837M/s     0.0478       3.34
+BM_ForLoopSlowPath/100000                           667060 ns       666844 ns         2107        149.96M/s     0.0362       2.01
+BM_NestedForLoop/100000                            3906361 ns      3904992 ns          358       256.082M/s     0.0546       6.16
+BM_ExceptionBareHandlerNoRaise/100000               616649 ns       616423 ns         2201       162.226M/s     0.0378       2.79
+BM_ExceptionTypedHandlerNoRaise/100000              621661 ns       621498 ns         2225       160.902M/s     0.0386       2.82
+BM_ExceptionBareHandlerRaise/10000                  312423 ns       312305 ns         4525       32.0199M/s       70.4       1.91
+BM_ExceptionTypedHandlerRaise/10000                 330812 ns       330721 ns         4267       30.2369M/s       66.1       1.95
+BM_ClassInstantiationNoInit/100000                 1508709 ns      1508319 ns          922        66.299M/s     0.0151        2.6
+BM_ClassInstantiationWithInit/100000               2297014 ns      2296491 ns          585       43.5447M/s      9.95m       2.18
+BM_StrConstructorString/100000                     2028244 ns      2027508 ns          693       49.3216M/s     0.0116       1.41
+BM_StrConstructorInt/100000                        3376743 ns      3375524 ns          414        29.625M/s      0.192       1.27
+BM_IntConstructorInt/100000                         952235 ns       951997 ns         1477       105.042M/s     0.0253       1.89
+BM_IntConstructorString/100000                     1270146 ns      1269539 ns         1101       78.7688M/s     0.0187       2.54
+BM_InstanceAttributeAddMember/100000               3224593 ns      3223691 ns          434       31.0203M/s     0.0156       2.36
+BM_InstanceAttributeAddAfterConstruction/100000    2789376 ns      2788752 ns          499       35.8583M/s     0.0181       2.37
+BM_InstanceAttributeRead/100000                     440132 ns       440023 ns         3189       227.261M/s     0.0539        3.5
+BM_ClassAttributeRead/100000                        622336 ns       622089 ns         2269       160.749M/s      0.038       2.69
+BM_InstanceAttributeWrite/100000                    442608 ns       442439 ns         3148        226.02M/s     0.0546       3.79
+BM_ClassAttributeWrite/100000                       899693 ns       899362 ns         1557        111.19M/s     0.0264       4.88
+BM_MethodCall/100000                                710276 ns       710077 ns         1985        140.83M/s     0.0337        4.3
+BM_MethodKeywordCall/100000                         838546 ns       838317 ns         1671       119.287M/s     0.0582       3.99
+BM_FunctionDefaultParameter/100000                  768084 ns       767901 ns         1822       130.225M/s     0.0308       3.86
+BM_FunctionKeyword/100000                           949654 ns       949406 ns         1489       105.329M/s     0.0522       4.37
+BM_FunctionKeywordMixed/100000                      912820 ns       912603 ns         1540       109.577M/s     0.0516       4.29
+BM_FunctionKeywordDefault/100000                    975396 ns       975095 ns         1400       102.554M/s       0.05       3.96
+BM_FunctionKwargsCapture/100000                    9734905 ns      9732824 ns          142       10.2745M/s      2.47m      0.571
+BM_FunctionKwargsLookup/100000                    11236719 ns     11233976 ns          126       8.90157M/s      4.44m       0.79
+BM_FunctionKwargsMixed/100000                      8441296 ns      8439012 ns          165       11.8497M/s      5.93m        1.5
+BM_FunctionVarargs/100000                          2222537 ns      2222038 ns          626       45.0037M/s      0.011       1.74
+BM_FunctionVarargsWithPositional/100000            1943653 ns      1942695 ns          727       51.4749M/s     0.0126       1.86
+BM_GlobalRead/100000                                294862 ns       294784 ns         4730       339.231M/s      0.081       4.05
+BM_BuiltinLookup/100000                            1101208 ns      1100969 ns         1276        90.829M/s     0.0217       1.72
+BM_GlobalWrite/100000                               392706 ns       392033 ns         3643        255.08M/s     0.0771       5.55
+BM_GlobalRefcountedWrite/100000                     576121 ns       575964 ns         2433       173.622M/s     0.0424       4.69
+BM_GlobalAddDelete/100000                         18492696 ns     17669567 ns           90       5.65945M/s      1.85m      0.268
+BM_FunctionDefaultVarargs/100000                   1785538 ns      1785154 ns          790       56.0176M/s     0.0277       1.72
+BM_InstanceAttributeRefcountedWrite/100000          775465 ns       775231 ns         1804       128.994M/s     0.0314       2.27
+BM_MethodCallClassAttributeWrite/100000            1349947 ns      1349575 ns         1036       74.0974M/s     0.0179       5.27
+BM_MemoryReclamation/100000                        6045218 ns      6044108 ns          232        16.545M/s      8.03m       2.29
+BM_NBody/100000                                  677191021 ns    676956000 ns            2        1.4772M/s      4.56m      0.423
+BM_PystoneLite/10000                               2470594 ns      2469958 ns          568       4.04865M/s     0.0114       2.23
+BM_Pystone/10000                                   5319580 ns      5318449 ns          265       1.88025M/s     0.0368       1.72
+BM_PystoneArithmetic/10000                         9349689 ns      9347315 ns          149       1.06983M/s       0.02        2.2

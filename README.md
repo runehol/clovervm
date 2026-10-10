@@ -78,28 +78,36 @@ clovervm and CPython on the same workloads. The suite reports normalized
 throughput and a `vs_cpython` counter for quick comparison. Benchmarks with a
 barrier-protected C++ reference also report `vs_cpp`.
 
-Historical snapshot from a Mac Mini M4, committed on May 3, 2026:
+Snapshot measured on October 10, 2026 at commit `4371ac51`, on an Apple M4
+with 16 GB RAM and macOS 26.6.2. Release build with JIT disabled, compared
+with CPython 3.14.5.
 
-| Benchmark | Throughput | vs CPython 3.14.4 |
+Run the full suite with `cmake --build build-release --target run_benchmark`.
+The target uses a one-second minimum per benchmark; comparison counters use
+separate samples of at least 0.1 seconds. These are single-run measurements.
+[Full suite output](benchmark/results/2026-10-10.txt).
+
+| Benchmark | Throughput | vs CPython 3.14.5 |
 | --- | ---: | ---: |
-| Recursive Fibonacci | 142M calls/s | 3.06x |
-| While loop | 187M iters/s | 3.14x |
-| For loop | 297M iters/s | 3.92x |
-| For loop slow path | 292M iters/s | 3.90x |
-| Nested for loop | 239M iters/s | 5.33x |
-| Class instantiation, no `__init__` | 50.1M objects/s | 1.99x |
-| Class instantiation with `__init__` | 36.8M objects/s | 1.85x |
-| Instance attribute add in constructor | 27.7M attrs/s | 2.02x |
-| Instance attribute add after construction | 31.7M attrs/s | 2.04x |
-| Instance attribute read | 204M reads/s | 3.13x |
-| Class attribute read | 161M reads/s | 2.62x |
-| Instance attribute write | 206M writes/s | 3.39x |
-| Class attribute write | 111M writes/s | 5.07x |
-| Method call | 127M calls/s | 3.56x |
-| Function default parameter | 121M calls/s | 3.41x |
-| Function varargs | 36.3M calls/s | 1.37x |
-| Function varargs with positional args | 39.9M calls/s | 1.37x |
-| Function default varargs | 53.0M calls/s | 1.57x |
-| Method call with class attribute write | 77.1M calls/s | 5.24x |
-| Pystone lite | 4.22M runs/s | 2.27x |
-| Pystone arithmetic | 1.11M runs/s | 2.29x |
+| Recursive Fibonacci | 147M calls/s | 2.83x |
+| While loop | 199M iters/s | 3.50x |
+| For loop | 344M iters/s | 4.59x |
+| For loop slow path | 150M iters/s | 2.01x |
+| Nested for loop | 256M iters/s | 6.16x |
+| Class instantiation, no `__init__` | 66.3M objects/s | 2.60x |
+| Class instantiation with `__init__` | 43.5M objects/s | 2.18x |
+| Instance attribute add in constructor | 31.0M attrs/s | 2.36x |
+| Instance attribute add after construction | 35.9M attrs/s | 2.37x |
+| Instance attribute read | 227M reads/s | 3.50x |
+| Class attribute read | 161M reads/s | 2.69x |
+| Instance attribute write | 226M writes/s | 3.79x |
+| Class attribute write | 111M writes/s | 4.88x |
+| Method call | 141M calls/s | 4.30x |
+| Function default parameter | 130M calls/s | 3.86x |
+| Function varargs | 45.0M calls/s | 1.74x |
+| Function varargs with positional args | 51.5M calls/s | 1.86x |
+| Function default varargs | 56.0M calls/s | 1.72x |
+| Method call with class attribute write | 74.1M calls/s | 5.27x |
+| Pystone lite | 4.05M runs/s | 2.23x |
+| Pystone | 1.88M runs/s | 1.72x |
+| Pystone arithmetic | 1.07M runs/s | 2.20x |
