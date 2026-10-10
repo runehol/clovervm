@@ -358,6 +358,17 @@ namespace cl
                                ConstBigIntView{n_digits, signum, digits});
     }
 
+    Expected<Value> bigint_from_uint64(ThreadState *thread, uint64_t value)
+    {
+        digit_t digits[] = {static_cast<digit_t>(value),
+                            static_cast<digit_t>(value >> kDigitBits)};
+        size_t n_digits = digits[1] != 0 ? 2 : (digits[0] != 0 ? 1 : 0);
+        return finalize_bigint(
+            thread,
+            ConstBigIntView{n_digits, value != 0 ? signum_t{1} : signum_t{0},
+                            digits});
+    }
+
     Expected<int64_t> bigint_to_int64(ConstBigIntView view)
     {
         assert(is_normalized_bigint_view(view));
@@ -394,6 +405,22 @@ namespace cl
             return Expected<int64_t>::ok(std::numeric_limits<int64_t>::min());
         }
         return Expected<int64_t>::ok(-static_cast<int64_t>(magnitude));
+    }
+
+    Expected<uint64_t> bigint_to_uint64(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        if(view.signum < 0 || view.n_digits > 2)
+        {
+            return Expected<uint64_t>::raise_exception(L"OverflowError",
+                                                       L"integer overflow");
+        }
+        if(view.signum == 0)
+        {
+            return Expected<uint64_t>::ok(0);
+        }
+        return Expected<uint64_t>::ok(
+            magnitude_to_double_digit_unchecked(view));
     }
 
     static size_t bigint_abs_bit_length(ConstBigIntView view)

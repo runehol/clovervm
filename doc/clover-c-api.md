@@ -231,6 +231,7 @@ Implemented runtime APIs:
 clover_handle clover_propagate_error(clover_context *ctx);
 clover_handle clover_none(clover_context *ctx);
 clover_handle clover_int_from_int64(clover_context *ctx, int64_t value);
+clover_handle clover_int_from_uint64(clover_context *ctx, uint64_t value);
 clover_handle clover_float_from_double(clover_context *ctx, double value);
 clover_handle clover_string_from_utf8(clover_context *ctx,
                                      const char *utf8_value);
@@ -246,6 +247,9 @@ clover_status clover_float_as_double(clover_context *ctx,
 clover_status clover_int_as_int64(clover_context *ctx,
                                   clover_handle value,
                                   int64_t *out);
+clover_status clover_int_as_uint64(clover_context *ctx,
+                                   clover_handle value,
+                                   uint64_t *out);
 clover_status clover_is(clover_context *ctx,
                         clover_handle left,
                         clover_handle right,
@@ -255,6 +259,13 @@ clover_handle clover_raise_overflow_error(clover_context *ctx,
 clover_handle clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
 ```
+
+Integer constructors preserve the full signed or unsigned 64-bit range, returning
+a tagged small integer when possible and a heap BigInt otherwise.
+`clover_int_as_int64` accepts either representation and raises `OverflowError`
+when the value lies outside the signed 64-bit range.
+`clover_int_as_uint64` accepts nonnegative integers through `UINT64_MAX` and
+raises `OverflowError` for negative values or larger magnitudes.
 
 Conversion helpers set a pending exception on failure and return
 `CLOVER_STATUS_ERROR`. Callers propagate that failure by returning

@@ -74,7 +74,8 @@ static clover_handle bad_tuple_func(clover_context *ctx)
 
 static clover_handle propagated_error_consumers_func(clover_context *ctx)
 {
-    clover_handle error = clover_int_from_int64(ctx, INT64_MAX);
+    clover_handle error =
+        clover_raise_overflow_error(ctx, "test native overflow");
 
     size_t tuple_size = 42;
     if(clover_tuple_size(ctx, error, &tuple_size) != CLOVER_STATUS_ERROR ||

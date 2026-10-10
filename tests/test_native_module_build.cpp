@@ -1,5 +1,6 @@
 #include "api/extension_handle.h"
 #include "build_config.h"
+#include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
 #include "builtin_types/list.h"
@@ -14,6 +15,7 @@
 #include "test_helpers.h"
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <limits>
 #include <optional>
 
 using namespace cl;
@@ -664,7 +666,7 @@ TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"OverflowError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(
-        L"integer is outside the supported native API range",
+        L"test native overflow",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
     EXPECT_FALSE(sys_modules_contains(context, name));
 }
@@ -692,7 +694,7 @@ TEST(NativeModuleBuild, ValueConsumersPreservePropagatedErrorHandles)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"OverflowError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(
-        L"integer is outside the supported native API range",
+        L"test native overflow",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
 }
 
@@ -726,4 +728,121 @@ TEST(NativeModuleBuild, InitSuccessWithExceptionRaisesSystemError)
         L"'_test_native_success_with_exception'",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
     EXPECT_FALSE(sys_modules_contains(context, name));
+}
+
+TEST(NativeModuleBuild, SignedIntegerApiRoundTripsFullInt64Range)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    const int64_t inputs[] = {0,
+                              value_smi_min,
+                              value_smi_max,
+                              value_smi_min - 1,
+                              value_smi_max + 1,
+                              std::numeric_limits<int64_t>::min(),
+                              std::numeric_limits<int64_t>::max()};
+    for(int64_t input: inputs)
+    {
+        Value slots[3] = {Value::not_present(), Value::not_present(),
+                          Value::not_present()};
+        clover_context ctx{context.thread(), slots, slots + 3, false};
+        clover_handle handle = clover_int_from_int64(&ctx, input);
+        ASSERT_FALSE(resolve_handle(handle).is_exception_marker());
+        EXPECT_EQ(input >= value_smi_min && input <= value_smi_max,
+                  resolve_handle(handle).is_smi());
+        int64_t output = 0;
+        EXPECT_EQ(CLOVER_STATUS_OK, clover_int_as_int64(&ctx, handle, &output));
+        EXPECT_EQ(input, output);
+        EXPECT_FALSE(context.thread()->has_pending_exception());
+    }
+}
+
+TEST(NativeModuleBuild, UnsignedIntegerApiPreservesFullUint64Range)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    const uint64_t inputs[] = {
+        0,
+        static_cast<uint64_t>(value_smi_max),
+        static_cast<uint64_t>(value_smi_max) + 1,
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::max()),
+        uint64_t{1} << 63,
+        std::numeric_limits<uint64_t>::max()};
+    for(uint64_t input: inputs)
+    {
+        Value slots[3] = {Value::not_present(), Value::not_present(),
+                          Value::not_present()};
+        clover_context ctx{context.thread(), slots, slots + 3, false};
+        clover_handle handle = clover_int_from_uint64(&ctx, input);
+        Value value = resolve_handle(handle);
+        ASSERT_FALSE(value.is_exception_marker());
+        EXPECT_EQ(input <= static_cast<uint64_t>(value_smi_max),
+                  value.is_smi());
+        std::wstring decimal =
+            value.is_smi()
+                ? std::to_wstring(value.get_smi())
+                : bigint_to_decimal_string(value.get_ptr<BigInt>()->view());
+        EXPECT_EQ(std::to_wstring(input), decimal);
+        uint64_t unsigned_output = 0;
+        EXPECT_EQ(CLOVER_STATUS_OK,
+                  clover_int_as_uint64(&ctx, handle, &unsigned_output));
+        EXPECT_EQ(input, unsigned_output);
+        int64_t output = 42;
+        if(input <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+        {
+            EXPECT_EQ(CLOVER_STATUS_OK,
+                      clover_int_as_int64(&ctx, handle, &output));
+            EXPECT_EQ(static_cast<int64_t>(input), output);
+        }
+        else
+        {
+            EXPECT_EQ(CLOVER_STATUS_ERROR,
+                      clover_int_as_int64(&ctx, handle, &output));
+            EXPECT_EQ(0, output);
+            ASSERT_TRUE(context.thread()->has_pending_exception());
+            EXPECT_EQ(
+                context.thread()->class_for_builtin_name(L"OverflowError"),
+                context.thread()
+                    ->pending_exception_object()
+                    .extract()
+                    ->get_shape()
+                    ->get_class());
+            context.thread()->clear_pending_exception();
+        }
+    }
+}
+
+TEST(NativeModuleBuild, UnsignedIntegerApiRejectsNegativeOverflowAndNonIntegers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    digit_t digits[] = {0, 0, 1};
+    Expected<Value> too_large =
+        finalize_bigint(context.thread(), ConstBigIntView{3, 1, digits});
+    ASSERT_TRUE(too_large.has_value());
+    Expected<Value> negative_bigint = bigint_from_int64(
+        context.thread(), std::numeric_limits<int64_t>::min());
+    ASSERT_TRUE(negative_bigint.has_value());
+    const Value inputs[] = {Value::from_smi(-1), negative_bigint.value(),
+                            too_large.value(), Value::None()};
+    for(Value input: inputs)
+    {
+        Value slots[3] = {Value::not_present(), Value::not_present(),
+                          Value::not_present()};
+        clover_context ctx{context.thread(), slots, slots + 3, false};
+        clover_handle handle = allocate_handle(&ctx, input);
+        uint64_t output = 42;
+        EXPECT_EQ(CLOVER_STATUS_ERROR,
+                  clover_int_as_uint64(&ctx, handle, &output));
+        EXPECT_EQ(0u, output);
+        ASSERT_TRUE(context.thread()->has_pending_exception());
+        EXPECT_EQ(context.thread()->class_for_builtin_name(
+                      input == Value::None() ? L"TypeError" : L"OverflowError"),
+                  context.thread()
+                      ->pending_exception_object()
+                      .extract()
+                      ->get_shape()
+                      ->get_class());
+        context.thread()->clear_pending_exception();
+    }
 }
