@@ -20,62 +20,43 @@
 
 namespace cl
 {
-    static bool classinfo_matches(ClassObject *cls, Value classinfo)
+    [[nodiscard]] static Value
+    classinfo_matches(ThreadState *thread, ClassObject *cls, Value classinfo,
+                      const wchar_t *invalid_classinfo_message)
     {
         if(can_convert_to<ClassObject>(classinfo))
         {
             return is_subclass_of(
-                cls,
-                TValue<ClassObject>::from_value_assumed(classinfo).extract());
+                       cls, TValue<ClassObject>::from_value_assumed(classinfo)
+                                .extract())
+                       ? Value::True()
+                       : Value::False();
         }
         if(can_convert_to<Tuple>(classinfo))
         {
             Tuple *tuple = classinfo.get_ptr<Tuple>();
             for(size_t idx = 0; idx < tuple->size(); ++idx)
             {
-                if(classinfo_matches(cls, tuple->item_unchecked(idx)))
+                Value result =
+                    classinfo_matches(thread, cls, tuple->item_unchecked(idx),
+                                      invalid_classinfo_message);
+                if(result != Value::False())
                 {
-                    return true;
+                    return result;
                 }
             }
+            return Value::False();
         }
-        return false;
-    }
-
-    static bool classinfo_is_valid(Value classinfo)
-    {
-        if(can_convert_to<ClassObject>(classinfo))
-        {
-            return true;
-        }
-        if(!can_convert_to<Tuple>(classinfo))
-        {
-            return false;
-        }
-        Tuple *tuple = classinfo.get_ptr<Tuple>();
-        for(size_t idx = 0; idx < tuple->size(); ++idx)
-        {
-            if(!classinfo_is_valid(tuple->item_unchecked(idx)))
-            {
-                return false;
-            }
-        }
-        return true;
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", invalid_classinfo_message);
     }
 
     static Value builtin_isinstance(ThreadState *thread, Value obj,
                                     Value classinfo)
     {
-        if(!classinfo_is_valid(classinfo))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"isinstance() arg 2 must be a type or tuple of types");
-        }
-        return classinfo_matches(active_thread()->class_of_value(obj),
-                                 classinfo)
-                   ? Value::True()
-                   : Value::False();
+        return classinfo_matches(
+            thread, thread->class_of_value(obj), classinfo,
+            L"isinstance() arg 2 must be a type or tuple of types");
     }
 
     static Value builtin_issubclass(ThreadState *thread, Value cls_value,
@@ -83,19 +64,14 @@ namespace cl
     {
         if(!can_convert_to<ClassObject>(cls_value))
         {
-            return active_thread()->set_pending_builtin_exception_string(
+            return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"issubclass() arg 1 must be a type");
-        }
-        if(!classinfo_is_valid(classinfo))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"issubclass() arg 2 must be a type or tuple of types");
         }
         ClassObject *cls =
             TValue<ClassObject>::from_value_assumed(cls_value).extract();
-        return classinfo_matches(cls, classinfo) ? Value::True()
-                                                 : Value::False();
+        return classinfo_matches(
+            thread, cls, classinfo,
+            L"issubclass() arg 2 must be a type or tuple of types");
     }
 
     static Value require_attribute_name(Value name)

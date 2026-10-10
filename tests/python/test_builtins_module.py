@@ -25,6 +25,32 @@ assert issubclass(bool, int)
 assert issubclass(bool, (str, int))
 assert not issubclass(str, (list, tuple))
 
+# Classinfo tuples are visited left to right, stopping at a match or error.
+for case in ((isinstance, 1), (issubclass, int)):
+    check = case[0]
+    value = case[1]
+    assert check(value, (int, 42))
+    assert check(value, ((str, int), 42))
+    assert check(value, ((), (str, (int, 42)), 42))
+    assert not check(value, ())
+    assert not check(value, ((), (str, (list, tuple))))
+    for invalid in (42, (42, int), (str, 42), ((str, 42), int)):
+        raised = False
+        try:
+            check(value, invalid)
+        except TypeError:
+            raised = True
+        assert raised
+
+# An invalid first argument to issubclass is still rejected for an empty tuple.
+for classinfo in ((), (int, 42)):
+    raised = False
+    try:
+        issubclass(1, classinfo)
+    except TypeError:
+        raised = True
+    assert raised
+
 setattr(obj, "dynamic_attr", 42)
 assert getattr(obj, "dynamic_attr") == 42
 assert hasattr(obj, "dynamic_attr")
