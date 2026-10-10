@@ -121,6 +121,8 @@ namespace cl
         [[nodiscard]] TValue<String> lower() const;
         [[nodiscard]] TValue<String> swapcase() const;
         [[nodiscard]] TValue<String> upper() const;
+        // Bounded searches require end <= length. A start greater than end
+        // means no match; equal bounds form a valid empty search range.
         bool startswith(const String *prefix) const;
         bool startswith(const String *prefix, size_t start, size_t end) const;
         bool endswith(const String *suffix) const;

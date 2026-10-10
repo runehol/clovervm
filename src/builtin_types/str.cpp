@@ -412,16 +412,14 @@ namespace cl
         {
             return 0;
         }
-        if(value > length)
-        {
-            return static_cast<size_t>(length);
-        }
         return static_cast<size_t>(value);
     }
 
-    static Value normalize_string_range(Value self, Value start_value,
-                                        Value end_value, size_t &start,
-                                        size_t &end)
+    // Preserve starts beyond the end and reversed ranges as no-match ranges.
+    // The end is bounded by the string length; start may exceed end.
+    [[nodiscard]] static Value
+    normalize_string_range(Value self, Value start_value, Value end_value,
+                           size_t &start, size_t &end)
     {
         int64_t length = self.get_ptr<String>()->count.extract();
         int64_t py_start = 0;
@@ -437,11 +435,8 @@ namespace cl
                 end_value, L"slice indices must be integers", py_end));
         }
         start = normalize_string_bound(py_start, length);
-        end = normalize_string_bound(py_end, length);
-        if(end < start)
-        {
-            end = start;
-        }
+        end = std::min(normalize_string_bound(py_end, length),
+                       static_cast<size_t>(length));
         return Value::None();
     }
 
@@ -1264,6 +1259,11 @@ namespace cl
     bool String::startswith(const String *prefix, size_t start,
                             size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return false;
+        }
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view prefix_view(prefix->data,
                                       size_t(prefix->count.extract()));
@@ -1279,6 +1279,11 @@ namespace cl
 
     bool String::endswith(const String *suffix, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return false;
+        }
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view suffix_view(suffix->data,
                                       size_t(suffix->count.extract()));
@@ -1294,6 +1299,11 @@ namespace cl
 
     int64_t String::find(const String *needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return -1;
+        }
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view needle_view(needle->data,
                                       size_t(needle->count.extract()));
@@ -1313,6 +1323,11 @@ namespace cl
 
     int64_t String::rfind(const String *needle, size_t start, size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return -1;
+        }
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view needle_view(needle->data,
                                       size_t(needle->count.extract()));
@@ -1365,6 +1380,11 @@ namespace cl
     int64_t String::count_substring(const String *needle, size_t start,
                                     size_t end) const
     {
+        assert(end <= size_t(count.extract()));
+        if(start > end)
+        {
+            return 0;
+        }
         std::wstring_view str(data, size_t(count.extract()));
         std::wstring_view needle_view(needle->data,
                                       size_t(needle->count.extract()));
