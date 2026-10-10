@@ -72,6 +72,8 @@ cwd = os.getcwd()
 assert len(cwd) > 0
 assert os.access(cwd, os.F_OK)
 assert os.stat(cwd)[0] > 0
+assert os.stat(cwd)[1] >= 0
+assert os.lstat(cwd)[1] == os.stat(cwd)[1]
 assert os.lstat(cwd)[0] > 0
 assert os.path.exists(cwd)
 assert os.path.lexists(cwd)

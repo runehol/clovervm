@@ -93,6 +93,8 @@ extern "C"
     CL_EXPORT clover_handle clover_none(clover_context *ctx);
     CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
                                                   int64_t value);
+    CL_EXPORT clover_handle clover_int_from_uint64(clover_context *ctx,
+                                                   uint64_t value);
     CL_EXPORT clover_handle clover_float_from_double(clover_context *ctx,
                                                      double value);
     CL_EXPORT clover_handle clover_string_from_utf8(clover_context *ctx,
@@ -120,6 +122,9 @@ extern "C"
     CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
                                                 clover_handle value,
                                                 int64_t *out);
+    CL_EXPORT clover_status clover_int_as_uint64(clover_context *ctx,
+                                                 clover_handle value,
+                                                 uint64_t *out);
     CL_EXPORT clover_status clover_is(clover_context *ctx, clover_handle left,
                                       clover_handle right, bool *out);
 

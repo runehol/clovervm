@@ -814,3 +814,23 @@ TEST(BigInt, ExactIntValueToSmiExcludesBool)
     EXPECT_EQ(IntToSmiStatus::NotInt, bool_result.value());
     EXPECT_EQ(7, bool_smi.extract());
 }
+
+TEST(BigInt, BigIntFromUint64PreservesUnsignedBoundaries)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    const uint64_t inputs[] = {0,
+                               1,
+                               static_cast<uint64_t>(value_smi_max),
+                               static_cast<uint64_t>(value_smi_max) + 1,
+                               uint64_t{1} << 63,
+                               std::numeric_limits<uint64_t>::max()};
+    for(uint64_t input: inputs)
+    {
+        Expected<Value> result = bigint_from_uint64(context.thread(), input);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(input <= static_cast<uint64_t>(value_smi_max),
+                  result.value().is_smi());
+        EXPECT_EQ(std::to_wstring(input), int_value_decimal(result.value()));
+    }
+}

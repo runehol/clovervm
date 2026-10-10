@@ -1,5 +1,6 @@
 #include "api/extension_handle.h"
 
+#include "builtin_types/bigint.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
 #include "builtin_types/list.h"
@@ -145,14 +146,23 @@ extern "C" CL_EXPORT clover_handle clover_none(clover_context *ctx)
 extern "C" CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
                                                          int64_t value)
 {
-    if(value < cl::value_smi_min || value > cl::value_smi_max)
+    cl::Expected<cl::Value> result = cl::bigint_from_int64(ctx->thread, value);
+    if(result.has_exception())
     {
-        (void)ctx->thread->set_pending_builtin_exception_string(
-            L"OverflowError",
-            L"integer is outside the supported native API range");
         return clover_propagate_error(ctx);
     }
-    return cl::allocate_handle(ctx, cl::Value::from_smi(value));
+    return cl::allocate_handle(ctx, result.value());
+}
+
+extern "C" CL_EXPORT clover_handle clover_int_from_uint64(clover_context *ctx,
+                                                          uint64_t value)
+{
+    cl::Expected<cl::Value> result = cl::bigint_from_uint64(ctx->thread, value);
+    if(result.has_exception())
+    {
+        return clover_propagate_error(ctx);
+    }
+    return cl::allocate_handle(ctx, result.value());
 }
 
 extern "C" CL_EXPORT clover_handle clover_float_from_double(clover_context *ctx,
@@ -392,9 +402,62 @@ extern "C" CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
         return CLOVER_STATUS_OK;
     }
 
+    if(cl::can_convert_to<cl::BigInt>(unwrapped))
+    {
+        cl::Expected<int64_t> result =
+            cl::bigint_to_int64(unwrapped.get_ptr<cl::BigInt>()->view());
+        if(result.has_exception())
+        {
+            return CLOVER_STATUS_ERROR;
+        }
+        *out = result.value();
+        return CLOVER_STATUS_OK;
+    }
+
     (void)ctx->thread->set_pending_builtin_exception_string(
         L"TypeError", L"value cannot be converted to int");
     return CLOVER_STATUS_ERROR;
+}
+
+extern "C" CL_EXPORT clover_status clover_int_as_uint64(clover_context *ctx,
+                                                        clover_handle value,
+                                                        uint64_t *out)
+{
+    if(out != nullptr)
+    {
+        *out = 0;
+    }
+    if(out == nullptr)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    cl::SmiViewStorage storage;
+    cl::ConstBigIntView view;
+    if(unwrapped.is_smi())
+    {
+        view = cl::smi_bigint_view(unwrapped.get_smi(), &storage);
+    }
+    else if(cl::can_convert_to<cl::BigInt>(unwrapped))
+    {
+        view = unwrapped.get_ptr<cl::BigInt>()->view();
+    }
+    else
+    {
+        return cl::set_extension_api_error(ctx, L"TypeError",
+                                           L"value cannot be converted to int");
+    }
+    cl::Expected<uint64_t> result = cl::bigint_to_uint64(view);
+    if(result.has_exception())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    *out = result.value();
+    return CLOVER_STATUS_OK;
 }
 
 extern "C" CL_EXPORT clover_status clover_is(clover_context *ctx,

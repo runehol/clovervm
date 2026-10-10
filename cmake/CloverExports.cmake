@@ -50,7 +50,9 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_float_as_double
     clover_float_from_double
     clover_int_from_int64
+    clover_int_from_uint64
     clover_int_as_int64
+    clover_int_as_uint64
     clover_is
     clover_none
     clover_propagate_error

@@ -297,12 +297,12 @@ static clover_handle os_umask(clover_context *ctx, clover_handle mask_value)
 static clover_handle stat_to_tuple(clover_context *ctx, const struct stat *st)
 {
     clover_handle items[] = {
-        clover_int_from_int64(ctx, (int64_t)st->st_mode),
-        clover_int_from_int64(ctx, (int64_t)st->st_ino),
-        clover_int_from_int64(ctx, (int64_t)st->st_dev),
-        clover_int_from_int64(ctx, (int64_t)st->st_nlink),
-        clover_int_from_int64(ctx, (int64_t)st->st_uid),
-        clover_int_from_int64(ctx, (int64_t)st->st_gid),
+        clover_int_from_uint64(ctx, st->st_mode),
+        clover_int_from_uint64(ctx, st->st_ino),
+        clover_int_from_uint64(ctx, st->st_dev),
+        clover_int_from_uint64(ctx, st->st_nlink),
+        clover_int_from_uint64(ctx, st->st_uid),
+        clover_int_from_uint64(ctx, st->st_gid),
         clover_int_from_int64(ctx, (int64_t)st->st_size),
         clover_float_from_double(ctx, (double)st->st_atime),
         clover_float_from_double(ctx, (double)st->st_mtime),
