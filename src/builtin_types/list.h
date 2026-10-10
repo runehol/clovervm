@@ -48,10 +48,6 @@ namespace cl
         [[nodiscard]] TValue<List> copy() const;
         void extend_from_list(const List *other);
         void extend_from_tuple(const Tuple *other);
-        int64_t count(Value needle) const;
-        [[nodiscard]] Value index(Value needle, int64_t start_py_idx,
-                                  int64_t stop_py_idx) const;
-        [[nodiscard]] Value remove(Value needle);
         void reverse();
         [[nodiscard]] TValue<List> concat(const List *other) const;
 
@@ -83,6 +79,7 @@ namespace cl
     class VirtualMachine;
     BuiltinClassDefinition make_list_class(VirtualMachine *vm);
     void install_list_class_methods(VirtualMachine *vm);
+    void install_list_python_methods(VirtualMachine *vm);
 
 }  // namespace cl
 

@@ -4,7 +4,9 @@
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
+#include "import_system/module_global.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/native_function.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_propagation.h"
@@ -255,19 +257,6 @@ namespace cl
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
-    static size_t normalize_list_search_bound(int64_t py_idx, size_t size)
-    {
-        int64_t normalized = py_idx;
-        int64_t n_items = static_cast<int64_t>(size);
-        if(normalized < 0)
-        {
-            normalized += n_items;
-        }
-        normalized = std::max<int64_t>(0, normalized);
-        normalized = std::min<int64_t>(normalized, n_items);
-        return static_cast<size_t>(normalized);
-    }
-
     static Value native_list_append(ThreadState *thread, Value self,
                                     Value value)
     {
@@ -308,28 +297,6 @@ namespace cl
             L"TypeError", L"list.extend expects a list or tuple");
     }
 
-    static Value native_list_count(ThreadState *thread, Value self,
-                                   Value needle)
-    {
-        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"count"));
-        return Value::from_smi(self.get_ptr<List>()->count(needle));
-    }
-
-    static Value native_list_index(ThreadState *thread, Value self,
-                                   Value needle, Value start_value,
-                                   Value stop_value)
-    {
-        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"index"));
-        int64_t start_py_idx = 0;
-        int64_t stop_py_idx = 0;
-        CL_PROPAGATE_EXCEPTION(require_smi_index(
-            start_value, L"list indices must be integers", start_py_idx));
-        CL_PROPAGATE_EXCEPTION(require_smi_index(
-            stop_value, L"list indices must be integers", stop_py_idx));
-
-        return self.get_ptr<List>()->index(needle, start_py_idx, stop_py_idx);
-    }
-
     static Value native_list_insert(ThreadState *thread, Value self,
                                     Value index_value, Value value)
     {
@@ -349,13 +316,6 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             index_value, L"list indices must be integers", py_idx));
         return self.get_ptr<List>()->pop_item(py_idx);
-    }
-
-    static Value native_list_remove(ThreadState *thread, Value self,
-                                    Value needle)
-    {
-        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"remove"));
-        return self.get_ptr<List>()->remove(needle);
     }
 
     static Value native_list_reverse(ThreadState *thread, Value self)
@@ -380,16 +340,6 @@ namespace cl
         TValue<Tuple> defaults =
             vm->get_default_thread()->make_object_value<Tuple>(1);
         defaults.extract()->initialize_item_unchecked(0, value);
-        return defaults;
-    }
-
-    static TValue<Tuple>
-    list_default_pair(VirtualMachine *vm, Value first_value, Value second_value)
-    {
-        TValue<Tuple> defaults =
-            vm->get_default_thread()->make_object_value<Tuple>(2);
-        defaults.extract()->initialize_item_unchecked(0, first_value);
-        defaults.extract()->initialize_item_unchecked(1, second_value);
         return defaults;
     }
 
@@ -443,12 +393,8 @@ namespace cl
                                      L"Return a shallow copy of the list."),
             builtin_intrinsic_method(L"extend", native_list_extend,
                                      L"Extend list by appending items."),
-            builtin_intrinsic_method(L"count", native_list_count,
-                                     L"Return number of occurrences of value."),
             builtin_intrinsic_method(L"insert", native_list_insert,
                                      L"Insert object before index."),
-            builtin_intrinsic_method(L"remove", native_list_remove,
-                                     L"Remove first occurrence of value."),
             builtin_intrinsic_method(L"reverse", native_list_reverse,
                                      L"Reverse list in place."),
         };
@@ -474,12 +420,40 @@ namespace cl
             assert(stored);
             (void)stored;
         };
-        install(L"index", native_list_index,
-                Optional<TValue<Tuple>>::some(list_default_pair(
-                    vm, Value::from_smi(0), Value::from_smi(value_smi_max))));
         install(L"pop", native_list_pop,
                 Optional<TValue<Tuple>>::some(
                     list_default_single(vm, Value::from_smi(-1))));
+    }
+
+    void install_list_python_methods(VirtualMachine *vm)
+    {
+        ModuleObject *builtins = vm->global_builtins_module().extract();
+        ClassObject *cls = vm->list_class();
+        const wchar_t *method_names[] = {L"count", L"index", L"remove"};
+        const wchar_t *helper_names[] = {L"__clover_list_count",
+                                         L"__clover_list_index",
+                                         L"__clover_list_remove"};
+        DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
+                                descriptor_flag(DescriptorFlag::StableSlot);
+        for(size_t idx = 0; idx < std::size(method_names); ++idx)
+        {
+            TValue<String> helper_name =
+                vm->get_or_create_interned_string_value(helper_names[idx]);
+            Value function = builtins->get_own_property(helper_name);
+            if(!can_convert_to<Function>(function))
+            {
+                fatal("trusted builtins.py did not define list method");
+            }
+            bool stored = cls->define_own_property(
+                vm->get_or_create_interned_string_value(method_names[idx]),
+                function, flags);
+            assert(stored);
+            (void)stored;
+            if(!delete_module_global(builtins, helper_name))
+            {
+                fatal("failed to hide Python list method from builtins");
+            }
+        }
     }
 
     TValue<List> List::copy() const
@@ -507,49 +481,6 @@ namespace cl
         {
             append(other->item_unchecked(idx));
         }
-    }
-
-    int64_t List::count(Value needle) const
-    {
-        int64_t result = 0;
-        for(size_t idx = 0; idx < size(); ++idx)
-        {
-            if(item_unchecked(idx) == needle)
-            {
-                ++result;
-            }
-        }
-        return result;
-    }
-
-    Value List::index(Value needle, int64_t start_py_idx,
-                      int64_t stop_py_idx) const
-    {
-        size_t start = normalize_list_search_bound(start_py_idx, size());
-        size_t stop = normalize_list_search_bound(stop_py_idx, size());
-        for(size_t idx = start; idx < stop; ++idx)
-        {
-            if(item_unchecked(idx) == needle)
-            {
-                return Value::from_smi(static_cast<int64_t>(idx));
-            }
-        }
-        return active_thread()->set_pending_builtin_exception_string(
-            L"ValueError", L"list.index(x): x not in list");
-    }
-
-    Value List::remove(Value needle)
-    {
-        for(size_t idx = 0; idx < size(); ++idx)
-        {
-            if(item_unchecked(idx) == needle)
-            {
-                (void)pop_item_unchecked(idx);
-                return Value::None();
-            }
-        }
-        return active_thread()->set_pending_builtin_exception_string(
-            L"ValueError", L"list.remove(x): x not in list");
     }
 
     void List::reverse()

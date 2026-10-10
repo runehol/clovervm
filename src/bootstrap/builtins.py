@@ -272,3 +272,101 @@ With two or more arguments, return the largest argument."""
     if first:
         raise ValueError
     return best
+
+
+# Capture the existing maximum search bound without retaining a sys binding.
+import sys as _clover_sys
+
+
+def __clover_list_count(self, needle, /):
+    """Return number of occurrences of value."""
+    if not isinstance(self, list):
+        raise TypeError
+    count = 0
+    i = 0
+    while i < list.__len__(self):
+        item = list.__getitem__(self, i)
+        if item is needle or item == needle:
+            count += 1
+        i += 1
+    return count
+
+
+def __clover_list_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
+    if not isinstance(self, list):
+        raise TypeError
+    if not isinstance(start, int) or not isinstance(stop, int):
+        raise TypeError
+    size = list.__len__(self)
+    if start < 0:
+        start += size
+        if start < 0:
+            start = 0
+    if stop < 0:
+        stop += size
+        if stop < 0:
+            stop = 0
+    i = start
+    while i < stop and i < list.__len__(self):
+        item = list.__getitem__(self, i)
+        if item is needle or item == needle:
+            return int(i)
+        i += 1
+    raise ValueError
+
+
+def __clover_tuple_count(self, needle, /):
+    """Return number of occurrences of value."""
+    if not isinstance(self, tuple):
+        raise TypeError
+    size = tuple.__len__(self)
+    count = 0
+    i = 0
+    while i < size:
+        item = tuple.__getitem__(self, i)
+        if item is needle or item == needle:
+            count += 1
+        i += 1
+    return count
+
+
+def __clover_tuple_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
+    if not isinstance(self, tuple):
+        raise TypeError
+    if not isinstance(start, int) or not isinstance(stop, int):
+        raise TypeError
+    size = tuple.__len__(self)
+    if start < 0:
+        start += size
+        if start < 0:
+            start = 0
+    if stop < 0:
+        stop += size
+        if stop < 0:
+            stop = 0
+    i = start
+    while i < stop and i < size:
+        item = tuple.__getitem__(self, i)
+        if item is needle or item == needle:
+            return int(i)
+        i += 1
+    raise ValueError
+
+
+def __clover_list_remove(self, needle, /):
+    """Remove first occurrence of value."""
+    if not isinstance(self, list):
+        raise TypeError
+    i = 0
+    while i < list.__len__(self):
+        item = list.__getitem__(self, i)
+        if item is needle or item == needle:
+            # Equality can remove this slot. CPython still reports success.
+            if i < list.__len__(self):
+                list.__delitem__(self, i)
+            return None
+        i += 1
+    raise ValueError
+
+
+del _clover_sys

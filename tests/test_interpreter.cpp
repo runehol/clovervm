@@ -1376,6 +1376,128 @@ TEST(Interpreter, unary_float_handler_has_registered_metadata)
     EXPECT_EQ(TrustedHandlerSemantics::Neg, metadata->semantics);
 }
 
+TEST(Interpreter, sequence_search_methods_have_local_equality_caches)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code =
+        test_context.compile_file(L"class Equal:\n"
+                                  L"    def __eq__(self, other):\n"
+                                  L"        return True\n"
+                                  L"item = Equal()\n"
+                                  L"needle = Equal()\n"
+                                  L"for i in range(2):\n"
+                                  L"    assert [item].count(needle) == 1\n"
+                                  L"    assert [item].index(needle) == 0\n"
+                                  L"    assert [item].remove(needle) is None\n"
+                                  L"    assert (item,).count(needle) == 1\n"
+                                  L"    assert (item,).index(needle) == 0\n");
+    ASSERT_FALSE(test_context.thread()
+                     ->run_clovervm_code_object(code)
+                     .is_exception_marker());
+    Value cls =
+        load_global_from_module_for_test(code, interned_string(L"Equal"));
+    Value equality = load_attr(cls, interned_string(L"__eq__"));
+    ASSERT_TRUE(can_convert_to<Function>(equality));
+
+    for(ClassObject *sequence_class:
+        {test_context.vm().list_class(), test_context.vm().tuple_class()})
+    {
+        for(const wchar_t *name: {L"count", L"index", L"remove"})
+        {
+            if(sequence_class == test_context.vm().tuple_class() &&
+               std::wcscmp(name, L"remove") == 0)
+            {
+                continue;
+            }
+            Value method = load_attr(Value::from_oop(sequence_class),
+                                     interned_string(name));
+            ASSERT_TRUE(can_convert_to<Function>(method));
+            CodeObject *method_code =
+                method.get_ptr<Function>()->code_object.extract();
+            EXPECT_EQ(nullptr, method_code->trusted_handler_resolver);
+            bool found_equality_cache = false;
+            for(const OperatorInlineCache &cache:
+                method_code->inline_caches.operator_caches)
+            {
+                if(cache.function == equality.get_ptr<Function>())
+                {
+                    found_equality_cache = true;
+                    EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+                    EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+                }
+            }
+            EXPECT_TRUE(found_equality_cache);
+        }
+    }
+    for(const wchar_t *name: {L"__clover_list_count", L"__clover_list_index",
+                              L"__clover_list_remove", L"__clover_tuple_count",
+                              L"__clover_tuple_index", L"_clover_sys"})
+    {
+        EXPECT_TRUE(test_context.vm()
+                        .global_builtins_module()
+                        .extract()
+                        ->get_own_property(interned_string(name))
+                        .is_not_present());
+    }
+}
+
+TEST(Interpreter, sequence_search_methods_bypass_subclass_storage_overrides)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *classes =
+        test_context.compile_file(L"class HostileList(list):\n"
+                                  L"    def __len__(self):\n"
+                                  L"        raise AssertionError\n"
+                                  L"    def __getitem__(self, index):\n"
+                                  L"        raise AssertionError\n"
+                                  L"    def __iter__(self):\n"
+                                  L"        raise AssertionError\n"
+                                  L"    def __delitem__(self, index):\n"
+                                  L"        raise AssertionError\n"
+                                  L"class HostileTuple(tuple):\n"
+                                  L"    def __len__(self):\n"
+                                  L"        raise AssertionError\n"
+                                  L"    def __getitem__(self, index):\n"
+                                  L"        raise AssertionError\n"
+                                  L"    def __iter__(self):\n"
+                                  L"        raise AssertionError\n");
+    ASSERT_FALSE(test_context.thread()
+                     ->run_clovervm_code_object(classes)
+                     .is_exception_marker());
+    Value list_class = load_global_from_module_for_test(
+        classes, interned_string(L"HostileList"));
+    Value tuple_class = load_global_from_module_for_test(
+        classes, interned_string(L"HostileTuple"));
+    ASSERT_TRUE(can_convert_to<ClassObject>(list_class));
+    ASSERT_TRUE(can_convert_to<ClassObject>(tuple_class));
+    // Python subclass construction currently allocates generic instances.
+    // Allocate the native storage explicitly to test the search contract.
+    Owned<TValue<List>> list(test_context.thread()->make_internal_value<List>(
+        list_class.get_ptr<ClassObject>()));
+    list.extract()->append(Value::from_smi(7));
+    list.extract()->append(Value::from_smi(8));
+    Owned<TValue<Tuple>> tuple(
+        test_context.thread()->make_internal_value<Tuple>(
+            tuple_class.get_ptr<ClassObject>(), 2));
+    tuple.extract()->initialize_item_unchecked(0, Value::from_smi(7));
+    tuple.extract()->initialize_item_unchecked(1, Value::from_smi(8));
+    CodeObject *checks =
+        test_context.compile_file(L"assert xs.count(7.0) == 1\n"
+                                  L"assert xs.index(8.0) == 1\n"
+                                  L"assert xs.remove(7.0) is None\n"
+                                  L"assert list.__len__(xs) == 1\n"
+                                  L"assert list.__getitem__(xs, 0) == 8\n"
+                                  L"assert ys.count(7.0) == 1\n"
+                                  L"assert ys.index(8.0) == 1\n");
+    store_global_to_module_for_test(test_context, checks, L"xs", list.value());
+    store_global_to_module_for_test(test_context, checks, L"ys", tuple.value());
+    ASSERT_FALSE(test_context.thread()
+                     ->run_clovervm_code_object(checks)
+                     .is_exception_marker());
+}
+
 TEST(Interpreter, builtin_abs_caches_trusted_unary_handlers)
 {
     for(const wchar_t *source:

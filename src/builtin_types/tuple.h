@@ -66,9 +66,6 @@ namespace cl
         [[nodiscard]] TValue<Tuple>
         get_slice(const NormalizedGeneralSlice &slice) const;
         [[nodiscard]] TValue<Tuple> concat(const Tuple *other) const;
-        int64_t count(Value needle) const;
-        [[nodiscard]] Value index(Value needle, int64_t start_py_idx,
-                                  int64_t stop_py_idx) const;
 
         static ALWAYSINLINE TValue<Tuple>
         from_frame_arguments(ThreadState *thread, Value *fp,
@@ -147,6 +144,7 @@ namespace cl
 
     BuiltinClassDefinition make_tuple_class(VirtualMachine *vm);
     void install_tuple_class_methods(VirtualMachine *vm);
+    void install_tuple_python_methods(VirtualMachine *vm);
 
 }  // namespace cl
 

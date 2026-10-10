@@ -1335,6 +1335,8 @@ namespace cl
         }
 
         install_dict_python_methods(this);
+        install_list_python_methods(this);
+        install_tuple_python_methods(this);
 
         TValue<String> membership_iter_fallback_name =
             get_or_create_interned_string_value(
