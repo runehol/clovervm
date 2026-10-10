@@ -25,6 +25,20 @@ assert issubclass(bool, int)
 assert issubclass(bool, (str, int))
 assert not issubclass(str, (list, tuple))
 
+assert ord(b"A") == 65
+assert ord(b"\x00") == 0
+assert ord(b"\x80") == 128
+assert ord(b"\xff") == 255
+assert ord("A") == 65
+assert ord("\u20ac") == 8364
+for value in (b"", b"AB", b"\xc3\xa9", "", "AB", 65, None):
+    raised = False
+    try:
+        ord(value)
+    except TypeError:
+        raised = True
+    assert raised
+
 # Classinfo tuples are visited left to right, stopping at a match or error.
 for case in ((isinstance, 1), (issubclass, int)):
     check = case[0]

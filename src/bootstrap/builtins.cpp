@@ -1,5 +1,6 @@
 #include "bootstrap/builtins.h"
 
+#include "builtin_types/bytes.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
@@ -177,18 +178,28 @@ namespace cl
 
     static Value builtin_ord(ThreadState *thread, Value obj)
     {
-        if(!can_convert_to<String>(obj))
+        if(can_convert_to<String>(obj))
         {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"ord() expected string of length 1");
+            String *str = obj.get_ptr<String>();
+            if(str->count.extract() != 1)
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"ord() expected string of length 1");
+            }
+            return Value::from_smi(static_cast<int64_t>(str->data[0]));
         }
-        String *str = obj.get_ptr<String>();
-        if(str->count.extract() != 1)
+        if(can_convert_to<Bytes>(obj))
         {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"ord() expected string of length 1");
+            Bytes *bytes = obj.get_ptr<Bytes>();
+            if(bytes->count.extract() != 1)
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"ord() expected string of length 1");
+            }
+            return Value::from_smi(bytes->data[0]);
         }
-        return Value::from_smi(static_cast<int64_t>(str->data[0]));
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"ord() expected string of length 1");
     }
 
     static Value builtin_chr(ThreadState *thread, Value code_value)
