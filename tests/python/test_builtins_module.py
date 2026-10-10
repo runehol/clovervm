@@ -31,6 +31,24 @@ assert ord(b"\x80") == 128
 assert ord(b"\xff") == 255
 assert ord("A") == 65
 assert ord("\u20ac") == 8364
+assert chr(True) == "\x01"
+assert chr(False) == "\x00"
+for code in (0, 65, 8364, 55296, 1114111):
+    assert ord(chr(code)) == code
+for code in (-1, 1114112, 10**30, -(10**30)):
+    raised = False
+    try:
+        chr(code)
+    except ValueError:
+        raised = True
+    assert raised
+for code in (65.0, "65", None):
+    raised = False
+    try:
+        chr(code)
+    except TypeError:
+        raised = True
+    assert raised
 for value in (b"", b"AB", b"\xc3\xa9", "", "AB", 65, None):
     raised = False
     try:

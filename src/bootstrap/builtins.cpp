@@ -1,6 +1,7 @@
 #include "bootstrap/builtins.h"
 
 #include "builtin_types/bytes.h"
+#include "builtin_types/int.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
@@ -204,19 +205,44 @@ namespace cl
 
     static Value builtin_chr(ThreadState *thread, Value code_value)
     {
-        if(!code_value.is_smi())
+        int64_t code;
+        if(code_value.is_smi())
         {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"chr() arg must be an integer");
+            code = code_value.get_smi();
         }
-        int64_t code = code_value.get_smi();
+        else
+        {
+            if(!is_intlike_value(code_value))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"chr() arg must be an integer");
+            }
+            SmiViewStorage value_storage;
+            SmiViewStorage lower_storage;
+            SmiViewStorage upper_storage;
+            ConstBigIntView value_view =
+                intlike_value_bigint_view(code_value, &value_storage);
+            ConstBigIntView lower = smi_bigint_view(0, &lower_storage);
+            ConstBigIntView upper = smi_bigint_view(0x10ffff, &upper_storage);
+            if(compare_bigint(value_view, lower) < 0 ||
+               compare_bigint(value_view, upper) > 0)
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"chr() arg not in range(0x110000)");
+            }
+            TValue<SMI> smi = TValue<SMI>::from_smi(0);
+            [[maybe_unused]] IntToSmiStatus status =
+                CL_TRY(try_intlike_value_to_smi(code_value, &smi));
+            assert(status == IntToSmiStatus::Converted);
+            code = smi.extract();
+        }
         if(code < 0 || code > 0x10ffff)
         {
-            return active_thread()->set_pending_builtin_exception_string(
+            return thread->set_pending_builtin_exception_string(
                 L"ValueError", L"chr() arg not in range(0x110000)");
         }
         std::wstring result(1, static_cast<wchar_t>(code));
-        return active_thread()->make_object_value<String>(result).raw_value();
+        return thread->make_object_value<String>(result).raw_value();
     }
 
     static void append_unique_dir_name(std::vector<std::wstring> &names,
