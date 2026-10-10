@@ -122,8 +122,8 @@ def log(x, base=None):
 def nextafter(x, y, steps=None):
     if steps is None:
         return _math.nextafter(x, y)
-    if steps < 0:
-        raise ValueError
+    steps = _as_builtin_int(steps)
+    _require_nonnegative(steps)
     result = x
     for _ in range(steps):
         result = _math.nextafter(result, y)
