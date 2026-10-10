@@ -132,11 +132,9 @@ def _class_matches(ch, pat, start, end):
     pat_is_bytes = _is_bytes(pat)
     if pat_is_bytes:
         bang = 33
-        close_bracket = 93
         dash = 45
     else:
         bang = "!"
-        close_bracket = "]"
         dash = "-"
     idx = start + 1
     negate = False
@@ -145,11 +143,6 @@ def _class_matches(ch, pat, start, end):
         idx += 1
 
     matched = False
-    if idx < end and pat[idx] == close_bracket:
-        if ch == close_bracket:
-            matched = True
-        idx += 1
-
     while idx < end:
         first = pat[idx]
         if idx + 2 < end and pat[idx + 1] == dash:
@@ -209,11 +202,12 @@ def _translate_class(pat, start, end):
     if negate:
         stuff = "^"
 
+    previous = None
     if idx < end and pat[idx] == "]":
         stuff = stuff + "\\]"
+        previous = "]"
         idx += 1
 
-    previous = None
     while idx < end:
         ch = pat[idx]
         if ch == "\\":
@@ -223,6 +217,8 @@ def _translate_class(pat, start, end):
         elif ch == "-" and previous is not None and idx + 1 < end:
             next_ch = pat[idx + 1]
             if previous > next_ch:
+                if negate:
+                    return "."
                 return "(?!)"
             stuff = stuff + "-"
         elif ch == "[":

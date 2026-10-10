@@ -39,6 +39,27 @@ assert not fnmatch.fnmatchcase("m", "[z-a]")
 assert not fnmatch.fnmatchcase("]", "[]")
 assert not fnmatch.fnmatchcase("!", "[!]")
 
+# A leading ']' is a literal that can also start a range.
+bracket_cases = (
+    ("[]]", ("]",), ("a", "-")),
+    (b"[]]", (b"]",), (b"a", b"-")),
+    ("[]-]", ("]", "-"), ("a",)),
+    (b"[]-]", (b"]", b"-"), (b"a",)),
+    ("[]-b]", ("]", "a", "b"), ("-", "Z", "c")),
+    (b"[]-b]", (b"]", b"a", b"b"), (b"-", b"Z", b"c")),
+    ("[!]-b]", ("-", "Z", "c"), ("]", "a", "b")),
+    (b"[!]-b]", (b"-", b"Z", b"c"), (b"]", b"a", b"b")),
+    ("[]-Z]", (), ("]", "a", "-", "Z")),
+    (b"[]-Z]", (), (b"]", b"a", b"-", b"Z")),
+    ("[!]-Z]", ("]", "a", "-", "Z"), ()),
+    (b"[!]-Z]", (b"]", b"a", b"-", b"Z"), ()),
+)
+for case in bracket_cases:
+    for name in case[1]:
+        assert fnmatch.fnmatchcase(name, case[0])
+    for name in case[2]:
+        assert not fnmatch.fnmatchcase(name, case[0])
+
 names = ["main.py", "test.py", "README.md", "setup.cfg"]
 matches = fnmatch.filter(names, "*.py")
 assert len(matches) == 2
@@ -67,6 +88,11 @@ assert fnmatch.translate("file[0-9].txt") == "(?s:file[0-9]\\.txt)\\z"
 assert fnmatch.translate("file[!0-9].txt") == "(?s:file[^0-9]\\.txt)\\z"
 assert fnmatch.translate("[[]abc") == "(?s:[\\[]abc)\\z"
 assert fnmatch.translate("[z-a]") == "(?s:(?!))\\z"
+assert fnmatch.translate("[]]") == "(?s:[\\]])\\z"
+assert fnmatch.translate("[]-b]") == "(?s:[\\]-b])\\z"
+assert fnmatch.translate("[!]-b]") == "(?s:[^\\]-b])\\z"
+assert fnmatch.translate("[]-Z]") == "(?s:(?!))\\z"
+assert fnmatch.translate("[!]-Z]") == "(?s:.)\\z"
 
 try:
     fnmatch.fnmatchcase(b"a", "*")
