@@ -57,3 +57,69 @@ assert close(math.fmod(7.0, 4.0), 3.0)
 assert close(math.remainder(7.0, 4.0), -1.0)
 assert close(math.pow(2.0, 3.0), 8.0)
 assert math.pow(math.inf, 2.0) == math.inf
+
+# A NaN input propagates through the shared native result check.
+for func in (
+    math.acos, math.acosh, math.asin, math.asinh, math.atan, math.atanh,
+    math.cbrt, math.cos, math.cosh, math.erf, math.erfc, math.exp,
+    math.exp2, math.expm1, math.fabs, math.gamma, math.lgamma, math.log,
+    math.log10, math.log1p, math.log2, math.sin, math.sinh, math.sqrt,
+    math.tan, math.tanh,
+):
+    assert math.isnan(func(math.nan))
+
+for func in (math.atan2, math.fmod, math.pow, math.remainder):
+    assert math.isnan(func(math.nan, 2.0))
+    assert math.isnan(func(2.0, math.nan))
+    assert math.isnan(func(math.nan, math.nan))
+
+assert math.isnan(math.copysign(math.nan, 1.0))
+assert math.isnan(math.ldexp(math.nan, 2))
+assert math.isnan(math.fma(math.nan, 2.0, 3.0))
+assert math.isnan(math.fma(1.0, math.nan, 3.0))
+assert math.isnan(math.fma(1.0, 2.0, math.nan))
+
+# Genuine domain errors still raise instead of returning NaN.
+for case in (
+    (math.sqrt, (-1.0,)),
+    (math.sqrt, (-math.inf,)),
+    (math.sin, (math.inf,)),
+    (math.log, (0.0,)),
+    (math.pow, (-1.0, 0.5)),
+    (math.fmod, (1.0, 0.0)),
+    (math.remainder, (1.0, 0.0)),
+    (math.fma, (math.inf, 0.0, 1.0)),
+):
+    func = case[0]
+    args = case[1]
+    seen = False
+    try:
+        if len(args) == 1:
+            func(args[0])
+        elif len(args) == 2:
+            func(args[0], args[1])
+        else:
+            func(args[0], args[1], args[2])
+    except ValueError:
+        seen = True
+    assert seen
+
+for case in (
+    (math.exp, (1000.0,)),
+    (math.pow, (1e308, 2.0)),
+    (math.ldexp, (1.0, 1024)),
+    (math.fma, (1e308, 2.0, 0.0)),
+):
+    func = case[0]
+    args = case[1]
+    seen = False
+    try:
+        if len(args) == 1:
+            func(args[0])
+        elif len(args) == 2:
+            func(args[0], args[1])
+        else:
+            func(args[0], args[1], args[2])
+    except OverflowError:
+        seen = True
+    assert seen
