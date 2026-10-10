@@ -165,6 +165,7 @@ def le(a, b):
 
 
 def length_hint(obj, default=0):
+    default = index(default)
     try:
         return len(obj)
     except TypeError:

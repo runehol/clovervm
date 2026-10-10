@@ -115,6 +115,34 @@ assert operator.countOf([1, 2, 1, 3], 1) == 2
 assert operator.indexOf(["a", "b", "c"], "b") == 1
 assert operator.length_hint([1, 2, 3]) == 3
 assert operator.length_hint(42, 9) == 9
+for default in (True, False, -1, 10**18):
+    assert operator.length_hint([1], default) == 1
+    result = operator.length_hint(42, default)
+    assert result == int(default)
+    assert result.__class__ is int
+
+for default in (1.5, "2", None, NeverEqual()):
+    for value in ([1], 42):
+        raised = False
+        try:
+            operator.length_hint(value, default)
+        except TypeError:
+            raised = True
+        assert raised
+
+
+class RaisingLength:
+    def __len__(self):
+        raise ValueError
+
+
+raised = False
+try:
+    operator.length_hint(RaisingLength(), 1.5)
+except TypeError:
+    raised = True
+assert raised
+
 assert operator.index(12) == 12
 for value in (True, False, 0, -12, 10**30):
     result = operator.index(value)
