@@ -236,9 +236,11 @@ def expanduser(path):
     home = os.getenv("HOME")
     if home is None:
         return path
-    if home.endswith(sep) and home != sep:
-        home = home.rstrip(sep)
-    return home + rest
+    home = home.rstrip(sep)
+    expanded = home + rest
+    if expanded == "":
+        return sep
+    return expanded
 
 
 def expandvars(path):

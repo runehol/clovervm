@@ -134,6 +134,18 @@ assert os.path.expanduser("~/work") == "/tmp/clover-home/work"
 assert os.path.expanduser("~nosuchuser/work") == "~nosuchuser/work"
 assert os.path.expandvars("$HOME/work") == "/tmp/clover-home/work"
 
+for home in ("/", "", "///"):
+    os.putenv(home_key, home)
+    assert os.path.expanduser("~") == "/"
+    assert os.path.expanduser("~/") == "/"
+    assert os.path.expanduser("~/work") == "/work"
+    assert os.path.expanduser("~nosuchuser/work") == "~nosuchuser/work"
+    assert os.path.expanduser("relative/path") == "relative/path"
+os.putenv(home_key, "/tmp/clover-home///")
+assert os.path.expanduser("~") == "/tmp/clover-home"
+assert os.path.expanduser("~/work") == "/tmp/clover-home/work"
+os.putenv(home_key, "/tmp/clover-home")
+
 base = "build-debug/clovervm-os-test"
 nested = base.__add__("/a/b")
 parent = base.__add__("/a")
