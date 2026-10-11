@@ -18,6 +18,9 @@ storage mechanism. This decision was agreed on 2026-10-10. Class-creation
 validation, constructor specialization, and shared pure-slot layouts were
 refined on 2026-10-11.
 
+The staged checklist is in the
+[implementation plan](native-subtype-implementation-plan.md).
+
 ## Common Storage
 
 Move the overflow-storage pointer into `Object`. `SlotObject` must reuse that
@@ -106,6 +109,12 @@ actual physical inline slot count, recorded on the object. Rename the class's
 that allocation count consistent with the root Shape's capacity. The count
 must accommodate every predefined inline location; predefined values must be
 initialized according to the owning builtin's semantics.
+
+Each concrete `Object` subclass declares
+`static constexpr uint32_t kPredefinedInlineSlotCount` for allocation validation.
+It is zero when there are no predefined inline fields and includes inherited
+physical locations otherwise. Allocation must provide at least this minimum;
+fixed native layouts also constrain the maximum physical inline capacity.
 
 `Function`, `ClassObject`, and `ModuleObject` retain separate native layout
 IDs. They contain native metadata in addition to their attribute slots;
