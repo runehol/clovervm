@@ -126,8 +126,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::Dict};
         ClassObject *cls = ClassObject::make_builtin_class<Dict>(
-            vm->get_or_create_interned_string_value(L"dict"),
-            Dict::native_static_release_count(), nullptr, 0,
+            vm->get_or_create_interned_string_value(L"dict"), 0, nullptr, 0,
             vm->object_class());
         Shape *string_key_shape = cls->get_instance_root_shape();
         Shape *general_shape =

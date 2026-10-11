@@ -101,6 +101,27 @@ TEST(NativeLayoutDescriptor, SlotObjectCarriesAttributeStorageCells)
               SlotObject::native_static_release_count());
 }
 
+TEST(NativeLayoutDescriptor, NonSlotBuiltinClassesHaveZeroInlineCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    for(uint32_t idx = 1; idx < static_cast<uint32_t>(NativeLayoutId::Count);
+        ++idx)
+    {
+        NativeLayoutId layout = static_cast<NativeLayoutId>(idx);
+        ClassObject *cls = context.vm().class_for_native_layout(layout);
+        if(cls == nullptr || native_layout_has_slots(layout))
+        {
+            continue;
+        }
+        SCOPED_TRACE(idx);
+        EXPECT_EQ(0u, cls->get_instance_default_inline_slot_count());
+        EXPECT_EQ(0u, cls->get_instance_root_shape()
+                          ->get_instance_default_inline_slot_count());
+    }
+}
+
 TEST(NativeLayoutDescriptor, ModuleObjectReleaseCountCoversManagedFields)
 {
     EXPECT_EQ(SlotObject::native_static_release_count() +

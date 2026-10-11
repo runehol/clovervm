@@ -25,8 +25,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::SlotDict};
         ClassObject *cls = ClassObject::make_builtin_class<SlotDict>(
-            vm->get_or_create_interned_string_value(L"slotdict"),
-            SlotDict::native_static_release_count(), nullptr, 0,
+            vm->get_or_create_interned_string_value(L"slotdict"), 0, nullptr, 0,
             vm->object_class());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);

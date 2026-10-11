@@ -55,9 +55,8 @@ namespace cl
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<ListIterator>(
-            vm->get_or_create_interned_string_value(L"list_iterator"),
-            ListIterator::native_static_release_count(), methods,
-            std::size(methods), vm->object_class());
+            vm->get_or_create_interned_string_value(L"list_iterator"), 0,
+            methods, std::size(methods), vm->object_class());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }

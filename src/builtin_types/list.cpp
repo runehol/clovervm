@@ -353,8 +353,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::List};
         ClassObject *cls = ClassObject::make_builtin_class<List>(
-            vm->get_or_create_interned_string_value(L"list"),
-            List::native_static_release_count(), nullptr, 0,
+            vm->get_or_create_interned_string_value(L"list"), 0, nullptr, 0,
             vm->object_class());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
