@@ -38,21 +38,25 @@ branches, and evaluate only the selected expression. Cover precedence, nested
 expressions, truthiness callbacks, side effects, and exception propagation with
 parser and interpreter tests.
 
-### Fill narrow builtin constructor gaps
+### Tuple construction and subclassing
 
-Add one builtin constructor at a time where the allocation/conversion policy is
-already settled and can be expressed as that type's intrinsic `__new__`. Keep
-each constructor as its own change. Candidate slices include:
+Deferred after readiness discussion; no tuple constructor is implemented yet.
+Revisit native `tuple.__new__` with empty construction, exact tuple identity reuse,
+direct exact-list conversion, and fresh native storage for subclass targets.
+Subclass storage must use the requested class root shape, zero inline capacity,
+and common overflow attributes. Copy and retain element references, not elements.
 
-- `tuple()` for the empty case before iterable conversion is attempted.
+General iterable conversion remains an unsettled boundary: there is no existing
+general C++ iterable-consumption helper, and invoking a retained Python helper
+to materialize a temporary list was discussed but not accepted for implementation.
+Tuple/list subclass inputs can override `__iter__`; do not bypass those callbacks
+by copying their native payload unconditionally. Agree on the first supported
+input slice and fallback design before coding.
 
-Numeric float construction and empty/iterable list construction are implemented;
-see the [native subtype implementation plan](native-subtype-implementation-plan.md).
-
-Do not use these slices to invent a general constructor fallback or silently
-accept inputs whose conversion protocol is not implemented. Each slice is done
-when its Python-visible arity, result type, supported conversions, and errors
-have interpreter tests.
+Verify argument/error behavior, exact and subclass result identity, element
+lifetime, iteration overrides, attributes, operation results, and constructor
+invalidation. Tuple equality is a separate task above. This item remains deferred
+rather than the next active native-constructor stage.
 
 ### Complete small `operator` helpers
 
