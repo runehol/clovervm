@@ -13,7 +13,7 @@
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
 and [D-0013](decision-log.md#d-0013-use-common-overflow-storage-for-native-builtin-subclasses).
 Complete and verify each stage, then leave its changes uncommitted for review.
-Commit only when explicitly requested. Stages 4 and 5 need
+Commit only when explicitly requested. Stages 4a, 4b, 4c, and 5 each need
 the concrete sketches identified below before their implementation begins.
 Family-specific constructors and trusted lowering likewise need sketches when
 their contracts are selected in stage 6.
@@ -138,53 +138,82 @@ Verification: seven focused selector tests passed; full debug checks passed
 with 1,525 tests passing and one skipped. Class-creation integration remains
 stage 4 work. Changes are uncommitted for review.
 
-## Stage 4: Class-Creation Storage Validation
+## Stage 4a: Class Storage Selection And Root Shapes
 
-The runtime class-creation path selects compatible instance storage before
-installing the instance root Shape. Allocation enforces that selected contract.
+Integrate the stage-3 selector into class creation before installing the final
+instance root Shape. Include the allocation guard needed to make this change
+safe on its own; builtin constructor support remains in stages 5 and 6.
 
-- [ ] Agree on a compact metadata/API sketch for native payload ancestry,
-  predefined-slot compatibility, and capacity selection.
-- [ ] Walk the class MRO using each base's instance-storage requirements;
-  ordinary Python mixins contribute `Instance` and do not override a builtin
-  family. Select at most one builtin layout, accounting for its established
-  native ancestry through the stage-3 MRO storage check.
-- [ ] Validate subclass eligibility separately from storage compatibility.
-- [ ] Reject incompatible native payloads or predefined-slot requirements with
-  `TypeError` during class creation, including Slice/Exception and List/Dict.
-  Support ordinary StopIteration subclassing and the valid redundant
-  StopIteration-first Exception base declaration.
-- [ ] Build root Shapes with the selected builtin layout's existing capacity
-  and predefined locations; select zero without inline storage. If all layouts
-  are `Instance`, retain the ordinary-instance capacity policy. Do not combine
-  or add slot capacities from unrelated bases.
-- [ ] Preserve the selected storage interpretation in Shape transitions and
-  clones. Validate allocator/native-layout agreement.
-- [ ] Preserve native predefined field semantics while allowing mutable
+- [ ] Agree on a compact sketch for class construction order, root-Shape
+  inheritance, and the unsafe-allocation guard before implementing this slice.
+- [ ] Compute the candidate class's C3 MRO, call `select_instance_storage`, and
+  install the selected native layout and inline capacity before the final
+  instance root Shape is installed.
+- [ ] Build root Shapes with the selected provider's predefined locations and
+  existing capacity; select zero without inline storage. Instance-only ancestry
+  retains the ordinary-instance capacity policy. Do not add ancestor capacities.
+- [ ] Preserve native predefined field semantics and the selected storage
+  interpretation through Shape transitions and clones, while allowing mutable
   subclass attributes where appropriate.
-- [ ] Refactor `__dict__` exposure and `SlotDict` target validation to support
-  object layouts without inline slots. Such objects use the common overflow
-  pointer for their attribute mapping; inline-slot capability must no longer
-  gate that mapping's exposure. Apply the selected class/Shape exposure and
-  mutation policy, including tests for native subclasses with zero inline
-  capacity. Whether exact builtins such as `dict` and `list` also expose a
-  read-only mapping remains deferred; stage 2 preserves current exposure
-  behavior.
-- [ ] Verify compatible mixins and sibling subclasses, conflicting bases,
-  predefined-slot compatibility, zero/fixed/dynamic capacities, and class
-  identity. Do not enable construction through a generic allocator that cannot
-  satisfy the selected native storage contract.
-- [ ] Revisit the stage-1 fixtures that explicitly prepare zero-capacity native
-  subclass classes. Use actual Python class definitions once class creation
-  selects matching native storage, retaining explicit native instance allocation
+- [ ] Reject conflicting layouts with `TypeError`, including Slice/Exception
+  and List/Dict. Support compatible mixins, sibling subclasses, StopIteration
+  ancestry, and an Exception-layout subclass before StopIteration in the MRO.
+- [ ] Guard generic `Instance` allocation as soon as selected native layouts
+  become visible: reject constructing classes whose native payload or
+  initialization contract that allocator cannot satisfy. Do not defer this
+  guard to 4b or enable unfinished builtin constructor paths.
+- [ ] Verify MRO selection, inherited predefined descriptors, zero/fixed/dynamic
+  capacities, class identity, and rejection of unsafe generic construction.
+- [ ] Run `ninja -C build-debug all check` and leave changes uncommitted for
+  review.
+
+## Stage 4b: Subclass Eligibility And Allocation Validation
+
+Validate which builtin classes may be subclassed independently of storage
+compatibility, and enforce the selected contract on native allocation paths.
+The generic-allocation guard from 4a remains in place.
+
+- [ ] Agree on a compact sketch for subclass eligibility and allocator
+  validation before implementing this slice.
+- [ ] Validate builtin subclass eligibility separately from compatible storage;
+  reject prohibited builtin bases with `TypeError` during class creation.
+- [ ] Validate class/root-Shape/native-allocator agreement, predefined minima,
+  and physical capacity on ordinary, bootstrap, and cached-Shape paths.
+- [ ] Preserve native initialization contracts, including tuple-valued exception
+  `.args` and initialized StopIteration `.value`; matching slot counts do not
+  authorize construction through an incompatible allocator.
+- [ ] Verify permitted and prohibited bases, allocator mismatch rejection,
+  compatible native subclass allocation, and predefined field initialization.
+- [ ] Replace the stage-1 fixture classes with actual Python class definitions
+  selecting matching native storage. Retain explicit native instance allocation
   until builtin constructors support it:
   - `JitConstantFolding.DoesNotUnboxFloatSubclassConstant`
-    (`tests/test_jit_constant_folding.cpp`): `FloatSubclass` must receive zero
-    inline capacity while retaining float ancestry and distinct class identity.
+    (`tests/test_jit_constant_folding.cpp`): `FloatSubclass` receives zero inline
+    capacity, float ancestry, and distinct class identity.
   - `Interpreter.sequence_search_methods_bypass_subclass_storage_overrides`
-    (`tests/test_interpreter.cpp`): `HostileList` and `HostileTuple` must receive
-    zero inline capacity while preserving their Python-defined overrides.
-- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
+    (`tests/test_interpreter.cpp`): `HostileList` and `HostileTuple` receive zero
+    inline capacity while preserving their Python-defined overrides.
+- [ ] Run `ninja -C build-debug all check` and leave changes uncommitted for
+  review.
+
+## Stage 4c: Attribute Mapping Exposure For Native Subclasses
+
+Expose overflow-backed native subclass attributes through the existing live
+mapping without conflating inline-slot capability with namespace exposure.
+
+- [ ] Agree on a compact sketch for class/Shape mapping exposure and mutation
+  policy before implementing this slice.
+- [ ] Refactor `__dict__` exposure and `SlotDict` target validation to support
+  native subclass layouts without inline slots, using the common overflow
+  pointer. Inline-slot capability must no longer gate mapping exposure.
+- [ ] Preserve Shape permissions for mapping writes and deletion, including
+  immutable/read-only cases; dictionary payload entries remain separate from
+  instance attributes.
+- [ ] Keep exact-builtin mapping exposure deferred: whether exact `dict` and
+  `list` expose a read-only mapping is a separate decision, not implied by 4c.
+- [ ] Verify mapping reads, writes, deletion, live views, and permission checks
+  on native subclasses with zero inline capacity and existing inline layouts.
+- [ ] Run `ninja -C build-debug all check` and leave changes uncommitted for
   review.
 
 ## Stage 5: Complete Constructor Protocol
