@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) |
+| Validated against | Parent `3d6fedad` and the Stage 8c working tree (2026-10-11); full debug checks: 1,577 passed, one skipped |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -511,10 +511,11 @@ Raw outputs are `/tmp/clovervm-int-parent.json` and
 
 ### Stage 8b: Numeric Float Construction
 
-Float currently has no constructor. Add native `float.__new__(cls, input=0)`
-using the existing new-only thunk. The first slice accepts float, int, and bool
-inputs, including native numeric subclasses and heap BigInts. String parsing and
-user conversion protocols remain separate work. Exact target calls compare class
+Float previously had no constructor. Stage 8b adds native
+`float.__new__(cls, input=0)` using the existing new-only thunk. The first slice
+accepts float, int, and bool inputs, including native numeric subclasses and heap
+BigInts. String parsing and user conversion protocols remain separate work.
+Exact target calls compare class
 identity first, reuse only exact Float inputs, and otherwise box an exact Float.
 
 A NOINLINE subclass helper validates class, float ancestry, native Float layout,
@@ -551,7 +552,62 @@ float input and 38.7M/s for integer input; coefficient of variation was 1.1% and
 build-release/benchmark/bench_clovervm --benchmark_filter='BM_FloatConstructor(Float|Int)' --benchmark_min_time=2s --benchmark_repetitions=5 --benchmark_out=/tmp/clovervm-float-constructor.json --benchmark_out_format=json
 ```
 
-Changes are uncommitted for review.
+Stage 8b is committed as `3d6fedad`.
+
+### Stage 8c: Str Subclass Construction
+
+Extend the existing `str.__new__(cls, obj="")` on the new-only thunk path.
+Preserve the direct exact-str/small-int decimal formatter path and exact-string
+input reuse. A NOINLINE subclass helper validates the requested class, str
+ancestry, String layout, and zero inline capacity. Convert through the existing
+string conversion path, retaining its result with `Owned<TValue<String>>` while
+copying the native characters into a String with the requested class root shape.
+
+String subclass inputs must honor overridden `__str__`, unlike the old blanket
+String-input identity shortcut. Direct inherited `str.__str__` produces an exact
+string from a subclass's underlying text. Custom `__str__` methods may return
+string subclasses, and ordinary exact-target construction preserves those
+results. Subclass-target construction always copies into the requested class.
+
+Keep existing conversion forms and errors; encoding/decoding arguments remain
+unsupported. Audit string operation results, overflow attributes, native hashing,
+callback errors and re-entry, invalid allocator classes, and constructor lookup
+invalidation. No opcode, cache, initializer, or combined constructor path is added.
+
+- [x] Agree on conversion, identity, native allocation, and hot-path boundaries.
+- [x] Implement subclass construction and interpreter regression tests.
+- [x] Run full debug checks and compare existing release string constructor loops
+  against parent `3d6fedad` with the same command and repeated measurements.
+- [x] Leave verified changes uncommitted for review.
+
+Validation: three new interpreter test groups passed. Construction and callback
+scripts also passed against local CPython, allowing for the existing non-string
+conversion error wording. Full debug checks passed with 1,577 tests passing and
+one skipped (runtime JIT tiering disabled). No interpreter handlers changed.
+
+Five-repetition release comparisons measured the following median throughput.
+Positive percentages mean higher throughput. Int input was repeated at five
+seconds minimum because the initial two-second comparison showed a small 1.6%
+decrease; the longer pair instead showed a 1.8% increase. Treat the differences
+in both constructor loops as measurement noise, with no speedup claim or
+consistent int-constructor regression.
+
+| Constructor loop | Parent | Stage 8c | Change |
+|---|---:|---:|---:|
+| Int input (5s minimum) | 29.05M/s | 29.59M/s | +1.8% |
+| String input (2s minimum) | 49.66M/s | 51.23M/s | +3.2% |
+
+Throughput coefficients of variation were 0.7%/1.0% for the longer int pair and
+0.9%/1.1% for the string pair. Raw results are `/tmp/clovervm-str-before.json`,
+`/tmp/clovervm-str-after.json`, `/tmp/clovervm-str-int-before-long.json`, and
+`/tmp/clovervm-str-int-after-long.json`.
+
+```sh
+build-release/benchmark/bench_clovervm --benchmark_filter='BM_StrConstructor(Int|String)' --benchmark_min_time=2s --benchmark_repetitions=5 --benchmark_out=/tmp/clovervm-str-SIDE.json --benchmark_out_format=json
+build-release/benchmark/bench_clovervm --benchmark_filter=BM_StrConstructorInt --benchmark_min_time=5s --benchmark_repetitions=5 --benchmark_out=/tmp/clovervm-str-int-SIDE-long.json --benchmark_out_format=json
+```
+
+Stage 8c changes are uncommitted for review.
 
 Stages 7 and 8 must define their single-method boundary explicitly. Cases that
 require both resolved methods remain unsupported; do not silently skip

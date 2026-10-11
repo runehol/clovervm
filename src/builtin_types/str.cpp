@@ -77,14 +77,65 @@ namespace cl
         }
     }
 
-    static Value native_str_new(ThreadState *thread, Value cls_value, Value obj)
+    [[nodiscard]] NOINLINE static Value
+    str_new_subclass_slow(ThreadState *thread, Value cls_value, Value obj)
     {
-        if(cls_value != Value::from_oop(active_vm()->str_class()))
+        if(!can_convert_to<ClassObject>(cls_value))
         {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"str.__new__ expects str as cls");
+            TValue<String> name = thread->class_of_value(cls_value)->get_name();
+            std::wstring message = L"str.__new__(X): X is not a type object (";
+            message.append(name.extract()->data,
+                           size_t(name.extract()->count.extract()));
+            message += L")";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
         }
-        if(can_convert_to<String>(obj))
+        TValue<ClassObject> cls =
+            TValue<ClassObject>::from_value_assumed(cls_value);
+        if(!is_subclass_of(cls.extract(), thread->get_machine()->str_class()))
+        {
+            TValue<String> name = cls.extract()->get_name();
+            std::wstring class_name(name.extract()->data,
+                                    size_t(name.extract()->count.extract()));
+            std::wstring message = L"str.__new__(" + class_name + L"): " +
+                                   class_name + L" is not a subtype of str";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        assert(cls.extract()->instance_native_layout_id() ==
+               NativeLayoutId::String);
+        assert(cls.extract()->get_instance_inline_slot_capacity() == 0);
+        Value converted;
+        if(can_convert_to<String>(obj) &&
+           obj.get_ptr<String>()->get_shape()->get_class() ==
+               thread->get_machine()->str_class())
+        {
+            converted = obj;
+        }
+        else
+        {
+            converted = obj.is_smi() ? smi_to_str_string(thread, obj)
+                                     : value_to_str_string(obj);
+            CL_PROPAGATE_EXCEPTION(converted);
+        }
+        Owned<TValue<String>> text(
+            TValue<String>::from_value_assumed(converted));
+        return thread
+            ->make_internal_value<String>(cls.extract(),
+                                          string_view(text.value()))
+            .raw_value();
+    }
+
+    [[nodiscard]] static Value native_str_new(ThreadState *thread,
+                                              Value cls_value, Value obj)
+    {
+        if(cls_value != Value::from_oop(thread->get_machine()->str_class()))
+        {
+            return str_new_subclass_slow(thread, cls_value, obj);
+        }
+        if(can_convert_to<String>(obj) &&
+           obj.get_ptr<String>()->get_shape()->get_class() ==
+               thread->get_machine()->str_class())
         {
             return obj;
         }
@@ -102,7 +153,15 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__str__ expects a str receiver");
         }
-        return self;
+        if(self.get_ptr<String>()->get_shape()->get_class() ==
+           thread->get_machine()->str_class())
+        {
+            return self;
+        }
+        return thread
+            ->make_object_value<String>(
+                string_view(TValue<String>::from_value_assumed(self)))
+            .raw_value();
     }
 
     static Value native_str_repr(ThreadState *thread, Value self)

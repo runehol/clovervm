@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | Parent `a591ecdf` and the Stage 8b working tree (2026-10-11); full debug checks: 1,574 passed, one skipped; focused absolute release float-constructor measurements; combined constructor orchestration remains pending |
+| Validated against | Parent `3d6fedad` and the Stage 8c working tree (2026-10-11); full debug checks: 1,577 passed, one skipped; focused release constructor measurements; combined constructor orchestration remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -367,6 +367,15 @@ their requested class root and zero inline capacity. Convert to a double before
 allocation and retain checked integer overflow. String parsing and user conversion
 protocols are outside this slice. Existing exact-result unary and arithmetic
 operations and trusted exact-root guards are preserved.
+
+Stage 8c extends existing string construction through native `str.__new__`.
+Exact-str/small-int construction keeps the direct decimal formatter. A separate
+subclass helper validates ancestry and layout, converts the input, retains the
+converted String across allocation, and copies its characters into storage with
+the requested class root shape. String subclass inputs honor `__str__` overrides;
+inherited `str.__str__` returns an exact string, while custom conversion results
+keep their permitted subclass identity for exact-target construction. No new
+encoding/decoding forms or constructor orchestration are introduced.
 
 Only native payloads that can be initialized after allocation use this path.
 Immutable payloads, including int, float, str, bytes, and tuple, must be

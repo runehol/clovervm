@@ -5633,6 +5633,124 @@ else:
     ASSERT_FALSE(result.is_exception_marker());
 }
 
+TEST(Interpreter, str_subclass_construction_and_attributes)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class S(str): pass
+class T(S): pass
+class Mixin: pass
+class Mixed(S, Mixin): pass
+for cls in (str, S, T, Mixed):
+    assert cls().__class__ is cls
+    assert cls() == ""
+    for value in ("", "hello", "caf\u00e9\U0001f600", "a\x00b", 0, -123, True, 2**100):
+        x = cls(value)
+        assert x.__class__ is cls
+        assert x == str(value)
+        direct = str.__new__(cls, value)
+        assert direct.__class__ is cls
+        assert direct == x
+        if cls is not str:
+            x.extra = 42
+            assert x.__dict__["extra"] == 42
+            y = cls(x)
+            assert y is not x
+            assert y.__class__ is cls
+            assert not hasattr(y, "extra")
+original = "hello"
+assert str(original) is original
+x = S(original)
+assert str(x).__class__ is str
+assert str(x) is not x
+assert str.__str__(original) is original
+assert str.__str__(x).__class__ is str
+assert str.__str__(x) == original
+assert {x: 42}[original] == 42
+for value in (x[:], x[0], x + "", "" + x, x.lower(), x.upper(),
+              x.strip(), x.replace("missing", "x"), x.removeprefix("missing"),
+              x.removesuffix("missing"), x.join(("a", "b"))):
+    assert value.__class__ is str
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, str_subclass_conversion_callbacks)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class S(str):
+    def __str__(self): return "override"
+x = S("raw")
+assert str(x) == "override"
+assert str.__new__(str, x) == "override"
+assert S(x) == "override"
+assert str.__str__(x) == "raw"
+assert str.__str__(x).__class__ is str
+class Plain(str): pass
+text = Plain("callback result")
+class Source:
+    def __str__(self): return text
+assert str(Source()) is text
+converted = S(Source())
+assert converted.__class__ is S
+assert converted == text
+assert converted is not text
+class Bad:
+    def __str__(self): return 42
+class Raises:
+    def __str__(self): raise ValueError("conversion failed")
+for cls in (str, Plain):
+    try: cls(Bad())
+    except TypeError as e: assert str(e) == "__str__ returned non-str"
+    else: raise AssertionError
+    try: cls(Raises())
+    except ValueError as e: assert str(e) == "conversion failed"
+    else: raise AssertionError
+class Reentrant:
+    def __str__(self):
+        nested = Plain(123)
+        nested.extra = "kept alive"
+        return nested
+assert Plain(Reentrant()) == "123"
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, str_new_errors_invalidation_and_combined_boundary)
+{
+    expect_python_error(L"str.__new__(int, 4)\n", L"TypeError",
+                        L"str.__new__(int): int is not a subtype of str");
+    expect_python_error(L"str.__new__(1, 4)\n", L"TypeError",
+                        L"str.__new__(X): X is not a type object (int)");
+    expect_python_error(L"str.__new__(None, 4)\n", L"TypeError",
+                        L"str.__new__(X): X is not a type object (NoneType)");
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class S(str): pass
+class T(S): pass
+assert T(7).__class__ is T
+def replacement(cls, value="replacement"): return value
+S.__new__ = replacement
+assert T() == "replacement"
+assert T(11) == 11
+del S.__new__
+assert T(13).__class__ is T
+assert T(13) == "13"
+class Combined(str):
+    def __init__(self): raise AssertionError
+for mode in range(4):
+    try:
+        if mode == 0: S(1, 2)
+        elif mode == 1: S(obj="text")
+        elif mode == 2: S(b"text", "utf-8")
+        else: Combined()
+    except TypeError: pass
+    else: raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, float_subclass_numeric_construction_and_attributes)
 {
     test::VmTestContext context;
