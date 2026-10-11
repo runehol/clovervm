@@ -132,6 +132,9 @@ namespace cl
             case NativeLayoutId::Exception:
                 return code.emit_create_exception_known_class(0,
                                                               class_const_idx);
+            case NativeLayoutId::StopIteration:
+                return code.emit_create_stop_iteration_known_class(
+                    0, class_const_idx);
             default:
                 return Expected<uint32_t>::raise_exception(
                     L"TypeError",

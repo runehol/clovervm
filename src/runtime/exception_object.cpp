@@ -41,6 +41,24 @@ namespace cl
                                                             args.value());
     }
 
+    NOINLINE TValue<StopIterationObject>
+    allocate_default_stop_iteration(ThreadState *thread,
+                                    TValue<ClassObject> cls)
+    {
+        assert(cls.extract()->instance_native_layout_id() ==
+               NativeLayoutId::StopIteration);
+        Shape *root = cls.extract()->get_instance_root_shape();
+        assert(root != nullptr);
+        assert(cls.extract()->get_instance_inline_slot_capacity() ==
+               root->get_inline_slot_capacity());
+        assert(native_inline_slot_capacity_is_valid(
+            NativeLayoutId::StopIteration, root->get_inline_slot_capacity()));
+        (void)root;
+        Owned<TValue<Tuple>> args(thread->make_object_value<Tuple>(0));
+        return thread->make_internal_value<StopIterationObject>(cls.extract(),
+                                                                args.value());
+    }
+
     Value exception_args_to_string(ThreadState *thread,
                                    TValue<Exception> exception)
     {

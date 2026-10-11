@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `faa3da28` plus the stage 5b implementation (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
+| Validated against | `75a73af2` plus the stage 5c implementation (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -306,7 +306,9 @@ Stage 5b adds `CreateExceptionKnownClass`. It allocates Exception storage with
 the requested class and root Shape, validates the fixed one-slot capacity, and
 initializes `.args` to an empty tuple. User initializers receive constructor
 arguments afterwards; builtin argument initialization remains stage 6.
-StopIteration remains unsupported by default allocation until stage 5c.
+Stage 5c adds `CreateStopIterationKnownClass` with the distinct two-slot native
+layout. Its default allocator initializes `.args` to an empty tuple and `.value`
+to None, preserving the requested subclass identity.
 
 The implementation plan separates thunk-time allocator selection with
 Instance-only support (5a), Exception default allocation (5b), and StopIteration

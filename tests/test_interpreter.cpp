@@ -4901,7 +4901,7 @@ TEST(Interpreter,
 {
     expect_python_error(L"class C(list): pass\nC(1)\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
-    expect_python_error(L"class C(StopIteration):\n"
+    expect_python_error(L"class C(float):\n"
                         L"    def __init__(self, *, required):\n"
                         L"        raise AssertionError\n"
                         L"C()\n",
@@ -4959,6 +4959,74 @@ TEST(Interpreter, exception_default_allocation_propagates_initializer_errors)
                         L"__init__ should return None, not a value");
 }
 
+TEST(Interpreter, stop_iteration_default_allocation_preserves_native_storage)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+s = StopIteration()
+assert s.__class__ is StopIteration
+assert isinstance(s.args, tuple)
+assert len(s.args) == 0
+assert s.value is None
+class E(Exception): pass
+class C(E, StopIteration): pass
+class D(C): pass
+class S(StopIteration): pass
+class F(S, Exception): pass
+for cls in (C, D, F):
+    s = cls()
+    assert s.__class__ is cls
+    assert len(s.args) == 0
+    assert s.value is None
+    s.extra = 42
+    assert s.extra == 42
+    assert s.__dict__["extra"] == 42
+class G(StopIteration):
+    def __init__(self, value=7, *, other=9):
+        assert self.value is None
+        assert len(self.args) == 0
+        self.extra = value
+        self.other = other
+class H(G): pass
+assert H().extra == 7
+s = H(11, other=13)
+assert s.extra == 11
+assert s.other == 13
+assert s.value is None
+try:
+    raise s
+except H as caught:
+    assert caught is s
+    assert caught.value is None
+def replacement(self, value):
+    self.extra = value + 1
+G.__init__ = replacement
+assert H(20).extra == 21
+del G.__init__
+s = H()
+assert s.__class__ is H
+assert s.value is None
+assert len(s.args) == 0
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter,
+     stop_iteration_default_allocation_propagates_initializer_errors)
+{
+    expect_python_error(L"class S(StopIteration):\n"
+                        L"    def __init__(self):\n"
+                        L"        raise ValueError\n"
+                        L"S()\n",
+                        L"ValueError", L"");
+    expect_python_error(L"class S(StopIteration):\n"
+                        L"    def __init__(self):\n"
+                        L"        return 1\n"
+                        L"S()\n",
+                        L"TypeError",
+                        L"__init__ should return None, not a value");
+}
+
 TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
 {
     test::VmTestContext context;
@@ -4989,8 +5057,6 @@ TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
     expect_python_error(L"class C(list): pass\nC()\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(float): pass\nC()\n", L"TypeError",
-                        L"native instance layout requires a builtin allocator");
-    expect_python_error(L"class C(StopIteration): pass\nC()\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(list, dict): pass\n", L"TypeError",
                         L"incompatible native instance layouts");

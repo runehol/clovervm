@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `faa3da28` plus the stage 5b implementation (2026-10-11) |
+| Validated against | `75a73af2` plus the stage 5c implementation (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -288,24 +288,30 @@ Verification: full debug checks passed with 1,543 tests passing and one skipped.
 Release `check_opcode_frames` passed. Dedicated-opcode selection, exact and
 subclass identity, empty tuple args, overflow attributes, raising allocated
 exceptions, initializer argument forwarding, and initializer errors are covered.
-The allocation opcode is not included in the hot-path handler list. Changes
-remain uncommitted for review.
+The allocation opcode is not included in the hot-path handler list. Committed in `75a73af2`.
 
 ## Stage 5c: StopIteration Default Allocation
 
 Extend the same pattern to the distinct StopIteration layout.
 
-- [ ] Agree on `CreateStopIterationKnownClass` and its native allocation helper.
-- [ ] Allocate with the requested class and root Shape, validating the two-slot
+- [x] Agree on `CreateStopIterationKnownClass` and its native allocation helper.
+- [x] Allocate with the requested class and root Shape, validating the two-slot
   predefined minimum and fixed physical capacity. Preserve StopIteration's
   distinct native layout and ownership contract.
-- [ ] Initialize `.args` to an empty tuple and `.value` to None before returning.
-- [ ] Select this opcode for StopIteration in the no-new thunk path, including
+- [x] Initialize `.args` to an empty tuple and `.value` to None before returning.
+- [x] Select this opcode for StopIteration in the no-new thunk path, including
   compatible Exception/StopIteration MROs. Consume no constructor arguments.
-- [ ] Verify opcode selection, exact/subclass identity, both default fields,
+- [x] Verify opcode selection, exact/subclass identity, both default fields,
   init-only behavior, unsupported layouts, and lookup invalidation.
-- [ ] Run full debug checks and release `check_opcode_frames`; leave changes
+- [x] Run full debug checks and release `check_opcode_frames`; leave changes
   uncommitted for review. Builtin payload initialization remains stage 6.
+
+Verification: ten focused constructor tests passed. Full debug checks passed
+with 1,546 tests passing and one skipped; release `check_opcode_frames` passed.
+Coverage includes dedicated opcode selection, exact/subclass identity, empty
+args and None value, overflow attributes, both compatible MRO orders, raising
+allocated subclasses, initializer arguments/errors, and inherited initializer
+replacement/deletion invalidation. Changes remain uncommitted for review.
 
 ## Stage 6: Builtin Initializers And Immutable Constructors
 

@@ -393,8 +393,7 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
     for(ClassObject *base:
-        {context.vm().list_class(), context.vm().float_class(),
-         context.thread()->class_for_builtin_name(L"StopIteration")})
+        {context.vm().list_class(), context.vm().float_class()})
     {
         auto candidate = make_storage_selection_class(context, {base});
         ASSERT_FALSE(candidate.has_exception());
@@ -433,6 +432,24 @@ TEST(ConstructorAllocatorSelection, ExceptionUsesDedicatedOpcode)
     CodeObject *code = thunk.value().thunk->code_object.extract();
     ASSERT_GE(code->code.size(), 2u);
     EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateExceptionKnownClass),
+              code->code[0]);
+    EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
+}
+
+TEST(ConstructorAllocatorSelection, StopIterationUsesDedicatedOpcode)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto candidate = make_storage_selection_class(
+        context, {context.thread()->class_for_builtin_name(L"StopIteration")});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    auto thunk = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(thunk.has_exception());
+    ASSERT_TRUE(thunk.value().is_found());
+    CodeObject *code = thunk.value().thunk->code_object.extract();
+    ASSERT_GE(code->code.size(), 2u);
+    EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateStopIterationKnownClass),
               code->code[0]);
     EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
 }

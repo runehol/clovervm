@@ -101,6 +101,10 @@ namespace cl
     TValue<ExceptionObject> allocate_default_exception(ThreadState *thread,
                                                        TValue<ClassObject> cls);
 
+    TValue<StopIterationObject>
+    allocate_default_stop_iteration(ThreadState *thread,
+                                    TValue<ClassObject> cls);
+
     void install_exception_class_methods(VirtualMachine *vm);
 
     BuiltinClassDefinition make_base_exception_class(VirtualMachine *vm);

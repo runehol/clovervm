@@ -206,6 +206,7 @@ namespace cl
             case Bytecode::CreateFunction:
             case Bytecode::CreateInstanceKnownClass:
             case Bytecode::CreateExceptionKnownClass:
+            case Bytecode::CreateStopIterationKnownClass:
                 effects.destination_accumulator();
                 break;
 

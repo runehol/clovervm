@@ -4490,6 +4490,21 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_create_stop_iteration_known_class(PARAMS)
+    {
+        START(2);
+        uint8_t const_offset = pc[1];
+        TValue<ClassObject> cls = TValue<ClassObject>::from_value_assumed(
+            code_object->constant_table[const_offset].value());
+        if(unlikely(cls.extract()->instance_native_layout_id() !=
+                    NativeLayoutId::StopIteration))
+        {
+            MUSTTAIL return incompatible_instance_storage(ARGS);
+        }
+        accumulator = allocate_default_stop_iteration(thread, cls).raw_value();
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_is_instance_of_known_class(PARAMS)
     {
         START(2);
@@ -6329,6 +6344,8 @@ namespace cl
                         op_create_instance_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateExceptionKnownClass,
                         op_create_exception_known_class);
+        SET_TABLE_ENTRY(Bytecode::CreateStopIterationKnownClass,
+                        op_create_stop_iteration_known_class);
         SET_TABLE_ENTRY(Bytecode::IsInstanceOfKnownClass,
                         op_is_instance_of_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
