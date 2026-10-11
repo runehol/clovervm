@@ -17,7 +17,7 @@ namespace cl
         : Object(cls, native_layout), target(_target)
     {
         assert(_target != nullptr);
-        assert(native_layout_has_inline_slots(_target->native_layout_id()));
+        assert(_target->get_shape() != nullptr);
     }
 
     BuiltinClassDefinition make_slotdict_class(VirtualMachine *vm)

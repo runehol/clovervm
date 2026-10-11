@@ -4952,11 +4952,142 @@ TEST(Interpreter, class_assignment_rejects_module_instance_category_switch)
                         L"types or ModuleType subclasses");
 }
 
-TEST(Interpreter, builtin_container_instances_do_not_expose_dict)
+TEST(Interpreter, builtin_container_attribute_mappings_preserve_permissions)
 {
-    expect_python_error(L"[].__dict__\n", L"AttributeError", L"");
-    expect_python_error(L"{}.__dict__\n", L"AttributeError", L"");
-    expect_python_error(L"().__dict__\n", L"AttributeError", L"");
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+xs = [1]
+d = {'x': 7}
+ys = (2,)
+for obj in (xs, d, ys):
+    m = obj.__dict__
+    assert len(m) == 0
+    try:
+        m['x'] = 9
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+    try:
+        del m['x']
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+    try:
+        m['__class__']
+    except KeyError:
+        pass
+    else:
+        raise AssertionError
+assert xs[0] == 1
+assert d['x'] == 7
+assert ys[0] == 2
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << cl_test_string_to_wstring(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(Interpreter,
+     native_subclass_attribute_mappings_are_live_and_isolate_payload)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *classes = context.compile_file(LR"(
+class L(list): pass
+class T(tuple): pass
+class D(dict): pass
+class F(float): pass
+class S(str): pass
+class E(Exception): pass
+)");
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(classes)
+                     .is_exception_marker());
+    auto cls = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(classes, interned_string(name))
+            .get_ptr<ClassObject>();
+    };
+    Owned<TValue<List>> xs(
+        context.thread()->make_internal_value<List>(cls(L"L")));
+    xs.extract()->append(Value::from_smi(7));
+    Owned<TValue<Tuple>> ys(
+        context.thread()->make_internal_value<Tuple>(cls(L"T"), 1));
+    ys.extract()->initialize_item_unchecked(0, Value::from_smi(8));
+    Owned<TValue<Dict>> ds(
+        context.thread()->make_internal_value<Dict>(cls(L"D")));
+    ASSERT_FALSE(ds.extract()
+                     ->set_item(context.thread(),
+                                interned_string(L"first").raw_value(),
+                                Value::from_smi(99))
+                     .has_exception());
+    Owned<TValue<Float>> fs(
+        context.thread()->make_internal_value<Float>(cls(L"F"), 1.5));
+    Owned<TValue<String>> ss(context.thread()->make_internal_value<String>(
+        cls(L"S"), std::wstring(L"payload")));
+    Owned<TValue<Exception>> e(make_exception_object_with_arg(
+        context.thread(), TValue<ClassObject>::from_oop(cls(L"E")),
+        Value::from_smi(19)));
+    CodeObject *checks = context.compile_file(LR"(
+class C: pass
+c = C()
+for obj in (xs, ys, ds, fs, ss, c):
+    m = obj.__dict__
+    assert len(m) == 0
+    m['first'] = 1
+    assert obj.first == 1
+    obj.second = 2
+    assert m['second'] == 2
+    assert len(m) == 2
+    del m['first']
+    try:
+        obj.first
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError
+    del obj.second
+    assert len(m) == 0
+    m['first'] = 3
+    assert obj.first == 3
+    assert obj.__dict__['first'] == 3
+    assert str(m) == "{'first': 3}"
+assert xs[0] == 7
+assert ys[0] == 8
+assert ds['first'] == 99
+assert fs + 0.5 == 2.0
+assert ss == 'payload'
+m = e.__dict__
+assert m['args'] is e.args
+assert len(m['args']) == 1
+assert m['args'][0] == 19
+e.extra = 4
+assert m['extra'] == 4
+for operation in (0, 1):
+    try:
+        if operation == 0:
+            m['args'] = (20,)
+        else:
+            del m['args']
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+assert len(e.args) == 1
+assert e.args[0] == 19
+)");
+    store_global_to_module_for_test(context, checks, L"xs", xs.value());
+    store_global_to_module_for_test(context, checks, L"ys", ys.value());
+    store_global_to_module_for_test(context, checks, L"ds", ds.value());
+    store_global_to_module_for_test(context, checks, L"fs", fs.value());
+    store_global_to_module_for_test(context, checks, L"ss", ss.value());
+    store_global_to_module_for_test(context, checks, L"e", e.value());
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(checks)
+                     .is_exception_marker())
+        << cl_test_string_to_wstring(test::native_exception_message(
+               context.thread()->pending_exception_object()));
 }
 
 TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)

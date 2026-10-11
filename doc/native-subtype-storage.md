@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `ffee6c1b` plus stage 4b (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
+| Validated against | `2720047f` plus stage 4c (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -192,6 +192,14 @@ builtin may have mutable attribute Shapes while the native payload remains
 immutable; do not copy the exact builtin's attribute-immutability restrictions
 onto that subclass. Dictionary payload entries and subclass attributes remain
 separate: `d["x"]` and `d.x` are different storage.
+
+Stage 4c exposes the existing live `SlotDict` mapping wherever a heap object's
+Shape declares `__dict__`, including exact list, dict, and tuple objects.
+Neither inline-slot capability nor exact-builtin identity gates that descriptor.
+Existing Shape and descriptor permissions govern mapping updates and deletion;
+exposing the mapping does not grant additional mutation rights. No separate
+exposure flag or subclass-only descriptor installation is needed. Immediate
+values retain their existing Shapes and are outside this heap-object change.
 
 ## Integer Subclasses And Immediate Values
 

@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `ffee6c1b` plus the stage 4b implementation (2026-10-11) |
+| Validated against | `2720047f` plus the stage 4c implementation (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -208,27 +208,38 @@ lineages, native allocator/layout mismatches, cached Slice Shapes, bootstrap
 installation, and dynamic Instance sizing. Float/List/Tuple fixtures now use
 Python-declared classes. Seven metaclass fixtures were corrected to type ancestry,
 ClassObject layout, and its physical capacity. The int class now records BigInt
-as its heap storage contract. Changes remain uncommitted for review.
+as its heap storage contract. Committed in `2720047f`.
 
-## Stage 4c: Attribute Mapping Exposure For Native Subclasses
+## Stage 4c: Attribute Mapping Exposure For Native Objects
 
-Expose overflow-backed native subclass attributes through the existing live
-mapping without conflating inline-slot capability with namespace exposure.
+Expose native object attributes through the existing live mapping, including
+exact builtins whose Shapes already declare `__dict__`. Inline-slot capability
+does not control namespace exposure; existing Shape permissions control mutation.
 
-- [ ] Agree on a compact sketch for class/Shape mapping exposure and mutation
+- [x] Agree on a compact sketch for class/Shape mapping exposure and mutation
   policy before implementing this slice.
-- [ ] Refactor `__dict__` exposure and `SlotDict` target validation to support
-  native subclass layouts without inline slots, using the common overflow
+- [x] Refactor `__dict__` exposure and `SlotDict` target validation to support
+  native layouts without inline slots, using the common overflow
   pointer. Inline-slot capability must no longer gate mapping exposure.
-- [ ] Preserve Shape permissions for mapping writes and deletion, including
+- [x] Preserve Shape permissions for mapping writes and deletion, including
   immutable/read-only cases; dictionary payload entries remain separate from
   instance attributes.
-- [ ] Keep exact-builtin mapping exposure deferred: whether exact `dict` and
-  `list` expose a read-only mapping is a separate decision, not implied by 4c.
-- [ ] Verify mapping reads, writes, deletion, live views, and permission checks
+- [x] Keep the existing `__dict__` descriptors on exact builtins, including
+  list, dict, and tuple. Do not introduce an exact/subclass exposure gate or
+  change root-Shape construction to hide these mappings.
+- [x] Verify mapping reads, writes, deletion, live views, and permission checks
   on native subclasses with zero inline capacity and existing inline layouts.
-- [ ] Run `ninja -C build-debug all check` and leave changes uncommitted for
+  Replace exact-container AttributeError expectations with mapping exposure
+  and mutation-permission checks; verify dictionary payload isolation.
+- [x] Run `ninja -C build-debug all check` and leave changes uncommitted for
   review.
+
+Verification: seven focused mapping tests passed. Full debug checks passed
+with 1,537 tests passing and one skipped. Exact list/dict/tuple mappings preserve
+existing mutation permissions; native List/Tuple/Dict/Float/String subclasses
+and ordinary instances retain live views across attribute additions, deletion,
+and re-addition. Dict payload entries remain independent, and exception args
+retain their read-only descriptor permissions. Changes are uncommitted for review.
 
 ## Stage 5: Complete Constructor Protocol
 
