@@ -134,6 +134,31 @@ TEST(BigInt, NormalizeCanonicalizesZero)
     EXPECT_TRUE(is_normalized_bigint_view(view));
 }
 
+TEST(BigInt, IntSubclassSmallValuesRemainHeapBigInts)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(int64_t value:
+        {int64_t(0), int64_t(1), int64_t(-1), value_smi_min, value_smi_max})
+    {
+        std::wstring source =
+            L"class I(int): pass\nx = I(" + std::to_wstring(value) + L")\nx\n";
+        Owned<Value> result(context.run_file(source.c_str()));
+        ASSERT_FALSE(result.value().is_exception_marker());
+        ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+        EXPECT_FALSE(result.value().is_smi());
+        EXPECT_EQ(value, bigint_to_smi(result.value().get_ptr<BigInt>()->view())
+                             .value()
+                             .extract());
+        EXPECT_NE(context.vm().int_class(),
+                  result.value().get_ptr<BigInt>()->get_shape()->get_class());
+        EXPECT_EQ(0u, result.value()
+                          .get_ptr<BigInt>()
+                          ->get_shape()
+                          ->get_inline_slot_capacity());
+    }
+}
+
 TEST(BigInt, FinalizeReturnsSmiForSmallValues)
 {
     test::VmTestContext context;

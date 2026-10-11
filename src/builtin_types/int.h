@@ -19,6 +19,8 @@ namespace cl
     };
 
     bool is_intlike_value(Value value);
+    // These historical exact-int helpers exclude bool but accept heap int
+    // subclasses. Callers needing exact class identity must check the class.
     bool is_exact_int_value(Value value);
     [[nodiscard]] Expected<IntToSmiStatus>
     try_intlike_value_to_smi(Value value, TValue<SMI> *out);

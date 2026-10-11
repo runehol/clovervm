@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; Exception and StopIteration native initializers were verified with full debug checks (1,551 passed, one skipped); list allocation and initialization passed full debug checks (1,557 passed, one skipped) and release opcode-frame checks; dict new-only subclass construction passed full debug checks (1,564 passed, one skipped); other constructor work remains pending |
+| Validated against | Parent `bffa7030` and the Stage 8a working tree (2026-10-11); full debug checks: 1,569 passed, one skipped; focused release int-constructor comparison against the parent; combined constructor orchestration remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -350,6 +350,15 @@ implementation through private bootstrap bindings, then populates the new native
 object. Shared update inserts through builtin dict `__setitem__` so subclass
 method overrides do not intercept native population. No dict initializer or new
 allocation opcode is introduced; combined constructor orchestration is deferred.
+
+Stage 8a makes native int `__new__` subclass-aware using its existing new-only
+thunk. Exact class calls retain the common conversion fast path; non-exact
+targets use a slow helper for subtype/layout validation and CPython-style errors.
+Int subclass values always use fresh heap BigInt storage, including small values
+and zero, with their requested class root shape and zero inline capacity. Exact
+int conversion and inherited unary plus/abs discard subclass identity. Trusted
+abs remains guarded by the exact int root shape. Existing input conversions are
+retained; no new opcode or general constructor orchestration is introduced.
 
 Only native payloads that can be initialized after allocation use this path.
 Immutable payloads, including int, float, str, bytes, and tuple, must be

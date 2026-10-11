@@ -1,6 +1,7 @@
 #include "builtin_types/bigint.h"
 
 #include "builtin_types/hash.h"
+#include "object_model/shape.h"
 #include "runtime/thread_state.h"
 
 #include <algorithm>
@@ -158,6 +159,30 @@ namespace cl
                (n_digits > 0 && (signum == -1 || signum == 1)));
         return thread->make_object_raw<BigInt>(UninitializedBigIntDigitsTag{},
                                                n_digits, signum);
+    }
+
+    TValue<BigInt> make_heap_bigint(ThreadState *thread,
+                                    TValue<ClassObject> cls,
+                                    ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        assert(cls.extract()->instance_native_layout_id() ==
+               NativeLayoutId::BigInt);
+        assert(cls.extract()->get_instance_inline_slot_capacity() == 0);
+        assert(cls.extract()
+                   ->get_instance_root_shape()
+                   ->get_inline_slot_capacity() == 0);
+        TValue<BigInt> result = thread->make_internal_value<BigInt>(
+            cls.extract(), UninitializedBigIntDigitsTag{}, view.n_digits,
+            view.signum);
+        MutableBigIntView dest =
+            result.extract()->mutable_view_for_initialization();
+        if(view.n_digits != 0)
+        {
+            std::memcpy(dest.digits, view.digits,
+                        view.n_digits * sizeof(digit_t));
+        }
+        return result;
     }
 
     bool is_normalized_bigint_view(ConstBigIntView view)

@@ -130,6 +130,9 @@ namespace cl
     BigInt *make_uninitialized_bigint_for_digits(ThreadState *thread,
                                                  size_t n_digits,
                                                  signum_t signum);
+    [[nodiscard]] TValue<BigInt> make_heap_bigint(ThreadState *thread,
+                                                  TValue<ClassObject> cls,
+                                                  ConstBigIntView view);
     ConstBigIntView smi_bigint_view(int64_t decoded_smi_range_int,
                                     SmiViewStorage *storage);
     bool is_normalized_bigint_view(ConstBigIntView view);

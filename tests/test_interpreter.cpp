@@ -5519,6 +5519,120 @@ else:
                         L"TypeError", L"object is not callable");
 }
 
+TEST(Interpreter, int_subclass_construction_preserves_class_and_attributes)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"PY(
+class I(int): pass
+class J(I): pass
+for cls in (I, J):
+    assert cls().__class__ is cls
+    assert cls() == 0
+    for value in (0, 1, -1, True, False, 12345, -(2**61), 2**61, 2**100, -(2**100), "42", "-1267650600228229401496703205376"):
+        x = cls(value)
+        assert x.__class__ is cls
+        assert x == int(value)
+        assert str(x) == str(int(value))
+        assert hash(x) == hash(int(value))
+        x.extra = 42
+        assert x.__dict__["extra"] == 42
+        y = cls(x)
+        assert y.__class__ is cls
+        assert y == x
+        assert y is not x
+        assert not hasattr(y, "extra")
+        direct = int.__new__(cls, value)
+        assert direct.__class__ is cls
+        assert direct == x
+assert b"ab"[I(1)] == 98
+assert bytes((I(97), I(98)))[1] == 98
+)PY");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, int_subclass_operations_return_exact_integers)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class I(int): pass
+for value in (0, 1, -1, 2**100, -(2**100)):
+    x = I(value)
+    x.extra = 42
+    for result in (int(x), int.__new__(int, x), +x, -x, abs(x), ~x,
+                   x + 0, x - 0, x * 1, x // 1, x % 3, x << 0,
+                   x >> 0, x | 0, x & x, x ^ 0, x ** 1):
+        assert result.__class__ is int
+        assert result is not x
+        assert not hasattr(result, "extra")
+    assert int(x) == value
+    assert +x == value
+    assert abs(x) == abs(value)
+    assert hash(x) == hash(value)
+    assert {x: "found"}[value] == "found"
+# Repeat at shared unary call sites, alternating exact ints and subclasses.
+for value in (2**100, I(2**100), 7, I(7), 2**100, I(2**100)):
+    assert abs(value).__class__ is int
+    assert (+value).__class__ is int
+class Override(I):
+    def __pos__(self): return "positive override"
+    def __abs__(self): return "abs override"
+assert +Override(1) == "positive override"
+assert abs(Override(1)) == "abs override"
+large = 2**100
+assert int(large) is large
+assert (+large) is large
+assert abs(large) is large
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, int_new_reports_class_errors_like_cpython)
+{
+    expect_python_error(L"int.__new__(float, 4)\n", L"TypeError",
+                        L"int.__new__(float): float is not a subtype of int");
+    expect_python_error(L"class F(float): pass\nint.__new__(F, 4)\n",
+                        L"TypeError",
+                        L"int.__new__(F): F is not a subtype of int");
+    expect_python_error(L"int.__new__(bool, 4)\n", L"TypeError",
+                        L"int.__new__(bool) is not safe, use bool.__new__()");
+    expect_python_error(L"int.__new__(1, 4)\n", L"TypeError",
+                        L"int.__new__(X): X is not a type object (int)");
+    expect_python_error(L"int.__new__(None, 4)\n", L"TypeError",
+                        L"int.__new__(X): X is not a type object (NoneType)");
+    expect_python_error(L"class I(int): pass\nI('bad')\n", L"ValueError",
+                        L"invalid literal for int()");
+    expect_python_error(
+        L"class I(int): pass\nI(1.5)\n", L"TypeError",
+        L"int conversion is only implemented for int, bool and str");
+}
+
+TEST(Interpreter, int_subclass_new_invalidation_and_combined_boundary)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class I(int): pass
+class J(I): pass
+assert J(7).__class__ is J
+def replacement(cls, value=9): return value
+I.__new__ = replacement
+assert J() == 9
+assert J(11) == 11
+del I.__new__
+x = J(13)
+assert x.__class__ is J
+assert x == 13
+class Combined(int):
+    def __init__(self): raise AssertionError
+try:
+    Combined()
+except TypeError:
+    pass
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
 {
     test::VmTestContext context;

@@ -8,6 +8,7 @@
 #include "object_model/native_function.h"
 #include "object_model/owned.h"
 #include "object_model/value.h"
+#include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <bit>
@@ -299,14 +300,9 @@ namespace cl
         return result.value();
     }
 
-    static Value native_int_new(ThreadState *thread, Value cls_value, Value obj)
+    [[nodiscard]] static Value convert_to_exact_int(ThreadState *thread,
+                                                    Value obj)
     {
-        if(cls_value != Value::from_oop(active_vm()->int_class()))
-        {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"int.__new__ expects int as cls");
-        }
-
         if((obj.as.integer & value_not_smi_or_boolean_mask) == 0)
         {
             Value result;
@@ -316,7 +312,13 @@ namespace cl
 
         if(can_convert_to<BigInt>(obj))
         {
-            return obj;
+            BigInt *integer = obj.get_ptr<BigInt>();
+            if(integer->get_shape()->get_class() ==
+               thread->get_machine()->int_class())
+            {
+                return obj;
+            }
+            return CL_TRY(finalize_bigint(thread, integer->view()));
         }
 
         if(can_convert_to<String>(obj))
@@ -328,6 +330,62 @@ namespace cl
         return thread->set_pending_builtin_exception_string(
             L"TypeError",
             L"int conversion is only implemented for int, bool and str");
+    }
+
+    [[nodiscard]] NOINLINE static Value
+    int_new_subclass_slow(ThreadState *thread, Value cls_value, Value obj)
+    {
+        VirtualMachine *vm = thread->get_machine();
+        if(!can_convert_to<ClassObject>(cls_value))
+        {
+            TValue<String> name = thread->class_of_value(cls_value)->get_name();
+            std::wstring message = L"int.__new__(X): X is not a type object (";
+            message.append(name.extract()->data,
+                           size_t(name.extract()->count.extract()));
+            message += L")";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        TValue<ClassObject> cls =
+            TValue<ClassObject>::from_value_assumed(cls_value);
+        if(!is_subclass_of(cls.extract(), vm->int_class()))
+        {
+            TValue<String> name = cls.extract()->get_name();
+            std::wstring class_name(name.extract()->data,
+                                    size_t(name.extract()->count.extract()));
+            std::wstring message = L"int.__new__(" + class_name + L"): " +
+                                   class_name + L" is not a subtype of int";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        if(cls.extract()->instance_native_layout_id() != NativeLayoutId::BigInt)
+        {
+            TValue<String> name = cls.extract()->get_name();
+            std::wstring class_name(name.extract()->data,
+                                    size_t(name.extract()->count.extract()));
+            std::wstring message = L"int.__new__(" + class_name +
+                                   L") is not safe, use " + class_name +
+                                   L".__new__()";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        Value converted_value = convert_to_exact_int(thread, obj);
+        CL_PROPAGATE_EXCEPTION(converted_value);
+        Owned<Value> converted(converted_value);
+        SmiViewStorage storage;
+        ConstBigIntView view =
+            intlike_value_bigint_view(converted.value(), &storage);
+        return make_heap_bigint(thread, cls, view).raw_value();
+    }
+
+    [[nodiscard]] static Value native_int_new(ThreadState *thread,
+                                              Value cls_value, Value obj)
+    {
+        if(cls_value == Value::from_oop(thread->get_machine()->int_class()))
+        {
+            return convert_to_exact_int(thread, obj);
+        }
+        return int_new_subclass_slow(thread, cls_value, obj);
     }
 
     static Value native_int_str(ThreadState *thread, Value self)
@@ -1233,7 +1291,13 @@ namespace cl
         }
         if(can_convert_to<BigInt>(self))
         {
-            return trusted_bigint_abs(thread, self);
+            BigInt *integer = self.get_ptr<BigInt>();
+            if(integer->signum() < 0 || integer->get_shape()->get_class() ==
+                                            thread->get_machine()->int_class())
+            {
+                return trusted_bigint_abs(thread, self);
+            }
+            return CL_TRY(finalize_bigint(thread, integer->view()));
         }
         return thread->set_pending_builtin_exception_string(
             L"TypeError", SMIAbsOperator::receiver_error);
@@ -1394,10 +1458,19 @@ namespace cl
 
     static Value native_int_pos(ThreadState *thread, Value self)
     {
-        (void)thread;
-        if(self.is_smi() || can_convert_to<BigInt>(self))
+        if(self.is_smi())
         {
             return self;
+        }
+        if(can_convert_to<BigInt>(self))
+        {
+            BigInt *integer = self.get_ptr<BigInt>();
+            if(integer->get_shape()->get_class() ==
+               thread->get_machine()->int_class())
+            {
+                return self;
+            }
+            return CL_TRY(finalize_bigint(thread, integer->view()));
         }
         if(self == Value::True())
         {

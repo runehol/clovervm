@@ -433,13 +433,13 @@ dictionary. Native exception lookup is not part of this slice.
 - [x] Verify empty, mapping, pair iterable, and keyword construction, native
   operations and result identity, subclass attributes, override bypass, errors,
   rebinding, and inherited constructor invalidation.
-- [x] Run full debug checks and leave uncommitted for review.
+- [x] Run full debug checks and leave committed in `bffa7030`.
 
 Validation: all 111 Dict tests passed during focused verification; four
 construction regression scripts also passed against local CPython. Final
 `ninja -C build-debug all check` passed with 1,564 tests passing and one skipped
 (runtime JIT tiering disabled). No interpreter handlers changed. Changes are
-uncommitted for review.
+committed in `bffa7030`.
 
 ## Stage 8: Immutable Builtin Constructors
 
@@ -459,6 +459,55 @@ existing new-only path and must allocate their final native payload directly.
   payload operations, and specialized/general path agreement. Run debug checks
   and opcode frame checks for interpreter changes; measure allocation changes
   when needed. Leave each family slice uncommitted until requested.
+
+### Stage 8a: Int Subclass Construction
+
+Agreed sketch: preserve the exact-class first branch in native `int.__new__`,
+using the existing new-only thunk and current zero/one int, bool, or string input
+contract. Move non-exact targets and formatted errors to a NOINLINE slow helper.
+Validate the class, int ancestry, and BigInt layout; reject bool's incompatible
+allocator. Match CPython errors for non-types, non-subtypes, and bool.
+
+Add `make_heap_bigint(thread, cls, normalized_view)` in bigint.cpp as an unchecked
+storage primitive. It always copies into a heap BigInt using the requested root
+shape, including zero and SMI-sized values. Callers establish BigInt layout and
+zero inline capacity; parsed heap temporaries have an Owned owner while their
+views are consumed across allocation. Additional attributes use overflow storage.
+
+Exact int conversion reuses only exact BigInts. Subclass inputs normalize/copy
+to exact integers. Unary plus and nonnegative abs similarly return exact integers;
+retain the existing exact-root guard and fast handler for trusted abs. Audit
+identity-returning numeric branches and the misleading exact-int helpers used by
+bytes without changing their current accepted inputs. No opcode, resolver, cache,
+conversion protocol, or combined constructor machinery is introduced.
+
+- [x] Agree on class fast path, allocation primitive, errors, and identity rules.
+- [x] Implement subclass construction and exact-result conversion/unary paths.
+- [x] Verify values, heap identity, attributes, error text, operations and caches,
+  direct/inherited construction, and lookup invalidation.
+- [x] Run full debug checks and focused release constructor benchmarks against
+  parent commit `bffa7030`; leave uncommitted for review.
+
+Validation: five focused subclass/identity/error checks passed. The main
+construction and result-identity scripts also passed against local CPython.
+`ninja -C build-debug all check` passed with 1,569 tests passing and one skipped
+(runtime JIT tiering disabled). No interpreter handlers changed.
+
+Focused release comparison against `bffa7030` used the same command on each side:
+
+```sh
+build-release/benchmark/bench_clovervm --benchmark_filter='BM_IntConstructor(Int|String)' --benchmark_min_time=2s --benchmark_repetitions=5 --benchmark_out=/tmp/clovervm-int-SIDE.json --benchmark_out_format=json
+```
+
+| Benchmark | Parent median throughput | Stage 8a median throughput | Change |
+|---|---:|---:|---:|
+| IntConstructorInt | 101.8M/s | 105.4M/s | +3.5% |
+| IntConstructorString | 74.4M/s | 79.0M/s | +6.2% |
+
+Each set's coefficient of variation was below 1%. These focused measurements
+show no common-path regression; they do not establish general VM performance.
+Raw outputs are `/tmp/clovervm-int-parent.json` and
+`/tmp/clovervm-int-after.json`. Changes are uncommitted for review.
 
 Stages 7 and 8 must define their single-method boundary explicitly. Cases that
 require both resolved methods remain unsupported; do not silently skip
