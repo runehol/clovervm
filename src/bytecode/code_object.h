@@ -8,6 +8,7 @@
 #include "jit/jit_config.h"
 #include "object_model/attribute_cache.h"
 #include "object_model/builtin_class_registry.h"
+#include "object_model/heap_ptr.h"
 #include "object_model/owned.h"
 #include "object_model/shape_key.h"
 #include "object_model/typed_value.h"

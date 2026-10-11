@@ -1,6 +1,7 @@
 #ifndef CL_OWNED_H
 #define CL_OWNED_H
 
+#include "object_model/heap_ptr.h"
 #include "object_model/refcount.h"
 #include "object_model/typed_value.h"
 #include <type_traits>
@@ -173,141 +174,6 @@ namespace cl
 
         T value_;
     };
-
-    template <typename T> class OwnedHeapPtr
-    {
-    public:
-        OwnedHeapPtr() : ptr_(nullptr) {}
-        OwnedHeapPtr(std::nullptr_t) : ptr_(nullptr) {}
-        explicit OwnedHeapPtr(T *ptr) : ptr_(retain_ref(ptr)) {}
-        explicit OwnedHeapPtr(HeapPtr<T> ptr) : OwnedHeapPtr(ptr.get()) {}
-
-        OwnedHeapPtr(const OwnedHeapPtr &other) : ptr_(retain_ref(other.ptr_))
-        {
-        }
-
-        ~OwnedHeapPtr() { release_ptr(ptr_); }
-
-        OwnedHeapPtr &operator=(T *ptr)
-        {
-            assign(ptr);
-            return *this;
-        }
-        OwnedHeapPtr &operator=(std::nullptr_t)
-        {
-            assign(nullptr);
-            return *this;
-        }
-        OwnedHeapPtr &operator=(HeapPtr<T> ptr)
-        {
-            assign(ptr.get());
-            return *this;
-        }
-        OwnedHeapPtr &operator=(const OwnedHeapPtr &other)
-        {
-            if(this != &other)
-            {
-                assign(other.ptr_);
-            }
-            return *this;
-        }
-
-        T *get() const { return ptr_; }
-        T *extract() const { return ptr_; }
-        T *operator->() const { return ptr_; }
-        explicit operator bool() const { return ptr_ != nullptr; }
-        operator HeapPtr<T>() const { return HeapPtr<T>(ptr_); }
-        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
-        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
-
-    private:
-        void assign(T *ptr)
-        {
-            T *new_ptr = retain_ref(ptr);
-            release_ptr(ptr_);
-            ptr_ = new_ptr;
-        }
-
-        static T *retain_ref(T *ptr)
-        {
-            incref_heap_ptr(ptr);
-            return ptr;
-        }
-
-        static void release_ptr(T *ptr) { decref_heap_ptr(ptr); }
-
-        T *ptr_;
-    };
-
-    template <typename T> class MemberHeapPtr
-    {
-    public:
-        MemberHeapPtr() : ptr_(nullptr) {}
-        MemberHeapPtr(std::nullptr_t) : ptr_(nullptr) {}
-        explicit MemberHeapPtr(T *ptr) : ptr_(retain_ref(ptr)) {}
-        explicit MemberHeapPtr(HeapPtr<T> ptr) : MemberHeapPtr(ptr.get()) {}
-
-        MemberHeapPtr(const MemberHeapPtr &other) : ptr_(retain_ref(other.ptr_))
-        {
-        }
-
-        MemberHeapPtr &operator=(T *ptr)
-        {
-            assign(ptr);
-            return *this;
-        }
-        MemberHeapPtr &operator=(std::nullptr_t)
-        {
-            assign(nullptr);
-            return *this;
-        }
-        MemberHeapPtr &operator=(HeapPtr<T> ptr)
-        {
-            assign(ptr.get());
-            return *this;
-        }
-        MemberHeapPtr &operator=(const MemberHeapPtr &other)
-        {
-            if(this != &other)
-            {
-                assign(other.ptr_);
-            }
-            return *this;
-        }
-
-        T *get() const { return ptr_; }
-        T *extract() const { return ptr_; }
-        T *operator->() const { return ptr_; }
-        explicit operator bool() const { return ptr_ != nullptr; }
-        operator HeapPtr<T>() const { return HeapPtr<T>(ptr_); }
-        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
-        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
-
-        // For custom heap-object dealloc paths. Leaves the member pointer
-        // unchanged; the containing object must not use the member afterward.
-        void release_ref() { release_ptr(ptr_); }
-
-    private:
-        void assign(T *ptr)
-        {
-            T *new_ptr = retain_ref(ptr);
-            release_ptr(ptr_);
-            ptr_ = new_ptr;
-        }
-
-        static T *retain_ref(T *ptr)
-        {
-            incref_heap_ptr(ptr);
-            return ptr;
-        }
-
-        static void release_ptr(T *ptr) { decref_heap_ptr(ptr); }
-
-        T *ptr_;
-    };
-
-    static_assert(sizeof(OwnedHeapPtr<HeapObject>) == sizeof(HeapObject *));
-    static_assert(sizeof(MemberHeapPtr<HeapObject>) == sizeof(HeapObject *));
 
 }  // namespace cl
 

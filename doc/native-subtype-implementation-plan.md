@@ -12,7 +12,8 @@
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
 and [D-0013](decision-log.md#d-0013-use-common-overflow-storage-for-native-builtin-subclasses).
-Complete, verify, and commit each stage before proceeding. Stages 4 and 5 need
+Complete and verify each stage, then leave its changes uncommitted for review.
+Commit only when explicitly requested. Stages 4 and 5 need
 the concrete sketches identified below before their implementation begins.
 Family-specific constructors and trusted lowering likewise need sketches when
 their contracts are selected in stage 6.
@@ -65,24 +66,35 @@ metadata and Shapes describe the allocated capacity.
 The object model owns the common pointer; the memory layer must describe and
 release it consistently for every Python-visible heap layout.
 
+- [x] Separate heap-pointer wrappers, pointer-refcount primitives, and shared
+  value-tag constants into lightweight headers without an `Object` include
+  cycle. Preserve existing wrapper and pointer-refcount semantics; keep
+  Value/TValue ownership wrappers separate. This prerequisite is completed
+  independently of the storage change below.
 - [ ] Move the overflow-storage pointer into `Object`, initially null, and
-  remove the duplicate field from the existing `SlotObject` base.
+  remove the duplicate field from the existing `SlotObject` base. Use the
+  existing `MemberHeapPtr<OverflowSlots>` ownership wrapper.
 - [ ] Rename the C++ inline-capable base to `InlineSlotObject`. Keep its role
   distinct from the shared `NativeLayoutId::SlotObject` introduced in stage 3.
 - [ ] Make overflow reads, writes, growth, and deletion operate through
   `Object`, without requiring a cast to the inline-capable base.
 - [ ] Retain inline access only for layouts with an actual inline region;
-  layouts without that region must have zero Shape inline capacity.
+  layouts without that region must have zero Shape inline capacity. Rename the
+  native-layout predicate to `native_layout_has_inline_slots` to express that
+  capability independently of common overflow storage.
 - [ ] Update native member offsets, size/release descriptors, static assertions,
   and allocation initialization together. Internal `HeapObject` metadata records
   do not acquire the pointer.
 - [ ] Ensure release and tracing observe the common pointer exactly once,
   including custom native deallocation paths.
 - [ ] Preserve attribute permissions and constant-offset cache access; pointer
-  availability does not make exact builtins attribute-mutable.
+  availability does not make exact builtins attribute-mutable or broaden their
+  existing `__dict__` exposure. Keep that semantic gate separate from overflow
+  storage access.
 - [ ] Verify existing inline and overflow attributes, growth/deletion with
   populated caches, and reclamation of references held in overflow storage.
-- [ ] Run `ninja -C build-debug all check` and commit the stage.
+- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
+  review.
 
 ## Stage 3: Shared Native Layout For Pure-Slot Objects
 
@@ -110,7 +122,8 @@ contract. Semantic class identity remains in the Shape.
 - [ ] Verify semantic type discrimination between objects with the shared ID,
   predefined field access, different allocation counts, cached attribute access,
   and reclamation of both inline and overflow references.
-- [ ] Run `ninja -C build-debug all check` and commit the stage.
+- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
+  review.
 
 ## Stage 4: Class-Creation Storage Validation
 
@@ -133,11 +146,30 @@ installing the instance root Shape. Allocation enforces that selected contract.
   clones. Validate allocator/native-layout agreement.
 - [ ] Preserve native predefined field semantics while allowing mutable
   subclass attributes where appropriate.
+- [ ] Refactor `__dict__` exposure and `SlotDict` target validation to support
+  object layouts without inline slots. Such objects use the common overflow
+  pointer for their attribute mapping; inline-slot capability must no longer
+  gate that mapping's exposure. Apply the selected class/Shape exposure and
+  mutation policy, including tests for native subclasses with zero inline
+  capacity. Whether exact builtins such as `dict` and `list` also expose a
+  read-only mapping remains deferred; stage 2 preserves current exposure
+  behavior.
 - [ ] Verify compatible mixins and sibling subclasses, conflicting bases,
   predefined-slot compatibility, zero/fixed/dynamic capacities, and class
   identity. Do not enable construction through a generic allocator that cannot
   satisfy the selected native storage contract.
-- [ ] Run `ninja -C build-debug all check` and commit the stage.
+- [ ] Revisit the stage-1 fixtures that explicitly prepare zero-capacity native
+  subclass classes. Use actual Python class definitions once class creation
+  selects matching native storage, retaining explicit native instance allocation
+  until builtin constructors support it:
+  - `JitConstantFolding.DoesNotUnboxFloatSubclassConstant`
+    (`tests/test_jit_constant_folding.cpp`): `FloatSubclass` must receive zero
+    inline capacity while retaining float ancestry and distinct class identity.
+  - `Interpreter.sequence_search_methods_bypass_subclass_storage_overrides`
+    (`tests/test_interpreter.cpp`): `HostileList` and `HostileTuple` must receive
+    zero inline capacity while preserving their Python-defined overrides.
+- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
+  review.
 
 ## Stage 5: Complete Constructor Protocol
 
@@ -167,12 +199,14 @@ initialization. Builtin payload policy stays outside the thunk builder.
   non-`None` results, and replacement/deletion of inherited constructor methods.
 - [ ] Measure ordinary exact-class construction in a release build and check
   that the call representation does not force variadic collection allocation.
-- [ ] Run `ninja -C build-debug all check` and commit the stage.
+- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
+  review.
 
 ## Stage 6: Builtin Allocation And Trusted Specialization
 
 Implement and verify the general family-owned constructor behavior before
-specializing it. Split this stage into commits by builtin family and lowering.
+specializing it. Split this stage into reviewable changes by builtin family
+and lowering; commit them only when explicitly requested.
 
 - [ ] Start with allocation-correct exception/shared-slot constructors,
   allocating with the requested class's root Shape and predefined minimum.
@@ -198,7 +232,8 @@ specializing it. Split this stage into commits by builtin family and lowering.
   verify specialized and general paths agree.
 - [ ] Measure known builtin allocation and ordinary construction in release
   builds. Run `ninja -C build-debug all check` for each completed code slice.
-- [ ] Commit verified family implementations and specializations separately.
+- [ ] Leave verified family implementations and specializations uncommitted
+  for review; commit them separately when explicitly requested.
 
 ## Deferred Work And Completion
 

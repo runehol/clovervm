@@ -1,6 +1,7 @@
 #ifndef CL_VM_ARRAY_H
 #define CL_VM_ARRAY_H
 
+#include "object_model/heap_ptr.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"
 #include "object_model/refcount.h"

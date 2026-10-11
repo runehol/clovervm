@@ -4,6 +4,7 @@
 #include "memory/heap_construction.h"
 #include "object_model/attribute_descriptor.h"
 #include "object_model/builtin_class_registry.h"
+#include "object_model/heap_ptr.h"
 #include "object_model/instance.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"

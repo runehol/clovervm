@@ -23,7 +23,9 @@ The staged checklist is in the
 
 ## Common Storage
 
-Move the overflow-storage pointer into `Object`. `SlotObject` must reuse that
+Move the overflow-storage pointer into `Object` as
+`MemberHeapPtr<OverflowSlots>`, preserving its ownership and one-word storage.
+`SlotObject` must reuse that
 pointer rather than contain a second one. Rename `SlotObject` to an
 inline-capable base, provisionally `InlineSlotObject`, to make its remaining
 responsibility explicit: it marks the physical presence of inline `Value`

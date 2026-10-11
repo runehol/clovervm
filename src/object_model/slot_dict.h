@@ -2,6 +2,7 @@
 #define CL_SLOT_DICT_H
 
 #include "object_model/builtin_class_registry.h"
+#include "object_model/heap_ptr.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
