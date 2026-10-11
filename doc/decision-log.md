@@ -938,7 +938,8 @@ must use the adapter.
 
 **Date:** 2026-10-10
 
-**Refined:** 2026-10-11 (class-creation validation and constructor specialization)
+**Refined:** 2026-10-11 (class-creation validation, constructor specialization,
+and shared pure-slot layouts)
 
 ### Decision
 
@@ -960,7 +961,7 @@ offsets after their guards, independent of native payload length. Explicit Pytho
 
 Validate native payload ancestry while walking the MRO at class creation,
 before installing the instance root Shape. Reject conflicting native layouts
-there and select zero, fixed native, or dynamic `Instance` inline capacity to
+there and select zero, fixed native, or dynamic pure-slot inline capacity to
 match physical storage. Constructor thunks specialize resolved known builtin
 `__new__` methods through trusted-handler semantics, guarded by existing
 constructor lookup invalidation; native layout alone does not define allocation
@@ -968,6 +969,17 @@ semantics. General allocation results use the existing known-class instance
 test, including its exact-class fast path, without another type-test cache.
 Initialization resolves against the actual returned class after allocation,
 with independent binding of the original arguments for both method calls.
+
+Consolidate `Instance`, `ModuleLoaderObject`, `ModuleSpecObject`, `Slice`,
+`ExceptionObject`, and `StopIterationObject` under `NativeLayoutId::SlotObject`.
+Their predefined root-Shape attributes establish the minimum inline slot count;
+allocation and tracing use the actual physical count recorded on the object.
+Rename the class allocation count to `instance_inline_slot_count`. Retain
+distinct IDs and fixed inline capacities for `Function`, `ClassObject`, and
+`ModuleObject`, which contain additional native metadata. Shared physical
+storage does not replace semantic type checks or predefined-slot compatibility
+validation. Future slack tracking may trim only the unused tail common to the
+whole transition tree, preserving every predefined and occupied location.
 
 ### Context And Consequences
 

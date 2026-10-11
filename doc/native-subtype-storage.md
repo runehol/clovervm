@@ -15,7 +15,8 @@ Python-visible heap `Object`, native heap integer storage for `int` subclasses,
 and overflow-only additional attributes for builtin families that currently
 lack `SlotObject` storage. Existing `SlotObject` families retain their regular
 storage mechanism. This decision was agreed on 2026-10-10. Class-creation
-validation and constructor specialization were refined on 2026-10-11.
+validation, constructor specialization, and shared pure-slot layouts were
+refined on 2026-10-11.
 
 ## Common Storage
 
@@ -49,12 +50,14 @@ The resulting physical layout determines the Shape's inline capacity:
 
 - Native layouts without inline attribute storage, including `Dict`, declare
   zero inline capacity. Additional attributes use overflow storage.
-- Native inline-capable layouts retain their fixed physical capacity and
-  predefined descriptors. For example, exception subclasses retain `.args`
-  and StopIteration subclasses retain `.value`; additional attributes overflow.
-- Ordinary `Instance` layouts retain dynamically allocated automatic inline
-  slots. The universal `object` base maps to this slot-capable layout and does
-  not force native subclasses to adopt generic `Instance` storage.
+- Pure-slot objects share `NativeLayoutId::SlotObject` and dynamically allocated
+  inline storage. Their predefined attributes establish the minimum inline
+  slot count; additional attributes may use spare inline capacity or overflow.
+- Inline-capable layouts with additional native metadata retain distinct native
+  IDs and fixed physical inline capacity.
+- Ordinary user instances use the shared pure-slot layout with automatic inline
+  slots. The universal `object` base maps to this layout and does not force
+  native subclasses with other payloads to adopt generic slot-only storage.
 
 Root-shape construction, transitions, and clones preserve the selected storage
 interpretation. Allocators assert that the requested class's root Shape is
@@ -75,10 +78,53 @@ native builtin:
     native fields and payload
 ```
 
-Native layout identity still describes the builtin payload. The Shape supplies
-Python class identity and attribute locations. Subclassing must not replace a
-native payload with a generic `Instance`, or turn a subclass instance into an
+Native layout identity describes physical payload storage. For pure-slot
+objects it does not distinguish Python types; the Shape supplies Python class
+identity and attribute locations. Subclassing must not replace a non-slot native
+payload with generic slot-only storage, or turn a subclass instance into an
 exact builtin value where class identity remains observable.
+
+### Shared Pure-Slot Layout
+
+The following six current concrete types become the shared
+`NativeLayoutId::SlotObject` layout. Their predefined attributes remain at their
+existing fixed inline locations in the root Shape.
+
+| Current concrete type | Minimum inline slots | Predefined attributes |
+|---|---|---|
+| `Instance` | 0 | None; ordinary user classes retain automatic inline capacity |
+| `ModuleLoaderObject` | 3 | `kind`, `name`, `path` |
+| `ModuleSpecObject` | 6 | `name`, `loader`, `origin`, `submodule_search_locations`, `has_location`, `parent` |
+| `Slice` | 3 | `start`, `stop`, `step` |
+| `ExceptionObject` | 1 | `args` |
+| `StopIterationObject` | 2 | `args`, `value` |
+
+These objects contain only inline slot values beyond the common header and
+overflow pointer. Allocation, object-size recovery, and tracing use their
+actual physical inline slot count, recorded on the object. Rename the class's
+`instance_default_inline_slot_count` to `instance_inline_slot_count` and keep
+that allocation count consistent with the root Shape's capacity. The count
+must accommodate every predefined inline location; predefined values must be
+initialized according to the owning builtin's semantics.
+
+`Function`, `ClassObject`, and `ModuleObject` retain separate native layout
+IDs. They contain native metadata in addition to their attribute slots;
+`ModuleObject`, for example, also contains validity cells and dependent-cell
+storage. They continue using common slot access with their existing fixed
+physical capacities. Attribute extensibility is separate from this distinction.
+
+Sharing the native ID does not make unrelated builtin classes interchangeable.
+Typed access and trusted handlers must validate the relevant semantic class and
+predefined-slot contract rather than treating the shared ID as proof of a
+particular builtin type. Native ancestry validation must likewise retain the
+predefined-slot compatibility requirements; matching IDs alone are insufficient.
+
+Future slack tracking may remove only the unused trailing inline capacity
+common to the entire root Shape transition tree. Predefined attributes already
+occupy their root locations, so they set a lower bound; attributes allocated by
+descendant Shapes can raise that bound. It must never remove an occupied inline
+location. The profiling trigger and coordination of allocation counts, existing
+objects, and Shape/cache metadata remain a later implementation design.
 
 For native families currently lacking slot storage, such as `String`, `Dict`,
 and `List`, additional subclass attributes all use `OverflowSlots`. Do not
