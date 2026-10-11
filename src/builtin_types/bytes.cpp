@@ -98,13 +98,78 @@ namespace cl
         return Expected<std::vector<uint8_t>>::ok(std::move(result));
     }
 
-    static Value native_bytes_new(ThreadState *thread, Value cls_value,
-                                  Value source)
+    [[nodiscard]] NOINLINE static Value
+    bytes_new_subclass_slow(ThreadState *thread, Value cls_value, Value source)
     {
-        if(cls_value != Value::from_oop(active_vm()->bytes_class()))
+        if(!can_convert_to<ClassObject>(cls_value))
         {
+            TValue<String> name = thread->class_of_value(cls_value)->get_name();
+            std::wstring message =
+                L"bytes.__new__(X): X is not a type object (";
+            message.append(name.extract()->data,
+                           size_t(name.extract()->count.extract()));
+            message += L")";
             return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"bytes.__new__ expects bytes as cls");
+                L"TypeError", message.c_str());
+        }
+        TValue<ClassObject> cls =
+            TValue<ClassObject>::from_value_assumed(cls_value);
+        if(!is_subclass_of(cls.extract(), thread->get_machine()->bytes_class()))
+        {
+            TValue<String> name = cls.extract()->get_name();
+            std::wstring class_name(name.extract()->data,
+                                    size_t(name.extract()->count.extract()));
+            std::wstring message = L"bytes.__new__(" + class_name + L"): " +
+                                   class_name + L" is not a subtype of bytes";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        assert(cls.extract()->instance_native_layout_id() ==
+               NativeLayoutId::Bytes);
+        assert(cls.extract()->get_instance_inline_slot_capacity() == 0);
+        if(source.is_none())
+        {
+            return thread
+                ->make_internal_value<Bytes>(cls.extract(),
+                                             std::span<const uint8_t>{})
+                .raw_value();
+        }
+        if(can_convert_to<Bytes>(source))
+        {
+            return thread
+                ->make_internal_value<Bytes>(
+                    cls.extract(),
+                    bytes_view(TValue<Bytes>::from_value_assumed(source)))
+                .raw_value();
+        }
+        if(can_convert_to<List>(source))
+        {
+            std::vector<uint8_t> bytes =
+                CL_TRY(bytes_from_list(source.get_ptr<List>()));
+            return thread
+                ->make_internal_value<Bytes>(cls.extract(),
+                                             std::span<const uint8_t>(bytes))
+                .raw_value();
+        }
+        if(can_convert_to<Tuple>(source))
+        {
+            std::vector<uint8_t> bytes =
+                CL_TRY(bytes_from_tuple(source.get_ptr<Tuple>()));
+            return thread
+                ->make_internal_value<Bytes>(cls.extract(),
+                                             std::span<const uint8_t>(bytes))
+                .raw_value();
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"cannot convert object to bytes");
+    }
+
+    [[nodiscard]] static Value native_bytes_new(ThreadState *thread,
+                                                Value cls_value, Value source)
+    {
+        if(cls_value != Value::from_oop(thread->get_machine()->bytes_class()))
+        {
+            return bytes_new_subclass_slow(thread, cls_value, source);
         }
         if(source.is_none())
         {
@@ -113,7 +178,15 @@ namespace cl
         }
         if(can_convert_to<Bytes>(source))
         {
-            return source;
+            if(source.get_ptr<Bytes>()->get_shape()->get_class() ==
+               thread->get_machine()->bytes_class())
+            {
+                return source;
+            }
+            return thread
+                ->make_object_value<Bytes>(
+                    bytes_view(TValue<Bytes>::from_value_assumed(source)))
+                .raw_value();
         }
         if(can_convert_to<List>(source))
         {

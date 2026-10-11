@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | Parent `3d6fedad` and the Stage 8c working tree (2026-10-11); full debug checks: 1,577 passed, one skipped; focused release constructor measurements; combined constructor orchestration remains pending |
+| Validated against | Parent `49f0b342` and the Stage 8d working tree (2026-10-11); full debug checks: 1,580 passed, one skipped; focused release constructor measurements; combined constructor orchestration remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -376,6 +376,14 @@ the requested class root shape. String subclass inputs honor `__str__` overrides
 inherited `str.__str__` returns an exact string, while custom conversion results
 keep their permitted subclass identity for exact-target construction. No new
 encoding/decoding forms or constructor orchestration are introduced.
+
+Stage 8d extends native bytes construction for existing empty, bytes, list, and
+tuple inputs. Exact target calls reuse only exact Bytes objects; subclass inputs
+are copied into exact storage. A separate validated helper allocates fresh Bytes
+storage with the requested subclass root shape and zero inline capacity, using
+the existing integer-element validation for list/tuple inputs. Additional
+attributes use common overflow storage. Custom conversion protocols, new input
+forms, and the existing explicit-None/default distinction remain deferred.
 
 Only native payloads that can be initialized after allocation use this path.
 Immutable payloads, including int, float, str, bytes, and tuple, must be

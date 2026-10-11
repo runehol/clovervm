@@ -5633,6 +5633,125 @@ else:
     ASSERT_FALSE(result.is_exception_marker());
 }
 
+TEST(Interpreter, bytes_subclass_construction_and_attributes)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+class B(bytes): pass
+class C(B): pass
+class Mixin: pass
+class Mixed(B, Mixin): pass
+class I(int): pass
+class L(list): pass
+for cls in (bytes, B, C, Mixed):
+    assert cls().__class__ is cls
+    assert cls() == b""
+    for source in (b"", b"abc", b"\x00\xff", [], [0, 255], (),
+                   (97, 98), [I(97), I(98)], L([97, 98])):
+        x = cls(source)
+        assert x.__class__ is cls
+        assert x == bytes(source)
+        direct = bytes.__new__(cls, source)
+        assert direct.__class__ is cls
+        assert direct == x
+        if cls is not bytes:
+            x.extra = 42
+            assert x.__dict__["extra"] == 42
+            y = cls(x)
+            assert y.__class__ is cls
+            assert y is not x
+            assert not hasattr(y, "extra")
+original = b"abc"
+assert bytes(original) is original
+x = B(original)
+assert bytes(x).__class__ is bytes
+assert bytes(x) == original
+assert bytes(x) is not x
+assert {x: 42}[original] == 42
+assert hash(x) == hash(original)
+assert x[0] == 97
+assert x[-1] == 99
+assert b"b" in x
+assert x.find(b"b") == 1
+assert x.startswith(b"a")
+for value in (x[:], x[1:], x + b"", b"" + x,
+              x.replace(b"missing", b"x"), x.removeprefix(b"missing"),
+              x.removesuffix(b"missing")):
+    assert value.__class__ is bytes
+assert len(B([0, 255])) == 2
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, bytes_new_class_and_source_errors)
+{
+    expect_python_error(L"bytes.__new__(int, b'x')\n", L"TypeError",
+                        L"bytes.__new__(int): int is not a subtype of bytes");
+    expect_python_error(L"bytes.__new__(1, b'x')\n", L"TypeError",
+                        L"bytes.__new__(X): X is not a type object (int)");
+    expect_python_error(L"bytes.__new__(None, b'x')\n", L"TypeError",
+                        L"bytes.__new__(X): X is not a type object (NoneType)");
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+class B(bytes): pass
+for cls in (bytes, B):
+    for source in ([-1], [256], (2**100,), [1, -1]):
+        try: cls(source)
+        except ValueError as e: assert str(e) == "bytes must be in range(0, 256)"
+        else: raise AssertionError
+    for source in ([True], [1.0], ["x"], (None,)):
+        try: cls(source)
+        except TypeError as e: assert str(e) == "bytes item must be an integer"
+        else: raise AssertionError
+    for source in (4, "text", range(3)):
+        try: cls(source)
+        except TypeError as e: assert str(e) == "cannot convert object to bytes"
+        else: raise AssertionError
+    assert cls(None) == b""
+    for mode in range(3):
+        try:
+            if mode == 0: cls(b"a", b"b")
+            elif mode == 1: cls(source=b"a")
+            else: cls("text", "utf-8")
+        except TypeError: pass
+        else: raise AssertionError
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, bytes_new_invalidation_and_deferred_protocol_boundary)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+class B(bytes): pass
+class C(B): pass
+assert C(b"abc").__class__ is C
+def replacement(cls, source=b"replacement"): return source
+B.__new__ = replacement
+assert C() == b"replacement"
+assert C(11) == 11
+del B.__new__
+assert C(b"restored").__class__ is C
+assert C(b"restored") == b"restored"
+class Override(bytes):
+    def __bytes__(self): raise AssertionError
+x = Override(b"raw")
+assert bytes(x) == b"raw"
+assert B(x) == b"raw"
+class Source:
+    def __bytes__(self): return b"custom"
+try: B(Source())
+except TypeError: pass
+else: raise AssertionError
+class Combined(bytes):
+    def __init__(self): raise AssertionError
+try: Combined()
+except TypeError: pass
+else: raise AssertionError
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, str_subclass_construction_and_attributes)
 {
     test::VmTestContext context;

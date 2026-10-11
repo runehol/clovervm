@@ -79,6 +79,19 @@ existing out-of-range or unsupported-value behavior.
 
 ### Follow-ups from native constructor work
 
+- **Text/bytes encoding:** implement `str.encode`, `bytes.decode`, and the
+  encoding/errors forms of `bytes(text, encoding, errors)` and
+  `str(data, encoding, errors)`. Choose the first codecs and error policies in a
+  separate readiness sketch.
+- **Integer/bytes conversion:** implement `bytes(count)` zero filling, then
+  `int.to_bytes` and `int.from_bytes` as separate slices. Cover byte order,
+  signedness, length/range errors, and the applicable integer protocols.
+- **Bytes conversion protocols:** add `__bytes__`, generic iterable input,
+  element `__index__`, and buffer inputs when their dispatch/storage contracts
+  are ready. Bytes subclasses can override `__bytes__`; the current native
+  bytes-input shortcut does not honor this yet. Keep this separate from native
+  subclass allocation. Also distinguish an omitted bytes source from explicit
+  `None`: the current default uses `None` and accepts `bytes(None)` as empty.
 - **Native exception lookup:** stop resolving internal exception classes through
   mutable public builtin bindings. Rebinding `builtins.TypeError` can currently
   trigger a debug assertion when native code raises an error. Keep this separate

@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | Parent `3d6fedad` and the Stage 8c working tree (2026-10-11); full debug checks: 1,577 passed, one skipped |
+| Validated against | Parent `49f0b342` and the Stage 8d working tree (2026-10-11); full debug checks: 1,580 passed, one skipped |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -607,7 +607,43 @@ build-release/benchmark/bench_clovervm --benchmark_filter='BM_StrConstructor(Int
 build-release/benchmark/bench_clovervm --benchmark_filter=BM_StrConstructorInt --benchmark_min_time=5s --benchmark_repetitions=5 --benchmark_out=/tmp/clovervm-str-int-SIDE-long.json --benchmark_out_format=json
 ```
 
-Stage 8c changes are uncommitted for review.
+Stage 8c is committed as `49f0b342`.
+
+### Stage 8d: Bytes Subclass Construction
+
+Extend existing native `bytes.__new__` on the new-only thunk path. Preserve the
+exact-target input branches for omitted source, bytes, native list, and native
+tuple. Exact bytes inputs retain identity only for exact bytes targets; bytes
+subclass inputs are copied into exact storage. A NOINLINE subclass helper
+validates class, bytes ancestry, Bytes layout, and zero inline capacity, then
+allocates the final payload with the requested class root shape. Bytes inputs
+are copied directly; list/tuple inputs use the existing checked C++ byte vector
+conversion before allocation. Source handles stay rooted in the managed call
+frame, and the temporary vector owns its copied data across allocation.
+
+Keep existing element validation and unsupported-input errors, including the
+current exclusion of bool elements. Preserve the None default/explicit-None
+empty behavior for this slice. Custom `__bytes__`, generic iterable and buffer
+input, integer zero filling, encoding/decoding, and integer binary conversion
+remain follow-up work in [Small Tasks](small-tasks.md).
+
+Verify inherited subclasses and compatible multiple inheritance, attributes,
+payload operations and exact operation results, hashing, class/item errors,
+lookup invalidation, and the deferred protocol/combined-init boundaries. No
+opcode, cache, initializer, or conversion protocol is introduced.
+
+- [x] Agree on supported inputs, allocation, identity, and deferred boundaries.
+- [x] Implement subclass construction and interpreter regressions.
+- [x] Run full debug checks.
+- [x] Leave verified changes uncommitted for review.
+
+Validation: three new interpreter test groups passed, including explicit tests
+for the deferred conversion boundaries. Supported-input construction and
+operation-result cases also passed against local CPython. Full debug checks
+passed with 1,580 tests passing and one skipped (runtime JIT tiering disabled).
+No interpreter handlers changed.
+
+Stage 8d changes are uncommitted for review.
 
 Stages 7 and 8 must define their single-method boundary explicitly. Cases that
 require both resolved methods remain unsupported; do not silently skip
