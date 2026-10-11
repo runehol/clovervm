@@ -386,6 +386,38 @@ TEST(NativeAllocationValidationDeathTest,
 }
 #endif
 
+TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(ClassObject *base:
+        {context.vm().list_class(), context.vm().float_class(),
+         context.thread()->class_for_builtin_name(L"Exception"),
+         context.thread()->class_for_builtin_name(L"StopIteration")})
+    {
+        auto candidate = make_storage_selection_class(context, {base});
+        ASSERT_FALSE(candidate.has_exception());
+        Owned<TValue<ClassObject>> cls(candidate.value());
+        auto thunk = cls.extract()->get_or_create_constructor_thunk();
+        ASSERT_TRUE(thunk.has_exception());
+        EXPECT_EQ(nullptr, cls.extract()->current_constructor_thunk());
+        EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+                  context.thread()
+                      ->pending_exception_object()
+                      .extract()
+                      ->get_shape()
+                      ->get_class());
+        context.thread()->clear_pending_exception();
+    }
+    auto ordinary =
+        make_storage_selection_class(context, {context.vm().object_class()});
+    ASSERT_FALSE(ordinary.has_exception());
+    Owned<TValue<ClassObject>> cls(ordinary.value());
+    auto thunk = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(thunk.has_exception());
+    EXPECT_TRUE(thunk.value().is_found());
+}
+
 TEST(ClassStorageSelection, InheritsPredefinedRootDescriptors)
 {
     test::VmTestContext context;

@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `8262f9e5` and the revised single-method constructor design (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
+| Validated against | `2db408cf` plus the stage 5a implementation (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -297,6 +297,10 @@ Here zero-argument means no Python constructor arguments are consumed by the
 allocator; `cls` still supplies subclass identity, root Shape, and inline slot
 capacity. The builder selects the opcode once; opcode handlers must not contain
 a switch over native layouts.
+In stage 5a, unsupported layouts raise TypeError during thunk construction,
+before constructor argument binding or initializer execution, using the existing
+allocation-error message. Class/root capacity agreement is validated during
+emission; the runtime Instance guard remains as a defensive check.
 
 The implementation plan separates thunk-time allocator selection with
 Instance-only support (5a), Exception default allocation (5b), and StopIteration
@@ -304,7 +308,8 @@ default allocation (5c).
 
 Start with `Instance`, `Exception`, and `StopIteration`. Keep the existing
 `CreateInstanceKnownClass` name, which identifies the concrete native Instance
-layout, and add separate exception allocation operations. Allocate the class's required inline capacity
+layout, and add separate exception allocation operations. Allocate the class's
+required inline capacity
 within the validated physical bounds, preserving distinct native headers and
 predefined field locations. Allocation must establish valid default state:
 exceptions have an empty tuple in `.args`, and StopIteration also has `None` in

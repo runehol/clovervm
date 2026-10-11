@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `8262f9e5` and the revised single-method constructor design (2026-10-11) |
+| Validated against | `2db408cf` plus the stage 5a implementation (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -246,18 +246,24 @@ retain their read-only descriptor permissions. Committed in `8262f9e5`.
 Move allocation selection into thunk generation, initially supporting only the
 existing native Instance layout. No new allocation opcode is added here.
 
-- [ ] Agree on the selector/emission helper and unsupported-layout error path.
-- [ ] In `make_init_only_constructor_thunk_code`, inspect the class's selected
+- [x] Agree on the selector/emission helper and unsupported-layout error path.
+- [x] In `make_init_only_constructor_thunk_code`, inspect the class's selected
   native ID and root Shape before emitting the allocator. Select
   `CreateInstanceKnownClass` for Instance; reject every unsupported layout.
-- [ ] Preserve the runtime opcode guard and existing capacity validation.
+- [x] Preserve the runtime opcode guard and existing capacity validation.
   Do not put a native-layout switch into an opcode handler.
-- [ ] Preserve new-only construction, normalized initializer argument
+- [x] Preserve new-only construction, normalized initializer argument
   forwarding, the None-result check, and rejection of combined methods.
   Immutable payloads continue to require `__new__`.
-- [ ] Verify ordinary allocation, unsupported-layout errors, initializer
+- [x] Verify ordinary allocation, unsupported-layout errors, initializer
   arguments/results, and constructor lookup invalidation.
-- [ ] Run full debug checks; leave this slice uncommitted for review.
+- [x] Run full debug checks; leave this slice uncommitted for review.
+
+Verification: seven focused constructor tests passed. Full debug checks passed
+with 1,540 tests passing and one skipped. Unsupported native layouts fail before
+argument binding and are not cached as completed thunks. New-only inherited
+construction and replacement/deletion invalidation remain supported. The runtime
+opcode is unchanged. Stage 5a is complete.
 
 ## Stage 5b: Exception Default Allocation
 

@@ -4896,6 +4896,44 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
                         L"KeyError", L"");
 }
 
+TEST(Interpreter,
+     native_allocator_selection_precedes_constructor_argument_binding)
+{
+    expect_python_error(L"class C(list): pass\nC(1)\n", L"TypeError",
+                        L"native instance layout requires a builtin allocator");
+    expect_python_error(L"class C(Exception):\n"
+                        L"    def __init__(self, *, required):\n"
+                        L"        raise AssertionError\n"
+                        L"C()\n",
+                        L"TypeError",
+                        L"native instance layout requires a builtin allocator");
+}
+
+TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class C(list):
+    def __new__(cls, value=7):
+        return value
+class D(C): pass
+assert C() == 7
+assert D(value=9) == 9
+def replacement(cls):
+    return 11
+C.__new__ = replacement
+assert D() == 11
+del C.__new__
+try:
+    D()
+except TypeError:
+    pass
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
 {
     expect_python_error(L"class C(list): pass\nC()\n", L"TypeError",

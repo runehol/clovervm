@@ -110,6 +110,32 @@ namespace cl
                                                       L"__new__");
     }
 
+    static Expected<uint32_t>
+    emit_default_instance_allocation(CodeObjectBuilder &code, ClassObject *cls,
+                                     uint8_t class_const_idx)
+    {
+        switch(cls->instance_native_layout_id())
+        {
+            case NativeLayoutId::Instance:
+                {
+                    Shape *root = cls->get_instance_root_shape();
+                    assert(root != nullptr);
+                    assert(cls->get_instance_inline_slot_capacity() ==
+                           root->get_inline_slot_capacity());
+                    assert(native_inline_slot_capacity_is_valid(
+                        NativeLayoutId::Instance,
+                        root->get_inline_slot_capacity()));
+                    (void)root;
+                    return code.emit_create_instance_known_class(
+                        0, class_const_idx);
+                }
+            default:
+                return Expected<uint32_t>::raise_exception(
+                    L"TypeError",
+                    L"native instance layout requires a builtin allocator");
+        }
+    }
+
     static Expected<CodeObject *>
     make_init_only_constructor_thunk_code(ClassObject *cls,
                                           Optional<TValue<Function>> init)
@@ -159,7 +185,7 @@ namespace cl
 
         uint32_t class_const_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(cls)));
-        CL_TRY(code.emit_create_instance_known_class(0, class_const_idx));
+        CL_TRY(emit_default_instance_allocation(code, cls, class_const_idx));
         if(!has_init)
         {
             CL_TRY(code.emit_return(0));
