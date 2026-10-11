@@ -23,6 +23,7 @@ namespace cl
         static constexpr uint32_t kStartSlot = 0;
         static constexpr uint32_t kStopSlot = 1;
         static constexpr uint32_t kStepSlot = 2;
+        static constexpr uint32_t kPredefinedInlineSlotCount = kStepSlot + 1;
         static constexpr uint32_t kInlineSlotCount = 3;
 
         Slice(Shape *initial_shape, Value _start, Value _stop, Value _step)

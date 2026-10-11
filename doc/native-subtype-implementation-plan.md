@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Partial |
 | Scope | Common overflow storage, shared pure-slot layout, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `4eb671a6` (2026-10-11); implementation remains future work |
+| Validated against | `f13f72cf` plus stage 1 changes (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -17,38 +17,48 @@ the concrete sketches identified below before their implementation begins.
 Family-specific constructors and trusted lowering likewise need sketches when
 their contracts are selected in stage 6.
 
+The pre-stage-1 correction landed in `f13f72cf`: non-slot builtin class and
+root-Shape inline capacities are zero, independently of their GC release spans.
+The aux-count and instance-size cleanup belongs to the later moving-GC header
+refactor; stage 1 preserves current lazy initialization and reclamation behavior.
+
 ## Stage 1: Explicit Inline Counts And Allocation Validation
+
+Completed: focused checks passed, followed by 1,515 passing debug tests and
+one skipped test. Later stages remain unimplemented.
 
 Preserve current representations and capacities while making their contracts
 explicit. Runtime object types declare their predefined inline region; class
 metadata and Shapes describe the allocated capacity.
 
-- [ ] Rename `ClassObject::instance_default_inline_slot_count` to
-  `instance_inline_slot_count`, including parameters, accessors, and all callers.
-- [ ] Rename the corresponding Shape accessor to describe inline capacity
+- [x] Rename `ClassObject::instance_default_inline_slot_count` to
+  `instance_inline_slot_count`, with `get_instance_inline_slot_capacity()` as
+  the accessor; update parameters and all callers.
+- [x] Rename the corresponding Shape accessor to describe inline capacity
   rather than a default; keep the distinction between capacity and occupied
   locations explicit.
-- [ ] Add `static constexpr uint32_t kPredefinedInlineSlotCount` to every
+- [x] Add `static constexpr uint32_t kPredefinedInlineSlotCount` to every
   concrete `Object` subclass. Declare zero where there are no predefined inline
   fields; do not accidentally inherit an inappropriate count from a base.
-- [ ] Define the count as the minimum inline extent needed for the predefined
+- [x] Define the count as the minimum inline extent needed for the predefined
   physical locations, including inherited locations. Computed attributes and
   aliases do not consume additional slots. This count excludes native metadata
   outside the attribute region.
-- [ ] Use existing predefined indices to establish each count. In particular,
+- [x] Use existing predefined indices to establish each count. In particular,
   exceptions require one slot and StopIteration requires two.
-- [ ] At allocation, validate that physical inline capacity is at least
+- [x] At allocation, validate that physical inline capacity is at least
   `T::kPredefinedInlineSlotCount` and that the initial Shape fits that capacity.
   Keep physical fixed-layout limits separate from the predefined minimum.
-- [ ] Keep the class allocation count and instance root Shape capacity
-  consistent. Preserve the existing object-local physical count for dynamic
-  instances, including its representable bounds.
-- [ ] Cover bootstrap and cached-Shape allocation paths as well as ordinary
+- [x] Keep the class allocation count and instance root Shape capacity
+  consistent. Preserve the existing initialized-prefix aux count for dynamic
+  instances, including its representable bounds; it is not physical capacity.
+- [x] Cover bootstrap and cached-Shape allocation paths as well as ordinary
   class-based allocation; validate before using a potentially invalid count to
   initialize storage.
-- [ ] Verify representative predefined fields, dynamic instance allocation,
+- [x] Verify representative predefined fields, dynamic instance allocation,
   and invalid internal capacity combinations with focused checks.
-- [ ] Run `ninja -C build-debug all check` and commit the stage.
+- [x] Run `ninja -C build-debug all check`.
+- [x] Commit the verified stage.
 
 ## Stage 2: Common Overflow Storage
 

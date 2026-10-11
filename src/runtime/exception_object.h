@@ -20,6 +20,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Exception;
         static constexpr uint32_t kArgsSlot = 0;
+        static constexpr uint32_t kPredefinedInlineSlotCount = kArgsSlot + 1;
         static constexpr uint32_t kInlineSlotCount = 1;
 
         ExceptionObject(ClassObject *cls, TValue<Tuple> args)
@@ -51,6 +52,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::StopIteration;
         static constexpr uint32_t kValueSlot = 1;
+        static constexpr uint32_t kPredefinedInlineSlotCount = kValueSlot + 1;
         static constexpr uint32_t kInlineSlotCount = 2;
 
         StopIterationObject(ClassObject *cls, TValue<Tuple> args);

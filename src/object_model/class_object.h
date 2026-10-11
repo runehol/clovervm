@@ -99,71 +99,73 @@ namespace cl
         static constexpr uint32_t class_predefined_slot_new = 3;
         static constexpr uint32_t class_predefined_slot_init = 4;
         static constexpr uint32_t class_predefined_slot_count = 5;
+        static constexpr uint32_t kPredefinedInlineSlotCount =
+            class_predefined_slot_count;
         static constexpr uint32_t class_predefined_descriptor_count = 7;
         static constexpr uint32_t class_inline_storage_slot_count = 48;
 
         ClassObject(
             BootstrapObjectTag, TValue<String> name,
-            uint32_t instance_default_inline_slot_count,
-            ClassObject *single_base, NativeLayoutId instance_native_layout_id,
+            uint32_t instance_inline_slot_count, ClassObject *single_base,
+            NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
             ClassObject *metaclass, TValue<String> name,
-            uint32_t instance_default_inline_slot_count,
-            ClassObject *single_base, NativeLayoutId instance_native_layout_id,
+            uint32_t instance_inline_slot_count, ClassObject *single_base,
+            NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_inline_slot_count,
             ClassObject *single_base, NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         static Expected<TValue<ClassObject>> make(
             ThreadState *thread, ClassObject *metaclass, TValue<String> name,
-            uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
+            uint32_t instance_inline_slot_count, TValue<Tuple> bases,
             NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         template <typename T>
         static ClassObject *make_bootstrap_builtin_class(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
             ShapeFlags instance_shape_flags = fixed_attribute_shape_flags())
         {
             static_assert(HasNativeLayoutId<T>::value);
             return make_bootstrap_builtin_class(
-                name, instance_default_inline_slot_count, methods, method_count,
+                name, instance_inline_slot_count, methods, method_count,
                 T::native_layout, instance_shape_flags);
         }
 
         static ClassObject *make_builtin_class(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
             ClassObject *single_base, NativeLayoutId instance_native_layout_id,
             ShapeFlags instance_shape_flags = fixed_attribute_shape_flags());
         template <typename T>
         static ClassObject *make_builtin_class(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
             ClassObject *single_base,
             ShapeFlags instance_shape_flags = fixed_attribute_shape_flags())
         {
             static_assert(HasNativeLayoutId<T>::value);
-            return make_builtin_class(name, instance_default_inline_slot_count,
-                                      methods, method_count, single_base,
+            return make_builtin_class(name, instance_inline_slot_count, methods,
+                                      method_count, single_base,
                                       T::native_layout, instance_shape_flags);
         }
 
         TValue<String> get_name() const { return name.value(); }
         Value get_mro_value() const { return mro; }
-        uint32_t get_instance_default_inline_slot_count() const
+        uint32_t get_instance_inline_slot_capacity() const
         {
-            return instance_default_inline_slot_count;
+            return instance_inline_slot_count;
         }
         NativeLayoutId instance_native_layout_id() const
         {
@@ -276,11 +278,11 @@ namespace cl
             attached_mro_shape_and_contents_validity_cells;
         MemberHeapPtr<Shape> instance_root_shape;
         mutable MemberHeapPtr<Function> constructor_thunk;
-        uint32_t instance_default_inline_slot_count;
+        uint32_t instance_inline_slot_count;
         NativeLayoutId instance_native_layout_id_;
 
         static ClassObject *make_bootstrap_builtin_class(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
             NativeLayoutId instance_native_layout_id,
             ShapeFlags instance_shape_flags);
@@ -299,8 +301,11 @@ namespace cl
                                        NativeLayoutId native_layout_id)
     {
         assert(class_object != nullptr);
-        initialize_shape(class_object->get_instance_root_shape(),
-                         native_layout_id);
+        Shape *instance_root_shape = class_object->get_instance_root_shape();
+        assert(instance_root_shape != nullptr);
+        assert(class_object->get_instance_inline_slot_capacity() ==
+               instance_root_shape->get_inline_slot_capacity());
+        initialize_shape(instance_root_shape, native_layout_id);
     }
 
     ALWAYSINLINE void Object::initialize_shape(Shape *instance_root_shape,
@@ -308,6 +313,8 @@ namespace cl
     {
         assert(shape == nullptr);
         assert(instance_root_shape != nullptr);
+        assert(native_inline_slot_capacity_is_valid(
+            native_layout_id, instance_root_shape->get_inline_slot_capacity()));
 
         shape = incref(instance_root_shape);
         if(!native_layout_has_slots(native_layout_id) ||
@@ -319,7 +326,7 @@ namespace cl
         int32_t next_slot_index = instance_root_shape->get_next_slot_index();
         assert(next_slot_index >= 0);
         assert(uint32_t(next_slot_index) <=
-               instance_root_shape->get_inline_slot_count());
+               instance_root_shape->get_inline_slot_capacity());
 
         for(uint32_t slot_idx = 0; slot_idx < uint32_t(next_slot_index);
             ++slot_idx)

@@ -116,11 +116,77 @@ TEST(NativeLayoutDescriptor, NonSlotBuiltinClassesHaveZeroInlineCapacity)
             continue;
         }
         SCOPED_TRACE(idx);
-        EXPECT_EQ(0u, cls->get_instance_default_inline_slot_count());
-        EXPECT_EQ(0u, cls->get_instance_root_shape()
-                          ->get_instance_default_inline_slot_count());
+        EXPECT_EQ(0u, cls->get_instance_inline_slot_capacity());
+        EXPECT_EQ(0u,
+                  cls->get_instance_root_shape()->get_inline_slot_capacity());
     }
 }
+
+TEST(NativeLayoutDescriptor, InlineCapacityRespectsPredefinedAndPhysicalBounds)
+{
+    EXPECT_FALSE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::Exception, 0));
+    EXPECT_TRUE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::Exception, 1));
+    EXPECT_FALSE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::Exception, 2));
+    EXPECT_FALSE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::StopIteration, 1));
+    EXPECT_TRUE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::StopIteration, 2));
+    EXPECT_FALSE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::ClassObject, 4));
+    EXPECT_TRUE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::ClassObject, 5));
+    EXPECT_TRUE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::ClassObject, 48));
+    EXPECT_FALSE(
+        native_inline_slot_capacity_is_valid(NativeLayoutId::ClassObject, 49));
+    EXPECT_TRUE(native_inline_slot_capacity_is_valid(NativeLayoutId::Instance,
+                                                     UINT16_MAX));
+    EXPECT_FALSE(native_inline_slot_capacity_is_valid(
+        NativeLayoutId::Instance, uint32_t{UINT16_MAX} + 1));
+}
+
+#ifndef NDEBUG
+TEST(NativeLayoutDescriptor, CachedSliceAllocationRejectsInvalidInlineCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<ClassObject> cls =
+        TValue<ClassObject>::from_oop(context.vm().slice_class());
+    for(uint32_t capacity: {2u, 4u})
+    {
+        OwnedHeapPtr<Shape> shape(Shape::make_root_with_descriptors(
+            cls, nullptr, 0, 0, 0, capacity, immutable_shape_flags()));
+        EXPECT_DEATH(
+            context.thread()->make_object_raw_with_initial_shape<Slice>(
+                shape.extract(), Value::None(), Value::None(), Value::None()),
+            "native_inline_slot_capacity_is_valid");
+    }
+}
+
+TEST(NativeLayoutDescriptor, ShapeInstallationRejectsFixedCapacityOverflow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Owned<TValue<Slice>> slice(
+        context.thread()->make_object_value_with_initial_shape<Slice>(
+            context.vm().slice_class()->get_instance_root_shape(),
+            Value::None(), Value::None(), Value::None()));
+    OwnedHeapPtr<Shape> shape(Shape::make_root_with_descriptors(
+        TValue<ClassObject>::from_oop(context.vm().slice_class()), nullptr, 0,
+        0, 0, 4, immutable_shape_flags()));
+    EXPECT_DEATH(slice.extract()->set_shape(shape.extract()),
+                 "native_inline_slot_capacity_is_valid");
+}
+
+TEST(NativeLayoutDescriptor, DynamicInstanceCapacityIsCheckedBeforeAllocation)
+{
+    EXPECT_DEATH(Instance::size_for(uint32_t{UINT16_MAX} + 1),
+                 "dynamic_inline_slot_count <= UINT16_MAX");
+}
+#endif
 
 TEST(NativeLayoutDescriptor, ModuleObjectReleaseCountCoversManagedFields)
 {

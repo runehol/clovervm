@@ -30,6 +30,8 @@ namespace cl
     class String : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout = NativeLayoutId::String;
 
         String(ClassObject *cls, const cl_wchar *_data, TValue<SMI> _count)

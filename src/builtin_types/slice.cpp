@@ -50,7 +50,7 @@ namespace cl
             vm, TValue<ClassObject>::from_oop(cls), descriptors,
             std::size(descriptors), general_shape->get_next_slot_index(),
             general_shape->present_count(),
-            general_shape->get_inline_slot_count(), immutable_shape_flags());
+            general_shape->get_inline_slot_capacity(), immutable_shape_flags());
         vm->install_slice_shapes(cls, step_none_shape, general_shape);
     }
 

@@ -19,6 +19,8 @@ namespace cl
     class List : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout = NativeLayoutId::List;
 
         explicit List(ClassObject *cls) : Object(cls, native_layout) {}

@@ -43,6 +43,8 @@ namespace cl
         };
 
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout = NativeLayoutId::Dict;
 
         struct EntryView

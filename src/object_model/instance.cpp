@@ -17,7 +17,9 @@ namespace cl
     uint32_t Instance::inline_slot_count_for_class(ClassObject *cls)
     {
         Shape *shape = cls->get_instance_root_shape();
-        return shape->get_instance_default_inline_slot_count();
+        assert(cls->get_instance_inline_slot_capacity() ==
+               shape->get_inline_slot_capacity());
+        return shape->get_inline_slot_capacity();
     }
 
 }  // namespace cl

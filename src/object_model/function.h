@@ -27,6 +27,8 @@ namespace cl
         static constexpr uint32_t kCodeObjectSlot = 0;
         static constexpr uint32_t kDefaultParametersSlot = 1;
         static constexpr uint32_t kDocstringSlot = 2;
+        static constexpr uint32_t kPredefinedInlineSlotCount =
+            kDocstringSlot + 1;
         static constexpr uint32_t kInlineSlotCount = 3;
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,

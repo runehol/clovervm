@@ -25,6 +25,8 @@ namespace cl
     class Tuple : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout = NativeLayoutId::Tuple;
 
         Tuple(BootstrapObjectTag, size_t size);

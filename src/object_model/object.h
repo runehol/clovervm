@@ -114,6 +114,8 @@ namespace cl
     class SlotObject : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         SlotObject(ClassObject *cls, NativeLayoutId native_layout_id)
             : Object(BootstrapObjectTag{}, native_layout_id),
               overflow_storage(nullptr)

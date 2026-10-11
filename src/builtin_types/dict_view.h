@@ -14,6 +14,8 @@ namespace cl
     class DictKeysView : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::DictKeysView;
 
@@ -31,6 +33,8 @@ namespace cl
     class DictValuesView : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::DictValuesView;
 
@@ -48,6 +52,8 @@ namespace cl
     class DictItemsView : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::DictItemsView;
 
@@ -65,6 +71,8 @@ namespace cl
     class DictKeyIterator : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::DictKeyIterator;
 
@@ -87,6 +95,8 @@ namespace cl
     class DictValueIterator : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::DictValueIterator;
 
@@ -109,6 +119,8 @@ namespace cl
     class DictItemIterator : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::DictItemIterator;
 

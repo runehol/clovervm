@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `78f7490a` (2026-10-11), for current-code constraints and local CPython 3.14.5 probes; the accepted changes are not implemented |
+| Validated against | `78f7490a` (2026-10-11), for current-code constraints and local CPython 3.14.5 probes; storage and constructor changes remain unimplemented |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -38,7 +38,7 @@ must preserve that invariant. A positive capacity would let attribute access
 overwrite native fields. Existing inline-capable layouts must likewise keep
 Shape capacity within the actual physical slot region.
 
-Current user-class creation gives every class the same default of ten inline
+Current user-class creation gives every class the same capacity of ten inline
 slots, without inheriting or adding the base class's capacity. Replace that
 unconditional choice with native-lineage validation at class creation, before
 installing the instance root Shape. Walk the class MRO and inspect each base's
@@ -104,9 +104,9 @@ existing fixed inline locations in the root Shape.
 
 These objects contain only inline slot values beyond the common header and
 overflow pointer. Allocation, object-size recovery, and tracing use their
-actual physical inline slot count, recorded on the object. Rename the class's
-`instance_default_inline_slot_count` to `instance_inline_slot_count` and keep
-that allocation count consistent with the root Shape's capacity. The count
+actual physical inline slot count, recorded on the object. The class's
+`instance_inline_slot_count`, exposed by `get_instance_inline_slot_capacity()`,
+must remain consistent with the root Shape's capacity. The count
 must accommodate every predefined inline location; predefined values must be
 initialized according to the owning builtin's semantics.
 

@@ -98,15 +98,19 @@ namespace cl::jit
     {
         test::VmTestContext context;
         ThreadState::ActivationScope activation_scope(context.thread());
-        Owned<Value> subclass_class(
-            context.run_file(L"class FloatSubclass(float):\n"
-                             L"    pass\n"
-                             L"FloatSubclass\n"));
-        ASSERT_TRUE(can_convert_to<ClassObject>(subclass_class.raw_value()));
+        // Native float storage has no inline attribute region. Class creation
+        // will select this capacity once native lineage validation is
+        // supported.
+        Owned<TValue<ClassObject>> subclass_class(
+            context.thread()->make_internal_value<ClassObject>(
+                context.vm().get_or_create_interned_string_value(
+                    L"FloatSubclass"),
+                0, context.vm().float_class(), NativeLayoutId::Float));
+        ASSERT_TRUE(is_subclass_of(subclass_class.extract(),
+                                   context.vm().float_class()));
         Owned<TValue<Float>> subclass(
             context.thread()->make_internal_value<Float>(
-                assume_convert_to<ClassObject>(subclass_class.raw_value()),
-                1.5));
+                subclass_class.extract(), 1.5));
         ASSERT_NE(context.vm().float_class()->get_instance_root_shape(),
                   subclass.raw_value().get_ptr<Object>()->get_shape());
 

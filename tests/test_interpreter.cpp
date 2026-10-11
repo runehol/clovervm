@@ -1473,15 +1473,37 @@ TEST(Interpreter, sequence_search_methods_bypass_subclass_storage_overrides)
         classes, interned_string(L"HostileTuple"));
     ASSERT_TRUE(can_convert_to<ClassObject>(list_class));
     ASSERT_TRUE(can_convert_to<ClassObject>(tuple_class));
-    // Python subclass construction currently allocates generic instances.
-    // Allocate the native storage explicitly to test the search contract.
+    // Native subclass shape selection is deferred. Prepare compatible classes
+    // explicitly while preserving the Python-defined storage overrides.
+    auto native_subclass = [&](Value declared_class, ClassObject *base,
+                               NativeLayoutId layout) {
+        ClassObject *declared = declared_class.get_ptr<ClassObject>();
+        Owned<TValue<ClassObject>> cls(
+            test_context.thread()->make_internal_value<ClassObject>(
+                declared->get_name(), 0, base, layout));
+        for(const wchar_t *name:
+            {L"__len__", L"__getitem__", L"__iter__", L"__delitem__"})
+        {
+            TValue<String> key = interned_string(name);
+            Value method = declared->get_own_property(key);
+            if(!method.is_not_present())
+            {
+                EXPECT_TRUE(cls.extract()->set_own_property(key, method));
+            }
+        }
+        return cls;
+    };
+    Owned<TValue<ClassObject>> native_list_class = native_subclass(
+        list_class, test_context.vm().list_class(), NativeLayoutId::List);
+    Owned<TValue<ClassObject>> native_tuple_class = native_subclass(
+        tuple_class, test_context.vm().tuple_class(), NativeLayoutId::Tuple);
     Owned<TValue<List>> list(test_context.thread()->make_internal_value<List>(
-        list_class.get_ptr<ClassObject>()));
+        native_list_class.extract()));
     list.extract()->append(Value::from_smi(7));
     list.extract()->append(Value::from_smi(8));
     Owned<TValue<Tuple>> tuple(
         test_context.thread()->make_internal_value<Tuple>(
-            tuple_class.get_ptr<ClassObject>(), 2));
+            native_tuple_class.extract(), 2));
     tuple.extract()->initialize_item_unchecked(0, Value::from_smi(7));
     tuple.extract()->initialize_item_unchecked(1, Value::from_smi(8));
     CodeObject *checks =

@@ -164,8 +164,7 @@ namespace cl
         }
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
-        uint32_t get_inline_slot_count() const;
-        uint32_t get_instance_default_inline_slot_count() const
+        uint32_t get_inline_slot_capacity() const
         {
             return inline_slot_capacity;
         }

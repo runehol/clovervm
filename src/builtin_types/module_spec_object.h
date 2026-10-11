@@ -22,6 +22,7 @@ namespace cl
         static constexpr uint32_t kSubmoduleSearchLocationsSlot = 3;
         static constexpr uint32_t kHasLocationSlot = 4;
         static constexpr uint32_t kParentSlot = 5;
+        static constexpr uint32_t kPredefinedInlineSlotCount = kParentSlot + 1;
         static constexpr uint32_t kInlineSlotCount = 6;
 
         ModuleSpecObject(ClassObject *cls, Value name, Value loader,

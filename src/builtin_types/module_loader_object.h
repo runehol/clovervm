@@ -19,6 +19,7 @@ namespace cl
         static constexpr uint32_t kKindSlot = 0;
         static constexpr uint32_t kNameSlot = 1;
         static constexpr uint32_t kPathSlot = 2;
+        static constexpr uint32_t kPredefinedInlineSlotCount = kPathSlot + 1;
         static constexpr uint32_t kInlineSlotCount = 3;
 
         ModuleLoaderObject(ClassObject *cls, Value kind, Value name,

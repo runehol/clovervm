@@ -24,6 +24,10 @@ namespace cl
         StaticSize,
     };
 
+    // Physical attribute-slot bounds, independent of GC reference-span counts.
+    bool native_inline_slot_capacity_is_valid(NativeLayoutId layout,
+                                              uint32_t capacity);
+
 #define CL_DECLARE_EMPTY_VALUE_SPAN(type)                                      \
     static constexpr ReleaseKind native_release_kind =                         \
         ReleaseKind::StaticSpan;                                               \

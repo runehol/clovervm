@@ -24,6 +24,8 @@ namespace cl
     class Bytes : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout = NativeLayoutId::Bytes;
 
         Bytes(ClassObject *cls, std::span<const uint8_t> bytes)

@@ -244,6 +244,13 @@ namespace cl
     void Object::set_shape(Shape *new_shape)
     {
         Shape *old_shape = shape;
+        assert(new_shape != nullptr);
+        assert(native_inline_slot_capacity_is_valid(
+            native_layout_id(), new_shape->get_inline_slot_capacity()));
+        assert(native_layout_id() != NativeLayoutId::Instance ||
+               old_shape == nullptr ||
+               old_shape->get_inline_slot_capacity() ==
+                   new_shape->get_inline_slot_capacity());
         assert(old_shape == nullptr ||
                !old_shape->has_flag(ShapeFlag::IsImmutable) ||
                old_shape == new_shape);
@@ -490,7 +497,7 @@ namespace cl
 
         int32_t overflow_slot_count =
             new_shape->get_next_slot_index() -
-            int32_t(new_shape->get_inline_slot_count());
+            int32_t(new_shape->get_inline_slot_capacity());
         if(overflow_slot_count <= 0)
         {
             return;

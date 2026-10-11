@@ -16,6 +16,8 @@ namespace cl
     class TupleIterator : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::TupleIterator;
 

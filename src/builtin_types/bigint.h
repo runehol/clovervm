@@ -79,6 +79,8 @@ namespace cl
     class BigInt : public Object
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout = NativeLayoutId::BigInt;
 
         BigInt(ClassObject *cls, UninitializedBigIntDigitsTag, size_t n_digits,

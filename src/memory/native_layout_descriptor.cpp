@@ -4,6 +4,67 @@
 
 namespace cl
 {
+    namespace
+    {
+        template <typename T>
+        bool inline_slot_capacity_is_valid(uint32_t capacity)
+        {
+            if constexpr(!std::is_base_of_v<Object, T>)
+            {
+                return false;
+            }
+            else if constexpr(std::is_same_v<T, Instance>)
+            {
+                return capacity >= T::kPredefinedInlineSlotCount &&
+                       capacity <= UINT16_MAX;
+            }
+            else if constexpr(std::is_base_of_v<SlotObject, T>)
+            {
+                constexpr uint32_t physical_capacity = [] {
+                    if constexpr(std::is_same_v<T, ClassObject>)
+                    {
+                        return T::class_inline_storage_slot_count;
+                    }
+                    else if constexpr(std::is_same_v<T, ModuleObject>)
+                    {
+                        return T::module_inline_storage_slot_count;
+                    }
+                    else
+                    {
+                        return T::kInlineSlotCount;
+                    }
+                }();
+                static_assert(T::kPredefinedInlineSlotCount <=
+                              physical_capacity);
+                static_assert(sizeof(T) >=
+                              sizeof(SlotObject) +
+                                  physical_capacity * sizeof(Value));
+                return capacity >= T::kPredefinedInlineSlotCount &&
+                       capacity <= physical_capacity;
+            }
+            else
+            {
+                static_assert(T::kPredefinedInlineSlotCount == 0);
+                return capacity == 0;
+            }
+        }
+    }  // namespace
+
+    bool native_inline_slot_capacity_is_valid(NativeLayoutId layout,
+                                              uint32_t capacity)
+    {
+        switch(layout)
+        {
+#define CL_VALIDATE_NATIVE_INLINE_CAPACITY(type)                               \
+    case type::native_layout:                                                  \
+        return inline_slot_capacity_is_valid<type>(capacity)
+            CL_NATIVE_LAYOUT_REGISTRY(CL_VALIDATE_NATIVE_INLINE_CAPACITY);
+#undef CL_VALIDATE_NATIVE_INLINE_CAPACITY
+            default:
+                return false;
+        }
+    }
+
     size_t object_size_in_bytes(const HeapObject *obj)
     {
         assert(obj != nullptr);

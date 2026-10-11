@@ -13,6 +13,8 @@ namespace cl
     class Instance : public SlotObject
     {
     public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Instance;
 
@@ -20,6 +22,7 @@ namespace cl
 
         static size_t size_for(uint32_t dynamic_inline_slot_count)
         {
+            assert(dynamic_inline_slot_count <= UINT16_MAX);
             return sizeof(Instance) + sizeof(Value) * dynamic_inline_slot_count;
         }
         static size_t size_for(ClassObject *cls)

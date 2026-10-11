@@ -84,7 +84,7 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     EXPECT_EQ(DescriptorSpecialKind::SlotDict,
               root_shape->get_descriptor_info(1).special_kind());
     EXPECT_EQ(0, root_shape->get_next_slot_index());
-    EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
+    EXPECT_EQ(2u, root_shape->get_inline_slot_capacity());
 }
 
 TEST(Shape, BuiltinInstanceRootsMarkSemanticImmutability)
@@ -477,7 +477,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
               shape_with_ba->get_property_storage_location(3).kind);
     EXPECT_EQ(1, shape_with_ba->get_property_storage_location(3).physical_idx);
     EXPECT_EQ(3, shape_with_ba->get_next_slot_index());
-    EXPECT_EQ(1u, shape_with_ba->get_instance_default_inline_slot_count());
+    EXPECT_EQ(1u, shape_with_ba->get_inline_slot_capacity());
 }
 
 TEST(Shape, InstanceStoresClassAndShapeSeparately)
@@ -766,7 +766,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(2u, shape->latent_count());
     EXPECT_EQ(5, shape->get_next_slot_index());
     EXPECT_EQ(ClassObject::class_inline_storage_slot_count,
-              shape->get_inline_slot_count());
+              shape->get_inline_slot_capacity());
 
     const cl_wchar *expected_names[] = {L"__class__", L"__dict__", L"__name__",
                                         L"__bases__", L"__mro__"};

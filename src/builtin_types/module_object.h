@@ -41,6 +41,8 @@ namespace cl
         static constexpr uint32_t module_predefined_slot_name = 0;
         static constexpr uint32_t module_predefined_slot_builtins = 1;
         static constexpr uint32_t module_predefined_slot_count = 2;
+        static constexpr uint32_t kPredefinedInlineSlotCount =
+            module_predefined_slot_count;
         static constexpr uint32_t module_inline_storage_slot_count = 256;
 
         ModuleObject(ClassObject *cls, TValue<String> name, Value builtins,
