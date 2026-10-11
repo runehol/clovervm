@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
+| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; Exception and StopIteration native initializers were verified with full debug checks (1,551 passed, one skipped); other constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -322,12 +322,15 @@ within the validated physical bounds, preserving distinct native headers and
 predefined field locations. Allocation must establish valid default state:
 exceptions have an empty tuple in `.args`, and StopIteration also has `None` in
 `.value`. The existing init-only thunk then calls `__init__`, when present, with
-its normalized arguments and requires a `None` result. Python initializers own
-argument and payload-initialization semantics, using narrow trusted helpers to
-update native fields whose Python descriptors may remain read-only.
+its normalized arguments and requires a `None` result. C++ initializers wrapped
+as Python `Function` objects own payload initialization.
+The existing variadic wrapper packs positional arguments into a tuple; the
+initializer assigns native fields directly while their Python descriptors retain
+their existing permissions. Keywords are rejected by the normal argument binder.
 
-Stage 6 is limited to Python Exception-family and StopIteration `__init__`
-methods and argument-bearing instantiation/subclassing tests. Mutable builtin
+Stage 6 is limited to C++ Exception-family and StopIteration `__init__`
+implementations wrapped as Python functions and argument-bearing instantiation
+and subclassing tests. Mutable builtin
 allocation and initialization are planned by family in stage 7; immutable
 constructors are planned by family in stage 8.
 
@@ -360,8 +363,12 @@ For the new-only path, future trusted specialization is selected by the
 resolved method and its applicability contract. Native-layout selection applies
 only to the no-new allocation path; it must not bypass an explicit or inherited
 `__new__`. Builtin payload policy remains owned by each family; the Exception and
-StopIteration Python initializers use runtime helpers for native storage
-operations.
+StopIteration initializers live in the exception runtime implementation and
+write native fields through their existing `Member` owners. The inherited
+BaseException initializer updates only `.args`, including when explicitly
+called on a StopIteration; the StopIteration initializer also resets `.value`
+to the first positional argument or None. Direct calls validate native receiver
+layouts before writing fields.
 
 Constructor thunks and their call caches retain the existing MRO-and-contents
 validity guard. Replacing, adding, or deleting `__new__` or `__init__`, including

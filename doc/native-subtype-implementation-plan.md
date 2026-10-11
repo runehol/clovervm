@@ -313,39 +313,45 @@ args and None value, overflow attributes, both compatible MRO orders, raising
 allocated subclasses, initializer arguments/errors, and inherited initializer
 replacement/deletion invalidation. Committed in `c0d9916d`.
 
-## Stage 6: Python Exception And StopIteration Initializers
+## Stage 6: Native Exception And StopIteration Initializers
 
-Add Python `__init__` methods to the valid default objects allocated in stages
-5b and 5c. Use this family to verify argument-bearing native instantiation and
-subclassing through the existing init-only constructor path.
+Add C++ `__init__` implementations wrapped as Python `Function` objects to the
+valid default objects allocated in stages 5b and 5c. Use this family to verify
+argument-bearing native instantiation and subclassing through the existing
+init-only constructor path.
 
-- [ ] Readiness review the Python method installation, variadic argument
-  binding, and narrow trusted helpers needed to update native payload fields.
-  Keep argument semantics in Python; agree on helper validation, ownership,
-  pending-exception contracts, and public descriptor permissions before coding.
-- [ ] Implement the Exception-family initializer in Python. Store positional
-  arguments as tuple-valued `.args`; cover zero, one, and multiple arguments.
-  Resolve keyword-argument behavior in the readiness review.
-- [ ] Implement StopIteration's initializer in Python. Store all positional
-  arguments in `.args`; set `.value` to the first argument, or None when no
-  arguments are supplied. Do not require general call unpacking to delegate.
-- [ ] Install the methods so ordinary builtin exceptions and user subclasses
+- [x] Readiness review agreed on C++ callbacks in `exception_object.cpp`,
+  registered with `with_varargs` as `__init__(self, *args)`. The argument binder
+  packs positional arguments and rejects keywords; callbacks validate native
+  receivers, assign existing `Member` fields, and return None or an exception
+  marker. Preserve public descriptor permissions; no new resolver or cache.
+- [x] Implement the inherited BaseException initializer in C++. Store the packed
+  positional tuple in `.args`, without changing StopIteration `.value` when
+  explicitly called on that layout.
+- [x] Implement StopIteration's initializer in C++. Store the packed tuple in
+  `.args`; set `.value` to the first argument, or None when empty.
+- [x] Install the methods so ordinary builtin exceptions and user subclasses
   inherit the appropriate initializer. Preserve separate Exception and
   StopIteration layouts and the allocators from stages 5b and 5c.
-- [ ] Test exact builtin instantiation and inherited subclass construction with
+- [x] Test exact builtin instantiation and inherited subclass construction with
   zero, one, and multiple arguments; check class identity, `.args`, `.value`,
   exception formatting, raising/catching, and additional subclass attributes.
-- [ ] Test overridden initializers, direct/repeated initializer calls, argument
+- [x] Test overridden initializers, direct/repeated initializer calls, argument
   errors, initializer errors/results, and inherited method lookup invalidation.
   Keep combined `__new__`/`__init__` construction explicitly unsupported.
-- [ ] Follow the builtin-dunder-handler skill for trusted helper contracts and
-  lowering. Verify the existing normalized-parameter forwarding handles the
-  Python initializer signatures without adding general `funcall(*args, **kwargs)`.
-- [ ] Run full debug checks and opcode frame checks if interpreter handlers
+- [x] Follow the builtin-dunder-handler skill for receiver validation and
+  registration. Verify normalized-parameter forwarding passes the packed tuple
+  directly, without adding general `funcall(*args, **kwargs)` or new opcodes.
+- [x] Run full debug checks and opcode frame checks if interpreter handlers
   change. Update this checklist and leave changes uncommitted for review.
 
 This stage excludes other builtin families, new allocation opcodes, immutable
 constructors, integer boxing, and combined constructor orchestration.
+
+Validation: `ninja -C build-debug all check` passed with 1,551 tests passing
+and one skipped (runtime JIT tiering disabled). Nine focused initializer and
+allocator tests passed. No interpreter handlers changed, so opcode frame checks
+were not required. Changes are uncommitted for review.
 
 ## Stage 7: Mutable Builtin Allocation And Initialization
 

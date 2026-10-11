@@ -85,6 +85,33 @@ namespace cl
         return value_to_repr_string(args.raw_value());
     }
 
+    [[nodiscard]] static Value native_exception_init(ThreadState *, Value self,
+                                                     Value packed_args)
+    {
+        TValue<Exception> exception =
+            CL_TRY(TValue<Exception>::from_value_or_raise(
+                self, L"TypeError",
+                L"BaseException.__init__ expects an exception receiver"));
+        TValue<Tuple> args = TValue<Tuple>::from_value_assumed(packed_args);
+        exception.extract()->args = args;
+        return Value::None();
+    }
+
+    [[nodiscard]] static Value
+    native_stop_iteration_init(ThreadState *, Value self, Value packed_args)
+    {
+        TValue<StopIterationObject> exception =
+            CL_TRY(TValue<StopIterationObject>::from_value_or_raise(
+                self, L"TypeError",
+                L"StopIteration.__init__ expects a StopIteration receiver"));
+        TValue<Tuple> args = TValue<Tuple>::from_value_assumed(packed_args);
+        exception.extract()->args = args;
+        exception.extract()->value = args.extract()->empty()
+                                         ? Value::None()
+                                         : args.extract()->item_unchecked(0);
+        return Value::None();
+    }
+
     static Value native_exception_str(ThreadState *thread, Value self)
     {
         TValue<Exception> exception =
@@ -168,6 +195,9 @@ namespace cl
         ClassObject *cls =
             vm->class_for_native_layout(NativeLayoutId::Exception);
         BuiltinIntrinsicMethod methods[] = {
+            with_varargs(
+                builtin_intrinsic_method(L"__init__", native_exception_init,
+                                         L"Initialize exception arguments.")),
             builtin_intrinsic_method(L"__str__", native_exception_str,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_exception_repr,
@@ -176,7 +206,18 @@ namespace cl
         unwrap_bootstrap_expected(vm,
                                   install_builtin_intrinsic_methods(
                                       vm, cls, methods, std::size(methods)),
-                                  "installing exception string methods");
+                                  "installing exception methods");
+        BuiltinIntrinsicMethod stop_iteration_methods[] = {
+            with_varargs(builtin_intrinsic_method(
+                L"__init__", native_stop_iteration_init,
+                L"Initialize exception arguments and iteration value.")),
+        };
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(
+                vm, vm->class_for_native_layout(NativeLayoutId::StopIteration),
+                stop_iteration_methods, std::size(stop_iteration_methods)),
+            "installing StopIteration initializer");
     }
 
     BuiltinClassDefinition make_exception_class(VirtualMachine *vm,

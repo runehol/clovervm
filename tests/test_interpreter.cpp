@@ -5027,6 +5027,184 @@ TEST(Interpreter,
                         L"__init__ should return None, not a value");
 }
 
+TEST(Interpreter, native_exception_initializers_pack_arguments)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"PY(
+class E(Exception): pass
+class S(StopIteration): pass
+class Mixed(E, StopIteration): pass
+for cls in (BaseException, Exception, ValueError, E, StopIteration, S, Mixed):
+    for args in ((), (None,), ("hello",), ("hello", 42)):
+        # Explicit arities exercise the constructor binder without unpacking.
+        if len(args) == 0:
+            error = cls()
+        elif len(args) == 1:
+            error = cls(args[0])
+        else:
+            error = cls(args[0], args[1])
+        assert error.__class__ is cls
+        assert len(error.args) == len(args)
+        for index in range(len(args)):
+            assert error.args[index] is args[index]
+        assert isinstance(error.args, tuple)
+        if isinstance(error, StopIteration):
+            if len(args):
+                assert error.value is args[0]
+            else:
+                assert error.value is None
+        error.extra = 17
+        assert error.__dict__["extra"] == 17
+        try:
+            raise error
+        except cls as caught:
+            assert caught is error
+assert str(Exception()) == ""
+assert str(Exception("hello")) == "hello"
+assert str(Exception("hello", 42)) == "('hello', 42)"
+assert repr(Exception("hello", 42)) == "Exception('hello', 42)"
+assert repr(StopIteration(42)) == "StopIteration(42)"
+)PY");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, native_exception_initializers_support_reinitialization)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class S(StopIteration): pass
+s = S("old")
+assert s.__init__("new", 42) is None
+assert len(s.args) == 2
+assert s.args[0] == "new"
+assert s.args[1] == 42
+assert s.value == "new"
+assert BaseException.__init__(s, "base") is None
+assert len(s.args) == 1
+assert s.args[0] == "base"
+assert s.value == "new"
+assert Exception.__init__(s) is None
+assert len(s.args) == 0
+assert s.value == "new"
+assert StopIteration.__init__(s) is None
+assert len(s.args) == 0
+assert s.value is None
+item = [1, 2]
+assert s.__init__(item, item) is None
+assert s.args[0] is item
+assert s.args[1] is item
+assert s.value is item
+# The stored fields retain their values after the callback frame is gone.
+del item
+assert len(s.value) == 2
+assert s.value[0] == 1
+assert s.value[1] == 2
+assert s.__init__() is None
+assert s.value is None
+error = Exception("old")
+assert error.__init__(1, 2, 3) is None
+assert len(error.args) == 3
+assert error.args[0] == 1
+assert error.args[1] == 2
+assert error.args[2] == 3
+assert error.__init__() is None
+assert len(error.args) == 0
+try:
+    error.args = (1,)
+except AttributeError:
+    pass
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, native_exception_initializers_validate_receivers)
+{
+    expect_python_error(
+        L"BaseException.__init__(object())\n", L"TypeError",
+        L"BaseException.__init__ expects an exception receiver");
+    expect_python_error(
+        L"Exception.__init__(1)\n", L"TypeError",
+        L"BaseException.__init__ expects an exception receiver");
+    expect_python_error(
+        L"StopIteration.__init__(Exception())\n", L"TypeError",
+        L"StopIteration.__init__ expects a StopIteration receiver");
+    expect_python_error(
+        L"StopIteration.__init__(None)\n", L"TypeError",
+        L"StopIteration.__init__ expects a StopIteration receiver");
+}
+
+TEST(Interpreter,
+     native_exception_initializers_reject_keywords_without_mutation)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class E(Exception): pass
+class S(StopIteration): pass
+for cls in (BaseException, Exception, StopIteration, E, S):
+    try:
+        cls(args=1)
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+    error = cls("old")
+    try:
+        error.__init__("new", value=42)
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+    assert len(error.args) == 1
+    assert error.args[0] == "old"
+    if isinstance(error, StopIteration):
+        assert error.value == "old"
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, native_exception_initializer_inheritance_invalidates_thunks)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class E(Exception): pass
+class F(E): pass
+class S(StopIteration): pass
+class T(S): pass
+f = F(1, 2)
+assert len(f.args) == 2
+assert f.args[0] == 1
+assert f.args[1] == 2
+assert T(1, 2).value == 1
+def replacement(self, value):
+    BaseException.__init__(self, value + 1)
+    self.extra = value
+E.__init__ = replacement
+S.__init__ = replacement
+f = F(7)
+assert len(f.args) == 1
+assert f.args[0] == 8
+s = T(7)
+assert len(s.args) == 1
+assert s.args[0] == 8
+assert s.value is None
+assert s.extra == 7
+del E.__init__
+del S.__init__
+f = F(9, 10)
+assert len(f.args) == 2
+assert f.args[0] == 9
+assert f.args[1] == 10
+s = T(9, 10)
+assert len(s.args) == 2
+assert s.args[0] == 9
+assert s.args[1] == 10
+assert s.value == 9
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
 {
     test::VmTestContext context;
