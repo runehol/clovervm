@@ -968,8 +968,8 @@ before installing the instance root Shape. Reject conflicting native layouts
 and select zero, fixed native, or ordinary-instance capacity to match storage.
 New-only trusted specialization follows the resolved method's contract;
 no-new allocation follows the selected native storage contract. Both retain
-constructor lookup invalidation. Initial native allocation support targets
-Instance, Exception, and StopIteration, with exception args initialized to an
+constructor lookup invalidation. Native allocation opcodes support
+Instance, Exception, StopIteration, and List, with exception args initialized to an
 empty tuple and StopIteration.value to None before initialization.
 
 Keep the existing native layout IDs, including distinct Exception and
@@ -996,8 +996,11 @@ work. Future slack tracking must preserve every predefined and occupied slot.
 The common pointer accepts a field-size cost on exact native builtins to avoid
 subtype wrappers, variant layouts, payload-length-dependent Shapes, and runtime
 storage-location recipes. Native payload identity, subclass identity, allocation
-extent, attribute access, and reclamation must agree. Common overflow storage is implemented; class validation and constructor
-work remain pending and require concrete sketches.
+extent, attribute access, and reclamation must agree. Common overflow storage
+and class validation are implemented, along with
+Exception, StopIteration, list, dict, int, float, str, and bytes construction.
+Tuple construction and the combined new/init protocol remain deferred in
+[Small Tasks](small-tasks.md).
 
 A subtype-only negative-offset preheader was considered and deferred because it
 would change the allocation-start and object-pointer relationship used by

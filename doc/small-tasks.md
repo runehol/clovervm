@@ -108,8 +108,10 @@ existing out-of-range or unsupported-value behavior.
   bootstrap globals with captured builtin classes/functions where appropriate.
 - **Combined `__new__` / `__init__`:** retain original call arguments and bind
   the two methods independently, then check the returned type and resolve its
-  initializer after allocation. Track dependencies and remaining constructor
-  stages in the [implementation plan](native-subtype-implementation-plan.md#deferred-work).
+  initializer after allocation. General call unpacking/forwarding is prerequisite
+  work; handle initializer replacement during allocation and coordinated default
+  method argument rules. See the current
+  [constructor limitations](native-subtype-storage.md#constructor-limitations).
 
 Exception allocation and native initializers are already implemented; their old
 queue entry has been retired. These follow-ups are tracked here, but need a
