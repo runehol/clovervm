@@ -952,23 +952,25 @@ lacking slot storage use overflow storage. Existing
 ordinary user classes retain automatic inline slots.
 
 Integer subclasses always use native heap BigInt storage, even for small values.
-Exact integer normalization remains unchanged. Every builtin class must supply
-or inherit an allocation-correct `__new__`; native families must not fall through
-to generic `Instance` allocation. Combined `__new__`/`__init__` class calls are a
-constructor-protocol prerequisite. Attribute caches must resolve to constant
-offsets after their guards, independent of native payload length. Explicit Python
-`__slots__` semantics remain deferred.
+Exact integer normalization remains unchanged. Construction supports either
+`__new__` or `__init__`, not both together. Without a resolved `__new__`, thunk
+generation selects a dedicated zero-argument allocation opcode from the class's
+native layout and root Shape; handlers do not switch over layouts. Allocators
+preserve subclass identity and inline capacity and establish valid default
+payloads. Initializers then fill mutable payloads. Immutable payloads must use
+`__new__`; unsupported layouts must not fall through to Instance allocation.
+Combined construction is deferred until general `funcall(*args, **kwargs)`
+forwarding is available. Attribute caches retain constant offsets independent
+of payload length; explicit Python `__slots__` semantics remain deferred.
 
 Validate native payload ancestry while walking the MRO at class creation,
 before installing the instance root Shape. Reject conflicting native layouts
-there and select zero, fixed native, or ordinary-instance inline capacity to
-match physical storage. Constructor thunks specialize resolved known builtin
-`__new__` methods through trusted-handler semantics, guarded by existing
-constructor lookup invalidation; native layout alone does not define allocation
-semantics. General allocation results use the existing known-class instance
-test, including its exact-class fast path, without another type-test cache.
-Initialization resolves against the actual returned class after allocation,
-with independent binding of the original arguments for both method calls.
+and select zero, fixed native, or ordinary-instance capacity to match storage.
+New-only trusted specialization follows the resolved method's contract;
+no-new allocation follows the selected native storage contract. Both retain
+constructor lookup invalidation. Initial native allocation support targets
+Instance, Exception, and StopIteration, with exception args initialized to an
+empty tuple and StopIteration.value to None before initialization.
 
 Keep the existing native layout IDs, including distinct Exception and
 StopIteration layouts. The earlier shared-ID proposal is withdrawn. Select at

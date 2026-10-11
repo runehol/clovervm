@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `2720047f` plus the stage 4c implementation (2026-10-11) |
+| Validated against | `8262f9e5` and the revised single-method constructor design (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -239,74 +239,98 @@ with 1,537 tests passing and one skipped. Exact list/dict/tuple mappings preserv
 existing mutation permissions; native List/Tuple/Dict/Float/String subclasses
 and ordinary instances retain live views across attribute additions, deletion,
 and re-addition. Dict payload entries remain independent, and exception args
-retain their read-only descriptor permissions. Changes are uncommitted for review.
+retain their read-only descriptor permissions. Committed in `8262f9e5`.
 
-## Stage 5: Complete Constructor Protocol
+## Stage 5a: Thunk-Time Allocator Selection
 
-Constructor orchestration preserves the original call across allocation and
-initialization. Builtin payload policy stays outside the thunk builder.
+Move allocation selection into thunk generation, initially supporting only the
+existing native Instance layout. No new allocation opcode is added here.
 
-- [ ] Agree on a compact sketch for the original-argument representation, thunk
-  signature, and forwarding mechanism. Keep argument values live and rooted
-  across allocation without an unconditional tuple/dict wrapper.
-- [ ] Call resolved `__new__` with the requested class and original arguments;
-  bind allocation and initialization arguments independently.
-- [ ] Test the general allocation result with
-  `is_instance_of_known_class`, retaining its exact-class fast path and MRO
-  fallback without adding another type-test cache.
-- [ ] Return unrelated allocation results directly, without resolving,
-  validating, or calling initialization.
-- [ ] After allocation, resolve `__init__` using the returned object's actual
-  class and MRO. Preserve descriptor binding and ignore instance attribute
-  hooks; observe initializer replacement during `__new__`.
-- [ ] Require the initializer result to be `None` and propagate lookup, binding,
-  allocation, and initialization exceptions explicitly.
-- [ ] Preserve coordinated default `object.__new__`/`object.__init__` argument
-  rules and existing constructor lookup invalidation. Invalidation affects
-  subsequent calls without cancelling an executing thunk.
-- [ ] Verify independent defaults and keyword binding, unrelated and subclass
-  results, initializer mutation during allocation, descriptor binding,
-  non-`None` results, and replacement/deletion of inherited constructor methods.
-- [ ] Measure ordinary exact-class construction in a release build and check
-  that the call representation does not force variadic collection allocation.
-- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
-  review.
+- [ ] Agree on the selector/emission helper and unsupported-layout error path.
+- [ ] In `make_init_only_constructor_thunk_code`, inspect the class's selected
+  native ID and root Shape before emitting the allocator. Select
+  `CreateInstanceKnownClass` for Instance; reject every unsupported layout.
+- [ ] Preserve the runtime opcode guard and existing capacity validation.
+  Do not put a native-layout switch into an opcode handler.
+- [ ] Preserve new-only construction, normalized initializer argument
+  forwarding, the None-result check, and rejection of combined methods.
+  Immutable payloads continue to require `__new__`.
+- [ ] Verify ordinary allocation, unsupported-layout errors, initializer
+  arguments/results, and constructor lookup invalidation.
+- [ ] Run full debug checks; leave this slice uncommitted for review.
 
-## Stage 6: Builtin Allocation And Trusted Specialization
+## Stage 5b: Exception Default Allocation
 
-Implement and verify the general family-owned constructor behavior before
-specializing it. Split this stage into reviewable changes by builtin family
-and lowering; commit them only when explicitly requested.
+Add one native allocator and wire it into the selector. Builtin initialization
+from constructor arguments remains stage 6 work.
 
-- [ ] Start with allocation-correct exception constructors using their distinct
-  native layouts, allocating with the requested class's root Shape and
-  predefined minimum.
-- [ ] Supply or inherit allocation-correct `__new__` methods for the remaining
-  builtin families. Non-instantiable classes reject construction instead of
-  falling through to generic slot-only allocation.
-- [ ] Preserve native payloads and subclass identity for variable-sized
-  builtins; their additional attributes remain overflow-only.
-- [ ] Always allocate integer subclass results as native heap BigInts, even for
-  small values. Retain SMI normalization for ordinary exact integers.
-- [ ] Audit native-layout versus exact-type checks and operation-specific result
-  identity, including reuse/conversion paths that must return exact builtins.
-- [ ] For each family, agree on the allocator applicability and argument/payload
-  contract before implementing it, following the builtin dunder-handler skill.
-- [ ] Add allocator-specific trusted semantics and equivalent specialized
-  lowering selected by the resolved method, not by class layout or method name.
-- [ ] Omit the post-allocation type check only when the trusted contract proves
-  the result has the requested class; retain actual-class initialization.
-- [ ] Guard specialization with existing lookup invalidation and retain the
-  general call path for unsupported contracts.
-- [ ] Verify each family through Python-visible construction, arguments,
-  overrides, subclass attributes, payload operations, and exception behavior;
-  verify specialized and general paths agree.
-- [ ] Measure known builtin allocation and ordinary construction in release
-  builds. Run `ninja -C build-debug all check` for each completed code slice.
-- [ ] Leave verified family implementations and specializations uncommitted
-  for review; commit them separately when explicitly requested.
+- [ ] Agree on `CreateExceptionKnownClass`, its class-constant operand, the
+  allocation helper, empty args ownership, and opcode frame behavior.
+- [ ] Allocate Exception native storage using `cls` for subclass identity and
+  its root Shape. Validate predefined minima and fixed physical capacity.
+- [ ] Initialize `.args` to an empty tuple before returning the object. Consume
+  no Python constructor arguments; preserve native ownership contracts.
+- [ ] Select this opcode for Exception in the no-new thunk path. Keep other
+  unsupported layouts, including StopIteration until 5c, rejected.
+- [ ] Verify opcode selection, exact/subclass identity, valid default args,
+  user-defined init-only behavior, and failure propagation. Do not add a builtin
+  `__init__` or combined new/init machinery in this slice.
+- [ ] Run full debug checks and release `check_opcode_frames`; leave changes
+  uncommitted for review.
+
+## Stage 5c: StopIteration Default Allocation
+
+Extend the same pattern to the distinct StopIteration layout.
+
+- [ ] Agree on `CreateStopIterationKnownClass` and its native allocation helper.
+- [ ] Allocate with the requested class and root Shape, validating the two-slot
+  predefined minimum and fixed physical capacity. Preserve StopIteration's
+  distinct native layout and ownership contract.
+- [ ] Initialize `.args` to an empty tuple and `.value` to None before returning.
+- [ ] Select this opcode for StopIteration in the no-new thunk path, including
+  compatible Exception/StopIteration MROs. Consume no constructor arguments.
+- [ ] Verify opcode selection, exact/subclass identity, both default fields,
+  init-only behavior, unsupported layouts, and lookup invalidation.
+- [ ] Run full debug checks and release `check_opcode_frames`; leave changes
+  uncommitted for review. Builtin payload initialization remains stage 6.
+
+## Stage 6: Builtin Initializers And Immutable Constructors
+
+Implement by builtin family, with a readiness sketch and verification for each
+slice. This stage does not require combined new/init or general call unpacking.
+
+- [ ] Start with native Exception and StopIteration `__init__` methods that fill
+  the valid default objects allocated in stages 5b and 5c, preserving tuple-valued args
+  and StopIteration.value semantics. Resolve argument contracts before coding.
+- [ ] Expand the zero-argument allocator-plus-init path to other eligible mutable
+  payload families, such as list and dict. Add dedicated opcodes as needed;
+  preserve `cls` identity, Shape capacity, and valid default payload state.
+- [ ] Construct immutable payload families through allocation-correct `__new__`
+  on the existing new-only path: int, float, str, bytes, and tuple. Do not use
+  zero-argument placeholder allocation followed by payload mutation for them.
+- [ ] Always box integer subclass results as native heap BigInts, including small
+  values; retain SMI normalization for ordinary exact integers.
+- [ ] Keep additional attributes of non-inline layouts in overflow storage.
+  Audit native-layout/exact-type checks and operation-specific result identity.
+- [ ] Define each family's supported single-method call boundary explicitly.
+  Cases requiring both resolved methods remain unsupported; do not silently
+  skip initialization or move payload policy between methods to evade it.
+- [ ] For builtin dunders and trusted lowering, follow the dunder-handler skill.
+  Specialize new-only calls by resolved trusted method and applicability,
+  preserving argument validation, payload semantics, and lookup invalidation.
+- [ ] Verify Python-visible arguments, inherited/overridden methods, subclass
+  attributes, payload operations, initialization failures, and supported versus
+  unsupported construction. Verify specialized and general paths agree.
+- [ ] Run full debug checks for each code slice and opcode frame checks for
+  interpreter changes. Measure allocation changes in release builds as needed.
+- [ ] Leave verified family slices uncommitted; commit separately when requested.
 
 ## Deferred Work And Completion
+
+- General `funcall(*args, **kwargs)` is a separate prerequisite for combined
+  constructor calls. Defer original-call retention, independent new/init binding,
+  post-new type checks and actual-class initializer lookup, initializer mutation
+  during allocation, and coordinated default new/init argument rules.
 
 - Slack tracking is not implemented by these stages. Future shrinking may
   remove only unused trailing inline capacity common to the entire root Shape

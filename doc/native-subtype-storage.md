@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `2720047f` plus stage 4c (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
+| Validated against | `8262f9e5` and the revised single-method constructor design (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -286,14 +286,40 @@ Shape or ClassObject metadata awaiting relocation.
 
 ## Constructor Thunk Specialization
 
-Every builtin class must supply or inherit an allocation-correct `__new__`.
-For an instantiable native builtin family, this method allocates a valid native
-object for the requested class, including user subclasses; it must not hard-code
-exact builtin identity. Non-instantiable builtin classes must reject construction
-rather than fall through to generic `Instance` allocation. A fresh native
-allocation uses the requested class's instance root Shape: `dict.__new__`
-called for a dict subclass produces `Dict` native storage with that subclass's
-Shape. Builtin payload construction remains owned by the builtin family.
+Construction continues to support either `__new__` or `__init__`, not both
+in one class call. Preserve the existing new-only path: call the resolved
+method with the requested class and return its result directly.
+
+When no `__new__` is resolved, the constructor thunk builder inspects the
+class's selected native layout and instance root Shape. It emits a dedicated
+zero-argument allocation opcode for that layout, carrying a class constant.
+Here zero-argument means no Python constructor arguments are consumed by the
+allocator; `cls` still supplies subclass identity, root Shape, and inline slot
+capacity. The builder selects the opcode once; opcode handlers must not contain
+a switch over native layouts.
+
+The implementation plan separates thunk-time allocator selection with
+Instance-only support (5a), Exception default allocation (5b), and StopIteration
+default allocation (5c).
+
+Start with `Instance`, `Exception`, and `StopIteration`. Keep the existing
+`CreateInstanceKnownClass` name, which identifies the concrete native Instance
+layout, and add separate exception allocation operations. Allocate the class's required inline capacity
+within the validated physical bounds, preserving distinct native headers and
+predefined field locations. Allocation must establish valid default state:
+exceptions have an empty tuple in `.args`, and StopIteration also has `None` in
+`.value`. The existing init-only thunk then calls `__init__`, when present, with
+its normalized arguments and requires a `None` result. Native initializers own
+payload initialization; read-only Python descriptors do not prevent them from
+updating their native fields.
+
+Only native payloads that can be initialized after allocation use this path.
+Immutable payloads, including int, float, str, bytes, and tuple, must be
+constructed through `__new__`. Mutable subclass attributes do not make an
+immutable native payload eligible. Unsupported and non-instantiable layouts
+must reject construction rather than fall through to generic `Instance`
+allocation. No argument-bearing allocation or general call-unpacking machinery
+is introduced by this work.
 
 `ClassObject` stores an explicit `SubclassPolicy`. Ordinary classes permit
 subclasses; builtin factories declare `Allowed` or `Disallowed` independently
@@ -312,83 +338,43 @@ allowed only at initial ClassObject construction; metaclass installation
 validates its final identity. These assertions enforce internal contracts;
 Python-facing construction continues to use explicit exception paths.
 
-When building a constructor thunk, resolve `__new__` through the existing
-lookup machinery. Recognize supported builtin implementations through the
-trusted-handler system and its semantics metadata, then emit equivalent
-specialized allocation bytecode. Specialization depends on the resolved
-trusted method and its applicability contract, not merely its name, the
-absence of `__new__`, or the class's native layout. Allocator-specific semantics
-tags and bytecode lowering still need a concrete implementation sketch; the
-current `TrustedHandlerSemantics` enum does not yet describe these allocators.
-
-The specialization must preserve argument validation, payload construction,
-requested subclass identity, exception behavior, and coordinated default
-`object.__new__`/`object.__init__` argument rules. A trusted allocator whose
-contract proves that it returns the requested class can omit the post-allocation
-type check. Methods without a supported trusted allocation contract use the
-general call path. Keep family-specific construction policy in the owning
-builtin implementation; the thunk builder selects known lowering rather than
-inventing a native-layout-based fallback allocator.
+For the new-only path, future trusted specialization is selected by the
+resolved method and its applicability contract. Native-layout selection applies
+only to the no-new allocation path; it must not bypass an explicit or inherited
+`__new__`. Builtin payload policy remains in each family's runtime helpers.
 
 Constructor thunks and their call caches retain the existing MRO-and-contents
 validity guard. Replacing, adding, or deleting `__new__` or `__init__`, including
-inherited methods, invalidates the affected constructor lookup. Invalidation
-protects subsequent calls; it does not cancel a thunk already executing.
+inherited methods, invalidates subsequent constructor lookup without cancelling
+a thunk already executing. Inherited methods count when deciding whether the
+call is new-only, init-only, or an unsupported combination.
 
-The existing constructor machinery supports `__new__`-only or `__init__`-only
-class calls, but not the combination. The `__new__`-only thunk currently returns
-its result directly; this also misses initialization when the requested class
-has no initializer but `__new__` returns a subclass instance whose class does.
-Supporting post-allocation initialization is a prerequisite for the builtin
-constructor work.
+### Argument Binding And Deferred Combined Construction
 
-For general `__new__` calls, use the existing `is_instance_of_known_class`
-bytecode operation on the returned value. Its class-identity comparison handles
-the common exact-class result immediately; only a different actual class
-requires an MRO subtype check. Do not add another inline cache for this test.
-Subclass-returning allocators are supported through that fallback without
-optimizing them as a common case. A failed check is not an error: return the
-allocation result and skip initialization.
+Single-method thunks continue to copy the selected method's signature, defaults,
+and keyword remapping and forward normalized parameters. They do not need to
+retain the original call for a second independently bound method invocation.
+The zero-argument allocator does not consume or bind the initializer arguments.
 
-When the check passes, resolve `__init__` by special-method lookup using the
-returned object's actual class and MRO. Ignore instance attributes and custom
-instance attribute-access hooks. Preserve descriptor binding and require the
-initializer to return `None`. Lookup or cache validation occurs after `__new__`
-returns, so it observes a different returned subclass or an initializer replaced
-during allocation. Existing special-method and call caches can avoid repeated
-lookup without pinning the initializer selected at constructor entry.
+Combined `__new__`/`__init__` construction remains deferred until general
+`funcall(*args, **kwargs)` forwarding is available. That is a separate substantial
+feature, not a prerequisite for the native allocators and initializers above.
+The current new-only path also continues to omit initialization if `__new__`
+returns a subclass instance with its own initializer; that limitation belongs
+to the deferred combined protocol.
 
-### Argument Binding
+Future combined construction must preserve original arguments, bind the methods
+independently, test allocation results with `is_instance_of_known_class`, and
+resolve initialization from the actual returned class after allocation. An
+unrelated result skips initialization. Initializer replacement during allocation
+and coordinated default-method argument rules are future protocol work.
 
-Current thunks copy the selected method's signature, defaults, and keyword
-remapping into the thunk, then forward normalized parameters. That is suitable
-for the current single-method paths but cannot generally serve two independent
-calls: normalization loses which arguments were omitted and may apply defaults
-that belong only to `__new__`.
-
-The combined path must preserve the original constructor arguments and bind
-them independently for allocation and initialization. Do not forward
-`__new__`'s normalized frame as `__init__`'s input. In particular, each method
-must apply its own defaults and argument-validation rules, and initialization
-must not be validated or called when the returned object fails the type check.
-
-Preserving the call does not inherently require an unconditional `*args`/
-`**kwargs` tuple-and-dict wrapper. Existing register-based calls, keyword-name
-metadata, and cached argument-binding plans are inputs to an implementation
-sketch for keeping original arguments live and rooted across allocation.
-Actual variadic parameters may still require their usual collection objects.
-The original-argument representation, thunk signature, and forwarding mechanism
-remain to be designed; this document does not claim that the current thunk ABI
-already preserves them. This is constructor-protocol work, not builtin payload
-policy.
-
-Verification must cover class-definition-time layout conflicts and compatible
-mixins, zero/fixed/dynamic inline capacities, native allocation with subclass
-Shapes, replacement of specialized methods, unrelated and subclass `__new__`
-results, initializer replacement during allocation, independent defaults and
-keyword binding, and non-`None` initializer results. Performance verification
-must include ordinary exact-class construction and known builtin allocation
-without forcing every call through variadic collection objects.
+Current verification covers layout-specific opcode selection, allocation sizes,
+valid default fields, exact and subclass identity, initializer arguments and
+non-`None` results, unsupported layouts, and constructor lookup invalidation.
+Run opcode frame checks for interpreter changes and measure allocation paths
+when changing their performance. Immutable family construction is verified on
+the existing new-only path, separately from allocator-plus-init families.
 
 ## Explicit Python Slot Declarations
 
