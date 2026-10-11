@@ -971,7 +971,7 @@ Initialization resolves against the actual returned class after allocation,
 with independent binding of the original arguments for both method calls.
 
 Consolidate `Instance`, `ModuleLoaderObject`, `ModuleSpecObject`, `Slice`,
-`ExceptionObject`, and `StopIterationObject` under `NativeLayoutId::SlotObject`.
+`ExceptionObject`, and `StopIterationObject` under `NativeLayoutId::InlineSlotObject`.
 Their predefined root-Shape attributes establish the minimum inline slot count;
 allocation and tracing use the actual physical count recorded on the object.
 Rename the class allocation count to `instance_inline_slot_count`. Retain

@@ -55,7 +55,7 @@ The resulting physical layout determines the Shape's inline capacity:
 
 - Native layouts without inline attribute storage, including `Dict`, declare
   zero inline capacity. Additional attributes use overflow storage.
-- Pure-slot objects share `NativeLayoutId::SlotObject` and dynamically allocated
+- Pure-slot objects share `NativeLayoutId::InlineSlotObject` and dynamically allocated
   inline storage. Their predefined attributes establish the minimum inline
   slot count; additional attributes may use spare inline capacity or overflow.
 - Inline-capable layouts with additional native metadata retain distinct native
@@ -92,7 +92,7 @@ exact builtin value where class identity remains observable.
 ### Shared Pure-Slot Layout
 
 The following six current concrete types become the shared
-`NativeLayoutId::SlotObject` layout. Their predefined attributes remain at their
+`NativeLayoutId::InlineSlotObject` layout. Their predefined attributes remain at their
 existing fixed inline locations in the root Shape.
 
 | Current concrete type | Minimum inline slots | Predefined attributes |

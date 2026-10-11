@@ -75,7 +75,7 @@ release it consistently for every Python-visible heap layout.
   remove the duplicate field from the existing `SlotObject` base. Use the
   existing `MemberHeapPtr<OverflowSlots>` ownership wrapper.
 - [x] Rename the C++ inline-capable base to `InlineSlotObject`. Keep its role
-  distinct from the shared `NativeLayoutId::SlotObject` introduced in stage 3.
+  distinct from the shared `NativeLayoutId::InlineSlotObject` introduced in stage 3.
 - [x] Make overflow reads, writes, growth, and deletion operate through
   `Object`, without requiring a cast to the inline-capable base.
 - [x] Retain inline access only for layouts with an actual inline region;
@@ -105,7 +105,7 @@ that order.
 Replace the six slot-only physical layouts with one allocation and tracing
 contract. Semantic class identity remains in the Shape.
 
-- [ ] Introduce `NativeLayoutId::SlotObject` for `Instance`,
+- [ ] Introduce `NativeLayoutId::InlineSlotObject` for `Instance`,
   `ModuleLoaderObject`, `ModuleSpecObject`, `Slice`, `ExceptionObject`, and
   `StopIterationObject`; remove their superseded IDs and update every in-repo
   consumer.
