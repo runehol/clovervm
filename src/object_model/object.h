@@ -3,6 +3,7 @@
 
 #include "memory/native_layout_declarations.h"
 #include "object_model/heap_object.h"
+#include "object_model/heap_ptr.h"
 #include "object_model/shape_descriptor.h"
 #include "util/compiler.h"
 
@@ -37,13 +38,15 @@ namespace cl
     {
     public:
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
-            : HeapObject(_native_layout_id), shape(nullptr)
+            : HeapObject(_native_layout_id), shape(nullptr),
+              overflow_storage(nullptr)
         {
             initialize_shape_for_class(_cls, _native_layout_id);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
-            : HeapObject(_native_layout_id), shape(nullptr)
+            : HeapObject(_native_layout_id), shape(nullptr),
+              overflow_storage(nullptr)
         {
         }
 
@@ -80,14 +83,18 @@ namespace cl
         ALWAYSINLINE Value *inline_slot_base();
         ALWAYSINLINE const Value *inline_slot_base() const;
         Shape *shape;
+        MemberHeapPtr<OverflowSlots> overflow_storage;
 
-        CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 1);
+        CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
     private:
         ALWAYSINLINE InlineSlotObject *as_inline_slot_object();
         ALWAYSINLINE const InlineSlotObject *as_inline_slot_object() const;
-        ALWAYSINLINE OverflowSlots *get_overflow_slots() const;
+        ALWAYSINLINE OverflowSlots *get_overflow_slots() const
+        {
+            return overflow_storage.get();
+        }
         void ensure_storage_for_shape(Shape *new_shape);
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
@@ -117,8 +124,7 @@ namespace cl
         static constexpr uint32_t kPredefinedInlineSlotCount = 0;
 
         InlineSlotObject(ClassObject *cls, NativeLayoutId native_layout_id)
-            : Object(BootstrapObjectTag{}, native_layout_id),
-              overflow_storage(nullptr)
+            : Object(BootstrapObjectTag{}, native_layout_id)
         {
             initialize_shape_for_class(cls, native_layout_id);
         }
@@ -127,7 +133,7 @@ namespace cl
 
         InlineSlotObject(BootstrapObjectTag tag,
                          NativeLayoutId native_layout_id)
-            : Object(tag, native_layout_id), overflow_storage(nullptr)
+            : Object(tag, native_layout_id)
         {
         }
 
@@ -145,16 +151,7 @@ namespace cl
                 sizeof(InlineSlotObject) / sizeof(uint64_t));
         }
 
-        ALWAYSINLINE OverflowSlots *get_overflow_slots() const
-        {
-            return overflow_storage;
-        }
-        void ensure_storage_for_shape(Shape *new_shape);
-        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
-
-        OverflowSlots *overflow_storage;
-
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(InlineSlotObject, Object, 1);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(InlineSlotObject, Object, 0);
         CL_DECLARE_STATIC_OBJECT_SIZE(InlineSlotObject);
     };
 
@@ -178,23 +175,6 @@ namespace cl
     ALWAYSINLINE const Value *Object::inline_slot_base() const
     {
         return as_inline_slot_object()->InlineSlotObject::inline_slot_base();
-    }
-
-    ALWAYSINLINE OverflowSlots *Object::get_overflow_slots() const
-    {
-        return as_inline_slot_object()->InlineSlotObject::get_overflow_slots();
-    }
-
-    inline void Object::ensure_storage_for_shape(Shape *new_shape)
-    {
-        as_inline_slot_object()->InlineSlotObject::ensure_storage_for_shape(
-            new_shape);
-    }
-
-    inline OverflowSlots *Object::ensure_overflow_slot(int32_t physical_idx)
-    {
-        return as_inline_slot_object()->InlineSlotObject::ensure_overflow_slot(
-            physical_idx);
     }
 
     template <typename T>
@@ -236,7 +216,9 @@ namespace cl
         return static_cast<const T *>(object);
     }
 
-    static_assert(sizeof(Object) == 16);
+    static_assert(CL_OFFSETOF(Object, overflow_storage) ==
+                  CL_OFFSETOF(Object, shape) + sizeof(Shape *));
+    static_assert(sizeof(Object) == 24);
     static_assert(sizeof(InlineSlotObject) == 24);
     static_assert(std::is_trivially_destructible_v<Object>);
     static_assert(std::is_trivially_destructible_v<InlineSlotObject>);

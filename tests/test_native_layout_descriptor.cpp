@@ -89,7 +89,7 @@ TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
               List::native_static_release_count());
 }
 
-TEST(NativeLayoutDescriptor, SlotObjectCarriesAttributeStorageCells)
+TEST(NativeLayoutDescriptor, ObjectCarriesSharedOverflowStorage)
 {
     EXPECT_TRUE(native_layout_has_inline_slots(NativeLayoutId::Instance));
     EXPECT_TRUE(native_layout_has_inline_slots(NativeLayoutId::ClassObject));
@@ -97,7 +97,7 @@ TEST(NativeLayoutDescriptor, SlotObjectCarriesAttributeStorageCells)
     EXPECT_TRUE(native_layout_has_inline_slots(NativeLayoutId::Exception));
     EXPECT_TRUE(native_layout_has_inline_slots(NativeLayoutId::StopIteration));
     EXPECT_FALSE(native_layout_has_inline_slots(NativeLayoutId::List));
-    EXPECT_EQ(Object::native_static_release_count() + 1,
+    EXPECT_EQ(Object::native_static_release_count(),
               InlineSlotObject::native_static_release_count());
 }
 

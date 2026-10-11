@@ -256,10 +256,7 @@ namespace cl
                old_shape == new_shape);
         shape = incref(new_shape);
         decref(old_shape);
-        if(native_layout_has_inline_slots(native_layout_id()))
-        {
-            ensure_storage_for_shape(new_shape);
-        }
+        ensure_storage_for_shape(new_shape);
 
         if(old_shape != nullptr && old_shape != new_shape &&
            new_shape != nullptr &&
@@ -488,7 +485,7 @@ namespace cl
         __builtin_unreachable();
     }
 
-    void InlineSlotObject::ensure_storage_for_shape(Shape *new_shape)
+    void Object::ensure_storage_for_shape(Shape *new_shape)
     {
         if(new_shape == nullptr)
         {
@@ -511,7 +508,7 @@ namespace cl
         }
     }
 
-    OverflowSlots *InlineSlotObject::ensure_overflow_slot(int32_t physical_idx)
+    OverflowSlots *Object::ensure_overflow_slot(int32_t physical_idx)
     {
         assert(physical_idx >= 0);
         OverflowSlots *overflow_slots = get_overflow_slots();
@@ -542,9 +539,7 @@ namespace cl
             }
         }
 
-        OverflowSlots *old_overflow_storage = overflow_storage;
-        overflow_storage = incref(new_overflow_slots);
-        decref(old_overflow_storage);
+        overflow_storage = new_overflow_slots;
         return new_overflow_slots;
     }
 

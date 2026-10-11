@@ -1,9 +1,11 @@
 #include "test_helpers.h"
 
+#include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/tuple.h"
 #include "memory/global_heap.h"
 #include "memory/heap_reclamation.h"
+#include "object_model/overflow_slots.h"
 #include "object_model/refcount.h"
 #include "object_model/shape.h"
 #include "object_model/validity_cell.h"
@@ -234,6 +236,30 @@ namespace cl
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
 
+    TEST(HeapReclamation, NativeObjectOverflowStorageReleasesChild)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        List *owner = thread->make_object_raw<List>();
+        String *child = thread->make_object_raw<String>(L"overflow-child");
+        OverflowSlots *storage = thread->make_internal_raw<OverflowSlots>(1, 4);
+        storage->set(0, Value::from_oop(child));
+        owner->overflow_storage = storage;
+        ASSERT_EQ(1, storage->refcount);
+        ASSERT_EQ(1, child->refcount);
+        auto *owner_slab = heap.slab_for_object_unlocked(owner);
+        auto *storage_slab = heap.slab_for_object_unlocked(storage);
+        auto *child_slab = heap.slab_for_object_unlocked(child);
+        thread->add_to_zero_count_table_if_needed(owner);
+        context.vm().run_heap_reclamation();
+        EXPECT_FALSE(slab_has_valid_object(owner_slab, owner));
+        EXPECT_FALSE(slab_has_valid_object(storage_slab, storage));
+        EXPECT_FALSE(slab_has_valid_object(child_slab, child));
+    }
+
     TEST(HeapReclamation, CodeObjectCustomDeallocReclaimsConstantTableChild)
     {
         test::VmTestContext context;
@@ -250,6 +276,16 @@ namespace cl
         CodeObject *code_object = thread->make_object_raw<CodeObject>(
             nullptr, TValue<ModuleObject>::from_oop(module), nullptr,
             code_name);
+        String *overflow_child =
+            thread->make_object_raw<String>(L"code-overflow");
+        OverflowSlots *storage = thread->make_internal_raw<OverflowSlots>(1, 4);
+        storage->set(0, Value::from_oop(overflow_child));
+        code_object->overflow_storage = storage;
+        ASSERT_EQ(1, storage->refcount);
+        ASSERT_EQ(1, overflow_child->refcount);
+        auto *storage_slab = heap.slab_for_object_unlocked(storage);
+        auto *overflow_child_slab =
+            heap.slab_for_object_unlocked(overflow_child);
         code_object->constant_table.emplace_back(Value::from_oop(child));
         code_object->inline_caches.function_call_caches.push_back(
             FunctionCallInlineCache{});
@@ -274,6 +310,9 @@ namespace cl
         EXPECT_FALSE(slab_has_valid_object(child_slab, child));
         EXPECT_FALSE(slab_has_valid_object(module_slab, module));
         EXPECT_FALSE(slab_has_valid_object(code_object_slab, code_object));
+        EXPECT_FALSE(slab_has_valid_object(storage_slab, storage));
+        EXPECT_FALSE(
+            slab_has_valid_object(overflow_child_slab, overflow_child));
         EXPECT_FALSE(
             thread->zero_count_table_contains_for_testing(code_object));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));

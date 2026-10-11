@@ -453,8 +453,13 @@ namespace cl::jit
         PublishedCode code = std::move(emission).value();
         const void *instructions = reinterpret_cast<const void *>(
             code.entry().bits_for_indirect_target());
-        EXPECT_EQ(0xfd400800u, instruction_at(instructions, 0));
-        EXPECT_EQ(0xfd400821u, instruction_at(instructions, 1));
+        ASSERT_EQ(0u, Float::value_offset() % sizeof(double));
+        uint32_t payload_offset =
+            static_cast<uint32_t>(Float::value_offset() / sizeof(double)) << 10;
+        EXPECT_EQ(0xfd400000u | payload_offset,
+                  instruction_at(instructions, 0));
+        EXPECT_EQ(0xfd400021u | payload_offset,
+                  instruction_at(instructions, 1));
 
         using Function = uint64_t (*)(uint64_t, uint64_t);
         Function function =

@@ -613,6 +613,104 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
     EXPECT_EQ(3, instance->get_shape()->get_next_slot_index());
 }
 
+TEST(Shape, CachedOverflowAccessSurvivesGrowthDeletionAndReaddition)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+class C:
+    pass
+c = C()
+c.a0 = 0
+c.a1 = 1
+c.a2 = 2
+c.a3 = 3
+c.a4 = 4
+c.a5 = 5
+c.a6 = 6
+c.a7 = 7
+c.a8 = 8
+c.a9 = 9
+c.target = 10
+def read(obj):
+    return obj.target
+def write(obj, value):
+    obj.target = value
+for i in range(20):
+    write(c, i)
+    assert read(c) == i
+c.b0 = 0
+c.b1 = 1
+c.b2 = 2
+c.b3 = 3
+c.b4 = 4
+c.b5 = 5
+c.b6 = 6
+c.b7 = 7
+c.b8 = 8
+for i in range(20):
+    write(c, i + 100)
+    assert read(c) == i + 100
+del c.target
+write(c, 42)
+assert read(c) == 42
+assert c.a0 == 0
+assert c.a9 == 9
+assert c.b8 == 8
+)"));
+}
+
+TEST(Shape, ZeroInlineNativeLayoutUsesCommonOverflowStorage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    auto cls_name =
+        context.vm().get_or_create_interned_string_value(L"NativeList");
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 0, context.vm().list_class(), NativeLayoutId::List);
+    Owned<TValue<List>> list(
+        TValue<List>::from_oop(context.thread()->make_internal_raw<List>(cls)));
+    list.extract()->append(Value::from_smi(99));
+    std::vector<TValue<String>> names;
+    for(int idx = 0; idx < 12; ++idx)
+    {
+        names.push_back(context.vm().get_or_create_interned_string_value(
+            L"attr" + std::to_wstring(idx)));
+    }
+    String *child = context.thread()->make_object_raw<String>(L"attribute");
+    ASSERT_TRUE(
+        list.extract()->set_own_property(names[0], Value::from_oop(child)));
+    ASSERT_EQ(1, child->refcount);
+    auto read = resolve_attr_read_descriptor(list.raw_value(), names[0]);
+    auto write = resolve_attr_write_descriptor(list.raw_value(), names[0]);
+    ASSERT_TRUE(read.is_cacheable());
+    ASSERT_TRUE(write.is_found());
+    EXPECT_EQ(
+        StorageKind::Overflow,
+        list.extract()->get_shape()->resolve_present_property(names[0]).kind);
+    for(int idx = 1; idx < 12; ++idx)
+    {
+        ASSERT_TRUE(
+            list.extract()->set_own_property(names[idx], Value::from_smi(idx)));
+    }
+    EXPECT_EQ(Value::from_oop(child),
+              load_attr_from_plan(list.raw_value(), read.plan));
+    // Replaced arrays retain their cells until their zero-count entries are
+    // reclaimed.
+    context.vm().run_heap_reclamation();
+    EXPECT_EQ(1, child->refcount);
+    ASSERT_TRUE(store_attr_from_plan(list.raw_value(), write.plan,
+                                     Value::from_smi(42)));
+    EXPECT_EQ(0, child->refcount);
+    EXPECT_EQ(Value::from_smi(42),
+              load_attr_from_plan(list.raw_value(), read.plan));
+    ASSERT_TRUE(list.extract()->delete_own_property(names[0]));
+    EXPECT_EQ(Value::not_present(), list.extract()->get_own_property(names[0]));
+    ASSERT_TRUE(list.extract()->set_own_property(names[0], Value::from_smi(7)));
+    EXPECT_EQ(Value::from_smi(7), list.extract()->get_own_property(names[0]));
+    EXPECT_EQ(Value::from_smi(99), list.extract()->item_unchecked(0));
+    EXPECT_EQ(0u, list.extract()->get_shape()->get_inline_slot_capacity());
+}
+
 TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
 {
     test::VmTestContext context;

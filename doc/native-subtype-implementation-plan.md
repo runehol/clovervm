@@ -71,30 +71,34 @@ release it consistently for every Python-visible heap layout.
   cycle. Preserve existing wrapper and pointer-refcount semantics; keep
   Value/TValue ownership wrappers separate. This prerequisite is completed
   independently of the storage change below.
-- [ ] Move the overflow-storage pointer into `Object`, initially null, and
+- [x] Move the overflow-storage pointer into `Object`, initially null, and
   remove the duplicate field from the existing `SlotObject` base. Use the
   existing `MemberHeapPtr<OverflowSlots>` ownership wrapper.
-- [ ] Rename the C++ inline-capable base to `InlineSlotObject`. Keep its role
+- [x] Rename the C++ inline-capable base to `InlineSlotObject`. Keep its role
   distinct from the shared `NativeLayoutId::SlotObject` introduced in stage 3.
-- [ ] Make overflow reads, writes, growth, and deletion operate through
+- [x] Make overflow reads, writes, growth, and deletion operate through
   `Object`, without requiring a cast to the inline-capable base.
-- [ ] Retain inline access only for layouts with an actual inline region;
+- [x] Retain inline access only for layouts with an actual inline region;
   layouts without that region must have zero Shape inline capacity. Rename the
   native-layout predicate to `native_layout_has_inline_slots` to express that
   capability independently of common overflow storage.
-- [ ] Update native member offsets, size/release descriptors, static assertions,
+- [x] Update native member offsets, size/release descriptors, static assertions,
   and allocation initialization together. Internal `HeapObject` metadata records
   do not acquire the pointer.
-- [ ] Ensure release and tracing observe the common pointer exactly once,
+- [x] Ensure release and tracing observe the common pointer exactly once,
   including custom native deallocation paths.
-- [ ] Preserve attribute permissions and constant-offset cache access; pointer
+- [x] Preserve attribute permissions and constant-offset cache access; pointer
   availability does not make exact builtins attribute-mutable or broaden their
   existing `__dict__` exposure. Keep that semantic gate separate from overflow
   storage access.
-- [ ] Verify existing inline and overflow attributes, growth/deletion with
+- [x] Verify existing inline and overflow attributes, growth/deletion with
   populated caches, and reclamation of references held in overflow storage.
-- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
+- [x] Run `ninja -C build-debug all check` and leave the stage uncommitted for
   review.
+
+Verification: 1,518 tests passed, one skipped. The mechanical C++ rename and
+the common overflow-storage change were reviewed separately and committed in
+that order.
 
 ## Stage 3: Shared Native Layout For Pure-Slot Objects
 

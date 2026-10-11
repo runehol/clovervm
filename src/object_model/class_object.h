@@ -339,8 +339,7 @@ namespace cl
     ALWAYSINLINE
     InlineSlotObject::InlineSlotObject(Shape *initial_shape,
                                        NativeLayoutId native_layout_id)
-        : Object(BootstrapObjectTag{}, native_layout_id),
-          overflow_storage(nullptr)
+        : Object(BootstrapObjectTag{}, native_layout_id)
     {
         initialize_shape(initial_shape, native_layout_id);
     }
