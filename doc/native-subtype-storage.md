@@ -7,32 +7,29 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `78f7490a` (2026-10-11), for current-code constraints and local CPython 3.14.5 probes; storage and constructor changes remain unimplemented |
+| Validated against | `8ccda0d9` (2026-10-11) and local CPython 3.14.5 probes; common overflow storage is implemented; class validation and constructor work remain pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
 Python-visible heap `Object`, native heap integer storage for `int` subclasses,
 and overflow-only additional attributes for builtin families that currently
-lack `SlotObject` storage. Existing `SlotObject` families retain their regular
-storage mechanism. This decision was agreed on 2026-10-10. Class-creation
-validation, constructor specialization, and shared pure-slot layouts were
-refined on 2026-10-11.
+lack inline storage. Existing `InlineSlotObject` families retain their regular
+storage mechanism and separate native layout IDs. This decision was agreed on
+2026-10-10 and refined on 2026-10-11. The proposed shared native ID was abandoned
+in favor of preserving native field and initialization contracts.
 
 The staged checklist is in the
 [implementation plan](native-subtype-implementation-plan.md).
 
 ## Common Storage
 
-Move the overflow-storage pointer into `Object` as
+The overflow-storage pointer lives in `Object` as
 `MemberHeapPtr<OverflowSlots>`, preserving its ownership and one-word storage.
-`SlotObject` must reuse that
-pointer rather than contain a second one. Rename `SlotObject` to an
-inline-capable base, provisionally `InlineSlotObject`, to make its remaining
-responsibility explicit: it marks the physical presence of inline `Value`
-slots. Overflow access must no longer require casting to that base. Internal
-heap records that do not have Python object identity, such as Shape records,
-do not acquire the common pointer. The pointer is initially null; allocate
-overflow storage only when needed.
+The C++ `InlineSlotObject` base adds no second pointer; it marks the physical
+presence of inline `Value` slots. Overflow access operates through `Object`.
+Internal heap records without Python object identity, such as Shape records,
+do not acquire the pointer. It is initially null; overflow storage is allocated
+only when needed.
 
 A layout without the inline-capable base must declare zero inline attribute
 capacity in its instance Shape. Root-shape construction, transitions, and clones
@@ -40,35 +37,64 @@ must preserve that invariant. A positive capacity would let attribute access
 overwrite native fields. Existing inline-capable layouts must likewise keep
 Shape capacity within the actual physical slot region.
 
-Current user-class creation gives every class the same capacity of ten inline
-slots, without inheriting or adding the base class's capacity. Replace that
-unconditional choice with native-lineage validation at class creation, before
-installing the instance root Shape. Walk the class MRO and inspect each base's
-instance native layout, not the C++ layout of the `ClassObject` record.
-Resolve compatible native payload ancestry and reject conflicting requirements
-with `TypeError` during class creation, rather than at instance allocation.
-For example, `dict` and `list` cannot both supply the payload. Ordinary Python
-mixins and sibling subclasses sharing a compatible native lineage need not
-conflict. Subclass eligibility is validated separately.
+## Native Layout Selection And Multiple Inheritance
 
-The resulting physical layout determines the Shape's inline capacity:
+Keep the existing native layout IDs. In particular, `Instance`, `Slice`,
+`Exception`, `StopIteration`, `ModuleLoaderObject`, and `ModuleSpecObject` remain
+separate. The C++ base name `InlineSlotObject` does not introduce a shared
+`NativeLayoutId::InlineSlotObject`.
 
-- Native layouts without inline attribute storage, including `Dict`, declare
-  zero inline capacity. Additional attributes use overflow storage.
-- Pure-slot objects share `NativeLayoutId::InlineSlotObject` and dynamically allocated
-  inline storage. Their predefined attributes establish the minimum inline
-  slot count; additional attributes may use spare inline capacity or overflow.
-- Inline-capable layouts with additional native metadata retain distinct native
-  IDs and fixed physical inline capacity.
-- Ordinary user instances use the shared pure-slot layout with automatic inline
-  slots. The universal `object` base maps to this layout and does not force
-  native subclasses with other payloads to adopt generic slot-only storage.
+Current user-class creation assigns ten inline slots to every class. Replace
+that unconditional choice with storage selection before installing the instance
+root Shape. Inspect the classes' instance layouts, not the native layout of the
+`ClassObject` records themselves:
 
-Root-shape construction, transitions, and clones preserve the selected storage
-interpretation. Allocators assert that the requested class's root Shape is
-compatible with the allocation's native layout and physical capacity. The
-metadata API for expressing native compatibility still needs an implementation
-sketch; the validation phase and capacity rules are settled here.
+- Ignore `Instance` entries when selecting builtin storage. Ordinary Python
+  mixins and the universal `object` base do not override a builtin payload.
+- Select at most one builtin layout. Repeated occurrences of that same layout
+  through compatible subclasses are allowed.
+- Reject mixing distinct builtin storage requirements with `TypeError`, such
+  as Slice plus Exception or List plus Dict. Matching inline slot counts do not
+  establish compatibility: both families may require their own field at slot 0.
+- A builtin's own established ancestry is not a second independently selected
+  layout. In particular, StopIteration's inherited Exception ancestry is
+  permitted, with StopIteration storage selected. This is an explicit existing
+  native extension, not permission to combine unrelated builtin bases.
+- Reject explicit multiple inheritance combining Exception and StopIteration
+  storage lineages, in either declared base order. Ordinary StopIteration
+  subclassing remains valid. Examine declared bases as well as the resulting
+  MRO to distinguish these cases.
+- Use the selected builtin layout's existing inline capacity and predefined
+  field contract. It is zero for layouts without inline attribute storage.
+  If all entries use `Instance`, use the ordinary-instance capacity policy
+  (currently ten slots, not an additive sum of ancestor capacities).
+
+Thus "one builtin layout in the MRO" means one selected storage provider after
+accounting for its own established builtin ancestry, not a literal requirement
+that all MRO entries have one identical non-Instance ID. Multiple inheritance
+cannot compose two native prefixes. Subclass eligibility remains a separate
+check, even where physical storage would otherwise fit.
+
+CPython 3.14.5 rejects `(Exception, StopIteration)` because its MRO is
+inconsistent, but permits `(StopIteration, Exception)`. Clover deliberately
+rejects both explicit combinations. CPython also rejects `__class__` assignment
+between exact Exception and StopIteration objects in either direction.
+
+Root Shapes, transitions, and clones must preserve the selected native layout
+and capacity. Allocation validates agreement with that class contract and the
+concrete allocator; generic `Instance` allocation must not construct a class
+that requires builtin storage. Native constructors remain responsible for
+initializing their predefined fields.
+
+### Class Reassignment
+
+Preserve the current restrictions on `__class__` assignment. Do not broaden
+assignment to builtin families merely because they have inline slots or the
+common overflow pointer. Layout compatibility is necessary, but not sufficient;
+capacity and predefined-field contracts must remain valid. Ordinary compatible
+user classes and the existing ModuleObject path retain their supported behavior.
+Exception and StopIteration remain distinct layouts and cannot be reassigned to
+one another: a one-slot exception cannot safely become a two-slot StopIteration.
 
 Conceptually:
 
@@ -83,52 +109,43 @@ native builtin:
     native fields and payload
 ```
 
-Native layout identity describes physical payload storage. For pure-slot
-objects it does not distinguish Python types; the Shape supplies Python class
-identity and attribute locations. Subclassing must not replace a non-slot native
-payload with generic slot-only storage, or turn a subclass instance into an
-exact builtin value where class identity remains observable.
+Native layout identity continues to distinguish the existing native storage
+contracts, while the Shape supplies the object's actual Python class identity.
+Subclassing must not replace a builtin payload with generic `Instance` storage
+or erase subclass identity by returning an exact builtin value.
 
-### Shared Pure-Slot Layout
+### Existing Inline Slot Contracts
 
-The following six current concrete types become the shared
-`NativeLayoutId::InlineSlotObject` layout. Their predefined attributes remain at their
-existing fixed inline locations in the root Shape.
+Retain the following separate native layouts and predefined locations:
 
-| Current concrete type | Minimum inline slots | Predefined attributes |
-|---|---|---|
-| `Instance` | 0 | None; ordinary user classes retain automatic inline capacity |
-| `ModuleLoaderObject` | 3 | `kind`, `name`, `path` |
-| `ModuleSpecObject` | 6 | `name`, `loader`, `origin`, `submodule_search_locations`, `has_location`, `parent` |
-| `Slice` | 3 | `start`, `stop`, `step` |
-| `ExceptionObject` | 1 | `args` |
-| `StopIterationObject` | 2 | `args`, `value` |
+| Concrete type | Native layout ID | Minimum inline slots | Predefined attributes |
+|---|---|---|---|
+| `Instance` | `Instance` | 0 | Ordinary user attributes; current default capacity is ten |
+| `ModuleLoaderObject` | `ModuleLoaderObject` | 3 | `kind`, `name`, `path` |
+| `ModuleSpecObject` | `ModuleSpecObject` | 6 | `name`, `loader`, `origin`, `submodule_search_locations`, `has_location`, `parent` |
+| `Slice` | `Slice` | 3 | `start`, `stop`, `step` |
+| `ExceptionObject` | `Exception` | 1 | `args` |
+| `StopIterationObject` | `StopIteration` | 2 | `args`, `value` |
 
-These objects contain only inline slot values beyond the common header and
-overflow pointer. Allocation, object-size recovery, and tracing use their
-actual physical inline slot count, recorded on the object. The class's
-`instance_inline_slot_count`, exposed by `get_instance_inline_slot_capacity()`,
-must remain consistent with the root Shape's capacity. The count
-must accommodate every predefined inline location; predefined values must be
-initialized according to the owning builtin's semantics.
+These builtin layouts retain their existing physical inline capacities and
+size/release descriptors. Added subclass attributes spill to common overflow
+storage once that fixed region is full. `Function`, `ClassObject`, and
+`ModuleObject` likewise retain their separate IDs, capacities, and native
+metadata. The class's `instance_inline_slot_count`, exposed through
+`get_instance_inline_slot_capacity()`, must agree with its root Shape and the
+selected allocation contract.
 
 Each concrete `Object` subclass declares
 `static constexpr uint32_t kPredefinedInlineSlotCount` for allocation validation.
-It is zero when there are no predefined inline fields and includes inherited
-physical locations otherwise. Allocation must provide at least this minimum;
-fixed native layouts also constrain the maximum physical inline capacity.
+The count includes inherited predefined locations, and is zero where none
+exist. Exception `.args` remains a typed tuple field; StopIteration `.value`
+remains an additional initialized field. A raw count of available slots alone
+does not establish these initialization guarantees.
 
-`Function`, `ClassObject`, and `ModuleObject` retain separate native layout
-IDs. They contain native metadata in addition to their attribute slots;
-`ModuleObject`, for example, also contains validity cells and dependent-cell
-storage. They continue using common slot access with their existing fixed
-physical capacities. Attribute extensibility is separate from this distinction.
-
-Sharing the native ID does not make unrelated builtin classes interchangeable.
-Typed access and trusted handlers must validate the relevant semantic class and
-predefined-slot contract rather than treating the shared ID as proof of a
-particular builtin type. Native ancestry validation must likewise retain the
-predefined-slot compatibility requirements; matching IDs alone are insufficient.
+The proposal to merge these IDs and make all six families dynamically sized is
+withdrawn. Ordinary `Instance` size recovery currently uses an initialized-prefix
+aux count; its physical-capacity/header correction remains deferred to the
+moving-GC header work, rather than being folded into this storage selection.
 
 Future slack tracking may remove only the unused trailing inline capacity
 common to the entire root Shape transition tree. Predefined attributes already
@@ -146,7 +163,7 @@ a Shape regardless of payload length.
 
 This rule does not remove native fields or existing predefined inline slots.
 Exceptions retain `.args`, and StopIteration retains `.value`, in their native
-inline locations. These existing `SlotObject` families continue using their
+inline locations. These existing `InlineSlotObject` families continue using their
 regular shape/slot mechanism. Ordinary user classes based on `object` likewise
 keep their current automatic inline slots; all classes ultimately inherit from
 `object`, so native payload ancestry is the relevant distinction.
@@ -226,7 +243,7 @@ reads, writes, and deletion.
 ## Allocation, Reclamation, And Construction
 
 The common pointer adds one eight-byte field to layouts that currently inherit
-only `Object`. Existing `SlotObject` layouts must not pay for a duplicate field.
+only `Object`. Existing `InlineSlotObject` layouts must not pay for a duplicate field.
 Native member offsets, size descriptors, release descriptors, and offset
 assertions must be updated together. The allocator rounds extents to a
 32-byte granularity, so the physical allocation increase depends on the size

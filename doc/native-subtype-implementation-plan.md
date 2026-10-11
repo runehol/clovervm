@@ -5,9 +5,9 @@
 | Document type | Implementation plan |
 | Status | Accepted |
 | Implementation | Partial |
-| Scope | Common overflow storage, shared pure-slot layout, native subclass validation, and builtin construction |
+| Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `f13f72cf` plus stage 1 changes (2026-10-11) |
+| Validated against | `8ccda0d9` plus the revised retained-layout design (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -26,7 +26,7 @@ refactor; stage 1 preserves current lazy initialization and reclamation behavior
 ## Stage 1: Explicit Inline Counts And Allocation Validation
 
 Completed: focused checks passed, followed by 1,515 passing debug tests and
-one skipped test. Later stages remain unimplemented.
+one skipped test. Stage 2 is also complete; subsequent stages remain pending.
 
 Preserve current representations and capacities while making their contracts
 explicit. Runtime object types declare their predefined inline region; class
@@ -75,7 +75,7 @@ release it consistently for every Python-visible heap layout.
   remove the duplicate field from the existing `SlotObject` base. Use the
   existing `MemberHeapPtr<OverflowSlots>` ownership wrapper.
 - [x] Rename the C++ inline-capable base to `InlineSlotObject`. Keep its role
-  distinct from the shared `NativeLayoutId::InlineSlotObject` introduced in stage 3.
+  distinct from native layout identity; existing native IDs remain separate.
 - [x] Make overflow reads, writes, growth, and deletion operate through
   `Object`, without requiring a cast to the inline-capable base.
 - [x] Retain inline access only for layouts with an actual inline region;
@@ -100,34 +100,31 @@ Verification: 1,518 tests passed, one skipped. The mechanical C++ rename and
 the common overflow-storage change were reviewed separately and committed in
 that order.
 
-## Stage 3: Shared Native Layout For Pure-Slot Objects
+## Stage 3: Retained Native Layout Compatibility Contract
 
-Replace the six slot-only physical layouts with one allocation and tracing
-contract. Semantic class identity remains in the Shape.
+The shared-ID proposal is withdrawn. Keep the existing native layout IDs and
+fixed builtin capacities. Define the compatibility contract before wiring MRO
+selection into class creation in stage 4.
 
-- [ ] Introduce `NativeLayoutId::InlineSlotObject` for `Instance`,
-  `ModuleLoaderObject`, `ModuleSpecObject`, `Slice`, `ExceptionObject`, and
-  `StopIterationObject`; remove their superseded IDs and update every in-repo
-  consumer.
-- [ ] Allocate a contiguous inline `Value` region after the common object
-  prefix. Record its actual physical count in the object header.
-- [ ] Use that object-local count for size recovery and release/tracing, without
-  depending on class or Shape metadata for allocation extent.
-- [ ] Enforce the predefined minimum from stage 1. Preserve existing field
-  indices and each builtin's initialization semantics, including exception
-  `.args` and StopIteration `.value`.
-- [ ] Allow spare inline capacity above the predefined minimum; additional
-  attributes use inline storage until full, then overflow storage.
-- [ ] Update native helpers, typed conversions, trusted handlers, and builtin
-  registration so a shared layout ID alone never proves a particular builtin
-  semantic type. Preserve the typed tuple contract of exception `.args`.
-- [ ] Retain separate IDs and fixed physical inline capacities for `Function`,
-  `ClassObject`, and `ModuleObject`, including their native metadata.
-- [ ] Verify semantic type discrimination between objects with the shared ID,
-  predefined field access, different allocation counts, cached attribute access,
-  and reclamation of both inline and overflow references.
-- [ ] Run `ninja -C build-debug all check` and leave the stage uncommitted for
-  review.
+- [ ] Agree on a compact API sketch for selecting one builtin storage provider
+  and its capacity; distinguish declared-base contributions from inherited MRO
+  entries. Do not add a shared `NativeLayoutId::InlineSlotObject`.
+- [ ] Keep `Instance` as ordinary user storage, ignored when a builtin layout
+  is selected. Preserve the existing native type checks and class mappings.
+- [ ] Express the established Exception-to-StopIteration native extension
+  explicitly; it permits ordinary StopIteration ancestry, not combining two
+  independently supplied native layouts.
+- [ ] Define rejection of distinct builtin requirements from declared bases,
+  including explicit Exception/StopIteration mixing in either order. Allow
+  compatible repeated occurrences of one layout and ordinary mixins.
+- [ ] Preserve the current `__class__` assignment restrictions and validate
+  storage contracts without enabling new builtin reclassification paths.
+- [ ] Preserve predefined indices, fixed capacities, typed exception `.args`,
+  StopIteration `.value`, and native allocation/initialization responsibilities.
+- [ ] Verify the compatibility rules separately from the MRO integration;
+  leave aux/header and Instance-size recovery cleanup deferred.
+- [ ] Run `ninja -C build-debug all check` for code changes and leave the stage
+  uncommitted for review.
 
 ## Stage 4: Class-Creation Storage Validation
 
@@ -137,15 +134,18 @@ installing the instance root Shape. Allocation enforces that selected contract.
 - [ ] Agree on a compact metadata/API sketch for native payload ancestry,
   predefined-slot compatibility, and capacity selection.
 - [ ] Walk the class MRO using each base's instance-storage requirements;
-  ordinary Python mixins must not impose generic slot-only storage on a native
-  family.
+  ordinary Python mixins contribute `Instance` and do not override a builtin
+  family. Select at most one builtin layout, accounting for its established
+  native ancestry. Inspect declared bases to reject explicit mixing.
 - [ ] Validate subclass eligibility separately from storage compatibility.
 - [ ] Reject incompatible native payloads or predefined-slot requirements with
-  `TypeError` during class creation. Equal shared native IDs alone do not prove
-  compatibility.
-- [ ] Build shared-slot root Shapes with inherited predefined locations and
-  sufficient capacity; preserve fixed capacities for native metadata layouts
-  and select zero for layouts without inline attribute storage.
+  `TypeError` during class creation, including Slice/Exception, List/Dict, and
+  explicit Exception/StopIteration in either order. Ordinary StopIteration
+  subclassing remains supported.
+- [ ] Build root Shapes with the selected builtin layout's existing capacity
+  and predefined locations; select zero without inline storage. If all layouts
+  are `Instance`, retain the ordinary-instance capacity policy. Do not combine
+  or add slot capacities from unrelated bases.
 - [ ] Preserve the selected storage interpretation in Shape transitions and
   clones. Validate allocator/native-layout agreement.
 - [ ] Preserve native predefined field semantics while allowing mutable
@@ -212,8 +212,9 @@ Implement and verify the general family-owned constructor behavior before
 specializing it. Split this stage into reviewable changes by builtin family
 and lowering; commit them only when explicitly requested.
 
-- [ ] Start with allocation-correct exception/shared-slot constructors,
-  allocating with the requested class's root Shape and predefined minimum.
+- [ ] Start with allocation-correct exception constructors using their distinct
+  native layouts, allocating with the requested class's root Shape and
+  predefined minimum.
 - [ ] Supply or inherit allocation-correct `__new__` methods for the remaining
   builtin families. Non-instantiable classes reject construction instead of
   falling through to generic slot-only allocation.

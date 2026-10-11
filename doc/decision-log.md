@@ -939,16 +939,16 @@ must use the adapter.
 **Date:** 2026-10-10
 
 **Refined:** 2026-10-11 (class-creation validation, constructor specialization,
-and shared pure-slot layouts)
+and retained native layout contracts)
 
 ### Decision
 
 Put one overflow-storage pointer in every Python-visible heap `Object`, reusing
-it in existing `SlotObject` layouts. Rename that base to an inline-capable
-base, provisionally `InlineSlotObject`; other layouts must declare zero inline
+it in existing inline-capable layouts. The base is named
+`InlineSlotObject`; other layouts must declare zero inline
 attribute capacity. Additional attributes of native builtin families currently
 lacking slot storage use overflow storage. Existing
-`SlotObject` families retain their inline fields and regular slot mechanism;
+`InlineSlotObject` families retain their inline fields and regular slot mechanism;
 ordinary user classes retain automatic inline slots.
 
 Integer subclasses always use native heap BigInt storage, even for small values.
@@ -961,7 +961,7 @@ offsets after their guards, independent of native payload length. Explicit Pytho
 
 Validate native payload ancestry while walking the MRO at class creation,
 before installing the instance root Shape. Reject conflicting native layouts
-there and select zero, fixed native, or dynamic pure-slot inline capacity to
+there and select zero, fixed native, or ordinary-instance inline capacity to
 match physical storage. Constructor thunks specialize resolved known builtin
 `__new__` methods through trusted-handler semantics, guarded by existing
 constructor lookup invalidation; native layout alone does not define allocation
@@ -970,24 +970,30 @@ test, including its exact-class fast path, without another type-test cache.
 Initialization resolves against the actual returned class after allocation,
 with independent binding of the original arguments for both method calls.
 
-Consolidate `Instance`, `ModuleLoaderObject`, `ModuleSpecObject`, `Slice`,
-`ExceptionObject`, and `StopIterationObject` under `NativeLayoutId::InlineSlotObject`.
-Their predefined root-Shape attributes establish the minimum inline slot count;
-allocation and tracing use the actual physical count recorded on the object.
-Rename the class allocation count to `instance_inline_slot_count`. Retain
-distinct IDs and fixed inline capacities for `Function`, `ClassObject`, and
-`ModuleObject`, which contain additional native metadata. Shared physical
-storage does not replace semantic type checks or predefined-slot compatibility
-validation. Future slack tracking may trim only the unused tail common to the
-whole transition tree, preserving every predefined and occupied location.
+Keep the existing native layout IDs, including distinct Exception and
+StopIteration layouts. The earlier shared-ID proposal is withdrawn. Select at
+most one builtin storage provider from the MRO, ignoring `Instance` mixins and
+accounting for the selected builtin's own established ancestry. Use that
+layout's existing inline capacity; an all-Instance MRO uses ordinary instance
+capacity. Reject distinct builtin storage contributions from declared bases,
+including explicit Exception/StopIteration combinations in either order.
+Ordinary StopIteration ancestry remains valid. This deliberately rejects a
+combination CPython permits in the StopIteration-first order.
+
+Preserve native field indices, initialization, and typed-access contracts;
+matching slot counts alone are insufficient. Retain current `__class__`
+assignment restrictions, including rejecting Exception/StopIteration changes.
+The C++ inline-capable base is `InlineSlotObject`; it does not imply a shared
+native ID. Instance-size and aux/header cleanup remain deferred to moving-GC
+work. Future slack tracking must preserve every predefined and occupied slot.
 
 ### Context And Consequences
 
 The common pointer accepts a field-size cost on exact native builtins to avoid
 subtype wrappers, variant layouts, payload-length-dependent Shapes, and runtime
 storage-location recipes. Native payload identity, subclass identity, allocation
-extent, attribute access, and reclamation must agree. The design is accepted but
-not implemented; constructor and allocation APIs still require a concrete sketch.
+extent, attribute access, and reclamation must agree. Common overflow storage is implemented; class validation and constructor
+work remain pending and require concrete sketches.
 
 A subtype-only negative-offset preheader was considered and deferred because it
 would change the allocation-start and object-pointer relationship used by
