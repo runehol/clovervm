@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `75a73af2` plus the stage 5c implementation (2026-10-11) |
+| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -16,7 +16,7 @@ Complete and verify each stage, then leave its changes uncommitted for review.
 Commit only when explicitly requested. Stages 4a, 4b, 4c, and 5 each need
 the concrete sketches identified below before their implementation begins.
 Family-specific constructors and trusted lowering likewise need sketches when
-their contracts are selected in stage 6.
+their contracts are selected in stages 6 through 8.
 
 The pre-stage-1 correction landed in `f13f72cf`: non-slot builtin class and
 root-Shape inline capacities are zero, independently of their GC release spans.
@@ -311,38 +311,80 @@ with 1,546 tests passing and one skipped; release `check_opcode_frames` passed.
 Coverage includes dedicated opcode selection, exact/subclass identity, empty
 args and None value, overflow attributes, both compatible MRO orders, raising
 allocated subclasses, initializer arguments/errors, and inherited initializer
-replacement/deletion invalidation. Changes remain uncommitted for review.
+replacement/deletion invalidation. Committed in `c0d9916d`.
 
-## Stage 6: Builtin Initializers And Immutable Constructors
+## Stage 6: Python Exception And StopIteration Initializers
 
-Implement by builtin family, with a readiness sketch and verification for each
-slice. This stage does not require combined new/init or general call unpacking.
+Add Python `__init__` methods to the valid default objects allocated in stages
+5b and 5c. Use this family to verify argument-bearing native instantiation and
+subclassing through the existing init-only constructor path.
 
-- [ ] Start with native Exception and StopIteration `__init__` methods that fill
-  the valid default objects allocated in stages 5b and 5c, preserving tuple-valued args
-  and StopIteration.value semantics. Resolve argument contracts before coding.
-- [ ] Expand the zero-argument allocator-plus-init path to other eligible mutable
-  payload families, such as list and dict. Add dedicated opcodes as needed;
-  preserve `cls` identity, Shape capacity, and valid default payload state.
-- [ ] Construct immutable payload families through allocation-correct `__new__`
-  on the existing new-only path: int, float, str, bytes, and tuple. Do not use
-  zero-argument placeholder allocation followed by payload mutation for them.
-- [ ] Always box integer subclass results as native heap BigInts, including small
-  values; retain SMI normalization for ordinary exact integers.
-- [ ] Keep additional attributes of non-inline layouts in overflow storage.
-  Audit native-layout/exact-type checks and operation-specific result identity.
-- [ ] Define each family's supported single-method call boundary explicitly.
-  Cases requiring both resolved methods remain unsupported; do not silently
-  skip initialization or move payload policy between methods to evade it.
-- [ ] For builtin dunders and trusted lowering, follow the dunder-handler skill.
-  Specialize new-only calls by resolved trusted method and applicability,
-  preserving argument validation, payload semantics, and lookup invalidation.
-- [ ] Verify Python-visible arguments, inherited/overridden methods, subclass
-  attributes, payload operations, initialization failures, and supported versus
-  unsupported construction. Verify specialized and general paths agree.
-- [ ] Run full debug checks for each code slice and opcode frame checks for
-  interpreter changes. Measure allocation changes in release builds as needed.
-- [ ] Leave verified family slices uncommitted; commit separately when requested.
+- [ ] Readiness review the Python method installation, variadic argument
+  binding, and narrow trusted helpers needed to update native payload fields.
+  Keep argument semantics in Python; agree on helper validation, ownership,
+  pending-exception contracts, and public descriptor permissions before coding.
+- [ ] Implement the Exception-family initializer in Python. Store positional
+  arguments as tuple-valued `.args`; cover zero, one, and multiple arguments.
+  Resolve keyword-argument behavior in the readiness review.
+- [ ] Implement StopIteration's initializer in Python. Store all positional
+  arguments in `.args`; set `.value` to the first argument, or None when no
+  arguments are supplied. Do not require general call unpacking to delegate.
+- [ ] Install the methods so ordinary builtin exceptions and user subclasses
+  inherit the appropriate initializer. Preserve separate Exception and
+  StopIteration layouts and the allocators from stages 5b and 5c.
+- [ ] Test exact builtin instantiation and inherited subclass construction with
+  zero, one, and multiple arguments; check class identity, `.args`, `.value`,
+  exception formatting, raising/catching, and additional subclass attributes.
+- [ ] Test overridden initializers, direct/repeated initializer calls, argument
+  errors, initializer errors/results, and inherited method lookup invalidation.
+  Keep combined `__new__`/`__init__` construction explicitly unsupported.
+- [ ] Follow the builtin-dunder-handler skill for trusted helper contracts and
+  lowering. Verify the existing normalized-parameter forwarding handles the
+  Python initializer signatures without adding general `funcall(*args, **kwargs)`.
+- [ ] Run full debug checks and opcode frame checks if interpreter handlers
+  change. Update this checklist and leave changes uncommitted for review.
+
+This stage excludes other builtin families, new allocation opcodes, immutable
+constructors, integer boxing, and combined constructor orchestration.
+
+## Stage 7: Mutable Builtin Allocation And Initialization
+
+Plan and review each eligible family separately, starting with list and dict.
+Do not implement this as one general mutable-builtin switch.
+
+- [ ] Give each family a concrete allocation/initializer sketch and test scope.
+- [ ] Add a dedicated zero-argument allocator opcode where needed, preserving
+  `cls` identity, root Shape capacity, and valid default payload state.
+- [ ] Implement payload initialization through the supported init-only path;
+  define argument contracts and inherited/overridden method behavior per family.
+- [ ] Keep attributes of non-inline layouts in overflow storage. Audit payload
+  operations and operation-specific result identity for the family being changed.
+- [ ] Verify errors, lookup invalidation, and exact/subclass construction. Run
+  debug checks and release opcode frame checks for interpreter changes; leave
+  each verified family slice uncommitted until a commit is requested.
+
+## Stage 8: Immutable Builtin Constructors
+
+Plan and review int, float, str, bytes, and tuple separately. These use the
+existing new-only path and must allocate their final native payload directly.
+
+- [ ] Give each family an allocation-correct `__new__`/trusted-helper
+  sketch, supported argument contract, and focused test scope before coding.
+- [ ] Always box integer subclass results as native heap BigInts, including
+  small values; retain SMI normalization for ordinary exact integers.
+- [ ] Keep attributes of non-inline layouts in overflow storage. Audit native
+  layout/exact-type checks and operation-specific result identity per family.
+- [ ] Follow the builtin-dunder-handler skill. Specialize new-only calls by the
+  resolved trusted method and applicability, preserving argument validation,
+  payload semantics, and lookup invalidation.
+- [ ] Verify arguments, inherited/overridden methods, subclass attributes,
+  payload operations, and specialized/general path agreement. Run debug checks
+  and opcode frame checks for interpreter changes; measure allocation changes
+  when needed. Leave each family slice uncommitted until requested.
+
+Stages 7 and 8 must define their single-method boundary explicitly. Cases that
+require both resolved methods remain unsupported; do not silently skip
+initialization or move payload policy between methods to evade that boundary.
 
 ## Deferred Work And Completion
 
