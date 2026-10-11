@@ -406,7 +406,40 @@ Validation: all 12 focused constructor/initializer checks passed.
 `ninja -C build-debug all check` passed with 1,557 tests passing and one
 skipped (runtime JIT tiering disabled). Release `check_opcode_frames` passed
 without warnings; the allocation opcode tail-calls its allocation continuation
-to preserve its frame-free dispatch. Changes are uncommitted for review.
+to preserve its frame-free dispatch. Committed in `707b3a97`.
+
+### Stage 7b: Dict New-Only Subclass Construction
+
+Keep dict on the existing new-only thunk path; no initializer or allocation opcode
+is added. Retain the native `dict.__new__` function in a private C++ bootstrap binding
+before installing its Python replacement, without creating class lookup caches. The native allocator validates a dict-derived
+class with Dict storage and zero inline capacity, then creates `Dict(cls)` using
+that class's root shape. Exact dicts retain their existing optimized shapes.
+
+The Python `__new__(cls, *args, **kwargs)` allocates through the captured function
+and populates through a retained private reference to the shared Python update
+implementation. That implementation inserts through builtin dict `__setitem__`,
+bypassing subclass `update` and `__setitem__` overrides. Capture its builtin
+dependencies privately using the existing bootstrap pattern. A private
+`__next__` bridge uses the existing trusted special-method call lowering to avoid
+the public next wrapper's mutable dependencies. Preserve the
+existing source/keyword argument contract and new-only payload initialization;
+combined custom `__new__`/`__init__` remains unsupported. Exact dict calls with
+no positional source retain the existing fast path returning the packed keyword
+dictionary. Native exception lookup is not part of this slice.
+
+- [x] Agree on the existing native allocator and new-only population boundary.
+- [x] Implement subclass-aware allocation and private bootstrap dependencies.
+- [x] Verify empty, mapping, pair iterable, and keyword construction, native
+  operations and result identity, subclass attributes, override bypass, errors,
+  rebinding, and inherited constructor invalidation.
+- [x] Run full debug checks and leave uncommitted for review.
+
+Validation: all 111 Dict tests passed during focused verification; four
+construction regression scripts also passed against local CPython. Final
+`ninja -C build-debug all check` passed with 1,564 tests passing and one skipped
+(runtime JIT tiering disabled). No interpreter handlers changed. Changes are
+uncommitted for review.
 
 ## Stage 8: Immutable Builtin Constructors
 

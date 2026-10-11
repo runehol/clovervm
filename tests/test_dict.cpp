@@ -1277,6 +1277,169 @@ TEST(Dict, PublicUpdateMergesEqualKeys)
                                L"len(d) == 1 and d[1] == 'true'\n"));
 }
 
+TEST(Dict, ConstructorPreservesRequestedSubclassAndPayload)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class D(dict): pass
+class E(D): pass
+class Sibling(dict): pass
+class Mixed(E, Sibling): pass
+class Mapping:
+    def keys(self): return ("key",)
+    def __getitem__(self, key): return 7
+for cls in (dict, D, E, Mixed):
+    empty = cls()
+    assert empty.__class__ is cls
+    assert len(empty) == 0
+    for source in ({"key": 7}, (("key", 7),), [("key", 7)], Mapping()):
+        value = cls(source, key=9, extra=11)
+        assert value.__class__ is cls
+        assert len(value) == 2
+        assert value["key"] == 9
+        assert value["extra"] == 11
+        value[1] = "integer key"
+        assert value[1] == "integer key"
+        assert value.get("key") == 9
+        assert value.copy().__class__ is dict
+        assert value.pop(1) == "integer key"
+        if cls is not dict:
+            value.attribute = 42
+            assert value.__dict__["attribute"] == 42
+            assert "attribute" not in value
+    value = cls(cls=1, self=2, args=3, source=4)
+    assert value.__class__ is cls
+    assert value["cls"] == 1
+    assert value["self"] == 2
+    assert value["args"] == 3
+    assert value["source"] == 4
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Dict, ConstructorAndUpdateBypassSubclassInsertionOverrides)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class D(dict):
+    def update(self, source): raise AssertionError
+    def __setitem__(self, key, value): raise AssertionError
+value = D((("first", 1),), second=2)
+assert value["first"] == 1
+assert value["second"] == 2
+assert dict.update(value, third=3) is None
+assert value["third"] == 3
+assert dict.update(value, {"fourth": 4}) is None
+assert value["fourth"] == 4
+assert dict.update(value, [("fifth", 5)]) is None
+assert value["fifth"] == 5
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Dict, ConstructorPrivateDependenciesSurviveBuiltinRebinding)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+import builtins
+Dict = dict
+IsInstance = isinstance
+Len = len
+HasAttr = hasattr
+Iter = iter
+Next = next
+class D(Dict): pass
+builtins.dict = None
+builtins.isinstance = None
+builtins.len = None
+builtins.hasattr = None
+builtins.iter = None
+builtins.next = None
+try:
+    value = D((("first", 1),), second=2)
+    assert value.__class__ is D
+    assert value["first"] == 1
+    assert value["second"] == 2
+    Dict.update(value, third=3)
+    assert value["third"] == 3
+finally:
+    builtins.dict = Dict
+    builtins.isinstance = IsInstance
+    builtins.len = Len
+    builtins.hasattr = HasAttr
+    builtins.iter = Iter
+    builtins.next = Next
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Dict, ConstructorRejectsArgumentsAndPropagatesSourceErrors)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class D(dict): pass
+for mode in range(5):
+    try:
+        if mode == 0: D({}, {})
+        elif mode == 1: D(None)
+        elif mode == 2: D(((1,),))
+        elif mode == 3: D(((1, 2, 3),))
+        else: dict.__new__(list)
+    except TypeError:
+        pass
+    except ValueError:
+        pass
+    else:
+        raise AssertionError
+class BadMapping:
+    def keys(self): return ("bad",)
+    def __getitem__(self, key): raise ValueError("source error")
+try:
+    D(BadMapping())
+except ValueError as error:
+    assert error.args[0] == "source error"
+else:
+    raise AssertionError
+value = D()
+try:
+    dict.update(value, (("good", 1), ("bad",)))
+except ValueError:
+    pass
+else:
+    raise AssertionError
+assert value["good"] == 1
+assert len(value) == 1
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Dict, ConstructorInheritedNewInvalidationAndCombinedBoundary)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class D(dict): pass
+class E(D): pass
+assert E(key=1).__class__ is E
+def replacement(cls, value=7): return value
+D.__new__ = replacement
+assert E() == 7
+assert E(value=9) == 9
+del D.__new__
+value = E(key=11)
+assert value.__class__ is E
+assert value["key"] == 11
+class Combined(dict):
+    def __init__(self): raise AssertionError
+try:
+    Combined()
+except TypeError:
+    pass
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Dict, PythonDictBootstrapHelpersAreHidden)
 {
     test::VmTestContext context;

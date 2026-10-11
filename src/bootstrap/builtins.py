@@ -166,44 +166,50 @@ If the iterable is empty, return True."""
     return True
 
 
+def _clover_dict_next(iterator):
+    return __clover_call_special__(
+        iterator, "__next__", TypeError, "object is not an iterator"
+    )
+
+
 def __clover_dict_update(self, *args, **kwargs):
-    if not isinstance(self, dict):
-        raise TypeError
-    if len(args) > 1:
-        raise TypeError
-    if len(args) == 1:
+    if not _clover_isinstance(self, _clover_dict_type):
+        raise _clover_type_error
+    if _clover_len(args) > 1:
+        raise _clover_type_error
+    if _clover_len(args) == 1:
         source = args[0]
-        if hasattr(source, "keys"):
+        if _clover_hasattr(source, "keys"):
             for key in source.keys():
-                self[key] = source[key]
+                _clover_dict_type.__setitem__(self, key, source[key])
         else:
             for element in source:
-                element_iterator = iter(element)
+                element_iterator = _clover_iter(element)
                 try:
-                    key = next(element_iterator)
-                    value = next(element_iterator)
-                except StopIteration:
-                    raise ValueError
+                    key = _clover_dict_next(element_iterator)
+                    value = _clover_dict_next(element_iterator)
+                except _clover_stop_iteration:
+                    raise _clover_value_error
                 try:
-                    next(element_iterator)
-                except StopIteration:
-                    self[key] = value
+                    _clover_dict_next(element_iterator)
+                except _clover_stop_iteration:
+                    _clover_dict_type.__setitem__(self, key, value)
                 else:
-                    raise ValueError
+                    raise _clover_value_error
     for key in kwargs.keys():
-        self[key] = kwargs[key]
+        _clover_dict_type.__setitem__(self, key, kwargs[key])
 
 
 def __clover_dict_new(cls, *args, **kwargs):
-    if cls is not dict:
-        raise TypeError
-    if len(args) == 0:
+    if _clover_len(args) > 1:
+        raise _clover_type_error
+    # Preserve the existing exact-dict keyword-only allocation fast path.
+    if cls is _clover_dict_type and _clover_len(args) == 0:
         return kwargs
-    if len(args) > 1:
-        raise TypeError
-    result = {}
-    result.update(args[0])
-    result.update(kwargs)
+    result = _clover_dict_allocate(cls)
+    if _clover_len(args) == 1:
+        _clover_dict_update_impl(result, args[0])
+    _clover_dict_update_impl(result, kwargs)
     return result
 
 
@@ -281,6 +287,12 @@ _clover_int_type = int
 _clover_isinstance = isinstance
 _clover_type_error = TypeError
 _clover_value_error = ValueError
+_clover_dict_type = dict
+_clover_dict_update_impl = __clover_dict_update
+_clover_len = len
+_clover_hasattr = hasattr
+_clover_iter = iter
+_clover_stop_iteration = StopIteration
 
 
 def __clover_list_init(self, iterable=(), /):

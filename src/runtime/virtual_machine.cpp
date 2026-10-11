@@ -1287,6 +1287,12 @@ namespace cl
                 this, make_test_equal_helper_function(this),
                 "creating test equal helper"));
 
+        // Retain the native allocator without creating a class lookup cache:
+        // installing Python dict methods later replaces the __new__ slot.
+        install_builtin_binding(
+            get_or_create_interned_string_value(L"_clover_dict_allocate"),
+            dict_class()->get_own_property(interned_string(L"__new__")));
+
         Expected<CodeObject *> builtins_code = thread->compile_in_module(
             trusted_builtin_source, StartRule::File, builtins_module,
             LanguageMode::TrustedCloverExtensions);

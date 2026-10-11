@@ -136,14 +136,28 @@ namespace cl
                                         BuiltinsVisibility::Public);
     }
 
-    static Value native_dict_new(ThreadState *thread, Value cls_value)
+    [[nodiscard]] static Value native_dict_new(ThreadState *thread,
+                                               Value cls_value)
     {
-        if(cls_value != Value::from_oop(thread->get_machine()->dict_class()))
+        TValue<ClassObject> cls =
+            CL_TRY(TValue<ClassObject>::from_value_or_raise(
+                cls_value, L"TypeError",
+                L"dict.__new__ expects a dict subclass"));
+        if(!is_subclass_of(cls.extract(),
+                           thread->get_machine()->dict_class()) ||
+           cls.extract()->instance_native_layout_id() != NativeLayoutId::Dict)
         {
             return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"dict.__new__ expects dict as cls");
+                L"TypeError", L"dict.__new__ expects a dict subclass");
         }
-        return thread->make_object_value<Dict>().raw_value();
+        Shape *root = cls.extract()->get_instance_root_shape();
+        assert(root != nullptr);
+        assert(cls.extract()->get_instance_inline_slot_capacity() ==
+               root->get_inline_slot_capacity());
+        assert(native_inline_slot_capacity_is_valid(
+            NativeLayoutId::Dict, root->get_inline_slot_capacity()));
+        (void)root;
+        return thread->make_internal_value<Dict>(cls.extract()).raw_value();
     }
 
     static Value native_dict_repr(ThreadState *thread, Value self)

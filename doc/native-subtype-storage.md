@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; Exception and StopIteration native initializers were verified with full debug checks (1,551 passed, one skipped); list allocation and initialization passed full debug checks (1,557 passed, one skipped) and release opcode-frame checks; other constructor work remains pending |
+| Validated against | `c0d9916d` and the separated initializer/constructor stages (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; Exception and StopIteration native initializers were verified with full debug checks (1,551 passed, one skipped); list allocation and initialization passed full debug checks (1,557 passed, one skipped) and release opcode-frame checks; dict new-only subclass construction passed full debug checks (1,564 passed, one skipped); other constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -342,6 +342,14 @@ or extra signature parameters. The private alias remains while the initializer
 needs it; closure capture will replace it when supported. Native list attributes
 remain in overflow storage. Argument errors precede mutation; a valid call clears
 before iteration and preserves partial contents when iteration raises.
+
+Dict remains on the existing new-only path in stage 7b. The native bootstrap
+allocator accepts validated dict subclasses and preserves their root shape. Its
+Python `__new__` replacement captures that allocator and the shared update
+implementation through private bootstrap bindings, then populates the new native
+object. Shared update inserts through builtin dict `__setitem__` so subclass
+method overrides do not intercept native population. No dict initializer or new
+allocation opcode is introduced; combined constructor orchestration is deferred.
 
 Only native payloads that can be initialized after allocation use this path.
 Immutable payloads, including int, float, str, bytes, and tuple, must be
