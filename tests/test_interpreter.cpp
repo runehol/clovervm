@@ -4901,12 +4901,62 @@ TEST(Interpreter,
 {
     expect_python_error(L"class C(list): pass\nC(1)\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
-    expect_python_error(L"class C(Exception):\n"
+    expect_python_error(L"class C(StopIteration):\n"
                         L"    def __init__(self, *, required):\n"
                         L"        raise AssertionError\n"
                         L"C()\n",
                         L"TypeError",
                         L"native instance layout requires a builtin allocator");
+}
+
+TEST(Interpreter, exception_default_allocation_preserves_native_storage)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+assert BaseException().__class__ is BaseException
+assert Exception().__class__ is Exception
+assert ValueError().__class__ is ValueError
+assert isinstance(Exception().args, tuple)
+assert len(Exception().args) == 0
+class E(Exception): pass
+class F(E): pass
+f = F()
+assert f.__class__ is F
+assert len(f.args) == 0
+f.extra = 42
+assert f.extra == 42
+assert f.__dict__["extra"] == 42
+class G(Exception):
+    def __init__(self, value=7, *, other=9):
+        assert len(self.args) == 0
+        self.value = value
+        self.other = other
+assert G().value == 7
+g = G(11, other=13)
+assert g.value == 11
+assert g.other == 13
+assert len(g.args) == 0
+try:
+    raise f
+except F as caught:
+    assert caught is f
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, exception_default_allocation_propagates_initializer_errors)
+{
+    expect_python_error(L"class E(Exception):\n"
+                        L"    def __init__(self):\n"
+                        L"        raise ValueError\n"
+                        L"E()\n",
+                        L"ValueError", L"");
+    expect_python_error(L"class E(Exception):\n"
+                        L"    def __init__(self):\n"
+                        L"        return 1\n"
+                        L"E()\n",
+                        L"TypeError",
+                        L"__init__ should return None, not a value");
 }
 
 TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
@@ -4940,7 +4990,7 @@ TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(float): pass\nC()\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
-    expect_python_error(L"class C(Exception): pass\nC()\n", L"TypeError",
+    expect_python_error(L"class C(StopIteration): pass\nC()\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(list, dict): pass\n", L"TypeError",
                         L"incompatible native instance layouts");

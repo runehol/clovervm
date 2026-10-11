@@ -98,6 +98,9 @@ namespace cl
         static const wchar_t *target_type_name() { return L"BaseException"; }
     };
 
+    TValue<ExceptionObject> allocate_default_exception(ThreadState *thread,
+                                                       TValue<ClassObject> cls);
+
     void install_exception_class_methods(VirtualMachine *vm);
 
     BuiltinClassDefinition make_base_exception_class(VirtualMachine *vm);
@@ -110,7 +113,6 @@ namespace cl
                                                      ClassObject *base);
 
     // Internal factories: cls must have a compatible native exception shape.
-    // User-subclass shape inheritance is handled in the constructor follow-up.
     // No Python callbacks.
     TValue<Exception> make_exception_object(ThreadState *thread,
                                             TValue<ClassObject> cls,

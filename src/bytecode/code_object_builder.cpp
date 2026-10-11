@@ -525,6 +525,14 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_create_exception_known_class(uint32_t source_offset,
+                                                         uint8_t class_idx)
+    {
+        return emit_opcode_constant_idx(
+            source_offset, Bytecode::CreateExceptionKnownClass, class_idx);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_is_instance_of_known_class(uint32_t source_offset,
                                                        uint8_t class_idx)
     {

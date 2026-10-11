@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `2db408cf` plus the stage 5a implementation (2026-10-11) |
+| Validated against | `faa3da28` plus the stage 5b implementation (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -270,19 +270,26 @@ opcode is unchanged. Stage 5a is complete.
 Add one native allocator and wire it into the selector. Builtin initialization
 from constructor arguments remains stage 6 work.
 
-- [ ] Agree on `CreateExceptionKnownClass`, its class-constant operand, the
+- [x] Agree on `CreateExceptionKnownClass`, its class-constant operand, the
   allocation helper, empty args ownership, and opcode frame behavior.
-- [ ] Allocate Exception native storage using `cls` for subclass identity and
+- [x] Allocate Exception native storage using `cls` for subclass identity and
   its root Shape. Validate predefined minima and fixed physical capacity.
-- [ ] Initialize `.args` to an empty tuple before returning the object. Consume
+- [x] Initialize `.args` to an empty tuple before returning the object. Consume
   no Python constructor arguments; preserve native ownership contracts.
-- [ ] Select this opcode for Exception in the no-new thunk path. Keep other
+- [x] Select this opcode for Exception in the no-new thunk path. Keep other
   unsupported layouts, including StopIteration until 5c, rejected.
-- [ ] Verify opcode selection, exact/subclass identity, valid default args,
+- [x] Verify opcode selection, exact/subclass identity, valid default args,
   user-defined init-only behavior, and failure propagation. Do not add a builtin
   `__init__` or combined new/init machinery in this slice.
-- [ ] Run full debug checks and release `check_opcode_frames`; leave changes
+- [x] Run full debug checks and release `check_opcode_frames`; leave changes
   uncommitted for review.
+
+Verification: full debug checks passed with 1,543 tests passing and one skipped.
+Release `check_opcode_frames` passed. Dedicated-opcode selection, exact and
+subclass identity, empty tuple args, overflow attributes, raising allocated
+exceptions, initializer argument forwarding, and initializer errors are covered.
+The allocation opcode is not included in the hot-path handler list. Changes
+remain uncommitted for review.
 
 ## Stage 5c: StopIteration Default Allocation
 

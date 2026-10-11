@@ -2,8 +2,10 @@
 #include "builtin_types/list.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/code_object.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/instance.h"
 #include "object_model/shape.h"
 #include "runtime/thread_state.h"
@@ -392,7 +394,6 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
     ThreadState::ActivationScope activation(context.thread());
     for(ClassObject *base:
         {context.vm().list_class(), context.vm().float_class(),
-         context.thread()->class_for_builtin_name(L"Exception"),
          context.thread()->class_for_builtin_name(L"StopIteration")})
     {
         auto candidate = make_storage_selection_class(context, {base});
@@ -416,6 +417,24 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
     auto thunk = cls.extract()->get_or_create_constructor_thunk();
     ASSERT_FALSE(thunk.has_exception());
     EXPECT_TRUE(thunk.value().is_found());
+}
+
+TEST(ConstructorAllocatorSelection, ExceptionUsesDedicatedOpcode)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto candidate = make_storage_selection_class(
+        context, {context.thread()->class_for_builtin_name(L"Exception")});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    auto thunk = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(thunk.has_exception());
+    ASSERT_TRUE(thunk.value().is_found());
+    CodeObject *code = thunk.value().thunk->code_object.extract();
+    ASSERT_GE(code->code.size(), 2u);
+    EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateExceptionKnownClass),
+              code->code[0]);
+    EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
 }
 
 TEST(ClassStorageSelection, InheritsPredefinedRootDescriptors)

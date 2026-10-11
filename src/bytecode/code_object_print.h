@@ -853,6 +853,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::CreateInstanceKnownClass:
+            case cl::Bytecode::CreateExceptionKnownClass:
             case cl::Bytecode::IsInstanceOfKnownClass:
                 fmt::format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
