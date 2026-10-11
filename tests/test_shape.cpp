@@ -393,7 +393,7 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
     for(ClassObject *base:
-        {context.vm().list_class(), context.vm().float_class()})
+        {context.vm().float_class(), context.vm().tuple_class()})
     {
         auto candidate = make_storage_selection_class(context, {base});
         ASSERT_FALSE(candidate.has_exception());
@@ -416,6 +416,27 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
     auto thunk = cls.extract()->get_or_create_constructor_thunk();
     ASSERT_FALSE(thunk.has_exception());
     EXPECT_TRUE(thunk.value().is_found());
+}
+
+TEST(ConstructorAllocatorSelection, ListUsesDedicatedOpcode)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto candidate =
+        make_storage_selection_class(context, {context.vm().list_class()});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    auto thunk = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(thunk.has_exception());
+    ASSERT_TRUE(thunk.value().is_found());
+    CodeObject *code = thunk.value().thunk->code_object.extract();
+    ASSERT_GE(code->code.size(), 2u);
+    EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateListKnownClass),
+              code->code[0]);
+    EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
+    EXPECT_EQ(
+        0u,
+        cls.extract()->get_instance_root_shape()->get_inline_slot_capacity());
 }
 
 TEST(ConstructorAllocatorSelection, ExceptionUsesDedicatedOpcode)

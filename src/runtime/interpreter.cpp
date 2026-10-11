@@ -4475,6 +4475,27 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value create_list_known_class_slow(PARAMS)
+    {
+        START(2);
+        TValue<ClassObject> cls = TValue<ClassObject>::from_value_assumed(
+            code_object->constant_table[pc[1]].value());
+        accumulator = allocate_default_list(thread, cls).raw_value();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_create_list_known_class(PARAMS)
+    {
+        TValue<ClassObject> cls = TValue<ClassObject>::from_value_assumed(
+            code_object->constant_table[pc[1]].value());
+        if(unlikely(cls.extract()->instance_native_layout_id() !=
+                    NativeLayoutId::List))
+        {
+            MUSTTAIL return incompatible_instance_storage(ARGS);
+        }
+        MUSTTAIL return create_list_known_class_slow(ARGS);
+    }
+
     static INTERP_CC Value op_create_exception_known_class(PARAMS)
     {
         START(2);
@@ -6342,6 +6363,8 @@ namespace cl
                         op_create_function_with_defaults);
         SET_TABLE_ENTRY(Bytecode::CreateInstanceKnownClass,
                         op_create_instance_known_class);
+        SET_TABLE_ENTRY(Bytecode::CreateListKnownClass,
+                        op_create_list_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateExceptionKnownClass,
                         op_create_exception_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateStopIterationKnownClass,

@@ -8,6 +8,7 @@
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/native_function.h"
+#include "object_model/shape.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
@@ -18,6 +19,21 @@
 
 namespace cl
 {
+    NOINLINE TValue<List> allocate_default_list(ThreadState *thread,
+                                                TValue<ClassObject> cls)
+    {
+        assert(cls.extract()->instance_native_layout_id() ==
+               NativeLayoutId::List);
+        Shape *root = cls.extract()->get_instance_root_shape();
+        assert(root != nullptr);
+        assert(cls.extract()->get_instance_inline_slot_capacity() ==
+               root->get_inline_slot_capacity());
+        assert(native_inline_slot_capacity_is_valid(
+            NativeLayoutId::List, root->get_inline_slot_capacity()));
+        (void)root;
+        return thread->make_internal_value<List>(cls.extract());
+    }
+
     static Value native_list_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<List>(self))
@@ -428,10 +444,11 @@ namespace cl
     {
         ModuleObject *builtins = vm->global_builtins_module().extract();
         ClassObject *cls = vm->list_class();
-        const wchar_t *method_names[] = {L"count", L"index", L"remove"};
-        const wchar_t *helper_names[] = {L"__clover_list_count",
-                                         L"__clover_list_index",
-                                         L"__clover_list_remove"};
+        const wchar_t *method_names[] = {L"__init__", L"count", L"index",
+                                         L"remove"};
+        const wchar_t *helper_names[] = {
+            L"__clover_list_init", L"__clover_list_count",
+            L"__clover_list_index", L"__clover_list_remove"};
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
         for(size_t idx = 0; idx < std::size(method_names); ++idx)

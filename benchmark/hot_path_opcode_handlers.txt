@@ -99,3 +99,4 @@ op_is_not
 op_lt
 op_le
 op_ne
+op_create_list_known_class

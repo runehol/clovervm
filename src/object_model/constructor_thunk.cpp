@@ -129,6 +129,8 @@ namespace cl
                     return code.emit_create_instance_known_class(
                         0, class_const_idx);
                 }
+            case NativeLayoutId::List:
+                return code.emit_create_list_known_class(0, class_const_idx);
             case NativeLayoutId::Exception:
                 return code.emit_create_exception_known_class(0,
                                                               class_const_idx);

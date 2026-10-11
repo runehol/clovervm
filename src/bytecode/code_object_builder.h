@@ -334,6 +334,8 @@ namespace cl
         Expected<uint32_t>
         emit_create_instance_known_class(uint32_t source_offset,
                                          uint8_t class_idx);
+        Expected<uint32_t> emit_create_list_known_class(uint32_t source_offset,
+                                                        uint8_t class_idx);
         Expected<uint32_t>
         emit_create_exception_known_class(uint32_t source_offset,
                                           uint8_t class_idx);

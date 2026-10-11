@@ -853,6 +853,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::CreateInstanceKnownClass:
+            case cl::Bytecode::CreateListKnownClass:
             case cl::Bytecode::CreateExceptionKnownClass:
             case cl::Bytecode::CreateStopIterationKnownClass:
             case cl::Bytecode::IsInstanceOfKnownClass:

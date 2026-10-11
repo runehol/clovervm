@@ -1443,6 +1443,149 @@ TEST(Interpreter, sequence_search_methods_have_local_equality_caches)
     }
 }
 
+TEST(Interpreter, sequence_search_methods_survive_builtin_rebinding)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+import builtins
+List = list
+Tuple = tuple
+Int = int
+IsInstance = isinstance
+TypeErrorClass = TypeError
+ValueErrorClass = ValueError
+
+def restore():
+    builtins.list = List
+    builtins.tuple = Tuple
+    builtins.int = Int
+    builtins.isinstance = IsInstance
+    builtins.TypeError = TypeErrorClass
+    builtins.ValueError = ValueErrorClass
+
+# Both normal results and helper-raised errors must use retained dependencies.
+builtins.list = None
+builtins.tuple = None
+builtins.int = None
+builtins.isinstance = None
+builtins.TypeError = None
+builtins.ValueError = None
+try:
+    for values in ([1, 2, 1], (1, 2, 1)):
+        assert values.count(1) == 2
+        assert values.index(1, True) == 2
+        assert values.index(2, True).__class__ is Int
+        try:
+            values.index(9)
+        except ValueErrorClass:
+            pass
+        else:
+            raise AssertionError
+        try:
+            values.index(1, "bad")
+        except TypeErrorClass:
+            pass
+        else:
+            raise AssertionError
+    values = [1, 2, 1]
+    assert values.remove(1) is None
+    assert values[0] == 2
+    assert values.count(1) == 1
+    try:
+        values.remove(9)
+    except ValueErrorClass:
+        pass
+    else:
+        raise AssertionError
+    for method in (List.count, List.index, List.remove, Tuple.count, Tuple.index):
+        try:
+            method(1, 1)
+        except TypeErrorClass:
+            pass
+        else:
+            raise AssertionError
+finally:
+    restore()
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, sequence_search_methods_survive_equality_callback_rebinding)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+import builtins
+List = list
+Tuple = tuple
+Int = int
+IsInstance = isinstance
+TypeErrorClass = TypeError
+ValueErrorClass = ValueError
+
+def restore():
+    builtins.list = List
+    builtins.tuple = Tuple
+    builtins.int = Int
+    builtins.isinstance = IsInstance
+    builtins.TypeError = TypeErrorClass
+    builtins.ValueError = ValueErrorClass
+
+class Rebind:
+    def __init__(self, matches): self.matches = matches
+    def __eq__(self, other):
+        builtins.list = None
+        builtins.tuple = None
+        builtins.int = None
+        builtins.isinstance = None
+        builtins.TypeError = None
+        builtins.ValueError = None
+        return self.matches
+
+match = Rebind(True)
+miss = Rebind(False)
+for values in ([match, match], (match, match)):
+    try:
+        assert values.count(42) == 2
+    finally:
+        restore()
+    try:
+        # True becomes an int index even if equality rebinds the int name.
+        index = values.index(42, True)
+        assert index == 1
+        assert index.__class__ is Int
+    finally:
+        restore()
+for values in ([miss], (miss,)):
+    try:
+        try:
+            values.index(42)
+        except ValueErrorClass:
+            pass
+        else:
+            raise AssertionError
+    finally:
+        restore()
+values = [match, 7]
+try:
+    assert values.remove(42) is None
+    assert len(values) == 1
+    assert values[0] == 7
+finally:
+    restore()
+values = [miss]
+try:
+    try:
+        values.remove(42)
+    except ValueErrorClass:
+        pass
+    else:
+        raise AssertionError
+finally:
+    restore()
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, sequence_search_methods_bypass_subclass_storage_overrides)
 {
     test::VmTestContext test_context;
@@ -4899,7 +5042,7 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
 TEST(Interpreter,
      native_allocator_selection_precedes_constructor_argument_binding)
 {
-    expect_python_error(L"class C(list): pass\nC(1)\n", L"TypeError",
+    expect_python_error(L"class C(float): pass\nC(1)\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(float):\n"
                         L"    def __init__(self, *, required):\n"
@@ -5205,11 +5348,182 @@ assert s.value == 9
     ASSERT_FALSE(result.is_exception_marker());
 }
 
+TEST(Interpreter, list_initializer_preserves_class_payload_and_attributes)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"PY(
+class L(list): pass
+class M(L): pass
+for cls in (list, L, M):
+    empty = cls()
+    assert empty.__class__ is cls
+    assert len(empty) == 0
+    for source in ((1, 2), [1, 2], range(1, 3)):
+        value = cls(source)
+        assert value.__class__ is cls
+        assert len(value) == 2
+        assert value[0] == 1
+        assert value[1] == 2
+        if cls is not list:
+            value.extra = 42
+            assert value.__dict__["extra"] == 42
+        assert value.copy().__class__ is list
+        assert value[:].__class__ is list
+        assert (value + [3]).__class__ is list
+        value.append(3)
+        assert value.pop() == 3
+        assert len(value) == 2
+class Hostile(list):
+    def clear(self): raise AssertionError
+    def append(self, item): raise AssertionError
+h = Hostile((1, 2))
+assert h[0] == 1
+assert h[1] == 2
+assert list.__init__(h, (3,)) is None
+assert len(h) == 1
+assert h[0] == 3
+assert repr(h) == "[3]"
+)PY");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, list_initializer_reinitialization_and_partial_errors)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+value = list((9,))
+assert value.__init__() is None
+assert len(value) == 0
+assert value.__init__((1, 2)) is None
+assert len(value) == 2
+assert value.__init__(value) is None
+assert len(value) == 0
+value.__init__((1, 2))
+iterator = iter(value)
+value.__init__(iterator)
+assert len(value) == 0
+value.__init__((9,))
+try:
+    value.__init__(None)
+except TypeError:
+    pass
+else:
+    raise AssertionError
+assert len(value) == 0
+class Broken:
+    def __init__(self): self.index = 0
+    def __iter__(self): return self
+    def __next__(self):
+        self.index += 1
+        if self.index == 1: return 42
+        raise ValueError("broken")
+value.__init__((9,))
+try:
+    value.__init__(Broken())
+except ValueError as error:
+    assert error.args[0] == "broken"
+else:
+    raise AssertionError
+assert len(value) == 1
+assert value[0] == 42
+class Inspect:
+    def __iter__(self):
+        assert len(value) == 0
+        return iter((7, 8))
+value.__init__(Inspect())
+assert len(value) == 2
+assert value[1] == 8
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, list_initializer_argument_errors_precede_mutation)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+value = list((9,))
+for mode in range(3):
+    try:
+        if mode == 0: value.__init__((1,), (2,))
+        elif mode == 1: value.__init__(iterable=(1,))
+        else: list(iterable=(1,))
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+    assert len(value) == 1
+    assert value[0] == 9
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+    expect_python_error(L"list.__init__(object())\n", L"TypeError",
+                        L"list.clear expects a list receiver");
+}
+
+TEST(Interpreter,
+     list_initializer_private_dependency_survives_builtin_rebinding)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+import builtins
+List = list
+class L(List): pass
+builtins.list = None
+try:
+    value = L((1, 2))
+    assert len(value) == 2
+    assert value[1] == 2
+    value.__init__((3,))
+    assert len(value) == 1
+    assert value[0] == 3
+finally:
+    builtins.list = List
+assert not hasattr(builtins, "__clover_list_init")
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, list_initializer_override_and_invalidation)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class L(list): pass
+class M(L): pass
+assert M((1,))[0] == 1
+def replacement(self, value=7, *, other=9):
+    assert len(self) == 0
+    list.append(self, value)
+    self.other = other
+L.__init__ = replacement
+m = M(11, other=13)
+assert m[0] == 11
+assert m.other == 13
+assert M()[0] == 7
+del L.__init__
+assert M((17,))[0] == 17
+class F(list):
+    def __init__(self): raise ValueError("bad")
+try:
+    F()
+except ValueError:
+    pass
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+    expect_python_error(L"class L(list):\n"
+                        L"    def __init__(self): return 1\nL()\n",
+                        L"TypeError",
+                        L"__init__ should return None, not a value");
+    expect_python_error(L"class L(list):\n"
+                        L"    def __new__(cls): return []\nL()\n",
+                        L"TypeError", L"object is not callable");
+}
+
 TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
 {
     test::VmTestContext context;
     Value result = context.run_file(LR"(
-class C(list):
+class C(float):
     def __new__(cls, value=7):
         return value
 class D(C): pass
@@ -5232,8 +5546,6 @@ else:
 
 TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
 {
-    expect_python_error(L"class C(list): pass\nC()\n", L"TypeError",
-                        L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(float): pass\nC()\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(list, dict): pass\n", L"TypeError",

@@ -80,6 +80,8 @@ namespace cl
 
     class VirtualMachine;
     BuiltinClassDefinition make_list_class(VirtualMachine *vm);
+    [[nodiscard]] TValue<List> allocate_default_list(ThreadState *thread,
+                                                     TValue<ClassObject> cls);
     void install_list_class_methods(VirtualMachine *vm);
     void install_list_python_methods(VirtualMachine *vm);
 

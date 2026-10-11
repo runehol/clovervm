@@ -274,18 +274,33 @@ With two or more arguments, return the largest argument."""
     return best
 
 
+# Keep these private dependencies until closures can capture builtin objects.
+_clover_list_type = list
+_clover_tuple_type = tuple
+_clover_int_type = int
+_clover_isinstance = isinstance
+_clover_type_error = TypeError
+_clover_value_error = ValueError
+
+
+def __clover_list_init(self, iterable=(), /):
+    _clover_list_type.clear(self)
+    for item in iterable:
+        _clover_list_type.append(self, item)
+
+
 # Capture the existing maximum search bound without retaining a sys binding.
 import sys as _clover_sys
 
 
 def __clover_list_count(self, needle, /):
     """Return number of occurrences of value."""
-    if not isinstance(self, list):
-        raise TypeError
+    if not _clover_isinstance(self, _clover_list_type):
+        raise _clover_type_error
     count = 0
     i = 0
-    while i < list.__len__(self):
-        item = list.__getitem__(self, i)
+    while i < _clover_list_type.__len__(self):
+        item = _clover_list_type.__getitem__(self, i)
         if item is needle or item == needle:
             count += 1
         i += 1
@@ -293,11 +308,14 @@ def __clover_list_count(self, needle, /):
 
 
 def __clover_list_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
-    if not isinstance(self, list):
-        raise TypeError
-    if not isinstance(start, int) or not isinstance(stop, int):
-        raise TypeError
-    size = list.__len__(self)
+    if not _clover_isinstance(self, _clover_list_type):
+        raise _clover_type_error
+    if (
+        not _clover_isinstance(start, _clover_int_type)
+        or not _clover_isinstance(stop, _clover_int_type)
+    ):
+        raise _clover_type_error
+    size = _clover_list_type.__len__(self)
     if start < 0:
         start += size
         if start < 0:
@@ -307,23 +325,23 @@ def __clover_list_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
         if stop < 0:
             stop = 0
     i = start
-    while i < stop and i < list.__len__(self):
-        item = list.__getitem__(self, i)
+    while i < stop and i < _clover_list_type.__len__(self):
+        item = _clover_list_type.__getitem__(self, i)
         if item is needle or item == needle:
-            return int(i)
+            return _clover_int_type(i)
         i += 1
-    raise ValueError
+    raise _clover_value_error
 
 
 def __clover_tuple_count(self, needle, /):
     """Return number of occurrences of value."""
-    if not isinstance(self, tuple):
-        raise TypeError
-    size = tuple.__len__(self)
+    if not _clover_isinstance(self, _clover_tuple_type):
+        raise _clover_type_error
+    size = _clover_tuple_type.__len__(self)
     count = 0
     i = 0
     while i < size:
-        item = tuple.__getitem__(self, i)
+        item = _clover_tuple_type.__getitem__(self, i)
         if item is needle or item == needle:
             count += 1
         i += 1
@@ -331,11 +349,14 @@ def __clover_tuple_count(self, needle, /):
 
 
 def __clover_tuple_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
-    if not isinstance(self, tuple):
-        raise TypeError
-    if not isinstance(start, int) or not isinstance(stop, int):
-        raise TypeError
-    size = tuple.__len__(self)
+    if not _clover_isinstance(self, _clover_tuple_type):
+        raise _clover_type_error
+    if (
+        not _clover_isinstance(start, _clover_int_type)
+        or not _clover_isinstance(stop, _clover_int_type)
+    ):
+        raise _clover_type_error
+    size = _clover_tuple_type.__len__(self)
     if start < 0:
         start += size
         if start < 0:
@@ -346,27 +367,27 @@ def __clover_tuple_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
             stop = 0
     i = start
     while i < stop and i < size:
-        item = tuple.__getitem__(self, i)
+        item = _clover_tuple_type.__getitem__(self, i)
         if item is needle or item == needle:
-            return int(i)
+            return _clover_int_type(i)
         i += 1
-    raise ValueError
+    raise _clover_value_error
 
 
 def __clover_list_remove(self, needle, /):
     """Remove first occurrence of value."""
-    if not isinstance(self, list):
-        raise TypeError
+    if not _clover_isinstance(self, _clover_list_type):
+        raise _clover_type_error
     i = 0
-    while i < list.__len__(self):
-        item = list.__getitem__(self, i)
+    while i < _clover_list_type.__len__(self):
+        item = _clover_list_type.__getitem__(self, i)
         if item is needle or item == needle:
             # Equality can remove this slot. CPython still reports success.
-            if i < list.__len__(self):
-                list.__delitem__(self, i)
+            if i < _clover_list_type.__len__(self):
+                _clover_list_type.__delitem__(self, i)
             return None
         i += 1
-    raise ValueError
+    raise _clover_value_error
 
 
 del _clover_sys

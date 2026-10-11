@@ -205,6 +205,7 @@ namespace cl
             case Bytecode::LdaActiveException:
             case Bytecode::CreateFunction:
             case Bytecode::CreateInstanceKnownClass:
+            case Bytecode::CreateListKnownClass:
             case Bytecode::CreateExceptionKnownClass:
             case Bytecode::CreateStopIterationKnownClass:
                 effects.destination_accumulator();

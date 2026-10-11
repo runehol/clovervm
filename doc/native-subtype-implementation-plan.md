@@ -351,7 +351,7 @@ constructors, integer boxing, and combined constructor orchestration.
 Validation: `ninja -C build-debug all check` passed with 1,551 tests passing
 and one skipped (runtime JIT tiering disabled). Nine focused initializer and
 allocator tests passed. No interpreter handlers changed, so opcode frame checks
-were not required. Changes are uncommitted for review.
+were not required. Committed in `f57a03d2`.
 
 ## Stage 7: Mutable Builtin Allocation And Initialization
 
@@ -368,6 +368,45 @@ Do not implement this as one general mutable-builtin switch.
 - [ ] Verify errors, lookup invalidation, and exact/subclass construction. Run
   debug checks and release opcode frame checks for interpreter changes; leave
   each verified family slice uncommitted until a commit is requested.
+
+### Stage 7a: List
+
+Agreed sketch: `CreateListKnownClass` selects a native empty-list allocator at
+thunk creation, preserving the requested class and its zero-inline-capacity root.
+The Python initializer has signature `__init__(self, iterable=(), /)`; ordinary
+binding handles zero/one positional arguments and keyword rejection without
+argument-tuple packing. It clears the native list and appends items using the
+existing iteration bytecode and builtin methods. A persistent private
+`_clover_list_type = list` bootstrap binding supplies those methods, bypassing
+subclass overrides and public `list` rebinding. Replace this binding with closure
+capture once closures are supported. Only the temporary initializer function
+name is removed after installation.
+
+List count/index/remove and tuple count/index use the same persistent private
+binding pattern for their sequence classes, int conversion, isinstance, and
+TypeError/ValueError classes. Their dependencies remain stable even when an
+equality callback rebinds the public builtin names. Native exception-class
+lookup remains a separate follow-up. Regression scripts passed in Clover and local
+CPython; the full debug checks passed with 1,559 tests passing and one skipped.
+
+Valid calls clear before obtaining the iterator; iterator errors retain any
+partially appended contents. Self initialization clears the list. Existing
+init-only thunk invalidation and return checks apply. Custom `__new__` combined
+with the inherited initializer remains unsupported under the single-method
+constructor boundary. No dict or general native iteration bridge is included.
+
+- [x] Agree on list allocator, initializer signature, and bootstrap dependency.
+- [x] Implement allocator opcode and install the Python initializer.
+- [x] Verify argument errors, iteration/partial failure, self initialization,
+  receiver validation, override bypass, public builtin rebinding, attributes,
+  inherited initializer invalidation, and native-operation result identity.
+- [x] Run debug checks and release opcode-frame checks; leave uncommitted.
+
+Validation: all 12 focused constructor/initializer checks passed.
+`ninja -C build-debug all check` passed with 1,557 tests passing and one
+skipped (runtime JIT tiering disabled). Release `check_opcode_frames` passed
+without warnings; the allocation opcode tail-calls its allocation continuation
+to preserve its frame-free dispatch. Changes are uncommitted for review.
 
 ## Stage 8: Immutable Builtin Constructors
 
