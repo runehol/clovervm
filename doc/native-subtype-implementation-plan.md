@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `8ccda0d9` plus the revised retained-layout design (2026-10-11) |
+| Validated against | `97a7d7d3` plus the stage 4a implementation (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -136,7 +136,7 @@ selection into class creation in stage 4.
 
 Verification: seven focused selector tests passed; full debug checks passed
 with 1,525 tests passing and one skipped. Class-creation integration remains
-stage 4 work. Changes are uncommitted for review.
+stage 4 work. Committed in `acf3bf0c`.
 
 ## Stage 4a: Class Storage Selection And Root Shapes
 
@@ -144,28 +144,34 @@ Integrate the stage-3 selector into class creation before installing the final
 instance root Shape. Include the allocation guard needed to make this change
 safe on its own; builtin constructor support remains in stages 5 and 6.
 
-- [ ] Agree on a compact sketch for class construction order, root-Shape
+- [x] Agree on a compact sketch for class construction order, root-Shape
   inheritance, and the unsafe-allocation guard before implementing this slice.
-- [ ] Compute the candidate class's C3 MRO, call `select_instance_storage`, and
+- [x] Compute the candidate class's C3 MRO, call `select_instance_storage`, and
   install the selected native layout and inline capacity before the final
   instance root Shape is installed.
-- [ ] Build root Shapes with the selected provider's predefined locations and
+- [x] Build root Shapes with the selected provider's predefined locations and
   existing capacity; select zero without inline storage. Instance-only ancestry
   retains the ordinary-instance capacity policy. Do not add ancestor capacities.
-- [ ] Preserve native predefined field semantics and the selected storage
+- [x] Preserve native predefined field semantics and the selected storage
   interpretation through Shape transitions and clones, while allowing mutable
   subclass attributes where appropriate.
-- [ ] Reject conflicting layouts with `TypeError`, including Slice/Exception
+- [x] Reject conflicting layouts with `TypeError`, including Slice/Exception
   and List/Dict. Support compatible mixins, sibling subclasses, StopIteration
   ancestry, and an Exception-layout subclass before StopIteration in the MRO.
-- [ ] Guard generic `Instance` allocation as soon as selected native layouts
+- [x] Guard generic `Instance` allocation as soon as selected native layouts
   become visible: reject constructing classes whose native payload or
   initialization contract that allocator cannot satisfy. Do not defer this
   guard to 4b or enable unfinished builtin constructor paths.
-- [ ] Verify MRO selection, inherited predefined descriptors, zero/fixed/dynamic
+- [x] Verify MRO selection, inherited predefined descriptors, zero/fixed/dynamic
   capacities, class identity, and rejection of unsafe generic construction.
-- [ ] Run `ninja -C build-debug all check` and leave changes uncommitted for
+- [x] Run `ninja -C build-debug all check` and leave changes uncommitted for
   review.
+
+Verification: eleven focused selector, root-Shape, native-allocation, and
+interpreter tests passed. Full debug checks passed with 1,529 tests passing and
+one skipped. The release `check_opcode_frames` target passed. Changes are
+uncommitted for review; subclass eligibility, broader allocation validation,
+and attribute-dictionary exposure remain stages 4b and 4c.
 
 ## Stage 4b: Subclass Eligibility And Allocation Validation
 

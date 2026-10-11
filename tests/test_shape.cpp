@@ -53,10 +53,19 @@ static Expected<TValue<ClassObject>> make_storage_selection_class(
         retained_bases.extract()->initialize_item_unchecked(
             idx++, Value::from_oop(base));
     }
+    if(layout != NativeLayoutId::Instance)
+    {
+        assert(bases.size() == 1);
+        return Expected<TValue<ClassObject>>::ok(
+            context.thread()->make_internal_value<ClassObject>(
+                context.vm().get_or_create_interned_string_value(
+                    L"StorageFixture"),
+                capacity, *bases.begin(), layout));
+    }
     return ClassObject::make(
         context.thread(), context.vm().type_class(),
         context.vm().get_or_create_interned_string_value(L"StorageCandidate"),
-        capacity, retained_bases.value(), layout);
+        capacity, retained_bases.value());
 }
 
 TEST(InstanceStorageSelection, InstanceOnlyUsesSuppliedCapacity)
@@ -107,14 +116,13 @@ TEST(InstanceStorageSelection, FindsBuiltinBehindInstanceMixinsAndSubclasses)
             retained_candidate.extract()->get_mro_value()),
         10);
     ASSERT_FALSE(selected.has_exception());
-    EXPECT_EQ(context.vm().list_class(), selected.value().builtin_provider);
+    EXPECT_EQ(retained_first.extract(), selected.value().builtin_provider);
     EXPECT_EQ(NativeLayoutId::List, selected.value().layout);
     EXPECT_EQ(0u, selected.value().inline_slot_capacity);
-    // Selection is independent of installing the candidate's storage (stage 4).
-    EXPECT_EQ(NativeLayoutId::Instance,
+    EXPECT_EQ(NativeLayoutId::List,
               retained_candidate.extract()->instance_native_layout_id());
     EXPECT_EQ(
-        10u, retained_candidate.extract()->get_instance_inline_slot_capacity());
+        0u, retained_candidate.extract()->get_instance_inline_slot_capacity());
 }
 
 TEST(InstanceStorageSelection, SkipsCandidateStorageAndUsesAncestorCapacity)
@@ -194,13 +202,7 @@ TEST(InstanceStorageSelection, RejectsDistinctLayouts)
                          context.vm().slice_class(), exception}})
     {
         auto candidate = make_storage_selection_class(context, bases);
-        ASSERT_FALSE(candidate.has_exception());
-        Owned<TValue<ClassObject>> retained_candidate(candidate.value());
-        auto selected = select_instance_storage(
-            TValue<Tuple>::from_value_assumed(
-                retained_candidate.extract()->get_mro_value()),
-            10);
-        ASSERT_TRUE(selected.has_exception());
+        ASSERT_TRUE(candidate.has_exception());
         EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
                   context.thread()
                       ->pending_exception_object()
@@ -252,6 +254,97 @@ TEST(InstanceStorageSelection, UpgradesExceptionSubclassToStopIterationStorage)
             EXPECT_EQ(2u, selected.value().inline_slot_capacity);
         }
     }
+}
+
+TEST(ClassStorageSelection, InheritsPredefinedRootDescriptors)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(ClassObject *provider:
+        {context.vm().slice_class(),
+         context.thread()->class_for_builtin_name(L"Exception"),
+         context.thread()->class_for_builtin_name(L"StopIteration")})
+    {
+        auto candidate = make_storage_selection_class(context, {provider});
+        ASSERT_FALSE(candidate.has_exception());
+        Owned<TValue<ClassObject>> cls(candidate.value());
+        Shape *source = provider->get_instance_root_shape();
+        Shape *root = cls.extract()->get_instance_root_shape();
+        EXPECT_NE(source, root);
+        EXPECT_EQ(cls.extract(), root->get_class());
+        EXPECT_EQ(provider->instance_native_layout_id(),
+                  cls.extract()->instance_native_layout_id());
+        EXPECT_EQ(source->get_inline_slot_capacity(),
+                  root->get_inline_slot_capacity());
+        EXPECT_EQ(source->get_next_slot_index(), root->get_next_slot_index());
+        ASSERT_EQ(source->property_count(), root->property_count());
+        EXPECT_FALSE(root->has_flag(ShapeFlag::IsImmutable));
+        EXPECT_TRUE(root->allows_attribute_add_delete());
+        for(uint32_t idx = 0; idx < source->property_count(); ++idx)
+        {
+            EXPECT_EQ(source->get_property_name(idx),
+                      root->get_property_name(idx));
+            auto expected = source->get_descriptor_info(idx);
+            auto actual = root->get_descriptor_info(idx);
+            EXPECT_EQ(expected.physical_idx, actual.physical_idx);
+            EXPECT_EQ(expected.kind, actual.kind);
+            EXPECT_EQ(expected.flags, actual.flags);
+            EXPECT_EQ(expected.special_kind(), actual.special_kind());
+        }
+    }
+}
+
+TEST(ClassStorageSelection,
+     NativeAllocationRetainsSubclassShapeAndOverflowAttributes)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto candidate =
+        make_storage_selection_class(context, {context.vm().list_class()});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    Owned<TValue<List>> list(
+        context.thread()->make_internal_value<List>(cls.extract()));
+    EXPECT_EQ(cls.extract(), list.extract()->get_shape()->get_class());
+    EXPECT_EQ(0u, list.extract()->get_shape()->get_inline_slot_capacity());
+    list.extract()->append(Value::from_smi(7));
+    auto attr = context.vm().get_or_create_interned_string_value(L"extra");
+    ASSERT_TRUE(list.extract()->set_own_property(attr, Value::from_smi(42)));
+    EXPECT_EQ(StorageKind::Overflow,
+              list.extract()->get_shape()->resolve_present_property(attr).kind);
+    EXPECT_EQ(Value::from_smi(42), list.extract()->get_own_property(attr));
+    EXPECT_EQ(Value::from_smi(7), list.extract()->item_unchecked(0));
+    ASSERT_TRUE(list.extract()->delete_own_property(attr));
+    EXPECT_EQ(Value::not_present(), list.extract()->get_own_property(attr));
+}
+
+TEST(ClassStorageSelection, NativeExceptionFactoriesInitializeInheritedFields)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *base = context.thread()->class_for_builtin_name(L"Exception");
+    ClassObject *stop =
+        context.thread()->class_for_builtin_name(L"StopIteration");
+    auto e = make_storage_selection_class(context, {base});
+    ASSERT_FALSE(e.has_exception());
+    Owned<TValue<ClassObject>> retained_e(e.value());
+    auto candidate =
+        make_storage_selection_class(context, {retained_e.extract(), stop});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    Owned<TValue<Exception>> exception(make_exception_object_with_arg(
+        context.thread(), cls.value(), Value::from_smi(19)));
+    EXPECT_EQ(NativeLayoutId::StopIteration,
+              exception.extract()->native_layout_id());
+    EXPECT_EQ(cls.extract(), exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(1u, exception.extract()->args.extract()->size());
+    auto value_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    EXPECT_EQ(Value::from_smi(19),
+              exception.extract()->get_own_property(value_name));
+    auto args_name = context.vm().get_or_create_interned_string_value(L"args");
+    EXPECT_FALSE(
+        exception.extract()->set_own_property(args_name, Value::from_smi(0)));
 }
 
 TEST(Shape, InstanceRootShapeCarriesPresentedClass)

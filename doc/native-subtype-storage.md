@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `8ccda0d9` (2026-10-11) and local CPython 3.14.5 probes; common overflow storage is implemented; class validation and constructor work remain pending |
+| Validated against | `97a7d7d3` plus stage 4a (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and constructor work remain pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -44,10 +44,10 @@ Keep the existing native layout IDs. In particular, `Instance`, `Slice`,
 separate. The C++ base name `InlineSlotObject` does not introduce a shared
 `NativeLayoutId::InlineSlotObject`.
 
-Current user-class creation assigns ten inline slots to every class. Replace
-that unconditional choice with storage selection before installing the instance
-root Shape. Inspect the classes' instance layouts, not the native layout of the
-`ClassObject` records themselves:
+User-class creation now selects storage from the completed C3 MRO before
+installing the final instance root Shape. Instance-only ancestry retains the
+ten-slot default. Inspect the classes' instance layouts, not the native layout
+of the `ClassObject` records themselves:
 
 - Ignore `Instance` entries when selecting builtin storage. Ordinary Python
   mixins and the universal `object` base do not override a builtin payload.
@@ -94,6 +94,14 @@ and capacity. Allocation validates agreement with that class contract and the
 concrete allocator; generic `Instance` allocation must not construct a class
 that requires builtin storage. Native constructors remain responsible for
 initializing their predefined fields.
+
+`ClassObject::make` owns the unpublished candidate during this work. Its initial
+generic root is provisional; builtin ancestry gets a fresh root carrying the
+selected provider's predefined descriptors, occupied slot extent, and capacity.
+Structural flags are preserved, while exact-builtin shape restrictions are
+removed to allow subclass attributes. Descriptor permissions remain intact.
+Generic `Instance` construction raises `TypeError` for a selected native layout
+until the corresponding builtin allocator is supported.
 
 ### Class Reassignment
 

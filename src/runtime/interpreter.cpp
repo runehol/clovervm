@@ -607,7 +607,7 @@ namespace cl
 
         TValue<ClassObject> cls = CL_TRY(ClassObject::make(
             thread, thread->get_machine()->type_class(), class_name,
-            kDefaultFactoryInlineSlotCount, bases, NativeLayoutId::Instance));
+            kDefaultFactoryInlineSlotCount, bases));
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {
@@ -4447,12 +4447,29 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value incompatible_instance_storage(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"native instance layout requires a builtin allocator");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_create_instance_known_class(PARAMS)
     {
         START(2);
         uint8_t const_offset = pc[1];
         ClassObject *cls = assume_convert_to<ClassObject>(
             code_object->constant_table[const_offset].value());
+        if(unlikely(cls->instance_native_layout_id() !=
+                    NativeLayoutId::Instance))
+        {
+            MUSTTAIL return incompatible_instance_storage(ARGS);
+        }
         accumulator = Value::from_oop(thread->make_internal_raw<Instance>(cls));
 
         COMPLETE();

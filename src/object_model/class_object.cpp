@@ -362,21 +362,46 @@ namespace cl
     {
     }
 
-    Expected<TValue<ClassObject>> ClassObject::make(
-        ThreadState *thread, ClassObject *metaclass, TValue<String> name,
-        uint32_t instance_inline_slot_count, TValue<Tuple> bases,
-        NativeLayoutId instance_native_layout_id, ShapeFlags class_shape_flags,
-        ShapeFlags instance_shape_flags)
+    Expected<TValue<ClassObject>>
+    ClassObject::make(ThreadState *thread, ClassObject *metaclass,
+                      TValue<String> name, uint32_t instance_inline_slot_count,
+                      TValue<Tuple> bases, ShapeFlags class_shape_flags,
+                      ShapeFlags instance_shape_flags)
     {
-        TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
+        Owned<TValue<ClassObject>> cls(thread->make_internal_value<ClassObject>(
             BootstrapObjectTag{}, name, instance_inline_slot_count, nullptr,
-            instance_native_layout_id, class_shape_flags, instance_shape_flags);
+            NativeLayoutId::Instance, class_shape_flags, instance_shape_flags));
         cls.extract()->install_bootstrap_class(metaclass);
         CL_TRY(validate_bases(bases));
         cls.extract()->bases = bases.raw_value();
         cls.extract()->mro =
             CL_TRY(compute_mro(cls.extract(), bases.extract())).raw_value();
-        return Expected<TValue<ClassObject>>::ok(cls);
+        InstanceStorageSelection storage = CL_TRY(select_instance_storage(
+            TValue<Tuple>::from_value_assumed(cls.extract()->mro),
+            instance_inline_slot_count));
+        if(storage.builtin_provider != nullptr)
+        {
+            Shape *source = storage.builtin_provider->get_instance_root_shape();
+            std::vector<ShapeRootDescriptor> descriptors;
+            descriptors.reserve(source->property_count());
+            for(uint32_t idx = 0; idx < source->property_count(); ++idx)
+            {
+                descriptors.push_back({source->get_property_name(idx),
+                                       source->get_descriptor_info(idx)});
+            }
+            ShapeFlags permission_flags = immutable_shape_flags();
+            ShapeFlags flags =
+                (source->flags() & ~permission_flags) | instance_shape_flags;
+            OwnedHeapPtr<Shape> root(Shape::make_root_with_descriptors(
+                cls.value(), descriptors.data(), descriptors.size(),
+                source->get_next_slot_index(), source->present_count(),
+                storage.inline_slot_capacity, flags));
+            cls.extract()->instance_native_layout_id_ = storage.layout;
+            cls.extract()->instance_inline_slot_count =
+                storage.inline_slot_capacity;
+            cls.extract()->instance_root_shape = root.get();
+        }
+        return Expected<TValue<ClassObject>>::ok(cls.value());
     }
 
     ClassObject *ClassObject::make_bootstrap_builtin_class(

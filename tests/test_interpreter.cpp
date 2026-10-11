@@ -4908,6 +4908,18 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
                         L"KeyError", L"");
 }
 
+TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
+{
+    expect_python_error(L"class C(list): pass\nC()\n", L"TypeError",
+                        L"native instance layout requires a builtin allocator");
+    expect_python_error(L"class C(float): pass\nC()\n", L"TypeError",
+                        L"native instance layout requires a builtin allocator");
+    expect_python_error(L"class C(Exception): pass\nC()\n", L"TypeError",
+                        L"native instance layout requires a builtin allocator");
+    expect_python_error(L"class C(list, dict): pass\n", L"TypeError",
+                        L"incompatible native instance layouts");
+}
+
 TEST(Interpreter, class_assignment_rejects_builtin_and_class_object_receivers)
 {
     expect_python_error(L"class F:\n"

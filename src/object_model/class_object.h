@@ -142,7 +142,6 @@ namespace cl
         static Expected<TValue<ClassObject>> make(
             ThreadState *thread, ClassObject *metaclass, TValue<String> name,
             uint32_t instance_inline_slot_count, TValue<Tuple> bases,
-            NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
