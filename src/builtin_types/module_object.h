@@ -34,7 +34,7 @@ namespace cl
         bool is_module() const { return builtins_module != nullptr; }
     };
 
-    class ModuleObject : public SlotObject
+    class ModuleObject : public InlineSlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -101,7 +101,7 @@ namespace cl
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
-            ModuleObject, SlotObject,
+            ModuleObject, InlineSlotObject,
             module_inline_storage_slot_count + 2 +
                 HeapPtrArray<ValidityCell>::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(ModuleObject);

@@ -19,7 +19,7 @@ namespace cl
     class ClassObject;
     class OverflowSlots;
     class Shape;
-    class SlotObject;
+    class InlineSlotObject;
     class VirtualMachine;
     class String;
     class Value;
@@ -85,8 +85,8 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
     private:
-        ALWAYSINLINE SlotObject *as_slot_object();
-        ALWAYSINLINE const SlotObject *as_slot_object() const;
+        ALWAYSINLINE InlineSlotObject *as_inline_slot_object();
+        ALWAYSINLINE const InlineSlotObject *as_inline_slot_object() const;
         ALWAYSINLINE OverflowSlots *get_overflow_slots() const;
         void ensure_storage_for_shape(Shape *new_shape);
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
@@ -98,7 +98,7 @@ namespace cl
                                         NativeLayoutId native_layout_id);
     };
 
-    constexpr bool native_layout_has_slots(NativeLayoutId native_layout)
+    constexpr bool native_layout_has_inline_slots(NativeLayoutId native_layout)
     {
         return native_layout == NativeLayoutId::Instance ||
                native_layout == NativeLayoutId::ClassObject ||
@@ -111,21 +111,22 @@ namespace cl
                native_layout == NativeLayoutId::StopIteration;
     }
 
-    class SlotObject : public Object
+    class InlineSlotObject : public Object
     {
     public:
         static constexpr uint32_t kPredefinedInlineSlotCount = 0;
 
-        SlotObject(ClassObject *cls, NativeLayoutId native_layout_id)
+        InlineSlotObject(ClassObject *cls, NativeLayoutId native_layout_id)
             : Object(BootstrapObjectTag{}, native_layout_id),
               overflow_storage(nullptr)
         {
             initialize_shape_for_class(cls, native_layout_id);
         }
 
-        SlotObject(Shape *initial_shape, NativeLayoutId native_layout_id);
+        InlineSlotObject(Shape *initial_shape, NativeLayoutId native_layout_id);
 
-        SlotObject(BootstrapObjectTag tag, NativeLayoutId native_layout_id)
+        InlineSlotObject(BootstrapObjectTag tag,
+                         NativeLayoutId native_layout_id)
             : Object(tag, native_layout_id), overflow_storage(nullptr)
         {
         }
@@ -134,14 +135,14 @@ namespace cl
         {
             return reinterpret_cast<Value *>(
                 reinterpret_cast<uint64_t *>(this) +
-                sizeof(SlotObject) / sizeof(uint64_t));
+                sizeof(InlineSlotObject) / sizeof(uint64_t));
         }
 
         ALWAYSINLINE const Value *inline_slot_base() const
         {
             return reinterpret_cast<const Value *>(
                 reinterpret_cast<const uint64_t *>(this) +
-                sizeof(SlotObject) / sizeof(uint64_t));
+                sizeof(InlineSlotObject) / sizeof(uint64_t));
         }
 
         ALWAYSINLINE OverflowSlots *get_overflow_slots() const
@@ -153,45 +154,47 @@ namespace cl
 
         OverflowSlots *overflow_storage;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(SlotObject, Object, 1);
-        CL_DECLARE_STATIC_OBJECT_SIZE(SlotObject);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(InlineSlotObject, Object, 1);
+        CL_DECLARE_STATIC_OBJECT_SIZE(InlineSlotObject);
     };
 
-    ALWAYSINLINE SlotObject *Object::as_slot_object()
+    ALWAYSINLINE InlineSlotObject *Object::as_inline_slot_object()
     {
-        assert(native_layout_has_slots(native_layout_id()));
-        return static_cast<SlotObject *>(this);
+        assert(native_layout_has_inline_slots(native_layout_id()));
+        return static_cast<InlineSlotObject *>(this);
     }
 
-    ALWAYSINLINE const SlotObject *Object::as_slot_object() const
+    ALWAYSINLINE const InlineSlotObject *Object::as_inline_slot_object() const
     {
-        assert(native_layout_has_slots(native_layout_id()));
-        return static_cast<const SlotObject *>(this);
+        assert(native_layout_has_inline_slots(native_layout_id()));
+        return static_cast<const InlineSlotObject *>(this);
     }
 
     ALWAYSINLINE Value *Object::inline_slot_base()
     {
-        return as_slot_object()->SlotObject::inline_slot_base();
+        return as_inline_slot_object()->InlineSlotObject::inline_slot_base();
     }
 
     ALWAYSINLINE const Value *Object::inline_slot_base() const
     {
-        return as_slot_object()->SlotObject::inline_slot_base();
+        return as_inline_slot_object()->InlineSlotObject::inline_slot_base();
     }
 
     ALWAYSINLINE OverflowSlots *Object::get_overflow_slots() const
     {
-        return as_slot_object()->SlotObject::get_overflow_slots();
+        return as_inline_slot_object()->InlineSlotObject::get_overflow_slots();
     }
 
     inline void Object::ensure_storage_for_shape(Shape *new_shape)
     {
-        as_slot_object()->SlotObject::ensure_storage_for_shape(new_shape);
+        as_inline_slot_object()->InlineSlotObject::ensure_storage_for_shape(
+            new_shape);
     }
 
     inline OverflowSlots *Object::ensure_overflow_slot(int32_t physical_idx)
     {
-        return as_slot_object()->SlotObject::ensure_overflow_slot(physical_idx);
+        return as_inline_slot_object()->InlineSlotObject::ensure_overflow_slot(
+            physical_idx);
     }
 
     template <typename T>
@@ -234,9 +237,9 @@ namespace cl
     }
 
     static_assert(sizeof(Object) == 16);
-    static_assert(sizeof(SlotObject) == 24);
+    static_assert(sizeof(InlineSlotObject) == 24);
     static_assert(std::is_trivially_destructible_v<Object>);
-    static_assert(std::is_trivially_destructible_v<SlotObject>);
+    static_assert(std::is_trivially_destructible_v<InlineSlotObject>);
 
     BuiltinClassDefinition make_object_class(VirtualMachine *vm);
     void install_object_class_methods(VirtualMachine *vm);

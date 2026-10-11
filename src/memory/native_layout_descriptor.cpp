@@ -18,7 +18,7 @@ namespace cl
                 return capacity >= T::kPredefinedInlineSlotCount &&
                        capacity <= UINT16_MAX;
             }
-            else if constexpr(std::is_base_of_v<SlotObject, T>)
+            else if constexpr(std::is_base_of_v<InlineSlotObject, T>)
             {
                 constexpr uint32_t physical_capacity = [] {
                     if constexpr(std::is_same_v<T, ClassObject>)
@@ -37,7 +37,7 @@ namespace cl
                 static_assert(T::kPredefinedInlineSlotCount <=
                               physical_capacity);
                 static_assert(sizeof(T) >=
-                              sizeof(SlotObject) +
+                              sizeof(InlineSlotObject) +
                                   physical_capacity * sizeof(Value));
                 return capacity >= T::kPredefinedInlineSlotCount &&
                        capacity <= physical_capacity;

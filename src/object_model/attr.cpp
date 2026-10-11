@@ -126,7 +126,8 @@ namespace cl
                 {
                     assert(receiver.is_ptr());
                     Object *object = receiver.get_ptr<Object>();
-                    if(!native_layout_has_slots(object->native_layout_id()))
+                    if(!native_layout_has_inline_slots(
+                           object->native_layout_id()))
                     {
                         return AttributeReadDescriptor::not_found();
                     }

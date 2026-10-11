@@ -11,7 +11,7 @@ namespace cl
     class ClassObject;
     class VirtualMachine;
 
-    class ModuleSpecObject : public SlotObject
+    class ModuleSpecObject : public InlineSlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -36,28 +36,29 @@ namespace cl
         Member<Value> has_location;
         Member<Value> parent;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ModuleSpecObject, SlotObject, 6);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ModuleSpecObject, InlineSlotObject,
+                                             6);
         CL_DECLARE_STATIC_OBJECT_SIZE(ModuleSpecObject);
     };
 
     static_assert(CL_OFFSETOF(ModuleSpecObject, name) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleSpecObject::kNameSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleSpecObject, loader) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleSpecObject::kLoaderSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleSpecObject, origin) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleSpecObject::kOriginSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleSpecObject, submodule_search_locations) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleSpecObject::kSubmoduleSearchLocationsSlot *
                           sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleSpecObject, has_location) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleSpecObject::kHasLocationSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleSpecObject, parent) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleSpecObject::kParentSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ModuleSpecObject>);
 

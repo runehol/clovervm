@@ -16,7 +16,7 @@ namespace cl
     class ThreadState;
     class VirtualMachine;
 
-    class Slice : public SlotObject
+    class Slice : public InlineSlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout = NativeLayoutId::Slice;
@@ -27,7 +27,7 @@ namespace cl
         static constexpr uint32_t kInlineSlotCount = 3;
 
         Slice(Shape *initial_shape, Value _start, Value _stop, Value _step)
-            : SlotObject(initial_shape, native_layout), start(_start),
+            : InlineSlotObject(initial_shape, native_layout), start(_start),
               stop(_stop), step(_step)
         {
         }
@@ -36,16 +36,16 @@ namespace cl
         Member<Value> stop;
         Member<Value> step;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Slice, SlotObject, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Slice, InlineSlotObject, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(Slice);
     };
 
     static_assert(CL_OFFSETOF(Slice, start) ==
-                  sizeof(SlotObject) + Slice::kStartSlot * sizeof(Value));
+                  sizeof(InlineSlotObject) + Slice::kStartSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(Slice, stop) ==
-                  sizeof(SlotObject) + Slice::kStopSlot * sizeof(Value));
+                  sizeof(InlineSlotObject) + Slice::kStopSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(Slice, step) ==
-                  sizeof(SlotObject) + Slice::kStepSlot * sizeof(Value));
+                  sizeof(InlineSlotObject) + Slice::kStepSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<Slice>);
 
     struct NormalizedNonstridedSlice

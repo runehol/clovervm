@@ -11,7 +11,7 @@ namespace cl
     class ClassObject;
     class VirtualMachine;
 
-    class ModuleLoaderObject : public SlotObject
+    class ModuleLoaderObject : public InlineSlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -29,18 +29,19 @@ namespace cl
         Member<Value> name;
         Member<Value> path;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ModuleLoaderObject, SlotObject, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ModuleLoaderObject,
+                                             InlineSlotObject, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(ModuleLoaderObject);
     };
 
     static_assert(CL_OFFSETOF(ModuleLoaderObject, kind) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleLoaderObject::kKindSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleLoaderObject, name) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleLoaderObject::kNameSlot * sizeof(Value));
     static_assert(CL_OFFSETOF(ModuleLoaderObject, path) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ModuleLoaderObject::kPathSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ModuleLoaderObject>);
 

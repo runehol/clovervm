@@ -14,7 +14,7 @@ namespace cl
                                        Value _loader, Value _origin,
                                        Value _submodule_search_locations,
                                        Value _has_location, Value _parent)
-        : SlotObject(cls, native_layout), name(_name), loader(_loader),
+        : InlineSlotObject(cls, native_layout), name(_name), loader(_loader),
           origin(_origin),
           submodule_search_locations(_submodule_search_locations),
           has_location(_has_location), parent(_parent)

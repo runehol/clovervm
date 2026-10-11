@@ -12,7 +12,8 @@ namespace cl
 {
     ModuleLoaderObject::ModuleLoaderObject(ClassObject *cls, Value _kind,
                                            Value _name, Value _path)
-        : SlotObject(cls, native_layout), kind(_kind), name(_name), path(_path)
+        : InlineSlotObject(cls, native_layout), kind(_kind), name(_name),
+          path(_path)
     {
     }
 

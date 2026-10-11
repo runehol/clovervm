@@ -196,7 +196,7 @@ namespace cl
                              NativeLayoutId _instance_native_layout_id,
                              ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
-        : SlotObject(BootstrapObjectTag{}, native_layout), name(_name),
+        : InlineSlotObject(BootstrapObjectTag{}, native_layout), name(_name),
           bases(Value::not_present()), mro(Value::not_present()),
           mro_shape_and_contents_validity_cell(nullptr),
           mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),
@@ -408,7 +408,8 @@ namespace cl
     {
         static_assert(sizeof(Member<TValue<String>>) == sizeof(Value));
         static_assert(sizeof(Member<Value>) == sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, name) == sizeof(SlotObject));
+        static_assert(CL_OFFSETOF(ClassObject, name) ==
+                      sizeof(InlineSlotObject));
         static_assert(CL_OFFSETOF(ClassObject, bases) ==
                       CL_OFFSETOF(ClassObject, name) +
                           class_metadata_slot_bases * sizeof(Value));

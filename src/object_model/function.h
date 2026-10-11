@@ -18,7 +18,7 @@ namespace cl
     class VirtualMachine;
 
     // may need closures and stuff later. TBD
-    class Function : public SlotObject
+    class Function : public InlineSlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -35,7 +35,7 @@ namespace cl
                  Optional<TValue<String>> _docstring,
                  Optional<TValue<Tuple>> _default_parameters =
                      Optional<TValue<Tuple>>::none())
-            : SlotObject(cls, native_layout), code_object(_code_object),
+            : InlineSlotObject(cls, native_layout), code_object(_code_object),
               default_parameters(_default_parameters), docstring(_docstring)
         {
             refresh_signature_from_code_object();
@@ -124,7 +124,7 @@ namespace cl
         Member<Optional<TValue<String>>> docstring;
         FunctionCallSignature call_signature;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, SlotObject, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, InlineSlotObject, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(Function);
 
     private:

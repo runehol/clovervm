@@ -10,7 +10,7 @@ namespace cl
 {
     class VirtualMachine;
 
-    class Instance : public SlotObject
+    class Instance : public InlineSlotObject
     {
     public:
         static constexpr uint32_t kPredefinedInlineSlotCount = 0;
@@ -37,7 +37,8 @@ namespace cl
         static uint32_t inline_slot_count_for_class(ClassObject *cls);
 
     public:
-        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(Instance, SlotObject, 0);
+        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(Instance, InlineSlotObject,
+                                                  0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Instance, Instance::object_size_in_bytes);
     };
 

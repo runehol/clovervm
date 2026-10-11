@@ -14,7 +14,7 @@ namespace cl
     class ThreadState;
     class VirtualMachine;
 
-    class ExceptionObject : public SlotObject
+    class ExceptionObject : public InlineSlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -30,19 +30,20 @@ namespace cl
 
         Member<TValue<Tuple>> args;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, SlotObject, 1);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, InlineSlotObject,
+                                             1);
         CL_DECLARE_STATIC_OBJECT_SIZE(ExceptionObject);
 
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
                         TValue<Tuple> args)
-            : SlotObject(cls, layout_id), args(args)
+            : InlineSlotObject(cls, layout_id), args(args)
         {
         }
     };
 
     static_assert(CL_OFFSETOF(ExceptionObject, args) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       ExceptionObject::kArgsSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ExceptionObject>);
 
@@ -65,7 +66,7 @@ namespace cl
     };
 
     static_assert(CL_OFFSETOF(StopIterationObject, value) ==
-                  sizeof(SlotObject) +
+                  sizeof(InlineSlotObject) +
                       StopIterationObject::kValueSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<StopIterationObject>);
 

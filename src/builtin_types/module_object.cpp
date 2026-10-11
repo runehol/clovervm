@@ -121,7 +121,7 @@ namespace cl
     ModuleObject::ModuleObject(ClassObject *cls, TValue<String> _name,
                                Value _builtins, Value doc, Value package,
                                Value loader, Value spec, Value file)
-        : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
+        : InlineSlotObject(cls, native_layout), name_binding(_name.raw_value()),
           builtins_binding(_builtins), module_globals_validity_cell(nullptr),
           module_builtins_validity_cell(nullptr),
           attached_dependent_lookup_validity_cells()

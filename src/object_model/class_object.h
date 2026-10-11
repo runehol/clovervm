@@ -86,7 +86,7 @@ namespace cl
         bool is_found() const { return thunk != nullptr; }
     };
 
-    class ClassObject : public SlotObject
+    class ClassObject : public InlineSlotObject
     {
     public:
         friend class BuiltinInstanceShapeBuilder;
@@ -290,7 +290,7 @@ namespace cl
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
-            ClassObject, SlotObject,
+            ClassObject, InlineSlotObject,
             3 + class_extra_inline_attribute_slot_count + 2 +
                 2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ClassObject);
@@ -318,7 +318,7 @@ namespace cl
             native_layout_id, instance_root_shape->get_inline_slot_capacity()));
 
         shape = incref(instance_root_shape);
-        if(!native_layout_has_slots(native_layout_id) ||
+        if(!native_layout_has_inline_slots(native_layout_id) ||
            native_layout_id == NativeLayoutId::Instance)
         {
             return;
@@ -336,8 +336,9 @@ namespace cl
         }
     }
 
-    ALWAYSINLINE SlotObject::SlotObject(Shape *initial_shape,
-                                        NativeLayoutId native_layout_id)
+    ALWAYSINLINE
+    InlineSlotObject::InlineSlotObject(Shape *initial_shape,
+                                       NativeLayoutId native_layout_id)
         : Object(BootstrapObjectTag{}, native_layout_id),
           overflow_storage(nullptr)
     {
