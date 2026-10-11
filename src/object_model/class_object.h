@@ -86,6 +86,20 @@ namespace cl
         bool is_found() const { return thunk != nullptr; }
     };
 
+    struct InstanceStorageSelection
+    {
+        // Borrowed from the input MRO; the caller keeps its classes alive.
+        ClassObject *builtin_provider;
+        NativeLayoutId layout;
+        uint32_t inline_slot_capacity;
+    };
+
+    // mro is the candidate class's completed C3 MRO. Entry zero is the
+    // candidate itself, whose instance storage has not yet been selected.
+    [[nodiscard]] Expected<InstanceStorageSelection>
+    select_instance_storage(TValue<Tuple> mro,
+                            uint32_t ordinary_instance_capacity);
+
     class ClassObject : public InlineSlotObject
     {
     public:

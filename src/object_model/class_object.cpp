@@ -165,6 +165,47 @@ namespace cl
             tuple_from_vector<ClassObject>(linearized)));
     }
 
+    Expected<InstanceStorageSelection>
+    select_instance_storage(TValue<Tuple> mro,
+                            uint32_t ordinary_instance_capacity)
+    {
+        assert(!mro.extract()->empty());
+        InstanceStorageSelection selected{nullptr, NativeLayoutId::Instance,
+                                          ordinary_instance_capacity};
+        for(size_t idx = 1; idx < mro.extract()->size(); ++idx)
+        {
+            ClassObject *ancestor = assume_convert_to<ClassObject>(
+                mro.extract()->item_unchecked(idx));
+            NativeLayoutId layout = ancestor->instance_native_layout_id();
+            if(layout == NativeLayoutId::Instance)
+            {
+                continue;
+            }
+            if(selected.builtin_provider == nullptr)
+            {
+                selected = {ancestor, layout,
+                            ancestor->get_instance_inline_slot_capacity()};
+                continue;
+            }
+            if(layout == selected.layout ||
+               (selected.layout == NativeLayoutId::StopIteration &&
+                layout == NativeLayoutId::Exception))
+            {
+                continue;
+            }
+            if(selected.layout == NativeLayoutId::Exception &&
+               layout == NativeLayoutId::StopIteration)
+            {
+                selected = {ancestor, layout,
+                            ancestor->get_instance_inline_slot_capacity()};
+                continue;
+            }
+            return Expected<InstanceStorageSelection>::raise_exception(
+                L"TypeError", L"incompatible native instance layouts");
+        }
+        return Expected<InstanceStorageSelection>::ok(selected);
+    }
+
     Expected<void> ClassObject::validate_bases(TValue<Tuple> bases)
     {
         Tuple *bases_tuple = bases.extract();

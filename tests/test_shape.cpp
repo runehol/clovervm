@@ -8,6 +8,7 @@
 #include "test_helpers.h"
 #include <cassert>
 #include <gtest/gtest.h>
+#include <initializer_list>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -38,6 +39,219 @@ static Value class_property_value(ClassObject *cls, uint32_t idx)
     DescriptorInfo info = cls->get_shape()->get_descriptor_info(
         class_metadata_descriptor_count + idx);
     return cls->read_storage_location(info.storage_location());
+}
+
+static Expected<TValue<ClassObject>> make_storage_selection_class(
+    test::VmTestContext &context, std::initializer_list<ClassObject *> bases,
+    NativeLayoutId layout = NativeLayoutId::Instance, uint32_t capacity = 10)
+{
+    Owned<TValue<Tuple>> retained_bases(
+        context.thread()->make_object_value<Tuple>(bases.size()));
+    size_t idx = 0;
+    for(ClassObject *base: bases)
+    {
+        retained_bases.extract()->initialize_item_unchecked(
+            idx++, Value::from_oop(base));
+    }
+    return ClassObject::make(
+        context.thread(), context.vm().type_class(),
+        context.vm().get_or_create_interned_string_value(L"StorageCandidate"),
+        capacity, retained_bases.value(), layout);
+}
+
+TEST(InstanceStorageSelection, InstanceOnlyUsesSuppliedCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto mixin = make_storage_selection_class(
+        context, {context.vm().object_class()}, NativeLayoutId::Instance, 7);
+    ASSERT_FALSE(mixin.has_exception());
+    Owned<TValue<ClassObject>> retained_mixin(mixin.value());
+    auto candidate =
+        make_storage_selection_class(context, {retained_mixin.extract()});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+    auto selected = select_instance_storage(
+        TValue<Tuple>::from_value_assumed(
+            retained_candidate.extract()->get_mro_value()),
+        4);
+    ASSERT_FALSE(selected.has_exception());
+    EXPECT_EQ(nullptr, selected.value().builtin_provider);
+    EXPECT_EQ(NativeLayoutId::Instance, selected.value().layout);
+    EXPECT_EQ(4u, selected.value().inline_slot_capacity);
+}
+
+TEST(InstanceStorageSelection, FindsBuiltinBehindInstanceMixinsAndSubclasses)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto first =
+        make_storage_selection_class(context, {context.vm().list_class()});
+    ASSERT_FALSE(first.has_exception());
+    Owned<TValue<ClassObject>> retained_first(first.value());
+    auto second =
+        make_storage_selection_class(context, {context.vm().list_class()});
+    ASSERT_FALSE(second.has_exception());
+    Owned<TValue<ClassObject>> retained_second(second.value());
+    auto mixin =
+        make_storage_selection_class(context, {context.vm().object_class()});
+    ASSERT_FALSE(mixin.has_exception());
+    Owned<TValue<ClassObject>> retained_mixin(mixin.value());
+    auto candidate = make_storage_selection_class(
+        context, {retained_mixin.extract(), retained_first.extract(),
+                  retained_second.extract()});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+    auto selected = select_instance_storage(
+        TValue<Tuple>::from_value_assumed(
+            retained_candidate.extract()->get_mro_value()),
+        10);
+    ASSERT_FALSE(selected.has_exception());
+    EXPECT_EQ(context.vm().list_class(), selected.value().builtin_provider);
+    EXPECT_EQ(NativeLayoutId::List, selected.value().layout);
+    EXPECT_EQ(0u, selected.value().inline_slot_capacity);
+    // Selection is independent of installing the candidate's storage (stage 4).
+    EXPECT_EQ(NativeLayoutId::Instance,
+              retained_candidate.extract()->instance_native_layout_id());
+    EXPECT_EQ(
+        10u, retained_candidate.extract()->get_instance_inline_slot_capacity());
+}
+
+TEST(InstanceStorageSelection, SkipsCandidateStorageAndUsesAncestorCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    // The candidate's provisional storage is not an ancestor requirement.
+    auto candidate = make_storage_selection_class(
+        context, {context.vm().slice_class()}, NativeLayoutId::List, 0);
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+    auto selected = select_instance_storage(
+        TValue<Tuple>::from_value_assumed(
+            retained_candidate.extract()->get_mro_value()),
+        10);
+    ASSERT_FALSE(selected.has_exception());
+    EXPECT_EQ(context.vm().slice_class(), selected.value().builtin_provider);
+    EXPECT_EQ(NativeLayoutId::Slice, selected.value().layout);
+    EXPECT_EQ(3u, selected.value().inline_slot_capacity);
+}
+
+TEST(InstanceStorageSelection, StopIterationKeepsTwoSlotsWithExceptionAncestors)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *stop =
+        context.thread()->class_for_builtin_name(L"StopIteration");
+    ClassObject *exception =
+        context.thread()->class_for_builtin_name(L"Exception");
+    for(bool redundant_base: {false, true})
+    {
+        auto candidate =
+            redundant_base
+                ? make_storage_selection_class(context, {stop, exception})
+                : make_storage_selection_class(context, {stop});
+        ASSERT_FALSE(candidate.has_exception());
+        Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+        auto selected = select_instance_storage(
+            TValue<Tuple>::from_value_assumed(
+                retained_candidate.extract()->get_mro_value()),
+            10);
+        ASSERT_FALSE(selected.has_exception());
+        EXPECT_EQ(stop, selected.value().builtin_provider);
+        EXPECT_EQ(NativeLayoutId::StopIteration, selected.value().layout);
+        EXPECT_EQ(2u, selected.value().inline_slot_capacity);
+    }
+}
+
+TEST(InstanceStorageSelection, RepeatedExceptionLayoutsKeepFirstProvider)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *type_error =
+        context.thread()->class_for_builtin_name(L"TypeError");
+    auto candidate = make_storage_selection_class(context, {type_error});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+    auto selected = select_instance_storage(
+        TValue<Tuple>::from_value_assumed(
+            retained_candidate.extract()->get_mro_value()),
+        10);
+    ASSERT_FALSE(selected.has_exception());
+    EXPECT_EQ(type_error, selected.value().builtin_provider);
+    EXPECT_EQ(NativeLayoutId::Exception, selected.value().layout);
+    EXPECT_EQ(1u, selected.value().inline_slot_capacity);
+}
+
+TEST(InstanceStorageSelection, RejectsDistinctLayouts)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *exception =
+        context.thread()->class_for_builtin_name(L"Exception");
+    for(auto bases: {std::initializer_list<ClassObject *>{
+                         context.vm().list_class(), context.vm().dict_class()},
+                     std::initializer_list<ClassObject *>{
+                         context.vm().slice_class(), exception}})
+    {
+        auto candidate = make_storage_selection_class(context, bases);
+        ASSERT_FALSE(candidate.has_exception());
+        Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+        auto selected = select_instance_storage(
+            TValue<Tuple>::from_value_assumed(
+                retained_candidate.extract()->get_mro_value()),
+            10);
+        ASSERT_TRUE(selected.has_exception());
+        EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+                  context.thread()
+                      ->pending_exception_object()
+                      .extract()
+                      ->get_shape()
+                      ->get_class());
+        context.thread()->clear_pending_exception();
+    }
+}
+
+TEST(InstanceStorageSelection, UpgradesExceptionSubclassToStopIterationStorage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *exception =
+        context.thread()->class_for_builtin_name(L"Exception");
+    ClassObject *stop =
+        context.thread()->class_for_builtin_name(L"StopIteration");
+    // Prepare the subclass storage metadata that stage 4 will install.
+    auto e = make_storage_selection_class(context, {exception},
+                                          NativeLayoutId::Exception, 1);
+    ASSERT_FALSE(e.has_exception());
+    Owned<TValue<ClassObject>> retained_e(e.value());
+    auto stop_subclass = make_storage_selection_class(
+        context, {stop}, NativeLayoutId::StopIteration, 2);
+    ASSERT_FALSE(stop_subclass.has_exception());
+    Owned<TValue<ClassObject>> retained_stop_subclass(stop_subclass.value());
+    for(ClassObject *stop_provider: {stop, retained_stop_subclass.extract()})
+    {
+        for(bool exception_first: {true, false})
+        {
+            auto candidate =
+                exception_first
+                    ? make_storage_selection_class(
+                          context, {retained_e.extract(), stop_provider})
+                    : make_storage_selection_class(
+                          context, {stop_provider, retained_e.extract()});
+            ASSERT_FALSE(candidate.has_exception());
+            Owned<TValue<ClassObject>> retained_candidate(candidate.value());
+            auto mro = TValue<Tuple>::from_value_assumed(
+                retained_candidate.extract()->get_mro_value());
+            EXPECT_EQ(Value::from_oop(exception_first ? retained_e.extract()
+                                                      : stop_provider),
+                      mro.extract()->item_unchecked(1));
+            auto selected = select_instance_storage(mro, 10);
+            ASSERT_FALSE(selected.has_exception());
+            EXPECT_EQ(stop_provider, selected.value().builtin_provider);
+            EXPECT_EQ(NativeLayoutId::StopIteration, selected.value().layout);
+            EXPECT_EQ(2u, selected.value().inline_slot_capacity);
+        }
+    }
 }
 
 TEST(Shape, InstanceRootShapeCarriesPresentedClass)

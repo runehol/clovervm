@@ -106,25 +106,37 @@ The shared-ID proposal is withdrawn. Keep the existing native layout IDs and
 fixed builtin capacities. Define the compatibility contract before wiring MRO
 selection into class creation in stage 4.
 
-- [ ] Agree on a compact API sketch for selecting one builtin storage provider
-  and its capacity; distinguish declared-base contributions from inherited MRO
-  entries. Do not add a shared `NativeLayoutId::InlineSlotObject`.
-- [ ] Keep `Instance` as ordinary user storage, ignored when a builtin layout
-  is selected. Preserve the existing native type checks and class mappings.
-- [ ] Express the established Exception-to-StopIteration native extension
-  explicitly; it permits ordinary StopIteration ancestry, not combining two
-  independently supplied native layouts.
-- [ ] Define rejection of distinct builtin requirements from declared bases,
-  including explicit Exception/StopIteration mixing in either order. Allow
-  compatible repeated occurrences of one layout and ordinary mixins.
-- [ ] Preserve the current `__class__` assignment restrictions and validate
-  storage contracts without enabling new builtin reclassification paths.
-- [ ] Preserve predefined indices, fixed capacities, typed exception `.args`,
+- [x] Implement the object-model helper
+  `Expected<InstanceStorageSelection> select_instance_storage(TValue<Tuple> mro,
+  uint32_t ordinary_instance_capacity)`. The result contains the borrowed
+  builtin provider (null for all-Instance ancestry), selected native ID, and
+  inline capacity. Its input is the candidate class's completed C3 MRO;
+  skip entry zero, the class whose storage is being selected.
+- [x] Keep `Instance` as ordinary user storage, ignored when a builtin layout
+  is selected. Preserve the existing native type checks, dense IDs, indexed
+  descriptor tables, and class mappings.
+- [x] Scan ancestors from most-derived to least-derived. Select the first
+  non-Instance provider and its existing capacity. Accept equal IDs and the
+  explicit selected-StopIteration/later-Exception case. If Exception is selected
+  and StopIteration appears later, upgrade all three result fields to that
+  StopIteration provider. Never downgrade; reject other distinct IDs with
+  `TypeError`.
+- [x] Drop the separate declared-base compatibility check. Accept the valid
+  `(StopIteration, Exception)` declaration; the reverse order is rejected by C3.
+  Ordinary mixins and repeated occurrences of one native layout remain valid.
+- [x] Preserve the current `__class__` assignment restrictions without enabling
+  new builtin reclassification paths. The selector does not mutate classes,
+  Shapes, or assignment policy; storage installation remains stage 4 work.
+- [x] Preserve predefined indices, fixed capacities, typed exception `.args`,
   StopIteration `.value`, and native allocation/initialization responsibilities.
-- [ ] Verify the compatibility rules separately from the MRO integration;
+- [x] Verify the compatibility rules separately from the MRO integration;
   leave aux/header and Instance-size recovery cleanup deferred.
-- [ ] Run `ninja -C build-debug all check` for code changes and leave the stage
+- [x] Run `ninja -C build-debug all check` for code changes and leave the stage
   uncommitted for review.
+
+Verification: seven focused selector tests passed; full debug checks passed
+with 1,525 tests passing and one skipped. Class-creation integration remains
+stage 4 work. Changes are uncommitted for review.
 
 ## Stage 4: Class-Creation Storage Validation
 
@@ -136,12 +148,12 @@ installing the instance root Shape. Allocation enforces that selected contract.
 - [ ] Walk the class MRO using each base's instance-storage requirements;
   ordinary Python mixins contribute `Instance` and do not override a builtin
   family. Select at most one builtin layout, accounting for its established
-  native ancestry. Inspect declared bases to reject explicit mixing.
+  native ancestry through the stage-3 MRO storage check.
 - [ ] Validate subclass eligibility separately from storage compatibility.
 - [ ] Reject incompatible native payloads or predefined-slot requirements with
-  `TypeError` during class creation, including Slice/Exception, List/Dict, and
-  explicit Exception/StopIteration in either order. Ordinary StopIteration
-  subclassing remains supported.
+  `TypeError` during class creation, including Slice/Exception and List/Dict.
+  Support ordinary StopIteration subclassing and the valid redundant
+  StopIteration-first Exception base declaration.
 - [ ] Build root Shapes with the selected builtin layout's existing capacity
   and predefined locations; select zero without inline storage. If all layouts
   are `Instance`, retain the ordinary-instance capacity policy. Do not combine

@@ -975,10 +975,12 @@ StopIteration layouts. The earlier shared-ID proposal is withdrawn. Select at
 most one builtin storage provider from the MRO, ignoring `Instance` mixins and
 accounting for the selected builtin's own established ancestry. Use that
 layout's existing inline capacity; an all-Instance MRO uses ordinary instance
-capacity. Reject distinct builtin storage contributions from declared bases,
-including explicit Exception/StopIteration combinations in either order.
-Ordinary StopIteration ancestry remains valid. This deliberately rejects a
-combination CPython permits in the StopIteration-first order.
+capacity. Scan the MRO: accept equal IDs and retain StopIteration storage when
+Exception ancestors appear later. If Exception is selected first, upgrade to a
+later StopIteration provider, including its layout and capacity.
+Reject other distinct builtin layouts. No separate declared-base restriction
+is required; the valid StopIteration-first Exception combination is supported.
+Keep dense IDs and indexed tables rather than encoding ancestry in ID bits.
 
 Preserve native field indices, initialization, and typed-access contracts;
 matching slot counts alone are insufficient. Retain current `__class__`

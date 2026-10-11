@@ -60,10 +60,17 @@ root Shape. Inspect the classes' instance layouts, not the native layout of the
   layout. In particular, StopIteration's inherited Exception ancestry is
   permitted, with StopIteration storage selected. This is an explicit existing
   native extension, not permission to combine unrelated builtin bases.
-- Reject explicit multiple inheritance combining Exception and StopIteration
-  storage lineages, in either declared base order. Ordinary StopIteration
-  subclassing remains valid. Examine declared bases as well as the resulting
-  MRO to distinguish these cases.
+- Scan the MRO from most-derived to least-derived. Accept equal non-Instance
+  IDs, plus the explicit case where the selected layout is StopIteration and
+  the later ancestor layout is Exception. Keep the selected provider and
+  capacity unchanged. If Exception is selected and StopIteration appears later,
+  upgrade the provider, layout, and capacity together to that StopIteration
+  entry. Reject every other distinct non-Instance ID.
+- Do not impose a separate declared-base restriction. A valid
+  `(StopIteration, Exception)` declaration selects StopIteration storage safely;
+  the reverse order already fails ordinary C3 MRO construction. Dense native
+  IDs and indexed descriptor/class tables remain unchanged; no inheritance bit
+  encoding is introduced.
 - Use the selected builtin layout's existing inline capacity and predefined
   field contract. It is zero for layouts without inline attribute storage.
   If all entries use `Instance`, use the ordinary-instance capacity policy
@@ -76,8 +83,10 @@ cannot compose two native prefixes. Subclass eligibility remains a separate
 check, even where physical storage would otherwise fit.
 
 CPython 3.14.5 rejects `(Exception, StopIteration)` because its MRO is
-inconsistent, but permits `(StopIteration, Exception)`. Clover deliberately
-rejects both explicit combinations. CPython also rejects `__class__` assignment
+inconsistent, but permits `(StopIteration, Exception)`. Clover accepts the
+valid order through the MRO storage rule. A user Exception subclass can precede
+StopIteration in a valid MRO, requiring the explicit upgrade described above.
+CPython also rejects `__class__` assignment
 between exact Exception and StopIteration objects in either direction.
 
 Root Shapes, transitions, and clones must preserve the selected native layout
