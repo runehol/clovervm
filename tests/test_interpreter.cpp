@@ -5042,9 +5042,9 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
 TEST(Interpreter,
      native_allocator_selection_precedes_constructor_argument_binding)
 {
-    expect_python_error(L"class C(float): pass\nC(1)\n", L"TypeError",
+    expect_python_error(L"class C(tuple): pass\nC(1)\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
-    expect_python_error(L"class C(float):\n"
+    expect_python_error(L"class C(tuple):\n"
                         L"    def __init__(self, *, required):\n"
                         L"        raise AssertionError\n"
                         L"C()\n",
@@ -5633,6 +5633,125 @@ else:
     ASSERT_FALSE(result.is_exception_marker());
 }
 
+TEST(Interpreter, float_subclass_numeric_construction_and_attributes)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class F(float): pass
+class G(F): pass
+class I(int): pass
+for cls in (float, F, G):
+    assert cls().__class__ is cls
+    assert cls() == 0.0
+    for value in (0, 1, -1, True, False, 2.5, -0.0, 2**100, I(7), I(2**100)):
+        x = cls(value)
+        assert x.__class__ is cls
+        assert x == float(value)
+        if cls is not float:
+            x.extra = 42
+            assert x.__dict__["extra"] == 42
+            y = cls(x)
+            assert y.__class__ is cls
+            assert y is not x
+            assert not hasattr(y, "extra")
+        direct = float.__new__(cls, value)
+        assert direct.__class__ is cls
+        assert direct == x
+original = 2.5
+assert float(original) is original
+x = F(original)
+assert float(x).__class__ is float
+assert float(x) is not x
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, float_subclass_special_values_and_exact_results)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+import math
+class F(float): pass
+for value in (0.0, -0.0, 2.5, -2.5, math.inf, -math.inf, math.nan):
+    x = F(value)
+    assert x.__class__ is F
+    assert math.copysign(1.0, x) == math.copysign(1.0, value)
+    if math.isnan(value):
+        assert math.isnan(x)
+        assert math.isnan(float(x))
+    else:
+        assert float(x) == value
+    for result in (float(x), +x, -x, abs(x), x + 0.0, x - 0.0, x * 1.0, x / 1.0):
+        assert result.__class__ is float
+        assert result is not x
+for value in (2.5, F(2.5), 2.5, F(2.5)):
+    assert (+value).__class__ is float
+    assert abs(value).__class__ is float
+class Override(F):
+    def __pos__(self): return "positive override"
+    def __abs__(self): return "abs override"
+assert +Override(1) == "positive override"
+assert abs(Override(1)) == "abs override"
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, float_new_class_errors_and_numeric_scope)
+{
+    expect_python_error(L"float.__new__(int, 4)\n", L"TypeError",
+                        L"float.__new__(int): int is not a subtype of float");
+    expect_python_error(L"float.__new__(1, 4)\n", L"TypeError",
+                        L"float.__new__(X): X is not a type object (int)");
+    expect_python_error(L"float.__new__(None, 4)\n", L"TypeError",
+                        L"float.__new__(X): X is not a type object (NoneType)");
+    expect_python_error(
+        L"class F(float): pass\nF('2.5')\n", L"TypeError",
+        L"float conversion is only implemented for float, int and bool");
+    expect_python_error(L"class F(float): pass\nF(2**10000)\n",
+                        L"OverflowError", L"int too large to convert to float");
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class F(float): pass
+for mode in range(3):
+    try:
+        if mode == 0: F(1, 2)
+        elif mode == 1: F(input=1)
+        else: float(None)
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, float_new_invalidation_and_combined_boundary)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class F(float): pass
+class G(F): pass
+assert G(7).__class__ is G
+def replacement(cls, value=9): return value
+F.__new__ = replacement
+assert G() == 9
+assert G(11) == 11
+del F.__new__
+value = G(13)
+assert value.__class__ is G
+assert value == 13.0
+class Combined(float):
+    def __init__(self): raise AssertionError
+try:
+    Combined()
+except TypeError:
+    pass
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
 TEST(Interpreter, native_layout_new_only_bypasses_default_allocator_selection)
 {
     test::VmTestContext context;
@@ -5648,19 +5767,16 @@ def replacement(cls):
 C.__new__ = replacement
 assert D() == 11
 del C.__new__
-try:
-    D()
-except TypeError:
-    pass
-else:
-    raise AssertionError
+value = D()
+assert value.__class__ is D
+assert value == 0.0
 )");
     ASSERT_FALSE(result.is_exception_marker());
 }
 
 TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
 {
-    expect_python_error(L"class C(float): pass\nC()\n", L"TypeError",
+    expect_python_error(L"class C(tuple): pass\nC()\n", L"TypeError",
                         L"native instance layout requires a builtin allocator");
     expect_python_error(L"class C(list, dict): pass\n", L"TypeError",
                         L"incompatible native instance layouts");

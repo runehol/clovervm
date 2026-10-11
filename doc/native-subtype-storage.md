@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | Parent `bffa7030` and the Stage 8a working tree (2026-10-11); full debug checks: 1,569 passed, one skipped; focused release int-constructor comparison against the parent; combined constructor orchestration remains pending |
+| Validated against | Parent `a591ecdf` and the Stage 8b working tree (2026-10-11); full debug checks: 1,574 passed, one skipped; focused absolute release float-constructor measurements; combined constructor orchestration remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -359,6 +359,14 @@ and zero, with their requested class root shape and zero inline capacity. Exact
 int conversion and inherited unary plus/abs discard subclass identity. Trusted
 abs remains guarded by the exact int root shape. Existing input conversions are
 retained; no new opcode or general constructor orchestration is introduced.
+
+Stage 8b adds numeric float `__new__` on the existing new-only path. It accepts
+zero or one float/int/bool input, including heap numeric subclasses. Exact target
+calls reuse only exact Float inputs; subclasses receive fresh Float storage with
+their requested class root and zero inline capacity. Convert to a double before
+allocation and retain checked integer overflow. String parsing and user conversion
+protocols are outside this slice. Existing exact-result unary and arithmetic
+operations and trusted exact-root guards are preserved.
 
 Only native payloads that can be initialized after allocation use this path.
 Immutable payloads, including int, float, str, bytes, and tuple, must be

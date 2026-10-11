@@ -41,6 +41,7 @@ add_executable(bench_clovervm
     instance_attribute_read.cpp
     instance_attribute_refcounted_write.cpp
     instance_attribute_write.cpp
+    float_constructor.cpp
     int_constructor_int.cpp
     int_constructor_string.cpp
     iterative_fib.cpp

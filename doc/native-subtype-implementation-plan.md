@@ -507,7 +507,51 @@ build-release/benchmark/bench_clovervm --benchmark_filter='BM_IntConstructor(Int
 Each set's coefficient of variation was below 1%. These focused measurements
 show no common-path regression; they do not establish general VM performance.
 Raw outputs are `/tmp/clovervm-int-parent.json` and
-`/tmp/clovervm-int-after.json`. Changes are uncommitted for review.
+`/tmp/clovervm-int-after.json`. Committed in `a591ecdf`.
+
+### Stage 8b: Numeric Float Construction
+
+Float currently has no constructor. Add native `float.__new__(cls, input=0)`
+using the existing new-only thunk. The first slice accepts float, int, and bool
+inputs, including native numeric subclasses and heap BigInts. String parsing and
+user conversion protocols remain separate work. Exact target calls compare class
+identity first, reuse only exact Float inputs, and otherwise box an exact Float.
+
+A NOINLINE subclass helper validates class, float ancestry, native Float layout,
+and zero inline capacity, then allocates `Float(cls, converted_double)` using
+the requested root shape. Convert the numeric payload before allocation; preserve
+signed zero, infinity, and NaN. BigInt conversion uses the existing checked
+conversion and propagates overflow. Invalid targets get CPython-style errors.
+
+Existing unary plus already copies subclasses and its trusted identity handler
+requires the exact root shape; abs/negation/arithmetic already allocate exact
+floats. Preserve those contracts and test custom overrides, caches, inherited
+construction, attributes, errors, and invalidation. No opcode, cache, initializer,
+or combined constructor path is added. Float hashing remains unsupported for
+exact and subclass values and is outside this slice.
+
+- [x] Agree on the numeric-only argument and native allocation boundary.
+- [x] Implement numeric float construction and regression tests.
+- [x] Run full debug checks and focused release constructor measurements.
+  Float construction has no working parent baseline; report absolute throughput.
+- [x] Leave verified changes uncommitted for review.
+
+Validation: all 13 focused construction/allocator checks passed. Numeric
+construction and special-value/result-identity scripts passed against local
+CPython. `ninja -C build-debug all check` passed with 1,574 tests passing and one
+skipped (runtime JIT tiering disabled). No interpreter handlers changed.
+
+Added release constructor loops for float and integer inputs. Each loop also
+compares the converted value and increments an integer accumulator. Five
+repetitions at two seconds minimum measured median throughput of 69.9M/s for
+float input and 38.7M/s for integer input; coefficient of variation was 1.1% and
+1.5%, respectively. There is no working parent float-constructor baseline.
+
+```sh
+build-release/benchmark/bench_clovervm --benchmark_filter='BM_FloatConstructor(Float|Int)' --benchmark_min_time=2s --benchmark_repetitions=5 --benchmark_out=/tmp/clovervm-float-constructor.json --benchmark_out_format=json
+```
+
+Changes are uncommitted for review.
 
 Stages 7 and 8 must define their single-method boundary explicitly. Cases that
 require both resolved methods remain unsupported; do not silently skip

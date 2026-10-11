@@ -44,6 +44,11 @@ namespace benchmark_cpp
     int64_t str_constructor_string_run(int64_t n);
     int64_t str_constructor_string_items(int64_t n);
 
+    int64_t float_constructor_float_run(int64_t n);
+    int64_t float_constructor_float_items(int64_t n);
+    int64_t float_constructor_int_run(int64_t n);
+    int64_t float_constructor_int_items(int64_t n);
+
     int64_t int_constructor_int_run(int64_t n);
     int64_t int_constructor_int_items(int64_t n);
 

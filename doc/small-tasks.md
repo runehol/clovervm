@@ -12,16 +12,42 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
+### Float hashing
+
+Implement hashing for exact floats and float subclasses. Equal numeric values
+must have equal hashes across `float`, `int`, and `bool`; cover integral and
+fractional values, signed zero, infinities, NaNs, and large integers. Pin the
+behavior against CPython before choosing the hash implementation. Add dictionary
+and set lookup regressions as well as direct `hash()` tests.
+
+### Tuple and list equality
+
+Implement elementwise `__eq__` and `__ne__` for both types. Both are missing:
+separately constructed `(1, 2)` tuples and `[1, 2]` lists currently compare
+unequal, as do empty containers. Cover length mismatches, identity shortcuts for
+elements, subclass behavior, incompatible sequence types, `NotImplemented`, and
+exceptions from element comparisons. List comparisons also need tests for
+mutation and re-entry during equality callbacks. Keep Python callbacks on the
+existing managed dispatch path; settle the continuation design before coding.
+
+### Conditional expressions
+
+Support `body if test else alternative`. The parser currently rejects this
+syntax. Use CPython's `IfExp` AST structure where it fits, lower it to existing
+branches, and evaluate only the selected expression. Cover precedence, nested
+expressions, truthiness callbacks, side effects, and exception propagation with
+parser and interpreter tests.
+
 ### Fill narrow builtin constructor gaps
 
 Add one builtin constructor at a time where the allocation/conversion policy is
 already settled and can be expressed as that type's intrinsic `__new__`. Keep
 each constructor as its own change. Candidate slices include:
 
-- `float()` and `float(x)` for the numeric input forms already supported by the
-  runtime;
-- `list()` for the empty case before iterable conversion is attempted;
 - `tuple()` for the empty case before iterable conversion is attempted.
+
+Numeric float construction and empty/iterable list construction are implemented;
+see the [native subtype implementation plan](native-subtype-implementation-plan.md).
 
 Do not use these slices to invent a general constructor fallback or silently
 accept inputs whose conversion protocol is not implemented. Each slice is done
@@ -51,30 +77,26 @@ existing out-of-range or unsupported-value behavior.
 
 ## Bounded, But Larger
 
-### Construct builtin objects without per-type `__new__`
+### Follow-ups from native constructor work
 
-Add a standard allocation path for builtin classes whose construction policy is
-already settled, without requiring every such class to publish a type-specific
-`__new__`. Use builtin exceptions as the first slice so calls such as
-`ValueError()` and `ValueError("message")` construct objects that can
-subsequently be raised.
+- **Native exception lookup:** stop resolving internal exception classes through
+  mutable public builtin bindings. Rebinding `builtins.TypeError` can currently
+  trigger a debug assertion when native code raises an error. Keep this separate
+  from the private bindings used by Python sequence helpers.
+- **Numeric conversion coverage:** float string parsing and user-defined
+  `__float__` / `__index__` conversion remain deferred. Int conversion protocols
+  and additional constructor forms need their own semantic sketches too.
+- **Closure capture for builtin helpers:** once
+  [closure cells](closure-cells.md) are implemented, replace persistent private
+  bootstrap globals with captured builtin classes/functions where appropriate.
+- **Combined `__new__` / `__init__`:** retain original call arguments and bind
+  the two methods independently, then check the returned type and resolve its
+  initializer after allocation. Track dependencies and remaining constructor
+  stages in the [implementation plan](native-subtype-implementation-plan.md#deferred-work).
 
-Before implementation, pin down the eligibility guard and internal allocation
-contract: which builtin classes may use standard allocation, how constructor
-arguments are initialized, and how an inherited or overridden `__new__` takes
-precedence. `NativeLayoutId` describes how to interpret an object that already
-exists; it is not by itself an allocation recipe. Do not add a fallback that
-guesses how to allocate arbitrary builtin layouts.
-
-The exception slice is done when interpreter tests cover zero and one argument,
-raising a constructed exception, its Python-visible arguments/message state,
-invalid argument counts, exception subclasses, and precedence for an explicit
-`__new__`. If the eligibility rule needs new public metadata or changes the
-general class-call protocol, settle that design before implementation.
-Native-subtype storage, extension-type allocation, and copying-GC extent
-metadata remain related design questions recorded in
-[Native Subtype Storage](native-subtype-storage.md); this task must not settle
-them accidentally.
+Exception allocation and native initializers are already implemented; their old
+queue entry has been retired. These follow-ups are tracked here, but need a
+readiness sketch before implementation where the owning design is unsettled.
 
 ### Non-starred unpacking assignment
 

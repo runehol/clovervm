@@ -1,6 +1,8 @@
 #include "builtin_types/float.h"
 
+#include "builtin_types/int.h"
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
 #include "object_model/shape_key.h"
@@ -89,6 +91,74 @@ namespace cl
         integer_value.as.integer =
             value.as.integer & value_boolean_to_integer_mask;
         return static_cast<double>(integer_value.get_smi());
+    }
+
+    [[nodiscard]] static Expected<double>
+    float_constructor_value(ThreadState *thread, Value input)
+    {
+        double value;
+        if(try_get_float_or_smi_or_bool(input, &value))
+        {
+            return Expected<double>::ok(value);
+        }
+        if(can_convert_to<BigInt>(input))
+        {
+            return bigint_to_double(input.get_ptr<BigInt>()->view());
+        }
+        return Expected<double>::raise_exception(
+            L"TypeError",
+            L"float conversion is only implemented for float, int and bool");
+    }
+
+    [[nodiscard]] NOINLINE static Value
+    float_new_subclass_slow(ThreadState *thread, Value cls_value, Value input)
+    {
+        if(!can_convert_to<ClassObject>(cls_value))
+        {
+            TValue<String> name = thread->class_of_value(cls_value)->get_name();
+            std::wstring message =
+                L"float.__new__(X): X is not a type object (";
+            message.append(name.extract()->data,
+                           size_t(name.extract()->count.extract()));
+            message += L")";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        TValue<ClassObject> cls =
+            TValue<ClassObject>::from_value_assumed(cls_value);
+        if(!is_subclass_of(cls.extract(), thread->get_machine()->float_class()))
+        {
+            TValue<String> name = cls.extract()->get_name();
+            std::wstring class_name(name.extract()->data,
+                                    size_t(name.extract()->count.extract()));
+            std::wstring message = L"float.__new__(" + class_name + L"): " +
+                                   class_name + L" is not a subtype of float";
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        assert(cls.extract()->instance_native_layout_id() ==
+               NativeLayoutId::Float);
+        assert(cls.extract()->get_instance_inline_slot_capacity() == 0);
+        double value = CL_TRY(float_constructor_value(thread, input));
+        return thread->make_internal_value<Float>(cls.extract(), value)
+            .raw_value();
+    }
+
+    [[nodiscard]] static Value native_float_new(ThreadState *thread,
+                                                Value cls_value, Value input)
+    {
+        if(cls_value != Value::from_oop(thread->get_machine()->float_class()))
+        {
+            return float_new_subclass_slow(thread, cls_value, input);
+        }
+        if(can_convert_to<Float>(input) &&
+           input.get_ptr<Float>()->get_shape()->get_class() ==
+               thread->get_machine()->float_class())
+        {
+            return input;
+        }
+        double value = CL_TRY(float_constructor_value(thread, input));
+        return box_float(thread, value);
     }
 
     static Value float_equal(ThreadState *thread, double left, double right)
@@ -722,7 +792,14 @@ namespace cl
 
     void install_float_class_methods(VirtualMachine *vm)
     {
+        Owned<TValue<Tuple>> defaults(
+            vm->get_default_thread()->make_object_value<Tuple>(1));
+        defaults.extract()->initialize_item_unchecked(0, Value::from_smi(0));
         BuiltinIntrinsicMethod methods[] = {
+            with_defaults(builtin_intrinsic_method(
+                              L"__new__", native_float_new,
+                              L"Create a float from a numeric value."),
+                          defaults.value()),
             builtin_intrinsic_method(L"__str__", native_float_str,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_float_repr,

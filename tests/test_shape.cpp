@@ -392,8 +392,7 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
-    for(ClassObject *base:
-        {context.vm().float_class(), context.vm().tuple_class()})
+    for(ClassObject *base: {context.vm().tuple_class()})
     {
         auto candidate = make_storage_selection_class(context, {base});
         ASSERT_FALSE(candidate.has_exception());
