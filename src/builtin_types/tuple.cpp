@@ -211,7 +211,7 @@ namespace cl
             NativeLayoutId::Tuple};
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class<Tuple>(
             vm->get_or_create_interned_string_value(L"tuple"), 0, nullptr, 0,
-            immutable_shape_flags());
+            SubclassPolicy::Allowed, immutable_shape_flags());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
     }

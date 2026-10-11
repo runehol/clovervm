@@ -67,7 +67,8 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<RangeIterator>(
             vm->get_or_create_interned_string_value(L"range_iterator"), 0,
-            methods, std::size(methods), vm->object_class());
+            methods, std::size(methods), vm->object_class(),
+            SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }

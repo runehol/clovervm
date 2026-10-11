@@ -1,6 +1,7 @@
 #include "jit/constant_folding.h"
 
 #include "builtin_types/float.h"
+#include "import_system/module_global.h"
 #include "jit/compilation_session.h"
 #include "jit/graph_builder.h"
 #include "object_model/owned.h"
@@ -98,14 +99,22 @@ namespace cl::jit
     {
         test::VmTestContext context;
         ThreadState::ActivationScope activation_scope(context.thread());
-        // Native float storage has no inline attribute region. Class creation
-        // will select this capacity once native lineage validation is
-        // supported.
+        CodeObject *classes =
+            context.compile_file(L"class FloatSubclass(float):\n    pass\n");
+        ASSERT_FALSE(context.thread()
+                         ->run_clovervm_code_object(classes)
+                         .is_exception_marker());
+        auto name =
+            context.vm().get_or_create_interned_string_value(L"FloatSubclass");
+        Value declared =
+            load_module_global(classes->get_defining_module().extract(), name);
+        ASSERT_TRUE(can_convert_to<ClassObject>(declared));
         Owned<TValue<ClassObject>> subclass_class(
-            context.thread()->make_internal_value<ClassObject>(
-                context.vm().get_or_create_interned_string_value(
-                    L"FloatSubclass"),
-                0, context.vm().float_class(), NativeLayoutId::Float));
+            TValue<ClassObject>::from_value_assumed(declared));
+        EXPECT_EQ(NativeLayoutId::Float,
+                  subclass_class.extract()->instance_native_layout_id());
+        EXPECT_EQ(
+            0u, subclass_class.extract()->get_instance_inline_slot_capacity());
         ASSERT_TRUE(is_subclass_of(subclass_class.extract(),
                                    context.vm().float_class()));
         Owned<TValue<Float>> subclass(

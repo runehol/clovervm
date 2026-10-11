@@ -86,6 +86,12 @@ namespace cl
         bool is_found() const { return thunk != nullptr; }
     };
 
+    enum class SubclassPolicy : uint8_t
+    {
+        Disallowed = 0,
+        Allowed,
+    };
+
     struct InstanceStorageSelection
     {
         // Borrowed from the input MRO; the caller keeps its classes alive.
@@ -149,30 +155,33 @@ namespace cl
         static ClassObject *make_bootstrap_builtin_class(
             TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
+            SubclassPolicy subclass_policy,
             ShapeFlags instance_shape_flags = fixed_attribute_shape_flags())
         {
             static_assert(HasNativeLayoutId<T>::value);
             return make_bootstrap_builtin_class(
                 name, instance_inline_slot_count, methods, method_count,
-                T::native_layout, instance_shape_flags);
+                T::native_layout, subclass_policy, instance_shape_flags);
         }
 
         static ClassObject *make_builtin_class(
             TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
             ClassObject *single_base, NativeLayoutId instance_native_layout_id,
+            SubclassPolicy subclass_policy,
             ShapeFlags instance_shape_flags = fixed_attribute_shape_flags());
         template <typename T>
         static ClassObject *make_builtin_class(
             TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
-            ClassObject *single_base,
+            ClassObject *single_base, SubclassPolicy subclass_policy,
             ShapeFlags instance_shape_flags = fixed_attribute_shape_flags())
         {
             static_assert(HasNativeLayoutId<T>::value);
             return make_builtin_class(name, instance_inline_slot_count, methods,
                                       method_count, single_base,
-                                      T::native_layout, instance_shape_flags);
+                                      T::native_layout, subclass_policy,
+                                      instance_shape_flags);
         }
 
         TValue<String> get_name() const { return name.value(); }
@@ -184,6 +193,10 @@ namespace cl
         NativeLayoutId instance_native_layout_id() const
         {
             return instance_native_layout_id_;
+        }
+        bool allows_subclasses() const
+        {
+            return subclass_policy_ != SubclassPolicy::Disallowed;
         }
         void freeze();
         static void validate_inline_slot_layout();
@@ -294,12 +307,13 @@ namespace cl
         mutable MemberHeapPtr<Function> constructor_thunk;
         uint32_t instance_inline_slot_count;
         NativeLayoutId instance_native_layout_id_;
+        SubclassPolicy subclass_policy_;
 
         static ClassObject *make_bootstrap_builtin_class(
             TValue<String> name, uint32_t instance_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count,
             NativeLayoutId instance_native_layout_id,
-            ShapeFlags instance_shape_flags);
+            SubclassPolicy subclass_policy, ShapeFlags instance_shape_flags);
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
@@ -315,6 +329,7 @@ namespace cl
                                        NativeLayoutId native_layout_id)
     {
         assert(class_object != nullptr);
+        assert(class_object->instance_native_layout_id() == native_layout_id);
         Shape *instance_root_shape = class_object->get_instance_root_shape();
         assert(instance_root_shape != nullptr);
         assert(class_object->get_instance_inline_slot_capacity() ==
@@ -329,6 +344,12 @@ namespace cl
         assert(instance_root_shape != nullptr);
         assert(native_inline_slot_capacity_is_valid(
             native_layout_id, instance_root_shape->get_inline_slot_capacity()));
+        ClassObject *cls = instance_root_shape->get_class();
+        assert(cls != nullptr);
+        assert(cls->instance_native_layout_id() == native_layout_id);
+        assert(cls->get_instance_inline_slot_capacity() ==
+               instance_root_shape->get_inline_slot_capacity());
+        (void)cls;
 
         shape = incref(instance_root_shape);
         if(!native_layout_has_inline_slots(native_layout_id) ||

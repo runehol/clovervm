@@ -26,7 +26,7 @@ namespace cl
             NativeLayoutId::SlotDict};
         ClassObject *cls = ClassObject::make_builtin_class<SlotDict>(
             vm->get_or_create_interned_string_value(L"slotdict"), 0, nullptr, 0,
-            vm->object_class());
+            vm->object_class(), SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }

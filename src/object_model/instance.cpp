@@ -21,6 +21,8 @@ namespace cl
         Shape *shape = cls->get_instance_root_shape();
         assert(cls->get_instance_inline_slot_capacity() ==
                shape->get_inline_slot_capacity());
+        assert(native_inline_slot_capacity_is_valid(
+            native_layout, shape->get_inline_slot_capacity()));
         return shape->get_inline_slot_capacity();
     }
 

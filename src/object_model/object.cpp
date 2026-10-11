@@ -144,7 +144,7 @@ namespace cl
             NativeLayoutId::Instance};
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class<Instance>(
             vm->get_or_create_interned_string_value(L"object"), 0, nullptr, 0,
-            immutable_shape_flags());
+            SubclassPolicy::Allowed, immutable_shape_flags());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
     }
@@ -232,6 +232,7 @@ namespace cl
     void Object::install_bootstrap_class(ClassObject *new_cls)
     {
         assert(new_cls != nullptr);
+        assert(new_cls->instance_native_layout_id() == native_layout_id());
         if(shape == nullptr)
         {
             set_shape(new_cls->get_instance_root_shape());
@@ -247,6 +248,20 @@ namespace cl
         assert(new_shape != nullptr);
         assert(native_inline_slot_capacity_is_valid(
             native_layout_id(), new_shape->get_inline_slot_capacity()));
+        ClassObject *cls = new_shape->get_class();
+        assert(cls != nullptr);
+        // Class construction starts with a self-labelled Shape; installing
+        // the metaclass replaces that label before the class is published.
+        bool bootstrap_class_shape =
+            old_shape == nullptr && cls == this &&
+            native_layout_id() == NativeLayoutId::ClassObject;
+        assert(bootstrap_class_shape ||
+               cls->instance_native_layout_id() == native_layout_id());
+        assert(bootstrap_class_shape ||
+               cls->get_instance_inline_slot_capacity() ==
+                   new_shape->get_inline_slot_capacity());
+        (void)bootstrap_class_shape;
+        (void)cls;
         assert(native_layout_id() != NativeLayoutId::Instance ||
                old_shape == nullptr ||
                old_shape->get_inline_slot_capacity() ==

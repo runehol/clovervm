@@ -220,6 +220,11 @@ namespace cl
                 return Expected<void>::raise_exception(
                     L"TypeError", L"class bases must be class objects");
             }
+            if(!base->allows_subclasses())
+            {
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"type is not an acceptable base type");
+            }
             if(std::find(seen_bases.begin(), seen_bases.end(), base) !=
                seen_bases.end())
             {
@@ -245,7 +250,8 @@ namespace cl
           attached_mro_shape_and_contents_validity_cells(),
           instance_root_shape(nullptr), constructor_thunk(nullptr),
           instance_inline_slot_count(_instance_inline_slot_count),
-          instance_native_layout_id_(_instance_native_layout_id)
+          instance_native_layout_id_(_instance_native_layout_id),
+          subclass_policy_(SubclassPolicy::Allowed)
     {
         BuiltinInstanceShapeBuilder(
             this, BuiltinInstanceShapeDefaults::DunderClassAndDict, 0)
@@ -408,7 +414,7 @@ namespace cl
         TValue<String> name, uint32_t instance_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count,
         NativeLayoutId instance_native_layout_id,
-        ShapeFlags instance_shape_flags)
+        SubclassPolicy subclass_policy, ShapeFlags instance_shape_flags)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject *type = active_vm()->type_class();
@@ -417,6 +423,8 @@ namespace cl
             BootstrapObjectTag{}, name, instance_inline_slot_count, nullptr,
             instance_native_layout_id, class_shape_flags, instance_shape_flags);
         cls->install_bootstrap_class(type);
+
+        cls->subclass_policy_ = subclass_policy;
 
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
@@ -437,7 +445,7 @@ namespace cl
         TValue<String> name, uint32_t instance_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count,
         ClassObject *single_base, NativeLayoutId instance_native_layout_id,
-        ShapeFlags instance_shape_flags)
+        SubclassPolicy subclass_policy, ShapeFlags instance_shape_flags)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         ClassObject *type = active_vm()->type_class();
@@ -445,6 +453,8 @@ namespace cl
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             type, name, instance_inline_slot_count, single_base,
             instance_native_layout_id, class_shape_flags, instance_shape_flags);
+
+        cls->subclass_policy_ = subclass_policy;
 
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |

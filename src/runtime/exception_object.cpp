@@ -112,7 +112,8 @@ namespace cl
     {
         ClassObject *cls = ClassObject::make_builtin_class<ExceptionObject>(
             vm->get_or_create_interned_string_value(name),
-            ExceptionObject::kInlineSlotCount, nullptr, 0, base);
+            ExceptionObject::kInlineSlotCount, nullptr, 0, base,
+            SubclassPolicy::Allowed);
         install_exception_instance_root_shape(cls);
         return cls;
     }
@@ -167,7 +168,8 @@ namespace cl
             NativeLayoutId::StopIteration};
         ClassObject *cls = ClassObject::make_builtin_class<StopIterationObject>(
             vm->get_or_create_interned_string_value(L"StopIteration"),
-            StopIterationObject::kInlineSlotCount, nullptr, 0, base);
+            StopIterationObject::kInlineSlotCount, nullptr, 0, base,
+            SubclassPolicy::Allowed);
         install_stop_iteration_instance_root_shape(cls);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);

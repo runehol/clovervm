@@ -127,7 +127,7 @@ namespace cl
             NativeLayoutId::Dict};
         ClassObject *cls = ClassObject::make_builtin_class<Dict>(
             vm->get_or_create_interned_string_value(L"dict"), 0, nullptr, 0,
-            vm->object_class());
+            vm->object_class(), SubclassPolicy::Allowed);
         Shape *string_key_shape = cls->get_instance_root_shape();
         Shape *general_shape =
             string_key_shape->clone_with_flags(string_key_shape->flags());

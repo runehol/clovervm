@@ -1,4 +1,6 @@
+#include "builtin_types/float.h"
 #include "builtin_types/list.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/tuple.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
@@ -201,8 +203,18 @@ TEST(InstanceStorageSelection, RejectsDistinctLayouts)
                      std::initializer_list<ClassObject *>{
                          context.vm().slice_class(), exception}})
     {
-        auto candidate = make_storage_selection_class(context, bases);
-        ASSERT_TRUE(candidate.has_exception());
+        Owned<TValue<Tuple>> mro(
+            context.thread()->make_object_value<Tuple>(bases.size() + 1));
+        mro.extract()->initialize_item_unchecked(
+            0, Value::from_oop(context.vm().object_class()));
+        size_t index = 1;
+        for(ClassObject *base: bases)
+        {
+            mro.extract()->initialize_item_unchecked(index++,
+                                                     Value::from_oop(base));
+        }
+        auto selected = select_instance_storage(mro.value(), 10);
+        ASSERT_TRUE(selected.has_exception());
         EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
                   context.thread()
                       ->pending_exception_object()
@@ -256,13 +268,130 @@ TEST(InstanceStorageSelection, UpgradesExceptionSubclassToStopIterationStorage)
     }
 }
 
+TEST(ClassSubclassPolicy, PermitsSupportedBuiltinBasesAndTheirSubclasses)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(ClassObject *base:
+        {context.vm().object_class(), context.vm().type_class(),
+         context.vm().int_class(), context.vm().float_class(),
+         context.vm().str_class(), context.vm().bytes_class(),
+         context.vm().list_class(), context.vm().tuple_class(),
+         context.vm().dict_class(), context.vm().module_class(),
+         context.thread()->class_for_builtin_name(L"BaseException"),
+         context.thread()->class_for_builtin_name(L"StopIteration")})
+    {
+        ASSERT_TRUE(base->allows_subclasses());
+        auto candidate = make_storage_selection_class(context, {base});
+        ASSERT_FALSE(candidate.has_exception());
+        Owned<TValue<ClassObject>> cls(candidate.value());
+        EXPECT_TRUE(cls.extract()->allows_subclasses());
+        auto child = make_storage_selection_class(context, {cls.extract()});
+        ASSERT_FALSE(child.has_exception());
+        EXPECT_EQ(cls.extract()->instance_native_layout_id(),
+                  child.value().extract()->instance_native_layout_id());
+    }
+}
+
+TEST(ClassSubclassPolicy, RejectsProhibitedBuiltinBases)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(ClassObject *base:
+        {context.vm().bool_class(), context.vm().none_type_class(),
+         context.vm().ellipsis_type_class(),
+         context.vm().not_implemented_type_class(), context.vm().slice_class(),
+         context.vm().function_class(), context.vm().code_class(),
+         context.vm().list_iterator_class(),
+         context.vm().tuple_iterator_class(),
+         context.vm().range_iterator_class(), context.vm().slotdict_class(),
+         context.vm().module_loader_class(), context.vm().module_spec_class()})
+    {
+        ASSERT_FALSE(base->allows_subclasses());
+        auto candidate = make_storage_selection_class(context, {base});
+        ASSERT_TRUE(candidate.has_exception());
+        EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+                  context.thread()
+                      ->pending_exception_object()
+                      .extract()
+                      ->get_shape()
+                      ->get_class());
+        context.thread()->clear_pending_exception();
+        // A permissible base alongside a prohibited one cannot bypass policy.
+        candidate = make_storage_selection_class(
+            context, {context.vm().object_class(), base});
+        EXPECT_TRUE(candidate.has_exception());
+        context.thread()->clear_pending_exception();
+    }
+}
+
+TEST(NativeAllocationValidation, CachedSliceShapeInitializesPredefinedFields)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Shape *root = context.vm().slice_class()->get_instance_root_shape();
+    Owned<TValue<Slice>> slice(context.thread()->make_internal_value<Slice>(
+        root, Value::from_smi(1), Value::from_smi(9), Value::from_smi(2)));
+    EXPECT_EQ(root, slice.extract()->get_shape());
+    EXPECT_EQ(Value::from_smi(1), slice.extract()->start.value());
+    EXPECT_EQ(Value::from_smi(9), slice.extract()->stop.value());
+    EXPECT_EQ(Value::from_smi(2), slice.extract()->step.value());
+}
+
+#ifndef NDEBUG
+TEST(NativeAllocationValidationDeathTest, RejectsMismatchedZeroSlotLayouts)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    EXPECT_DEATH(
+        context.thread()->make_internal_raw<List>(context.vm().float_class()),
+        "instance_native_layout_id");
+    EXPECT_DEATH(context.thread()->make_internal_raw<Float>(
+                     context.vm().list_class(), 1.5),
+                 "instance_native_layout_id");
+    OwnedHeapPtr<Shape> mismatched(Shape::make_root_with_descriptors(
+        TValue<ClassObject>::from_oop(context.vm().float_class()), nullptr, 0,
+        0, 0, Slice::kInlineSlotCount, mutable_attribute_shape_flags()));
+    EXPECT_DEATH(
+        context.thread()->make_internal_raw<Slice>(
+            mismatched.extract(), Value::None(), Value::None(), Value::None()),
+        "instance_native_layout_id");
+}
+
+TEST(NativeAllocationValidationDeathTest, RejectsBootstrapAndShapeMismatch)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<TValue<List>> list(context.thread()->make_object_value<List>());
+    EXPECT_DEATH(
+        list.extract()->install_bootstrap_class(context.vm().float_class()),
+        "instance_native_layout_id");
+    EXPECT_DEATH(list.extract()->set_shape(
+                     context.vm().float_class()->get_instance_root_shape()),
+                 "instance_native_layout_id");
+}
+
+TEST(NativeAllocationValidationDeathTest,
+     RejectsOversizedInstanceBeforeAllocation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<TValue<ClassObject>> cls(
+        context.thread()->make_internal_value<ClassObject>(
+            context.vm().get_or_create_interned_string_value(L"Oversized"),
+            uint32_t(UINT16_MAX) + 1, context.vm().object_class(),
+            NativeLayoutId::Instance));
+    EXPECT_DEATH(Instance::size_for(cls.extract()),
+                 "native_inline_slot_capacity_is_valid");
+}
+#endif
+
 TEST(ClassStorageSelection, InheritsPredefinedRootDescriptors)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
     for(ClassObject *provider:
-        {context.vm().slice_class(),
-         context.thread()->class_for_builtin_name(L"Exception"),
+        {context.thread()->class_for_builtin_name(L"Exception"),
          context.thread()->class_for_builtin_name(L"StopIteration")})
     {
         auto candidate = make_storage_selection_class(context, {provider});
@@ -466,7 +595,7 @@ TEST(ClassObject, BuiltinClassesCarryInstanceNativeLayoutIds)
               context.vm().list_class()->instance_native_layout_id());
     EXPECT_EQ(NativeLayoutId::ClassObject,
               context.vm().type_class()->instance_native_layout_id());
-    EXPECT_EQ(NativeLayoutId::Invalid,
+    EXPECT_EQ(NativeLayoutId::BigInt,
               context.vm().int_class()->instance_native_layout_id());
     EXPECT_EQ(NativeLayoutId::Invalid,
               context.vm().bool_class()->instance_native_layout_id());
@@ -1344,7 +1473,7 @@ TEST(ClassObject, BuiltinClassFreezesAfterMethodInstallation)
 
     ClassObject *cls = ClassObject::make_builtin_class(
         cls_name, 2, methods, 2, context.vm().object_class(),
-        NativeLayoutId::Invalid);
+        NativeLayoutId::Instance, SubclassPolicy::Allowed);
 
     Shape *shape = cls->get_shape();
     ASSERT_NE(nullptr, shape);
@@ -1785,8 +1914,9 @@ TEST(ClassObject,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
-        NativeLayoutId::Instance);
+        context.vm().type_class(), meta_name,
+        ClassObject::class_inline_storage_slot_count, context.vm().type_class(),
+        NativeLayoutId::ClassObject);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);

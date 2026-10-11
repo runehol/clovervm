@@ -289,7 +289,7 @@ namespace cl
         ClassObject *cls = ClassObject::make_builtin_class<ModuleObject>(
             vm->get_or_create_interned_string_value(L"module"),
             ModuleObject::module_inline_storage_slot_count, nullptr, 0,
-            vm->object_class());
+            vm->object_class(), SubclassPolicy::Allowed);
         install_module_instance_root_shape(cls);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);

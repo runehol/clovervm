@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Native builtin subclass storage, class-creation validation, and constructor specialization; explicit Python slot declarations remain deferred |
 | Owning layers | Runtime object model, shapes, native layouts, allocation and reclamation; builtin families own construction and payload semantics |
-| Validated against | `97a7d7d3` plus stage 4a (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and constructor work remain pending |
+| Validated against | `ffee6c1b` plus stage 4b (2026-10-11) and local CPython 3.14.5 probes; common overflow storage and MRO storage selection are implemented; subclass eligibility and allocation validation are implemented; constructor work remains pending |
 | Supersedes | The previous investigation in this document |
 
 The accepted direction is a common overflow-storage pointer in every
@@ -196,7 +196,9 @@ separate: `d["x"]` and `d.x` are different storage.
 ## Integer Subclasses And Immediate Values
 
 An `int` subclass must always be a heap object, including for values that fit in
-an SMI. Use native BigInt storage with the requested subclass identity. Its
+an SMI. Use native BigInt storage with the requested subclass identity. The int class
+records `NativeLayoutId::BigInt` for its heap allocation contract; tagged SMI
+values keep their existing immediate representation. Its
 constructor must not pass through a result-normalization path that returns an
 SMI and discards that identity. A generic wrapper containing an exact builtin
 payload is not required by this design.
@@ -285,10 +287,22 @@ allocation uses the requested class's instance root Shape: `dict.__new__`
 called for a dict subclass produces `Dict` native storage with that subclass's
 Shape. Builtin payload construction remains owned by the builtin family.
 
+`ClassObject` stores an explicit `SubclassPolicy`. Ordinary classes permit
+subclasses; builtin factories declare `Allowed` or `Disallowed` independently
+of layout, visibility, and constructor availability. Direct-base validation
+raises `TypeError` for prohibited bases, including `bool` even though it inherits
+from `int`. Internal loader/spec classes are prohibited for now.
+
 Subclass eligibility is separate from storage and construction capability.
 Having an overflow pointer does not make `bool`, `NoneType`, or the other
 non-subclassable singleton types legal bases. Native payload compatibility must
 also be validated independently during class creation, as described above.
+Native C++ allocation asserts agreement between the allocator's layout, the
+requested class, and its Shape capacity. Bootstrap installation and cached
+Shapes receive the same checks. The temporary self-labelled class Shape is
+allowed only at initial ClassObject construction; metaclass installation
+validates its final identity. These assertions enforce internal contracts;
+Python-facing construction continues to use explicit exception paths.
 
 When building a constructor thunk, resolve `__new__` through the existing
 lookup machinery. Recognize supported builtin implementations through the

@@ -27,7 +27,8 @@ namespace cl
             NativeLayoutId::Function};
         ClassObject *cls = ClassObject::make_builtin_class<Function>(
             vm->get_or_create_interned_string_value(L"function"),
-            Function::kInlineSlotCount, nullptr, 0, vm->object_class());
+            Function::kInlineSlotCount, nullptr, 0, vm->object_class(),
+            SubclassPolicy::Disallowed);
         install_function_instance_root_shape(cls);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);

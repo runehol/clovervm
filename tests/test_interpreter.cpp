@@ -1473,30 +1473,18 @@ TEST(Interpreter, sequence_search_methods_bypass_subclass_storage_overrides)
         classes, interned_string(L"HostileTuple"));
     ASSERT_TRUE(can_convert_to<ClassObject>(list_class));
     ASSERT_TRUE(can_convert_to<ClassObject>(tuple_class));
-    // Native subclass shape selection is deferred. Prepare compatible classes
-    // explicitly while preserving the Python-defined storage overrides.
-    auto native_subclass = [&](Value declared_class, ClassObject *base,
-                               NativeLayoutId layout) {
-        ClassObject *declared = declared_class.get_ptr<ClassObject>();
-        Owned<TValue<ClassObject>> cls(
-            test_context.thread()->make_internal_value<ClassObject>(
-                declared->get_name(), 0, base, layout));
-        for(const wchar_t *name:
-            {L"__len__", L"__getitem__", L"__iter__", L"__delitem__"})
-        {
-            TValue<String> key = interned_string(name);
-            Value method = declared->get_own_property(key);
-            if(!method.is_not_present())
-            {
-                EXPECT_TRUE(cls.extract()->set_own_property(key, method));
-            }
-        }
-        return cls;
-    };
-    Owned<TValue<ClassObject>> native_list_class = native_subclass(
-        list_class, test_context.vm().list_class(), NativeLayoutId::List);
-    Owned<TValue<ClassObject>> native_tuple_class = native_subclass(
-        tuple_class, test_context.vm().tuple_class(), NativeLayoutId::Tuple);
+    Owned<TValue<ClassObject>> native_list_class(
+        TValue<ClassObject>::from_value_assumed(list_class));
+    Owned<TValue<ClassObject>> native_tuple_class(
+        TValue<ClassObject>::from_value_assumed(tuple_class));
+    EXPECT_EQ(NativeLayoutId::List,
+              native_list_class.extract()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::Tuple,
+              native_tuple_class.extract()->instance_native_layout_id());
+    EXPECT_EQ(0u,
+              native_list_class.extract()->get_instance_inline_slot_capacity());
+    EXPECT_EQ(
+        0u, native_tuple_class.extract()->get_instance_inline_slot_capacity());
     Owned<TValue<List>> list(test_context.thread()->make_internal_value<List>(
         native_list_class.extract()));
     list.extract()->append(Value::from_smi(7));
@@ -5769,4 +5757,14 @@ TEST(Interpreter, negate_overflow)
     expect_string_value(context.run_file(L"x = -288230376151711743 - 1\n"
                                          L"str(-x)\n"),
                         L"288230376151711744");
+}
+
+TEST(Interpreter, prohibited_builtin_subclass_bases)
+{
+    expect_python_error(L"class C(bool):\n    pass\n", L"TypeError",
+                        L"type is not an acceptable base type");
+    expect_python_error(L"class C(int, bool):\n    pass\n", L"TypeError",
+                        L"type is not an acceptable base type");
+    expect_python_error(L"class C(slice):\n    pass\n", L"TypeError",
+                        L"type is not an acceptable base type");
 }

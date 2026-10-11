@@ -148,7 +148,7 @@ namespace cl
         ClassObject *cls = ClassObject::make_builtin_class<Slice>(
             vm->get_or_create_interned_string_value(L"slice"),
             Slice::kInlineSlotCount, nullptr, 0, vm->object_class(),
-            immutable_shape_flags());
+            SubclassPolicy::Disallowed, immutable_shape_flags());
         install_slice_instance_shapes(vm, cls);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);

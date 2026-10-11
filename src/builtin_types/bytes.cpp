@@ -1307,7 +1307,8 @@ namespace cl
             NativeLayoutId::Bytes};
         ClassObject *cls = ClassObject::make_builtin_class<Bytes>(
             vm->get_or_create_interned_string_value(L"bytes"), 0, nullptr, 0,
-            vm->object_class(), immutable_shape_flags());
+            vm->object_class(), SubclassPolicy::Allowed,
+            immutable_shape_flags());
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Public);
     }

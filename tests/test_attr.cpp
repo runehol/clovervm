@@ -252,8 +252,9 @@ TEST(Attr,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
-        NativeLayoutId::Instance);
+        context.vm().type_class(), meta_name,
+        ClassObject::class_inline_storage_slot_count, context.vm().type_class(),
+        NativeLayoutId::ClassObject);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
@@ -292,8 +293,9 @@ TEST(Attr, ClassReadDescriptorMetaclassFallbackReloadsSlot)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
-        NativeLayoutId::Instance);
+        context.vm().type_class(), meta_name,
+        ClassObject::class_inline_storage_slot_count, context.vm().type_class(),
+        NativeLayoutId::ClassObject);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
@@ -429,8 +431,9 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
     TValue<String> meta_attr_name(
         context.vm().get_or_create_interned_string_value(L"meta_attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
-        NativeLayoutId::Instance);
+        context.vm().type_class(), meta_name,
+        ClassObject::class_inline_storage_slot_count, context.vm().type_class(),
+        NativeLayoutId::ClassObject);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
@@ -489,7 +492,8 @@ TEST(Attr, LoadAttrOnClassFallsBackToMetaclass)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"meta_attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        meta_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+        meta_name, ClassObject::class_inline_storage_slot_count,
+        context.vm().type_class(), NativeLayoutId::ClassObject);
     meta->set_own_property(attr_name, Value::from_smi(7));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
@@ -510,7 +514,8 @@ TEST(Attr, LoadAttrOnClassPrefersClassPathOverMetaclass)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        meta_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+        meta_name, ClassObject::class_inline_storage_slot_count,
+        context.vm().type_class(), NativeLayoutId::ClassObject);
     meta->set_own_property(attr_name, Value::from_smi(7));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
@@ -841,8 +846,9 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
     TValue<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
-        NativeLayoutId::Instance);
+        context.vm().type_class(), meta_name,
+        ClassObject::class_inline_storage_slot_count, context.vm().type_class(),
+        NativeLayoutId::ClassObject);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);

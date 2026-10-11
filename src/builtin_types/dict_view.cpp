@@ -204,7 +204,7 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictKeysView>(
             vm->get_or_create_interned_string_value(L"dict_keys"), 0, methods,
-            std::size(methods), vm->object_class());
+            std::size(methods), vm->object_class(), SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }
@@ -227,7 +227,7 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictValuesView>(
             vm->get_or_create_interned_string_value(L"dict_values"), 0, methods,
-            std::size(methods), vm->object_class());
+            std::size(methods), vm->object_class(), SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }
@@ -250,7 +250,7 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictItemsView>(
             vm->get_or_create_interned_string_value(L"dict_items"), 0, methods,
-            std::size(methods), vm->object_class());
+            std::size(methods), vm->object_class(), SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }
@@ -273,7 +273,8 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictKeyIterator>(
             vm->get_or_create_interned_string_value(L"dict_keyiterator"), 0,
-            methods, std::size(methods), vm->object_class());
+            methods, std::size(methods), vm->object_class(),
+            SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }
@@ -298,7 +299,8 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictValueIterator>(
             vm->get_or_create_interned_string_value(L"dict_valueiterator"), 0,
-            methods, std::size(methods), vm->object_class());
+            methods, std::size(methods), vm->object_class(),
+            SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }
@@ -323,7 +325,8 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictItemIterator>(
             vm->get_or_create_interned_string_value(L"dict_itemiterator"), 0,
-            methods, std::size(methods), vm->object_class());
+            methods, std::size(methods), vm->object_class(),
+            SubclassPolicy::Disallowed);
         return builtin_class_definition(cls, native_layout_ids,
                                         BuiltinsVisibility::Internal);
     }

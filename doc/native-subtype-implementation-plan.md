@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Common overflow storage, retained native layouts, native subclass validation, and builtin construction |
 | Owning layers | Runtime object model owns storage and class validation; memory layer owns sizing and reclamation; builtin families own payload construction; constructor thunks and bytecode own call orchestration |
-| Validated against | `97a7d7d3` plus the stage 4a implementation (2026-10-11) |
+| Validated against | `ffee6c1b` plus the stage 4b implementation (2026-10-11) |
 | Supersedes | N/A |
 
 Implements the accepted [native subtype storage design](native-subtype-storage.md)
@@ -169,9 +169,9 @@ safe on its own; builtin constructor support remains in stages 5 and 6.
 
 Verification: eleven focused selector, root-Shape, native-allocation, and
 interpreter tests passed. Full debug checks passed with 1,529 tests passing and
-one skipped. The release `check_opcode_frames` target passed. Changes are
-uncommitted for review; subclass eligibility, broader allocation validation,
-and attribute-dictionary exposure remain stages 4b and 4c.
+one skipped. The release `check_opcode_frames` target passed.
+Stage 4a was committed in `ffee6c1b`. Subclass eligibility and broader allocation
+validation are stage 4b; attribute-dictionary exposure remains stage 4c.
 
 ## Stage 4b: Subclass Eligibility And Allocation Validation
 
@@ -179,18 +179,18 @@ Validate which builtin classes may be subclassed independently of storage
 compatibility, and enforce the selected contract on native allocation paths.
 The generic-allocation guard from 4a remains in place.
 
-- [ ] Agree on a compact sketch for subclass eligibility and allocator
+- [x] Agree on a compact sketch for subclass eligibility and allocator
   validation before implementing this slice.
-- [ ] Validate builtin subclass eligibility separately from compatible storage;
+- [x] Validate builtin subclass eligibility separately from compatible storage;
   reject prohibited builtin bases with `TypeError` during class creation.
-- [ ] Validate class/root-Shape/native-allocator agreement, predefined minima,
+- [x] Validate class/root-Shape/native-allocator agreement, predefined minima,
   and physical capacity on ordinary, bootstrap, and cached-Shape paths.
-- [ ] Preserve native initialization contracts, including tuple-valued exception
+- [x] Preserve native initialization contracts, including tuple-valued exception
   `.args` and initialized StopIteration `.value`; matching slot counts do not
   authorize construction through an incompatible allocator.
-- [ ] Verify permitted and prohibited bases, allocator mismatch rejection,
+- [x] Verify permitted and prohibited bases, allocator mismatch rejection,
   compatible native subclass allocation, and predefined field initialization.
-- [ ] Replace the stage-1 fixture classes with actual Python class definitions
+- [x] Replace the stage-1 fixture classes with actual Python class definitions
   selecting matching native storage. Retain explicit native instance allocation
   until builtin constructors support it:
   - `JitConstantFolding.DoesNotUnboxFloatSubclassConstant`
@@ -199,8 +199,16 @@ The generic-allocation guard from 4a remains in place.
   - `Interpreter.sequence_search_methods_bypass_subclass_storage_overrides`
     (`tests/test_interpreter.cpp`): `HostileList` and `HostileTuple` receive zero
     inline capacity while preserving their Python-defined overrides.
-- [ ] Run `ninja -C build-debug all check` and leave changes uncommitted for
+- [x] Run `ninja -C build-debug all check` and leave changes uncommitted for
   review.
+
+Verification: full debug checks passed with 1,536 tests passing and one skipped.
+New coverage includes prohibited bases (including bool), permitted builtin
+lineages, native allocator/layout mismatches, cached Slice Shapes, bootstrap
+installation, and dynamic Instance sizing. Float/List/Tuple fixtures now use
+Python-declared classes. Seven metaclass fixtures were corrected to type ancestry,
+ClassObject layout, and its physical capacity. The int class now records BigInt
+as its heap storage contract. Changes remain uncommitted for review.
 
 ## Stage 4c: Attribute Mapping Exposure For Native Subclasses
 
