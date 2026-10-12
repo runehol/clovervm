@@ -52,6 +52,36 @@ namespace cl
         return is_smi_or_bool_value(value) || can_convert_to<BigInt>(value);
     }
 
+    Expected<int64_t> validate_length_result(Value value)
+    {
+        int64_t length;
+        if(is_smi_or_bool_value(value))
+        {
+            length = smi_or_bool_as_int(value);
+        }
+        else if(can_convert_to<BigInt>(value))
+        {
+            ConstBigIntView view = value.get_ptr<BigInt>()->view();
+            if(view.signum < 0)
+            {
+                return Expected<int64_t>::raise_exception(
+                    L"ValueError", L"__len__() should return >= 0");
+            }
+            length = CL_TRY(bigint_to_int64(view));
+        }
+        else
+        {
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"__len__() should return an integer");
+        }
+        if(length < 0)
+        {
+            return Expected<int64_t>::raise_exception(
+                L"ValueError", L"__len__() should return >= 0");
+        }
+        return Expected<int64_t>::ok(length);
+    }
+
     bool is_exact_int_value(Value value)
     {
         return value.is_smi() || can_convert_to<BigInt>(value);
@@ -418,6 +448,24 @@ namespace cl
                 L"TypeError", L"int.__hash__ expects an int receiver");
         }
         return intlike_hash_value(self);
+    }
+
+    static Value intlike_bool_value(Value self)
+    {
+        bool truth = is_smi_or_bool_value(self)
+                         ? smi_or_bool_as_int(self) != 0
+                         : self.get_ptr<BigInt>()->signum() != 0;
+        return truth ? Value::True() : Value::False();
+    }
+
+    static Value native_int_bool(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__bool__ expects an int receiver");
+        }
+        return intlike_bool_value(self);
     }
 
     static bool try_get_smi_or_bool(Value value, int64_t *out)
@@ -1674,6 +1722,26 @@ namespace cl
         return Operator{}(thread, smi_or_bool_as_int(value));
     }
 
+    static Value trusted_smi_or_bool_truth(ThreadState *thread, Value self)
+    {
+        (void)thread;
+        return smi_or_bool_as_int(self) != 0 ? Value::True() : Value::False();
+    }
+
+    static Value trusted_bigint_truth(ThreadState *thread, Value self)
+    {
+        (void)thread;
+        return self.get_ptr<BigInt>()->signum() != 0 ? Value::True()
+                                                     : Value::False();
+    }
+
+    using IntInlineBoolHandler =
+        TrustedHandlerDefinition<trusted_smi_or_bool_truth,
+                                 TrustedHandlerEffects::None>;
+    using IntBigIntBoolHandler =
+        TrustedHandlerDefinition<trusted_bigint_truth,
+                                 TrustedHandlerEffects::None>;
+
     static Value trusted_smi_or_bool_hash(ThreadState *thread, Value value)
     {
         (void)thread;
@@ -1743,6 +1811,35 @@ namespace cl
         }
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
+
+    class IntBoolResolver final
+        : public TrustedHandlerResolverBase<IntInlineBoolHandler,
+                                            IntBigIntBoolHandler>
+    {
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm,
+                                         ShapeKey operand0_key,
+                                         ShapeKey operand1_key,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity requested_arity)
+        {
+            (void)operand1_key;
+            (void)order;
+            if(requested_arity != TrustedHandlerArity::Unary)
+            {
+                return TrustedResolution::no_trusted_handler_call_untrusted();
+            }
+            if(is_smi_or_bool_shape_key(operand0_key))
+            {
+                return IntInlineBoolHandler::resolution();
+            }
+            if(is_bigint_shape_key(vm, operand0_key))
+            {
+                return IntBigIntBoolHandler::resolution();
+            }
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        }
+    };
 
     static TrustedResolution resolve_trusted_int_hash_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
@@ -2002,6 +2099,9 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_int_str,
                                      L"Return repr(self)."),
+            with_trusted_handler_resolver<IntBoolResolver>(
+                vm, builtin_intrinsic_method(L"__bool__", native_int_bool,
+                                             L"Return self != 0.")),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__hash__", native_int_hash,
                                          L"Return hash(self)."),

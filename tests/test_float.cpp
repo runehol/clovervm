@@ -196,4 +196,53 @@ assert hash(value) == 2
 True
 )"));
     }
+    TEST(FloatRuntime, BoolMethodsAndTrustedHandlersCoverSpecialValues)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        Value method = context.vm().float_class()->get_own_property(
+            interned_string(L"__bool__"));
+        ASSERT_TRUE(can_convert_to<Function>(method));
+        auto resolver = method.get_ptr<Function>()
+                            ->code_object.extract()
+                            ->trusted_handler_resolver;
+        ASSERT_NE(nullptr, resolver);
+        CodeObject *code = context.compile_file(L"float.__bool__(value)\n");
+        const double values[] = {0.0,
+                                 -0.0,
+                                 1.5,
+                                 -1.5,
+                                 std::numeric_limits<double>::infinity(),
+                                 -std::numeric_limits<double>::infinity(),
+                                 std::numeric_limits<double>::quiet_NaN()};
+        for(double number: values)
+        {
+            Owned<Value> value(
+                context.thread()->make_object_value<Float>(number).raw_value());
+            Value expected = number != 0.0 ? Value::True() : Value::False();
+            ASSERT_TRUE(code->get_defining_module().extract()->set_own_property(
+                interned_string(L"value"), value.value()));
+            EXPECT_EQ(expected,
+                      context.thread()->run_clovervm_code_object(code));
+            auto resolution = resolver(
+                &context.vm(), ShapeKey::from_value(value.value()),
+                ShapeKey::from_value(Value::not_present()),
+                TrustedHandlerOperandOrder::Normal, TrustedHandlerArity::Unary);
+            ASSERT_TRUE(resolution.has_trusted_handler());
+            EXPECT_EQ(expected,
+                      resolution.unary(context.thread(), value.value()));
+            auto metadata = context.vm().trusted_handler_metadata(
+                erase_trusted_handler_target(resolution.unary));
+            ASSERT_TRUE(metadata.has_value());
+            EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+        }
+        Owned<Value> subclass(
+            context.run_file(L"class F(float): pass\nF(0.0)\n"));
+        EXPECT_FALSE(resolver(&context.vm(),
+                              ShapeKey::from_value(subclass.value()),
+                              ShapeKey::from_value(Value::not_present()),
+                              TrustedHandlerOperandOrder::Normal,
+                              TrustedHandlerArity::Unary)
+                         .has_trusted_handler());
+    }
 }  // namespace cl

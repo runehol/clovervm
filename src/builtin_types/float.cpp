@@ -828,6 +828,31 @@ namespace cl
             .raw_value();
     }
 
+    static Value float_bool_value(TValue<Float> self)
+    {
+        return self.extract()->value() != 0.0 ? Value::True() : Value::False();
+    }
+
+    static Value native_float_bool(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__bool__ expects a float receiver");
+        }
+        return float_bool_value(TValue<Float>::from_value_assumed(self));
+    }
+
+    static Value trusted_float_bool(ThreadState *thread, Value self)
+    {
+        (void)thread;
+        return float_bool_value(TValue<Float>::from_value_assumed(self));
+    }
+
+    using FloatBoolHandler =
+        TrustedHandlerDefinition<trusted_float_bool,
+                                 TrustedHandlerEffects::None>;
+
     using FloatHashHandler =
         TrustedHandlerDefinition<trusted_float_hash,
                                  TrustedHandlerEffects::None,
@@ -874,6 +899,7 @@ namespace cl
         }
     };
 
+    using FloatBoolResolver = FloatUnaryResolver<FloatBoolHandler>;
     using FloatHashResolver = FloatUnaryResolver<FloatHashHandler>;
     using FloatAbsResolver = FloatUnaryResolver<FloatAbsHandler>;
     using FloatNegResolver = FloatUnaryResolver<FloatNegHandler>;
@@ -977,6 +1003,9 @@ namespace cl
                 vm,
                 builtin_intrinsic_method(L"__ge__", FloatGeOperation::native,
                                          L"Return self >= value.")),
+            with_trusted_handler_resolver<FloatBoolResolver>(
+                vm, builtin_intrinsic_method(L"__bool__", native_float_bool,
+                                             L"Return self != 0.")),
             with_trusted_handler_resolver<FloatHashResolver>(
                 vm, builtin_intrinsic_method(L"__hash__", native_float_hash,
                                              L"Return hash(self).")),

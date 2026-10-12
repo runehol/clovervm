@@ -20,6 +20,8 @@ namespace cl
     };
 
     bool is_intlike_value(Value value);
+    // Validate a length payload without Python calls or SMI narrowing.
+    [[nodiscard]] Expected<int64_t> validate_length_result(Value value);
     // These historical exact-int helpers exclude bool but accept heap int
     // subclasses. Callers needing exact class identity must check the class.
     bool is_exact_int_value(Value value);

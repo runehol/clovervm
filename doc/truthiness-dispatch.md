@@ -4,14 +4,16 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Partial |
 | Scope | Truth conversion semantics, cached special-method dispatch, result validation, and Python return continuations |
 | Owning layers | Builtin numeric methods and integer validation; runtime dispatch and caches; interpreter continuations; codegen and bytecode metadata |
 | Validated against | `856bf6c4` (2026-10-12) |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
 This is the agreed target contract. Current conversion opcodes support immediate
-values and floats; full heap truthiness dispatch is not implemented yet. The
+values and floats; full heap truthiness dispatch is not implemented yet. Native
+int/float __bool__ methods, registered trusted handlers, and direct integer-length
+validation are implemented. The
 [implementation plan](truthiness-implementation-plan.md) stages the transition.
 
 ## Truthiness semantics and call path

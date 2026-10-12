@@ -7943,3 +7943,91 @@ True
     }
     EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
 }
+
+TEST(Interpreter, numeric_bool_methods_validate_receivers_and_subclass_payloads)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+for value in (0, 1, -1, True, False, 2**100, -(2**100)):
+    expected = value != 0
+    assert int.__bool__(value) is expected
+    assert value.__bool__() is expected
+class PlainInt(int):
+    pass
+for value in (PlainInt(0), PlainInt(1)):
+    assert value.__bool__() is (value != 0)
+class I(int):
+    def __bool__(self):
+        return False
+for value in (I(0), I(1), I(-1), I(2**100)):
+    assert int.__bool__(value) is (value != 0)
+    assert value.__bool__() is False
+class F(float):
+    pass
+for value in (0.0, -0.0, 1.5, -1.5, F(0.0), F(-0.0), F(1.5)):
+    expected = value != 0.0
+    assert float.__bool__(value) is expected
+    assert value.__bool__() is expected
+for pair in ((int.__bool__, 1.0), (float.__bool__, 1),
+             (int.__bool__, None), (float.__bool__, None)):
+    method = pair[0]
+    invalid = pair[1]
+    try:
+        method(invalid)
+    except TypeError:
+        pass
+    else:
+        assert False
+True
+)"));
+}
+
+TEST(Interpreter, int_bool_resolver_registers_allocation_free_exact_handlers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value method = context.vm().int_class()->get_own_property(
+        interned_string(L"__bool__"));
+    ASSERT_TRUE(can_convert_to<Function>(method));
+    auto resolver = method.get_ptr<Function>()
+                        ->code_object.extract()
+                        ->trusted_handler_resolver;
+    ASSERT_NE(nullptr, resolver);
+    Owned<Value> boxed_zero(
+        context.thread()
+            ->make_object_value<BigInt>(UninitializedBigIntDigitsTag{}, 0,
+                                        signum_t{0})
+            .raw_value());
+    Owned<Value> large(context.run_file(L"2**100\n"));
+    ASSERT_TRUE(can_convert_to<BigInt>(large.value()));
+    for(Value value: {Value::from_smi(0), Value::from_smi(-1), Value::False(),
+                      Value::True(), boxed_zero.value(), large.value()})
+    {
+        auto resolution = resolver(&context.vm(), ShapeKey::from_value(value),
+                                   ShapeKey::from_value(Value::not_present()),
+                                   TrustedHandlerOperandOrder::Normal,
+                                   TrustedHandlerArity::Unary);
+        ASSERT_TRUE(resolution.has_trusted_handler());
+        EXPECT_EQ(value == Value::from_smi(0) || value == Value::False() ||
+                          value == boxed_zero.value()
+                      ? Value::False()
+                      : Value::True(),
+                  resolution.unary(context.thread(), value));
+        auto metadata = context.vm().trusted_handler_metadata(
+            erase_trusted_handler_target(resolution.unary));
+        ASSERT_TRUE(metadata.has_value());
+        EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+    }
+    Owned<Value> subclass(context.run_file(L"class I(int): pass\nI(0)\n"));
+    ASSERT_TRUE(can_convert_to<BigInt>(subclass.value()));
+    EXPECT_FALSE(resolver(&context.vm(), ShapeKey::from_value(subclass.value()),
+                          ShapeKey::from_value(Value::not_present()),
+                          TrustedHandlerOperandOrder::Normal,
+                          TrustedHandlerArity::Unary)
+                     .has_trusted_handler());
+    EXPECT_FALSE(resolver(&context.vm(), ShapeKey::from_value(Value::True()),
+                          ShapeKey::from_value(Value::not_present()),
+                          TrustedHandlerOperandOrder::Normal,
+                          TrustedHandlerArity::Binary)
+                     .has_trusted_handler());
+}

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Partial |
 | Scope | Cached truth conversion, result validation, and staged conditional-jump integration |
 | Owning layers | Builtin numeric methods and integer validation; runtime dispatch and caches; interpreter continuations; codegen and bytecode metadata |
 | Validated against | `856bf6c4` (2026-10-12) |
@@ -31,14 +31,14 @@ fast path, including truthy NotImplemented.
 
 ### 1. Builtin methods and integer result validation
 
-- [ ] Add checked native `int.__bool__` and `float.__bool__` methods in their
+- [x] Add checked native `int.__bool__` and `float.__bool__` methods in their
   owning builtin type files, with trusted resolvers following nearby patterns.
-- [ ] Cover SMI/bool/BigInt integer receivers and float receivers, inherited
+- [x] Cover SMI/bool/BigInt integer receivers and float receivers, inherited
   methods, receiver rejection, boxed zero/one, float signed zero, and NaN.
-- [ ] Add a fallible integer-length validation helper alongside existing integer
+- [x] Add a fallible integer-length validation helper alongside existing integer
   conversion policy. It must accept boxed values through INT64_MAX without
   narrowing them to SMI or calling Python methods.
-- [ ] Pin valid boundaries, invalid types, negative values, and overflow in
+- [x] Pin valid boundaries, invalid types, negative values, and overflow in
   focused helper tests. Use Python/interpreter tests for the public dunders.
 
 This stage does not change conditional jumps or wire new truthiness opcodes.

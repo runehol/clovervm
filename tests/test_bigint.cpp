@@ -1,6 +1,8 @@
 #include "builtin_types/bigint.h"
 
 #include "builtin_types/int.h"
+#include "builtin_types/tuple.h"
+#include "object_model/owned.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
@@ -875,4 +877,78 @@ TEST(BigInt, BigIntFromUint64PreservesUnsignedBoundaries)
                   result.value().is_smi());
         EXPECT_EQ(std::to_wstring(input), int_value_decimal(result.value()));
     }
+}
+
+TEST(BigInt, LengthValidationAcceptsBoxedPayloadsThroughInt64Max)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(Value value: {Value::False(), Value::True(), Value::from_smi(0),
+                      Value::from_smi(value_smi_max)})
+    {
+        auto result = validate_length_result(value);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(value.is_bool() ? int64_t(value == Value::True())
+                                  : value.get_smi(),
+                  result.value());
+    }
+    Owned<Value> values(context.run_file(LR"(
+class I(int):
+    def __bool__(self):
+        raise AssertionError
+    def __index__(self):
+        raise AssertionError
+(I(0), I(1), I(2**58), I(2**63 - 1))
+)"));
+    ASSERT_TRUE(can_convert_to<Tuple>(values.value()));
+    const int64_t expected[] = {0, 1, int64_t{1} << 58,
+                                std::numeric_limits<int64_t>::max()};
+    Tuple *tuple = values.value().get_ptr<Tuple>();
+    ASSERT_EQ(std::size(expected), tuple->size());
+    for(size_t idx = 0; idx < tuple->size(); ++idx)
+    {
+        ASSERT_TRUE(can_convert_to<BigInt>(tuple->item_unchecked(idx)));
+        auto result = validate_length_result(tuple->item_unchecked(idx));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(expected[idx], result.value());
+    }
+}
+
+TEST(BigInt, LengthValidationRejectsInvalidNegativeAndOverflowResults)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    struct InvalidLength
+    {
+        const wchar_t *source;
+        const wchar_t *exception;
+    };
+    const InvalidLength cases[] = {
+        {L"None\n", L"TypeError"},
+        {L"1.5\n", L"TypeError"},
+        {L"'1'\n", L"TypeError"},
+        {L"class Index:\n    def __index__(self): return 1\nIndex()\n",
+         L"TypeError"},
+        {L"-1\n", L"ValueError"},
+        {L"class I(int): pass\nI(-1)\n", L"ValueError"},
+        {L"-(2**100)\n", L"ValueError"},
+        {L"2**63\n", L"OverflowError"},
+        {L"2**100\n", L"OverflowError"},
+    };
+    for(const InvalidLength &test_case: cases)
+    {
+        SCOPED_TRACE(test_case.source);
+        Owned<Value> value(context.run_file(test_case.source));
+        ASSERT_FALSE(value.value().is_exception_marker());
+        auto result = validate_length_result(value.value());
+        ASSERT_TRUE(result.has_exception());
+        EXPECT_EQ(context.thread()->class_for_builtin_name(test_case.exception),
+                  context.thread()
+                      ->pending_exception_object()
+                      .extract()
+                      ->get_shape()
+                      ->get_class());
+        context.thread()->clear_pending_exception();
+    }
+    EXPECT_FALSE(context.thread()->has_pending_exception());
 }
