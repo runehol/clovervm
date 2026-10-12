@@ -1715,6 +1715,20 @@ namespace cl
                     case AstNodeKind::STATEMENT_EXPRESSION:
                         return analyze_sequence(analysis, children, state);
 
+                    case AstNodeKind::EXPRESSION_IF:
+                        {
+                            analyze_child_as_expression(analysis, children[0],
+                                                        state);
+                            FlowState body_state = state;
+                            FlowState alternative_state = state;
+                            analyze_child_as_expression(analysis, children[1],
+                                                        body_state);
+                            analyze_child_as_expression(analysis, children[2],
+                                                        alternative_state);
+                            return fallthrough_summary(merge_flow_states(
+                                body_state, alternative_state));
+                        }
+
                     case AstNodeKind::STATEMENT_IF:
                         return analyze_if_statement(analysis, children, state);
 

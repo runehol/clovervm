@@ -190,6 +190,14 @@ template <> struct fmt::formatter<cl::AstVector>
                 fmt::format_to(out, " {} ", kind.operator_kind);
                 render_node(av, out, children[1], indent, self_precedence);
                 break;
+            case cl::AstNodeKind::EXPRESSION_IF:
+                render_node(av, out, children[1], indent, self_precedence);
+                fmt::format_to(out, " if ");
+                render_node(av, out, children[0], indent, self_precedence);
+                fmt::format_to(out, " else ");
+                render_node(av, out, children[2], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
             case cl::AstNodeKind::EXPRESSION_UNARY:
                 fmt::format_to(out, "{} ", kind.operator_kind);
                 render_node(av, out, children[0], indent, self_precedence);

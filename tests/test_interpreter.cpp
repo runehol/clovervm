@@ -7637,3 +7637,108 @@ True
 )");
     EXPECT_EQ(Value::True(), result);
 }
+
+TEST(Interpreter, conditional_expression_precedence_and_contexts)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+assert (1 if True else 2) == 1
+assert (1 if False else 2) == 2
+assert (1 or 2 if False else 3) == 3
+assert (1 if False else 2 if True else 3) == 2
+assert ((1 if False else 2) if True else 3) == 2
+assert (1 if (False if True else True) else 2) == 2
+assert (1 if 0 else 2) == 2
+assert (1 if None else 2) == 2
+assert (1 if -3 else 2) == 1
+assert (1 if 0.0 else 2) == 2
+assert (1 if 1.5 else 2) == 1
+def identity(value): return value
+assert identity(1 if False else 2) == 2
+values = [1 if True else 2, 3 if False else 4]
+assert values[0] == 1
+assert values[1] == 4
+assert values[0 if True else 1] == 1
+assert (10 + (1 if False else 2)) == 12
+True
+)"));
+}
+
+TEST(Interpreter, conditional_expression_is_lazy_and_preserves_identity)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+trace = 0
+def condition(value):
+    global trace
+    trace = trace * 10 + 1
+    return value
+def arm(value):
+    global trace
+    trace = trace * 10 + 2
+    return value
+def fail(): raise ValueError("unselected")
+left = [1]
+right = [2]
+assert (arm(left) if condition(True) else fail()) is left
+assert trace == 12
+trace = 0
+assert (fail() if condition(False) else arm(right)) is right
+assert trace == 12
+assert (left if True else missing) is left
+assert (missing if False else right) is right
+True
+)"));
+}
+
+TEST(Interpreter, conditional_expression_propagates_exceptions)
+{
+    expect_python_error(L"def fail(): raise ValueError('condition')\n"
+                        L"1 if fail() else 2\n",
+                        L"ValueError", L"condition");
+    expect_python_error(L"def fail(): raise ValueError('arm')\n"
+                        L"fail() if True else 2\n",
+                        L"ValueError", L"arm");
+    expect_python_error(L"def fail(): raise ValueError('arm')\n"
+                        L"1 if False else fail()\n",
+                        L"ValueError", L"arm");
+    expect_python_error(L"1 if 'unsupported' else 2\n", L"TypeError",
+                        L"unsupported truthiness for object");
+}
+
+TEST(Interpreter, conditional_expression_analyzes_local_reads_in_both_arms)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def choose(flag):
+    left = 1
+    right = 2
+    return left if flag else right
+assert choose(True) == 1
+assert choose(False) == 2
+def skip_missing(flag):
+    result = 1 if flag else missing
+    missing = 2
+    return result
+assert skip_missing(True) == 1
+True
+)"));
+    expect_python_error(L"def f(flag):\n"
+                        L"    result = missing if flag else 2\n"
+                        L"    missing = 1\n"
+                        L"    return result\n"
+                        L"f(True)\n",
+                        L"NameError", L"name 'missing' is not defined");
+    expect_python_error(L"def f(flag):\n"
+                        L"    result = 1 if flag else missing\n"
+                        L"    missing = 2\n"
+                        L"    return result\n"
+                        L"f(False)\n",
+                        L"NameError", L"name 'missing' is not defined");
+    expect_python_error(L"def f():\n"
+                        L"    result = 1 if missing else 2\n"
+                        L"    missing = True\n"
+                        L"    return result\n"
+                        L"f()\n",
+                        L"NameError", L"name 'missing' is not defined");
+}

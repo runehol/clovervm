@@ -17,7 +17,8 @@ or unsupported operation is encountered.
 
 The implemented subset is enough to run small Python programs with functions,
 classes, inheritance, loops, conditionals, integer arithmetic, assertions,
-exceptions, boxed floats, arbitrary-size integers, and native
+exceptions, conditional expressions (`body if test else alternative`), boxed
+floats, arbitrary-size integers, and native
 string/bytes/list/tuple/dict values. Function calls support positional and
 keyword defaults, positional-only and keyword-only parameters, and callee
 `*args`/`**kwargs`; caller unpacking remains incomplete.
