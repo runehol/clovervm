@@ -445,18 +445,7 @@ namespace cl
     static Value require_smi_index(Value value, const wchar_t *message,
                                    int64_t &out)
     {
-        TValue<SMI> index = TValue<SMI>::from_smi(0);
-        Expected<IntToSmiStatus> status =
-            try_intlike_value_to_smi(value, &index);
-        if(status.has_exception())
-        {
-            return Value::exception_marker();
-        }
-        if(status.value() == IntToSmiStatus::NotInt)
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", message);
-        }
+        TValue<SMI> index = CL_TRY(try_intlike_value_to_smi(value, message));
         out = index.extract();
         return Value::None();
     }

@@ -57,26 +57,21 @@ namespace cl
         return value.is_smi() || can_convert_to<BigInt>(value);
     }
 
-    NOINLINE Expected<IntToSmiStatus>
-    try_intlike_value_to_smi_slow(Value value, TValue<SMI> *out)
+    NOINLINE Expected<TValue<SMI>>
+    try_intlike_value_to_smi_slow(Value value,
+                                  const wchar_t *type_error_message)
     {
         if(value.is_bool())
         {
-            *out = TValue<SMI>::from_smi(smi_or_bool_as_int(value));
-            return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
+            return Expected<TValue<SMI>>::ok(
+                TValue<SMI>::from_smi(smi_or_bool_as_int(value)));
         }
         if(can_convert_to<BigInt>(value))
         {
-            Expected<TValue<SMI>> smi =
-                bigint_to_smi(value.get_ptr<BigInt>()->view());
-            if(smi.has_exception())
-            {
-                return Expected<IntToSmiStatus>::propagate_exception();
-            }
-            *out = smi.value();
-            return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
+            return bigint_to_smi(value.get_ptr<BigInt>()->view());
         }
-        return Expected<IntToSmiStatus>::ok(IntToSmiStatus::NotInt);
+        return Expected<TValue<SMI>>::raise_exception(L"TypeError",
+                                                      type_error_message);
     }
 
     Expected<IntToSmiStatus> try_exact_int_value_to_smi(Value value,
