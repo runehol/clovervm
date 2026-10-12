@@ -214,16 +214,11 @@ namespace cl
                              make_version_info(vm));
     }
 
-    [[nodiscard]] static Value require_range_integer_arg(Value arg,
-                                                         Value &arg_out)
+    [[nodiscard]] static Expected<TValue<SMI>>
+    require_range_integer_arg(Value arg)
     {
-        if(!arg.is_smi())
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"range() arguments must be integers");
-        }
-        arg_out = arg;
-        return Value::None();
+        return try_intlike_value_to_smi(arg,
+                                        L"range() arguments must be integers");
     }
 
     static Value builtin_range(ThreadState *thread, Value start_arg,
@@ -251,19 +246,16 @@ namespace cl
             step = step_arg;
         }
 
-        CL_PROPAGATE_EXCEPTION(require_range_integer_arg(start, start));
-        CL_PROPAGATE_EXCEPTION(require_range_integer_arg(stop, stop));
-        CL_PROPAGATE_EXCEPTION(require_range_integer_arg(step, step));
-        if(step.get_smi() == 0)
+        TValue<SMI> start_smi = CL_TRY(require_range_integer_arg(start));
+        TValue<SMI> stop_smi = CL_TRY(require_range_integer_arg(stop));
+        TValue<SMI> step_smi = CL_TRY(require_range_integer_arg(step));
+        if(step_smi.extract() == 0)
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"ValueError", L"range() arg 3 must not be zero");
         }
 
-        return make_object_value<RangeIterator>(
-                   TValue<SMI>::from_value_assumed(start),
-                   TValue<SMI>::from_value_assumed(stop),
-                   TValue<SMI>::from_value_assumed(step))
+        return make_object_value<RangeIterator>(start_smi, stop_smi, step_smi)
             .raw_value();
     }
 

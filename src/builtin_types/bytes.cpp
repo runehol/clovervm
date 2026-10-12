@@ -561,31 +561,14 @@ namespace cl
                 L"ValueError", L"byte must be in range(0, 256)");
         }
 
-        TValue<SMI> smi = TValue<SMI>::from_smi(0);
-        Expected<IntToSmiStatus> status =
-            try_intlike_value_to_smi(needle, &smi);
-        if(status.has_exception())
-        {
-            return Expected<uint8_t>::propagate_exception();
-        }
-        assert(status.value() == IntToSmiStatus::Converted);
+        TValue<SMI> smi = CL_TRY(try_intlike_value_to_smi(needle));
         return Expected<uint8_t>::ok(static_cast<uint8_t>(smi.extract()));
     }
 
     static Value require_smi_argument(Value value, const wchar_t *message,
                                       int64_t &out)
     {
-        TValue<SMI> smi = TValue<SMI>::from_smi(0);
-        Expected<IntToSmiStatus> status = try_intlike_value_to_smi(value, &smi);
-        if(status.has_exception())
-        {
-            return Value::exception_marker();
-        }
-        if(status.value() == IntToSmiStatus::NotInt)
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", message);
-        }
+        TValue<SMI> smi = CL_TRY(try_intlike_value_to_smi(value, message));
         out = smi.extract();
         return Value::None();
     }

@@ -147,6 +147,10 @@ TEST(BigInt, IntSubclassSmallValuesRemainHeapBigInts)
         ASSERT_FALSE(result.value().is_exception_marker());
         ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
         EXPECT_FALSE(result.value().is_smi());
+        Expected<TValue<SMI>> converted =
+            try_intlike_value_to_smi(result.value());
+        ASSERT_TRUE(converted.has_value());
+        EXPECT_EQ(value, converted.value().extract());
         EXPECT_EQ(value, bigint_to_smi(result.value().get_ptr<BigInt>()->view())
                              .value()
                              .extract());
@@ -814,21 +818,32 @@ TEST(BigInt, CompareBigIntViewsUsesSignedMagnitude)
         0);
 }
 
-TEST(BigInt, IntlikeValueToSmiAcceptsBoolAndRejectsNonIntegers)
+TEST(BigInt, IntlikeValueToSmiAcceptsInlineIntegersAndBool)
 {
-    TValue<SMI> bool_smi = TValue<SMI>::from_smi(0);
-    TValue<SMI> none_smi = TValue<SMI>::from_smi(7);
-    Expected<IntToSmiStatus> bool_result =
-        try_intlike_value_to_smi(Value::True(), &bool_smi);
-    Expected<IntToSmiStatus> none_result =
-        try_intlike_value_to_smi(Value::None(), &none_smi);
+    for(Value input:
+        {Value::from_smi(-7), Value::from_smi(0),
+         Value::from_smi(value_smi_max), Value::False(), Value::True()})
+    {
+        Expected<TValue<SMI>> result = try_intlike_value_to_smi(input);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(input.is_bool() ? (input == Value::True() ? 1 : 0)
+                                  : input.get_smi(),
+                  result.value().extract());
+    }
+}
 
-    ASSERT_TRUE(bool_result.has_value());
-    EXPECT_EQ(IntToSmiStatus::Converted, bool_result.value());
-    EXPECT_EQ(1, bool_smi.extract());
-    ASSERT_TRUE(none_result.has_value());
-    EXPECT_EQ(IntToSmiStatus::NotInt, none_result.value());
-    EXPECT_EQ(7, none_smi.extract());
+TEST(BigInt, IntlikeValueToSmiRejectsNonIntegersWithRequestedMessage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    EXPECT_TRUE(try_intlike_value_to_smi(Value::None()).has_exception());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"expected an integer");
+    context.thread()->clear_pending_exception();
+    EXPECT_TRUE(try_intlike_value_to_smi(Value::None(), L"custom integer error")
+                    .has_exception());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"custom integer error");
 }
 
 TEST(BigInt, ExactIntValueToSmiExcludesBool)

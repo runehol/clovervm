@@ -230,10 +230,7 @@ namespace cl
                 return thread->set_pending_builtin_exception_string(
                     L"ValueError", L"chr() arg not in range(0x110000)");
             }
-            TValue<SMI> smi = TValue<SMI>::from_smi(0);
-            [[maybe_unused]] IntToSmiStatus status =
-                CL_TRY(try_intlike_value_to_smi(code_value, &smi));
-            assert(status == IntToSmiStatus::Converted);
+            TValue<SMI> smi = CL_TRY(try_intlike_value_to_smi(code_value));
             code = smi.extract();
         }
         if(code < 0 || code > 0x10ffff)

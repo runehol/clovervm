@@ -56,16 +56,6 @@ protocols are already available.
 Done when the helper has focused stdlib tests and does not claim compatibility
 for protocol behavior the VM cannot yet execute.
 
-### Accept `bool` in SMI-sized integer consumers
-
-Audit one public API that directly rejects `bool` despite Python treating it as
-an `int`, starting with `range()`. Route the conversion through the existing
-intlike policy where the target representation remains SMI-sized; do not fold
-arbitrary-size `BigInt` support into the same patch.
-
-Done when interpreter tests cover `False`, `True`, ordinary SMI values, and the
-existing out-of-range or unsupported-value behavior.
-
 ## Bounded, But Larger
 
 ### Follow-ups from native constructor work
