@@ -323,53 +323,55 @@ namespace cl
     }
 
     static void install_builtin_function_binding(VirtualMachine *vm,
+                                                 ModuleObject *module,
                                                  const wchar_t *name,
                                                  Value value)
     {
-        bool installed =
-            vm->global_builtins_module().extract()->set_own_property(
-                vm->get_or_create_interned_string_value(name), value);
+        bool installed = module->set_own_property(
+            vm->get_or_create_interned_string_value(name), value);
         assert(installed);
         (void)installed;
     }
 
-    Expected<void> install_builtin_function_bindings(VirtualMachine *vm)
+    Expected<void>
+    install_builtin_function_bindings(VirtualMachine *vm,
+                                      ModuleObject *implementation_module)
     {
         install_builtin_function_binding(
-            vm, L"isinstance",
+            vm, vm->global_builtins_module().extract(), L"isinstance",
             CL_TRY(make_intrinsic_function(vm, builtin_isinstance))
                 .raw_value());
         install_builtin_function_binding(
-            vm, L"issubclass",
+            vm, vm->global_builtins_module().extract(), L"issubclass",
             CL_TRY(make_intrinsic_function(vm, builtin_issubclass))
                 .raw_value());
         install_builtin_function_binding(
-            vm, L"setattr",
+            vm, vm->global_builtins_module().extract(), L"setattr",
             CL_TRY(make_intrinsic_function(vm, builtin_setattr)).raw_value());
         install_builtin_function_binding(
-            vm, L"delattr",
+            vm, vm->global_builtins_module().extract(), L"delattr",
             CL_TRY(make_intrinsic_function(vm, builtin_delattr)).raw_value());
         install_builtin_function_binding(
-            vm, L"callable",
+            vm, vm->global_builtins_module().extract(), L"callable",
             CL_TRY(make_intrinsic_function(vm, builtin_callable)).raw_value());
         install_builtin_function_binding(
-            vm, L"ord",
+            vm, vm->global_builtins_module().extract(), L"ord",
             CL_TRY(make_intrinsic_function(vm, builtin_ord)).raw_value());
         install_builtin_function_binding(
-            vm, L"chr",
+            vm, vm->global_builtins_module().extract(), L"chr",
             CL_TRY(make_intrinsic_function(vm, builtin_chr)).raw_value());
         install_builtin_function_binding(
-            vm, L"_clover_builtin_getattr",
+            vm, implementation_module, L"_clover_builtin_getattr",
             CL_TRY(make_intrinsic_function(vm, builtin_getattr)).raw_value());
         install_builtin_function_binding(
-            vm, L"_clover_builtin_getattr_default",
+            vm, implementation_module, L"_clover_builtin_getattr_default",
             CL_TRY(make_intrinsic_function(vm, builtin_getattr_default))
                 .raw_value());
         install_builtin_function_binding(
-            vm, L"_clover_builtin_hasattr",
+            vm, implementation_module, L"_clover_builtin_hasattr",
             CL_TRY(make_intrinsic_function(vm, builtin_hasattr)).raw_value());
         install_builtin_function_binding(
-            vm, L"_clover_builtin_dir",
+            vm, implementation_module, L"_clover_builtin_dir",
             CL_TRY(make_intrinsic_function(vm, builtin_dir)).raw_value());
         return Expected<void>::ok();
     }

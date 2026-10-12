@@ -1,10 +1,10 @@
 #include "builtin_types/list.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list_iterator.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
-#include "import_system/module_global.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/native_function.h"
@@ -440,36 +440,34 @@ namespace cl
                     list_default_single(vm, Value::from_smi(-1))));
     }
 
-    void install_list_python_methods(VirtualMachine *vm)
+    void install_list_python_methods(VirtualMachine *vm,
+                                     ModuleObject *implementation_module)
     {
-        ModuleObject *builtins = vm->global_builtins_module().extract();
         ClassObject *cls = vm->list_class();
         const wchar_t *method_names[] = {L"__init__", L"__eq__", L"__ne__",
                                          L"count",    L"index",  L"remove"};
         const wchar_t *helper_names[] = {
-            L"__clover_list_init",  L"__clover_list_eq",
-            L"__clover_list_ne",    L"__clover_list_count",
-            L"__clover_list_index", L"__clover_list_remove"};
+            L"_clover_list_init",  L"_clover_list_eq",
+            L"_clover_list_ne",    L"_clover_list_count",
+            L"_clover_list_index", L"_clover_list_remove"};
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
         for(size_t idx = 0; idx < std::size(method_names); ++idx)
         {
             TValue<String> helper_name =
                 vm->get_or_create_interned_string_value(helper_names[idx]);
-            Value function = builtins->get_own_property(helper_name);
+            Value function =
+                implementation_module->get_own_property(helper_name);
             if(!can_convert_to<Function>(function))
             {
-                fatal("trusted builtins.py did not define list method");
+                fatal("trusted builtin_implementations.py did not define list "
+                      "method");
             }
             bool stored = cls->define_own_property(
                 vm->get_or_create_interned_string_value(method_names[idx]),
                 function, flags);
             assert(stored);
             (void)stored;
-            if(!delete_module_global(builtins, helper_name))
-            {
-                fatal("failed to hide Python list method from builtins");
-            }
         }
     }
 

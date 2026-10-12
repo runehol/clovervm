@@ -459,6 +459,7 @@ namespace cl
         Owned<Optional<TValue<Function>>>
             membership_sequence_fallback_function_;
         ModuleObject *global_builtins_module_ = nullptr;
+        ModuleObject *builtin_implementation_module_ = nullptr;
         ModuleObject *sys_module_ = nullptr;
         Dict *imported_modules_ = nullptr;
         std::unique_ptr<NativeLibraryHandleCache> native_library_handles_;

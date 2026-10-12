@@ -1431,9 +1431,9 @@ TEST(Interpreter, sequence_search_methods_have_local_equality_caches)
             EXPECT_TRUE(found_equality_cache);
         }
     }
-    for(const wchar_t *name: {L"__clover_list_count", L"__clover_list_index",
-                              L"__clover_list_remove", L"__clover_tuple_count",
-                              L"__clover_tuple_index", L"_clover_sys"})
+    for(const wchar_t *name:
+        {L"_clover_list_count", L"_clover_list_index", L"_clover_list_remove",
+         L"_clover_tuple_count", L"_clover_tuple_index", L"_clover_sys"})
     {
         EXPECT_TRUE(test_context.vm()
                         .global_builtins_module()
@@ -1929,7 +1929,7 @@ assert not (left == right)
         }
     }
     EXPECT_TRUE(found_element_cache);
-    for(const wchar_t *name: {L"__clover_list_eq", L"__clover_list_ne"})
+    for(const wchar_t *name: {L"_clover_list_eq", L"_clover_list_ne"})
     {
         EXPECT_TRUE(context.vm()
                         .global_builtins_module()
@@ -2011,7 +2011,7 @@ assert not (left == right)
         }
     }
     EXPECT_TRUE(found_element_cache);
-    for(const wchar_t *name: {L"__clover_tuple_eq", L"__clover_tuple_ne"})
+    for(const wchar_t *name: {L"_clover_tuple_eq", L"_clover_tuple_ne"})
     {
         EXPECT_TRUE(context.vm()
                         .global_builtins_module()
@@ -5374,22 +5374,21 @@ TEST(Interpreter, membership_fallback_helper_is_vm_owned_and_hidden)
 
     TValue<String> iter_helper_name =
         test_context.vm().get_or_create_interned_string_value(
-            L"__clover_iter_membership_fallback");
+            L"_clover_iter_membership_fallback");
     TValue<String> sequence_helper_name =
         test_context.vm().get_or_create_interned_string_value(
-            L"__clover_sequence_membership_fallback");
+            L"_clover_sequence_membership_fallback");
     ModuleObject *builtins =
         test_context.vm().global_builtins_module().extract();
     EXPECT_EQ(Value::not_present(),
               builtins->get_own_property(iter_helper_name));
     EXPECT_EQ(Value::not_present(),
               builtins->get_own_property(sequence_helper_name));
-    expect_python_error(L"__clover_iter_membership_fallback\n", L"NameError",
-                        L"name '__clover_iter_membership_fallback' is not "
+    expect_python_error(L"_clover_iter_membership_fallback\n", L"NameError",
+                        L"name '_clover_iter_membership_fallback' is not "
                         L"defined");
-    expect_python_error(L"__clover_sequence_membership_fallback\n",
-                        L"NameError",
-                        L"name '__clover_sequence_membership_fallback' is not "
+    expect_python_error(L"_clover_sequence_membership_fallback\n", L"NameError",
+                        L"name '_clover_sequence_membership_fallback' is not "
                         L"defined");
 }
 
@@ -5972,7 +5971,7 @@ try:
     assert value[0] == 3
 finally:
     builtins.list = List
-assert not hasattr(builtins, "__clover_list_init")
+assert not hasattr(builtins, "_clover_list_init")
 )");
     ASSERT_FALSE(result.is_exception_marker());
 }
@@ -7504,4 +7503,137 @@ TEST(Interpreter, prohibited_builtin_subclass_bases)
                         L"type is not an acceptable base type");
     expect_python_error(L"class C(slice):\n    pass\n", L"TypeError",
                         L"type is not an acceptable base type");
+}
+
+TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    ModuleObject *public_module =
+        context.vm().global_builtins_module().extract();
+    Value len_function =
+        public_module->get_own_property(interned_string(L"len"));
+    ASSERT_TRUE(can_convert_to<Function>(len_function));
+    ModuleObject *implementation = len_function.get_ptr<Function>()
+                                       ->code_object.extract()
+                                       ->get_defining_module()
+                                       .extract();
+    ASSERT_NE(public_module, implementation);
+    Value fallback = implementation->get_builtins_binding();
+    ASSERT_TRUE(can_convert_to<Dict>(fallback));
+    EXPECT_EQ(0u, fallback.get_ptr<Dict>()->size());
+    for(const wchar_t *name:
+        {L"list", L"tuple", L"dict", L"int", L"str", L"isinstance",
+         L"TypeError", L"ValueError", L"StopIteration", L"NotImplemented",
+         L"len", L"iter", L"hasattr"})
+    {
+        EXPECT_EQ(public_module->get_own_property(interned_string(name)),
+                  implementation->get_own_property(interned_string(name)));
+    }
+    for(ClassObject *cls:
+        {context.vm().list_class(), context.vm().tuple_class(),
+         context.vm().dict_class()})
+    {
+        const wchar_t *name =
+            cls == context.vm().dict_class() ? L"update" : L"count";
+        Value method = cls->get_own_property(interned_string(name));
+        ASSERT_TRUE(can_convert_to<Function>(method));
+        EXPECT_EQ(implementation, method.get_ptr<Function>()
+                                      ->code_object.extract()
+                                      ->get_defining_module()
+                                      .extract());
+    }
+    EXPECT_EQ(implementation, context.vm()
+                                  .membership_iter_fallback_function()
+                                  .extract()
+                                  ->code_object.extract()
+                                  ->get_defining_module()
+                                  .extract());
+    for(const wchar_t *name:
+        {L"_clover_builtin_getattr", L"_clover_builtin_getattr_default",
+         L"_clover_builtin_hasattr", L"_clover_builtin_dir",
+         L"_clover_dict_allocate", L"_clover_dict_next", L"_clover_dict_new",
+         L"_clover_dict_update", L"_clover_list_eq", L"_clover_tuple_eq",
+         L"_clover_iter_membership_fallback"})
+    {
+        EXPECT_TRUE(public_module->get_own_property(interned_string(name))
+                        .is_not_present());
+        EXPECT_FALSE(implementation->get_own_property(interned_string(name))
+                         .is_not_present());
+    }
+    Value result =
+        context.run_file(L"import sys\n"
+                         L"assert '_clover_builtin_impl' not in sys.modules\n"
+                         L"try:\n"
+                         L"    import _clover_builtin_impl\n"
+                         L"except ModuleNotFoundError:\n"
+                         L"    pass\n"
+                         L"else:\n"
+                         L"    assert False\n"
+                         L"marker = 81\n"
+                         L"assert globals()['marker'] == 81\n"
+                         L"assert locals()['marker'] == 81\n"
+                         L"True\n");
+    EXPECT_EQ(Value::True(), result);
+}
+
+TEST(Interpreter,
+     private_builtin_globals_do_not_fall_back_after_a_warmed_seed_is_removed)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Value function =
+        context.vm().global_builtins_module().extract()->get_own_property(
+            interned_string(L"len"));
+    ModuleObject *implementation = function.get_ptr<Function>()
+                                       ->code_object.extract()
+                                       ->get_defining_module()
+                                       .extract();
+    auto compiled = context.thread()->compile_in_module(
+        L"list\n", StartRule::File, implementation,
+        LanguageMode::StandardsCompliant);
+    ASSERT_FALSE(compiled.has_exception());
+    CodeObject *code = compiled.value();
+    Value original_list = Value::from_oop(context.vm().list_class());
+    EXPECT_EQ(original_list, context.thread()->run_clovervm_code_object(code));
+    EXPECT_EQ(original_list, context.thread()->run_clovervm_code_object(code));
+    ASSERT_TRUE(delete_module_global(implementation, interned_string(L"list")));
+    Value result = context.thread()->run_clovervm_code_object(code);
+    EXPECT_TRUE(result.is_exception_marker());
+    ASSERT_TRUE(context.thread()->has_pending_exception());
+    expect_thread_python_error(context.thread(), L"NameError",
+                               L"name 'list' is not defined");
+    context.thread()->clear_pending_exception();
+    ASSERT_TRUE(implementation->set_own_property(interned_string(L"list"),
+                                                 original_list));
+    EXPECT_EQ(original_list, context.thread()->run_clovervm_code_object(code));
+}
+
+TEST(Interpreter,
+     exported_python_builtins_keep_private_dependencies_during_callbacks)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Value result = context.run_file(LR"(
+import builtins
+Next = next
+Len = len
+Stop = StopIteration
+class Iterator:
+    def __next__(self):
+        builtins.len = None
+        raise Stop
+iterator = Iterator()
+# Warm both paths before a callback replaces the public dependency.
+assert Next(iter([4])) == 4
+assert Next(iter(()), 7) == 7
+try:
+    assert Next(iterator, 9) == 9
+    assert Next(iter(()), 8) == 8
+    assert Len((1, 2)) == 2
+finally:
+    builtins.len = Len
+True
+)");
+    EXPECT_EQ(Value::True(), result);
 }

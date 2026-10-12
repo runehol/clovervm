@@ -225,3 +225,21 @@ Builtin type bootstrap is centralized in VM initialization:
 - How much of descriptor protocol for immutable builtin types should be marked
   through `ShapeFlag::IsImmutable` after bootstrap?
 - Which internal runtime records should stay non-Object `HeapObject`s forever?
+
+## Trusted Python implementation module
+
+The VM executes `src/bootstrap/builtin_implementations.py` in an immortal private module named
+`_clover_builtin_impl`. It is absent from `sys.modules` and import discovery.
+Its `__builtins__` binding is an empty dict, installed before execution, so a
+missing dependency raises NameError rather than falling back to public builtins.
+C++ explicitly seeds the builtin classes, constants, native functions, bridges,
+and sys reference used by the source. Python functions defined there resolve
+ordinary names such as `list` against these private bindings.
+
+Bootstrap exports an explicit list of public Function objects to `builtins`.
+The dict, list, and tuple installers read methods from the private module, and
+membership fallbacks are retained by the VM. Helpers stay in the private
+namespace. Exporting and installing preserve the original Function and
+CodeObject identities, global caches, and method dispatch. CodeObjects retain
+their defining module; the VM keeps it alive for the same lifetime as builtins
+and sys. Caller-sensitive globals()/locals() keep their existing frame rules.

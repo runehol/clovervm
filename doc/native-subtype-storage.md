@@ -178,9 +178,10 @@ Member fields. BaseException initialization changes only args; StopIteration
 initialization also resets value. Public descriptor permissions remain unchanged.
 List initialization bypasses overridden clear/append through a private class
 binding; argument errors precede mutation, and iteration failure leaves partial
-contents. Dict population similarly bypasses overridden setitem. Persistent
-private bindings protect bootstrap helpers from public builtin rebinding until
-closures can replace those captures.
+contents. Dict population similarly bypasses overridden setitem. The trusted Python implementations share a private module with explicitly seeded
+builtin references and disabled public builtin fallback. Only public functions
+are exported to builtins; type methods and protocol helpers retain the private
+module through their CodeObjects.
 
 Exact-result reuse remains operation-specific. Exact str and bytes inputs can be
 reused for exact targets; subclass targets receive fresh native storage. A custom

@@ -12,6 +12,7 @@
 
 namespace cl
 {
+    class ModuleObject;
     class Tuple;
     struct NormalizedNonstridedSlice;
     struct NormalizedGeneralSlice;
@@ -83,7 +84,8 @@ namespace cl
     [[nodiscard]] TValue<List> allocate_default_list(ThreadState *thread,
                                                      TValue<ClassObject> cls);
     void install_list_class_methods(VirtualMachine *vm);
-    void install_list_python_methods(VirtualMachine *vm);
+    void install_list_python_methods(VirtualMachine *vm,
+                                     ModuleObject *implementation_module);
 
 }  // namespace cl
 

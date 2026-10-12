@@ -1,12 +1,12 @@
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
 #include "builtin_types/list.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
 #include "compiler/scope.h"
-#include "import_system/module_global.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/native_function.h"
@@ -1164,9 +1164,9 @@ namespace cl
                     make_single_default(vm, Value::None())));
     }
 
-    void install_dict_python_methods(VirtualMachine *vm)
+    void install_dict_python_methods(VirtualMachine *vm,
+                                     ModuleObject *implementation_module)
     {
-        ModuleObject *builtins = vm->global_builtins_module().extract();
         ClassObject *dict_class = vm->dict_class();
         assert(dict_class->current_mro_shape_and_contents_validity_cell() ==
                nullptr);
@@ -1179,17 +1179,19 @@ namespace cl
             0);
         assert(dict_class->current_constructor_thunk() == nullptr);
         const wchar_t *method_names[] = {L"update", L"__new__"};
-        const wchar_t *helper_names[] = {L"__clover_dict_update",
-                                         L"__clover_dict_new"};
+        const wchar_t *helper_names[] = {L"_clover_dict_update",
+                                         L"_clover_dict_new"};
 
         for(size_t idx = 0; idx < std::size(method_names); ++idx)
         {
             TValue<String> helper_name =
                 vm->get_or_create_interned_string_value(helper_names[idx]);
-            Value function = builtins->get_own_property(helper_name);
+            Value function =
+                implementation_module->get_own_property(helper_name);
             if(!can_convert_to<Function>(function))
             {
-                fatal("trusted builtins.py did not define dict method");
+                fatal("trusted builtin_implementations.py did not define dict "
+                      "method");
             }
 
             TValue<String> method_name =
@@ -1198,10 +1200,6 @@ namespace cl
                 dict_class->get_shape()->resolve_present_property(method_name);
             assert(location.is_found());
             dict_class->write_storage_location(location, function);
-            if(!delete_module_global(builtins, helper_name))
-            {
-                fatal("failed to hide Python dict method from builtins");
-            }
         }
     }
 

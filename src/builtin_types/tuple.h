@@ -14,6 +14,7 @@
 
 namespace cl
 {
+    class ModuleObject;
     class ClassObject;
     struct NormalizedNonstridedSlice;
     struct NormalizedGeneralSlice;
@@ -146,7 +147,8 @@ namespace cl
 
     BuiltinClassDefinition make_tuple_class(VirtualMachine *vm);
     void install_tuple_class_methods(VirtualMachine *vm);
-    void install_tuple_python_methods(VirtualMachine *vm);
+    void install_tuple_python_methods(VirtualMachine *vm,
+                                      ModuleObject *implementation_module);
 
 }  // namespace cl
 

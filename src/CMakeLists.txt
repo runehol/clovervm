@@ -1,6 +1,6 @@
 find_package(Threads)
 
-set(CL_TRUSTED_BUILTINS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bootstrap/builtins.py")
+set(CL_TRUSTED_BUILTINS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bootstrap/builtin_implementations.py")
 set(CL_TRUSTED_SYS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bootstrap/sys.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CL_TRUSTED_BUILTINS_FILE}"
@@ -207,7 +207,7 @@ add_library(libclovervm_objects OBJECT
     builtin_types/bool.h
     bootstrap/builtins.cpp
     bootstrap/builtins.h
-    bootstrap/builtins.py
+    bootstrap/builtin_implementations.py
     bootstrap/builtins.inc.in
     bootstrap/sys.py
     compiler/parser.cpp

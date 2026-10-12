@@ -172,55 +172,55 @@ def _clover_dict_next(iterator):
     )
 
 
-def __clover_dict_update(self, *args, **kwargs):
-    if not _clover_isinstance(self, _clover_dict_type):
-        raise _clover_type_error
-    if _clover_len(args) > 1:
-        raise _clover_type_error
-    if _clover_len(args) == 1:
+def _clover_dict_update(self, *args, **kwargs):
+    if not isinstance(self, dict):
+        raise TypeError
+    if len(args) > 1:
+        raise TypeError
+    if len(args) == 1:
         source = args[0]
-        if _clover_hasattr(source, "keys"):
+        if hasattr(source, "keys"):
             for key in source.keys():
-                _clover_dict_type.__setitem__(self, key, source[key])
+                dict.__setitem__(self, key, source[key])
         else:
             for element in source:
-                element_iterator = _clover_iter(element)
+                element_iterator = iter(element)
                 try:
                     key = _clover_dict_next(element_iterator)
                     value = _clover_dict_next(element_iterator)
-                except _clover_stop_iteration:
-                    raise _clover_value_error
+                except StopIteration:
+                    raise ValueError
                 try:
                     _clover_dict_next(element_iterator)
-                except _clover_stop_iteration:
-                    _clover_dict_type.__setitem__(self, key, value)
+                except StopIteration:
+                    dict.__setitem__(self, key, value)
                 else:
-                    raise _clover_value_error
+                    raise ValueError
     for key in kwargs.keys():
-        _clover_dict_type.__setitem__(self, key, kwargs[key])
+        dict.__setitem__(self, key, kwargs[key])
 
 
-def __clover_dict_new(cls, *args, **kwargs):
-    if _clover_len(args) > 1:
-        raise _clover_type_error
+def _clover_dict_new(cls, *args, **kwargs):
+    if len(args) > 1:
+        raise TypeError
     # Preserve the existing exact-dict keyword-only allocation fast path.
-    if cls is _clover_dict_type and _clover_len(args) == 0:
+    if cls is dict and len(args) == 0:
         return kwargs
     result = _clover_dict_allocate(cls)
-    if _clover_len(args) == 1:
-        _clover_dict_update_impl(result, args[0])
-    _clover_dict_update_impl(result, kwargs)
+    if len(args) == 1:
+        _clover_dict_update(result, args[0])
+    _clover_dict_update(result, kwargs)
     return result
 
 
-def __clover_iter_membership_fallback(container, needle):
+def _clover_iter_membership_fallback(container, needle):
     for item in container:
         if item == needle:
             return True
     return False
 
 
-def __clover_sequence_membership_fallback(container, needle):
+def _clover_sequence_membership_fallback(container, needle):
     idx = 0
     while True:
         try:
@@ -280,89 +280,66 @@ With two or more arguments, return the largest argument."""
     return best
 
 
-# Keep these private dependencies until closures can capture builtin objects.
-_clover_list_type = list
-_clover_tuple_type = tuple
-_clover_int_type = int
-_clover_isinstance = isinstance
-_clover_type_error = TypeError
-_clover_value_error = ValueError
-_clover_dict_type = dict
-_clover_dict_update_impl = __clover_dict_update
-_clover_len = len
-_clover_hasattr = hasattr
-_clover_iter = iter
-_clover_stop_iteration = StopIteration
-_clover_not_implemented = NotImplemented
-
-
-def __clover_list_init(self, iterable=(), /):
-    _clover_list_type.clear(self)
+def _clover_list_init(self, iterable=(), /):
+    list.clear(self)
     for item in iterable:
-        _clover_list_type.append(self, item)
+        list.append(self, item)
 
 
-# Capture the existing maximum search bound without retaining a sys binding.
-import sys as _clover_sys
-
-
-def __clover_list_eq(self, other, /):
-    if not _clover_isinstance(self, _clover_list_type):
-        raise _clover_type_error("list.__eq__ expects a list receiver")
-    if not _clover_isinstance(other, _clover_list_type):
-        return _clover_not_implemented
-    if _clover_list_type.__len__(self) != _clover_list_type.__len__(other):
+def _clover_list_eq(self, other, /):
+    if not isinstance(self, list):
+        raise TypeError("list.__eq__ expects a list receiver")
+    if not isinstance(other, list):
+        return NotImplemented
+    if list.__len__(self) != list.__len__(other):
         return False
     i = 0
-    while i < _clover_list_type.__len__(self) and i < _clover_list_type.__len__(other):
-        a = _clover_list_type.__getitem__(self, i)
-        b = _clover_list_type.__getitem__(other, i)
+    while i < list.__len__(self) and i < list.__len__(other):
+        a = list.__getitem__(self, i)
+        b = list.__getitem__(other, i)
         if a is not b:
             if not (a == b):
                 break
         i += 1
     # A callback can exhaust either list even when its comparison was false.
-    if i >= _clover_list_type.__len__(self) or i >= _clover_list_type.__len__(other):
-        return _clover_list_type.__len__(self) == _clover_list_type.__len__(other)
+    if i >= list.__len__(self) or i >= list.__len__(other):
+        return list.__len__(self) == list.__len__(other)
     return False
 
 
 # Inherited __ne__ compares list payloads, not a subclass's __eq__ override.
-_clover_list_eq_impl = __clover_list_eq
-
-
-def __clover_list_ne(self, other, /):
-    if not _clover_isinstance(self, _clover_list_type):
-        raise _clover_type_error("list.__ne__ expects a list receiver")
-    result = _clover_list_eq_impl(self, other)
-    if result is _clover_not_implemented:
+def _clover_list_ne(self, other, /):
+    if not isinstance(self, list):
+        raise TypeError("list.__ne__ expects a list receiver")
+    result = _clover_list_eq(self, other)
+    if result is NotImplemented:
         return result
     return not result
 
 
-def __clover_list_count(self, needle, /):
+def _clover_list_count(self, needle, /):
     """Return number of occurrences of value."""
-    if not _clover_isinstance(self, _clover_list_type):
-        raise _clover_type_error
+    if not isinstance(self, list):
+        raise TypeError
     count = 0
     i = 0
-    while i < _clover_list_type.__len__(self):
-        item = _clover_list_type.__getitem__(self, i)
+    while i < list.__len__(self):
+        item = list.__getitem__(self, i)
         if item is needle or item == needle:
             count += 1
         i += 1
     return count
 
 
-def __clover_list_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
-    if not _clover_isinstance(self, _clover_list_type):
-        raise _clover_type_error
+def _clover_list_index(self, needle, start=0, stop=sys.maxsize, /):
+    if not isinstance(self, list):
+        raise TypeError
     if (
-        not _clover_isinstance(start, _clover_int_type)
-        or not _clover_isinstance(stop, _clover_int_type)
+        not isinstance(start, int)
+        or not isinstance(stop, int)
     ):
-        raise _clover_type_error
-    size = _clover_list_type.__len__(self)
+        raise TypeError
+    size = list.__len__(self)
     if start < 0:
         start += size
         if start < 0:
@@ -372,25 +349,25 @@ def __clover_list_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
         if stop < 0:
             stop = 0
     i = start
-    while i < stop and i < _clover_list_type.__len__(self):
-        item = _clover_list_type.__getitem__(self, i)
+    while i < stop and i < list.__len__(self):
+        item = list.__getitem__(self, i)
         if item is needle or item == needle:
-            return _clover_int_type(i)
+            return int(i)
         i += 1
-    raise _clover_value_error
+    raise ValueError
 
 
-def __clover_tuple_eq(self, other, /):
-    if not _clover_isinstance(self, _clover_tuple_type):
-        raise _clover_type_error("tuple.__eq__ expects a tuple receiver")
-    if not _clover_isinstance(other, _clover_tuple_type):
-        return _clover_not_implemented
-    left_size = _clover_tuple_type.__len__(self)
-    right_size = _clover_tuple_type.__len__(other)
+def _clover_tuple_eq(self, other, /):
+    if not isinstance(self, tuple):
+        raise TypeError("tuple.__eq__ expects a tuple receiver")
+    if not isinstance(other, tuple):
+        return NotImplemented
+    left_size = tuple.__len__(self)
+    right_size = tuple.__len__(other)
     i = 0
     while i < left_size and i < right_size:
-        a = _clover_tuple_type.__getitem__(self, i)
-        b = _clover_tuple_type.__getitem__(other, i)
+        a = tuple.__getitem__(self, i)
+        b = tuple.__getitem__(other, i)
         if a is not b:
             if not (a == b):
                 return False
@@ -399,42 +376,39 @@ def __clover_tuple_eq(self, other, /):
 
 
 # Inherited __ne__ compares tuple payloads, not a subclass's __eq__ override.
-_clover_tuple_eq_impl = __clover_tuple_eq
-
-
-def __clover_tuple_ne(self, other, /):
-    if not _clover_isinstance(self, _clover_tuple_type):
-        raise _clover_type_error("tuple.__ne__ expects a tuple receiver")
-    result = _clover_tuple_eq_impl(self, other)
-    if result is _clover_not_implemented:
+def _clover_tuple_ne(self, other, /):
+    if not isinstance(self, tuple):
+        raise TypeError("tuple.__ne__ expects a tuple receiver")
+    result = _clover_tuple_eq(self, other)
+    if result is NotImplemented:
         return result
     return not result
 
 
-def __clover_tuple_count(self, needle, /):
+def _clover_tuple_count(self, needle, /):
     """Return number of occurrences of value."""
-    if not _clover_isinstance(self, _clover_tuple_type):
-        raise _clover_type_error
-    size = _clover_tuple_type.__len__(self)
+    if not isinstance(self, tuple):
+        raise TypeError
+    size = tuple.__len__(self)
     count = 0
     i = 0
     while i < size:
-        item = _clover_tuple_type.__getitem__(self, i)
+        item = tuple.__getitem__(self, i)
         if item is needle or item == needle:
             count += 1
         i += 1
     return count
 
 
-def __clover_tuple_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
-    if not _clover_isinstance(self, _clover_tuple_type):
-        raise _clover_type_error
+def _clover_tuple_index(self, needle, start=0, stop=sys.maxsize, /):
+    if not isinstance(self, tuple):
+        raise TypeError
     if (
-        not _clover_isinstance(start, _clover_int_type)
-        or not _clover_isinstance(stop, _clover_int_type)
+        not isinstance(start, int)
+        or not isinstance(stop, int)
     ):
-        raise _clover_type_error
-    size = _clover_tuple_type.__len__(self)
+        raise TypeError
+    size = tuple.__len__(self)
     if start < 0:
         start += size
         if start < 0:
@@ -445,27 +419,24 @@ def __clover_tuple_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
             stop = 0
     i = start
     while i < stop and i < size:
-        item = _clover_tuple_type.__getitem__(self, i)
+        item = tuple.__getitem__(self, i)
         if item is needle or item == needle:
-            return _clover_int_type(i)
+            return int(i)
         i += 1
-    raise _clover_value_error
+    raise ValueError
 
 
-def __clover_list_remove(self, needle, /):
+def _clover_list_remove(self, needle, /):
     """Remove first occurrence of value."""
-    if not _clover_isinstance(self, _clover_list_type):
-        raise _clover_type_error
+    if not isinstance(self, list):
+        raise TypeError
     i = 0
-    while i < _clover_list_type.__len__(self):
-        item = _clover_list_type.__getitem__(self, i)
+    while i < list.__len__(self):
+        item = list.__getitem__(self, i)
         if item is needle or item == needle:
             # Equality can remove this slot. CPython still reports success.
-            if i < _clover_list_type.__len__(self):
-                _clover_list_type.__delitem__(self, i)
+            if i < list.__len__(self):
+                list.__delitem__(self, i)
             return None
         i += 1
-    raise _clover_value_error
-
-
-del _clover_sys
+    raise ValueError

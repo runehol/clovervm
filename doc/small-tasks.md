@@ -108,7 +108,8 @@ existing out-of-range or unsupported-value behavior.
   and additional constructor forms need their own semantic sketches too.
 - **Closure capture for builtin helpers:** once
   [closure cells](closure-cells.md) are implemented, replace persistent private
-  bootstrap globals with captured builtin classes/functions where appropriate.
+  bindings in the builtin implementation module with captured builtin
+  classes/functions where appropriate.
 - **Combined `__new__` / `__init__`:** retain original call arguments and bind
   the two methods independently, then check the returned type and resolve its
   initializer after allocation. General call unpacking/forwarding is prerequisite

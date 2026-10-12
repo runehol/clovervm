@@ -464,6 +464,7 @@ namespace cl
                     vm->membership_sequence_fallback_function_ =
                         Optional<TValue<Function>>::none();
                     vm->global_builtins_module_ = nullptr;
+                    vm->builtin_implementation_module_ = nullptr;
                     vm->sys_module_ = nullptr;
                     vm->imported_modules_ = nullptr;
                 }
@@ -491,6 +492,7 @@ namespace cl
             membership_sequence_fallback_function_ =
                 Optional<TValue<Function>>::none();
             global_builtins_module_ = nullptr;
+            builtin_implementation_module_ = nullptr;
             sys_module_ = nullptr;
             imported_modules_ = nullptr;
         }
@@ -1212,6 +1214,21 @@ namespace cl
         initialize_module_bootstrap();
 
         ModuleObject *builtins_module = global_builtins_module().extract();
+        // This module is VM-owned but deliberately absent from import
+        // discovery.
+        builtin_implementation_module_ = make_immortal_object_raw<ModuleObject>(
+            get_or_create_interned_string_value(L"_clover_builtin_impl"),
+            make_object_value<Dict>().raw_value(), Value::None(),
+            get_or_create_interned_string_value(L"").raw_value(), Value::None(),
+            Value::None(), Value::not_present());
+        ModuleObject *implementation_module = builtin_implementation_module_;
+        auto install_implementation_binding = [&](TValue<String> name,
+                                                  Value value) {
+            bool installed =
+                implementation_module->set_own_property(name, value);
+            assert(installed);
+            (void)installed;
+        };
 
         auto install_builtin_binding = [&](TValue<String> name, Value value) {
             bool installed = builtins_module->set_own_property(name, value);
@@ -1256,8 +1273,10 @@ namespace cl
                             "installing range")
                             .raw_value();
         install_builtin_binding(range_name, range_builtin);
-        unwrap_bootstrap_expected(this, install_builtin_function_bindings(this),
-                                  "installing builtin functions");
+        unwrap_bootstrap_expected(
+            this,
+            install_builtin_function_bindings(this, implementation_module),
+            "installing builtin functions");
 
         TValue<String> import_name =
             get_or_create_interned_string_value(L"__import__");
@@ -1289,68 +1308,95 @@ namespace cl
 
         // Retain the native allocator without creating a class lookup cache:
         // installing Python dict methods later replaces the __new__ slot.
-        install_builtin_binding(
+        install_implementation_binding(
             get_or_create_interned_string_value(L"_clover_dict_allocate"),
             dict_class()->get_own_property(interned_string(L"__new__")));
 
+        // Seed dependencies explicitly: empty __builtins__ disables public
+        // fallback.
+        const wchar_t *seed_names[] = {
+            L"list",       L"tuple",         L"dict",           L"int",
+            L"str",        L"isinstance",    L"TypeError",      L"ValueError",
+            L"IndexError", L"StopIteration", L"NotImplemented", L"True",
+            L"False",      L"None",          L"Ellipsis"};
+        for(const wchar_t *name: seed_names)
+        {
+            TValue<String> key = get_or_create_interned_string_value(name);
+            Value value = builtins_module->get_own_property(key);
+            assert(!value.is_not_present());
+            install_implementation_binding(key, value);
+        }
+        install_implementation_binding(
+            get_or_create_interned_string_value(L"sys"),
+            sys_module().raw_value());
+
         Expected<CodeObject *> builtins_code = thread->compile_in_module(
-            trusted_builtin_source, StartRule::File, builtins_module,
+            trusted_builtin_source, StartRule::File, implementation_module,
             LanguageMode::TrustedCloverExtensions);
         if(builtins_code.has_exception())
         {
-            fatal_bootstrap_python_exception(thread,
-                                             "compiling trusted builtins.py");
+            fatal_bootstrap_python_exception(
+                thread, "compiling trusted builtin_implementations.py");
         }
         Value result = thread->run_clovervm_code_object(builtins_code.value());
         if(result.is_exception_marker())
         {
             fatal_bootstrap_python_exception(
-                thread, "initializing trusted builtins.py");
+                thread, "initializing trusted builtin_implementations.py");
         }
 
-        install_dict_python_methods(this);
-        install_list_python_methods(this);
-        install_tuple_python_methods(this);
+        const wchar_t *export_names[] = {
+            L"abs",     L"iter",    L"next",    L"repr", L"hash",
+            L"len",     L"getattr", L"hasattr", L"vars", L"dir",
+            L"globals", L"locals",  L"print",   L"pow",  L"sum",
+            L"any",     L"all",     L"min",     L"max"};
+        for(const wchar_t *name: export_names)
+        {
+            TValue<String> key = get_or_create_interned_string_value(name);
+            Value function = implementation_module->get_own_property(key);
+            if(!can_convert_to<Function>(function))
+            {
+                fatal("trusted builtin_implementations.py did not define "
+                      "public builtin");
+            }
+            install_builtin_binding(key, function);
+        }
+        install_dict_python_methods(this, implementation_module);
+        install_list_python_methods(this, implementation_module);
+        install_tuple_python_methods(this, implementation_module);
 
         TValue<String> membership_iter_fallback_name =
             get_or_create_interned_string_value(
-                L"__clover_iter_membership_fallback");
+                L"_clover_iter_membership_fallback");
         Value membership_iter_fallback_value =
-            builtins_module->get_own_property(membership_iter_fallback_name);
+            implementation_module->get_own_property(
+                membership_iter_fallback_name);
         if(!can_convert_to<Function>(membership_iter_fallback_value))
         {
-            fatal("trusted builtins.py did not define iter membership "
+            fatal("trusted builtin_implementations.py did not define iter "
+                  "membership "
                   "fallback");
         }
         membership_iter_fallback_function_ = Optional<TValue<Function>>::some(
             TValue<Function>::from_value_assumed(
                 membership_iter_fallback_value));
-        if(!delete_module_global(builtins_module,
-                                 membership_iter_fallback_name))
-        {
-            fatal("failed to hide iter membership fallback from builtins");
-        }
 
         TValue<String> membership_sequence_fallback_name =
             get_or_create_interned_string_value(
-                L"__clover_sequence_membership_fallback");
+                L"_clover_sequence_membership_fallback");
         Value membership_sequence_fallback_value =
-            builtins_module->get_own_property(
+            implementation_module->get_own_property(
                 membership_sequence_fallback_name);
         if(!can_convert_to<Function>(membership_sequence_fallback_value))
         {
-            fatal("trusted builtins.py did not define sequence membership "
+            fatal("trusted builtin_implementations.py did not define sequence "
+                  "membership "
                   "fallback");
         }
         membership_sequence_fallback_function_ =
             Optional<TValue<Function>>::some(
                 TValue<Function>::from_value_assumed(
                     membership_sequence_fallback_value));
-        if(!delete_module_global(builtins_module,
-                                 membership_sequence_fallback_name))
-        {
-            fatal("failed to hide sequence membership fallback from builtins");
-        }
 
         Expected<CodeObject *> sys_code = thread->compile_in_module(
             trusted_sys_source, StartRule::File, sys_module().extract(),

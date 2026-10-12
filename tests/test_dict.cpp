@@ -1446,9 +1446,9 @@ TEST(Dict, PythonDictBootstrapHelpersAreHidden)
 
     EXPECT_EQ(Value::False(),
               context.run_file(L"hasattr(__import__('builtins'), "
-                               L"'__clover_dict_update') or "
+                               L"'_clover_dict_update') or "
                                L"hasattr(__import__('builtins'), "
-                               L"'__clover_dict_new')\n"));
+                               L"'_clover_dict_new')\n"));
 }
 
 TEST(Dict, PublicUpdatePromotesFromNonStringSourceKey)
