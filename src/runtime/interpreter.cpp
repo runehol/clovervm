@@ -644,18 +644,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value range_integer_argument_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"range() arguments must be integers");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE INTERP_CC Value range_zero_step_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -6012,12 +6000,10 @@ namespace cl
         }
         else
         {
-            Value stop = fp[reg - 1];
-            if(unlikely(!stop.is_integer()))
-            {
-                MUSTTAIL return range_integer_argument_error(ARGS);
-            }
+            TValue<SMI> stop = INTERP_TRY(try_intlike_value_to_smi(
+                fp[reg - 1], L"range() arguments must be integers"));
             fp[reg] = Value::from_smi(0);
+            fp[reg - 1] = stop.raw_value();
         }
 
         START(0);
@@ -6036,14 +6022,12 @@ namespace cl
         }
         else
         {
-            Value start = fp[reg - 1];
-            Value stop = fp[reg - 2];
-            if(unlikely(!start.is_integer() || !stop.is_integer()))
-            {
-                MUSTTAIL return range_integer_argument_error(ARGS);
-            }
-            fp[reg] = start;
-            fp[reg - 1] = stop;
+            TValue<SMI> start = INTERP_TRY(try_intlike_value_to_smi(
+                fp[reg - 1], L"range() arguments must be integers"));
+            TValue<SMI> stop = INTERP_TRY(try_intlike_value_to_smi(
+                fp[reg - 2], L"range() arguments must be integers"));
+            fp[reg] = start.raw_value();
+            fp[reg - 1] = stop.raw_value();
         }
 
         START(0);
@@ -6062,21 +6046,19 @@ namespace cl
         }
         else
         {
-            Value start = fp[reg - 1];
-            Value stop = fp[reg - 2];
-            Value step = fp[reg - 3];
-            if(unlikely(!start.is_integer() || !stop.is_integer() ||
-                        !step.is_integer()))
-            {
-                MUSTTAIL return range_integer_argument_error(ARGS);
-            }
-            if(unlikely(step.get_smi() == 0))
+            TValue<SMI> start = INTERP_TRY(try_intlike_value_to_smi(
+                fp[reg - 1], L"range() arguments must be integers"));
+            TValue<SMI> stop = INTERP_TRY(try_intlike_value_to_smi(
+                fp[reg - 2], L"range() arguments must be integers"));
+            TValue<SMI> step = INTERP_TRY(try_intlike_value_to_smi(
+                fp[reg - 3], L"range() arguments must be integers"));
+            if(unlikely(step.extract() == 0))
             {
                 MUSTTAIL return range_zero_step_error(ARGS);
             }
-            fp[reg] = start;
-            fp[reg - 1] = stop;
-            fp[reg - 2] = step;
+            fp[reg] = start.raw_value();
+            fp[reg - 1] = stop.raw_value();
+            fp[reg - 2] = step.raw_value();
         }
 
         START(0);

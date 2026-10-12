@@ -7111,7 +7111,7 @@ TEST(Interpreter, exhausted_for_iter_opcodes_set_accumulator_to_none)
 
 TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
 {
-    expect_python_error(L"for x in range(False):\n"
+    expect_python_error(L"for x in range('bad'):\n"
                         L"    0\n",
                         L"TypeError", L"range() arguments must be integers");
 }
@@ -7132,18 +7132,18 @@ TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
 
 TEST(Interpreter, range_builtin_requires_integer_argument)
 {
-    expect_python_error(L"range(False)\n", L"TypeError",
+    expect_python_error(L"range('bad')\n", L"TypeError",
                         L"range() arguments must be integers");
-    expect_python_error(L"range(1, False)\n", L"TypeError",
+    expect_python_error(L"range(1, 'bad')\n", L"TypeError",
                         L"range() arguments must be integers");
-    expect_python_error(L"range(1, 2, False)\n", L"TypeError",
+    expect_python_error(L"range(1, 2, 'bad')\n", L"TypeError",
                         L"range() arguments must be integers");
 }
 
 TEST(Interpreter, range_integer_argument_error_unwinds_nested_frames)
 {
     expect_python_error(L"def fail():\n"
-                        L"    range(False)\n"
+                        L"    range('bad')\n"
                         L"    return 99\n"
                         L"fail()\n",
                         L"TypeError", L"range() arguments must be integers");
@@ -7741,4 +7741,143 @@ True
                         L"    return result\n"
                         L"f()\n",
                         L"NameError", L"name 'missing' is not defined");
+}
+
+TEST(Interpreter, range_accepts_bool_arguments_in_calls_and_direct_loops)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def collect(iterator):
+    values = []
+    for value in iterator: values.append(value)
+    return values
+assert collect(range(False)) == []
+assert collect(range(True)) == [0]
+assert collect(range(False, True)) == [0]
+assert collect(range(False, 3, True)) == [0, 1, 2]
+values = []
+for value in range(False): values.append(value)
+assert values == []
+for value in range(True): values.append(value)
+assert values == [0]
+values = []
+for value in range(False, True): values.append(value)
+assert values == [0]
+values = []
+for value in range(False, 3, True): values.append(value)
+assert values == [0, 1, 2]
+True
+)"));
+}
+
+TEST(Interpreter, range_accepts_small_heap_integer_arguments)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+class I(int): pass
+def collect(iterator):
+    values = []
+    for value in iterator: values.append(value)
+    return values
+assert collect(range(I(0))) == []
+assert collect(range(I(4))) == [0, 1, 2, 3]
+assert collect(range(I(-2), I(3))) == [-2, -1, 0, 1, 2]
+assert collect(range(I(5), I(-2), I(-2))) == [5, 3, 1, -1]
+values = []
+for value in range(I(0)): values.append(value)
+assert values == []
+for value in range(I(4)): values.append(value)
+assert values == [0, 1, 2, 3]
+values = []
+for value in range(I(-2), I(3)): values.append(value)
+assert values == [-2, -1, 0, 1, 2]
+values = []
+for value in range(I(5), I(-2), I(-2)): values.append(value)
+assert values == [5, 3, 1, -1]
+for value in values: assert value.__class__ is int
+True
+)"));
+}
+
+TEST(Interpreter, range_normalized_zero_steps_raise_value_error)
+{
+    for(const wchar_t *step: {L"False", L"I(0)"})
+    {
+        std::wstring prefix = L"class I(int): pass\n";
+        std::wstring args = L"1, 4, " + std::wstring(step);
+        expect_python_error((prefix + L"range(" + args + L")\n").c_str(),
+                            L"ValueError", L"range() arg 3 must not be zero");
+        expect_python_error((prefix + L"for x in range(" + args +
+                             L"):\n"
+                             L"    raise AssertionError\n")
+                                .c_str(),
+                            L"ValueError", L"range() arg 3 must not be zero");
+    }
+}
+
+TEST(Interpreter, range_conversion_errors_are_catchable_on_both_paths)
+{
+    for(const wchar_t *args: {L"'bad'", L"'bad', 3", L"0, 'bad'",
+                              L"0, 3, 'bad'", L"I(0), 'bad', I(1)"})
+    {
+        std::wstring prefix = L"class I(int): pass\ndef fail():\n";
+        std::wstring suffix =
+            L"\ntry:\n    fail()\nexcept TypeError as e:\n"
+            L"    assert str(e) == 'range() arguments must be integers'\n"
+            L"else: raise AssertionError\nTrue\n";
+        for(bool direct_loop: {false, true})
+        {
+            std::wstring body =
+                direct_loop ? L"    for value in range(" + std::wstring(args) +
+                                  L"):\n"
+                                  L"        raise AssertionError"
+                            : L"    return range(" + std::wstring(args) + L")";
+            test::VmTestContext context;
+            EXPECT_EQ(Value::True(),
+                      context.run_file((prefix + body + suffix).c_str()));
+        }
+    }
+}
+
+TEST(Interpreter, range_big_integer_overflow_is_catchable_on_both_paths)
+{
+    for(int64_t integer: {value_smi_min - 1, value_smi_max + 1})
+    {
+        std::wstring huge = std::to_wstring(integer);
+        for(const std::wstring &args:
+            {huge, huge + L", 3", L"0, " + huge, L"0, 3, " + huge})
+        {
+            for(bool direct_loop: {false, true})
+            {
+                std::wstring body = direct_loop
+                                        ? L"    for value in range(" + args +
+                                              L"):\n"
+                                              L"        raise AssertionError"
+                                        : L"    return range(" + args + L")";
+                std::wstring source =
+                    L"def fail():\n" + body +
+                    L"\ntry:\n    fail()\nexcept OverflowError as e:\n"
+                    L"    assert str(e) == 'integer overflow'\n"
+                    L"else: raise AssertionError\nTrue\n";
+                test::VmTestContext context;
+                EXPECT_EQ(Value::True(), context.run_file(source.c_str()));
+            }
+        }
+    }
+}
+
+TEST(Interpreter, range_rebinding_preserves_direct_loop_fallback)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+class I(int): pass
+def range(stop): return [stop]
+stop = I(3)
+count = 0
+for value in range(stop):
+    assert value is stop
+    count += 1
+assert count == 1
+True
+)"));
 }
