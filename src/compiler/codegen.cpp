@@ -113,8 +113,6 @@ namespace cl
         t.table[size_t(AstOperatorKind::NOT_IN)] =
             OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Contains);
 
-        t.table[size_t(AstOperatorKind::NOT)] =
-            OpTableEntry(OperatorBytecodeFormat::Plain, Bytecode::Not);
         t.table[size_t(AstOperatorKind::NEGATE)] =
             OpTableEntry(OperatorBytecodeFormat::WithCache, Bytecode::Neg);
         t.table[size_t(AstOperatorKind::PLUS)] =
@@ -2850,12 +2848,19 @@ namespace cl
 
                 case AstNodeKind::EXPRESSION_UNARY:
                     {
-                        OpTableEntry entry =
-                            get_operator_entry(kind.operator_kind);
                         CL_TRY(codegen_node(children[0]));
-                        CL_TRY(code_obj->emit_unary_op(source_offset,
-                                                       entry.standard,
-                                                       entry.bytecode_format));
+                        if(kind.operator_kind == AstOperatorKind::NOT)
+                        {
+                            CL_TRY(code_obj->emit_to_bool_not(source_offset));
+                        }
+                        else
+                        {
+                            OpTableEntry entry =
+                                get_operator_entry(kind.operator_kind);
+                            CL_TRY(code_obj->emit_unary_op(
+                                source_offset, entry.standard,
+                                entry.bytecode_format));
+                        }
                         break;
                     }
                 case AstNodeKind::EXPRESSION_LITERAL:

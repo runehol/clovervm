@@ -62,8 +62,6 @@ op_load_local_checked
 op_mul
 op_mul_smi
 op_negate
-op_not
-op_not_float_truthiness
 op_plus
 op_sqrt
 op_return
@@ -102,3 +100,4 @@ op_ne
 op_create_list_known_class
 
 op_to_bool
+op_to_bool_not

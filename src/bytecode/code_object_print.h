@@ -598,17 +598,20 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::ToBool:
+            case cl::Bytecode::ToBoolNot:
                 fmt::format_to(out, " ");
                 disassemble_operator_cache(code_obj, out, pc++);
-                assert(cl::Bytecode(code_obj.code[pc]) ==
-                       cl::Bytecode::FinishTruthiness);
+                assert(
+                    cl::Bytecode(code_obj.code[pc]) ==
+                    (cl::Bytecode(code_obj.code[pc - 2]) == cl::Bytecode::ToBool
+                         ? cl::Bytecode::FinishTruthiness
+                         : cl::Bytecode::FinishTruthinessNot));
                 ++pc;
                 break;
 
             case cl::Bytecode::Nop:
-            case cl::Bytecode::Not:
             case cl::Bytecode::FinishTruthiness:
-            case cl::Bytecode::ToBoolNot:
+            case cl::Bytecode::FinishTruthinessNot:
             case cl::Bytecode::Sqrt:
             case cl::Bytecode::CanonicalizeHash:
             case cl::Bytecode::CheckOperatorNotImplemented:

@@ -334,9 +334,9 @@ namespace cl
             case Bytecode::OrSmi:
             case Bytecode::AndSmi:
             case Bytecode::XorSmi:
-            case Bytecode::Not:
             case Bytecode::ToBool:
             case Bytecode::FinishTruthiness:
+            case Bytecode::FinishTruthinessNot:
             case Bytecode::ToBoolNot:
             case Bytecode::Neg:
             case Bytecode::Pos:
@@ -755,7 +755,9 @@ namespace cl
             assert(
                 Bytecode(
                     code_object.code[*instruction.continuation_pc_offset_]) ==
-                Bytecode::FinishTruthiness);
+                (instruction.encoded_opcode_ == Bytecode::ToBool
+                     ? Bytecode::FinishTruthiness
+                     : Bytecode::FinishTruthinessNot));
         }
 
         if(info.compound_role == BytecodeCompoundRole::BinaryOperator ||

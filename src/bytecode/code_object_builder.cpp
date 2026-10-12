@@ -1031,7 +1031,12 @@ namespace cl
     Expected<uint32_t>
     CodeObjectBuilder::emit_to_bool_not(uint32_t source_offset)
     {
-        return emit_opcode(source_offset, Bytecode::ToBoolNot);
+        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+        uint32_t result =
+            CL_TRY(emit_opcode(source_offset, Bytecode::ToBoolNot));
+        emplace_back(source_offset, cache_idx);
+        CL_TRY(emit_opcode(source_offset, Bytecode::FinishTruthinessNot));
+        return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_code_object(

@@ -90,14 +90,14 @@ coverage until their respective stages land.
 
 ### 4. Negative conversion and Python `not`
 
-- [ ] Give ToBoolNot its cache operand and embedded FinishTruthinessNot return
+- [x] Give ToBoolNot its cache operand and embedded FinishTruthinessNot return
   target, emitted and disassembled as part of the main instruction. Share the
   dispatch and validation implementation with positive conversion.
-- [ ] Lower Python `not` through ToBoolNot and retire the duplicate Not opcode,
+- [x] Lower Python `not` through ToBoolNot and retire the duplicate Not opcode,
   updating every in-repo user rather than retaining a compatibility alias.
-- [ ] Verify exactly one selected method call, inversion only after validation,
+- [x] Verify exactly one selected method call, inversion only after validation,
   error propagation, re-entry, and membership `not in` lowering.
-- [ ] Verify that the immediate fast path still makes NotImplemented truthy and
+- [x] Verify that the immediate fast path still makes NotImplemented truthy and
   `not NotImplemented` false, while rejecting it as a `__bool__` return.
 
 ### 5. Conditional jumps

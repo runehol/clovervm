@@ -138,10 +138,10 @@ CL_BYTECODE(AndSmi, Smi8OperatorCacheWithContinuation, Sequential,
 CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 
-CL_BYTECODE(Not, NoOperands, Sequential, None)
 CL_BYTECODE(ToBool, OperatorCacheWithContinuation, Sequential, Truthiness)
 CL_BYTECODE(FinishTruthiness, NoOperands, Sequential, TruthinessContinuation)
-CL_BYTECODE(ToBoolNot, NoOperands, Sequential, None)
+CL_BYTECODE(ToBoolNot, OperatorCacheWithContinuation, Sequential, Truthiness)
+CL_BYTECODE(FinishTruthinessNot, NoOperands, Sequential, TruthinessContinuation)
 CL_BYTECODE(Neg, OperatorCache, Sequential, None)
 CL_BYTECODE(Pos, OperatorCache, Sequential, None)
 CL_BYTECODE(Sqrt, NoOperands, Sequential, None)

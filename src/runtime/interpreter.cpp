@@ -911,34 +911,6 @@ namespace cl
         MUSTTAIL return raise_overflow_error(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_not_float_truthiness(PARAMS)
-    {
-        START(1);
-        if(!can_convert_to<Float>(accumulator))
-        {
-            MUSTTAIL return unsupported_truthiness_error(ARGS);
-        }
-
-        accumulator = accumulator.get_ptr<Float>()->value() != 0.0
-                          ? Value::False()
-                          : Value::True();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_to_bool_not_float_truthiness(PARAMS)
-    {
-        START(1);
-        if(!can_convert_to<Float>(accumulator))
-        {
-            MUSTTAIL return unsupported_truthiness_error(ARGS);
-        }
-
-        accumulator = accumulator.get_ptr<Float>()->value() != 0.0
-                          ? Value::False()
-                          : Value::True();
-        COMPLETE();
-    }
-
     NOINLINE static INTERP_CC Value op_jump_if_true_float_truthiness(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
@@ -4343,27 +4315,6 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_not(PARAMS)
-    {
-        START_UNARY_ACC();
-        if(unlikely((a.as.integer & value_ptr_mask) != 0))
-        {
-            MUSTTAIL return op_not_float_truthiness(ARGS);
-        }
-        // however, if this is an inlined type, we can simply test for
-        // truthiness using a mask and negate
-
-        if((a.as.integer & value_truthy_mask) != 0)
-        {
-            accumulator = Value::False();
-        }
-        else
-        {
-            accumulator = Value::True();
-        }
-        COMPLETE();
-    }
-
     [[nodiscard]] static NOINLINE Value validate_truthiness_result(
         ThreadState *thread, Value result, TruthResultKind kind)
     {
@@ -4402,7 +4353,8 @@ namespace cl
         return target != nullptr ? target : dispatch_entry_for_pc(dispatch, pc);
     }
 
-    NOINLINE static INTERP_CC Value op_to_bool_dispatch(PARAMS)
+    template <bool Invert>
+    NOINLINE static INTERP_CC Value op_truthiness_dispatch(PARAMS)
     {
         Value receiver = accumulator;
         OperatorInlineCache &cache =
@@ -4441,6 +4393,9 @@ namespace cl
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
             }
+            if constexpr(Invert)
+                accumulator = accumulator == Value::True() ? Value::False()
+                                                           : Value::True();
             START(3);
             COMPLETE();
         }
@@ -4449,6 +4404,7 @@ namespace cl
         MUSTTAIL return target(ARGS);
     }
 
+    template <bool Invert>
     NOINLINE static INTERP_CC Value op_finish_truthiness(PARAMS)
     {
         int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
@@ -4464,6 +4420,9 @@ namespace cl
             pc -= 2;
             MUSTTAIL return propagate_pending_exception(ARGS);
         }
+        if constexpr(Invert)
+            accumulator =
+                accumulator == Value::True() ? Value::False() : Value::True();
         START(1);
         COMPLETE();
     }
@@ -4474,7 +4433,7 @@ namespace cl
         Value a = accumulator;
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_to_bool_dispatch(ARGS);
+            MUSTTAIL return op_truthiness_dispatch<false>(ARGS);
         }
 
         accumulator = a.is_truthy() ? Value::True() : Value::False();
@@ -4483,10 +4442,11 @@ namespace cl
 
     static INTERP_CC Value op_to_bool_not(PARAMS)
     {
-        START_UNARY_ACC();
+        START(3);
+        Value a = accumulator;
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_to_bool_not_float_truthiness(ARGS);
+            MUSTTAIL return op_truthiness_dispatch<true>(ARGS);
         }
 
         accumulator = a.is_truthy() ? Value::False() : Value::True();
@@ -6423,9 +6383,11 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DictInsertNew, op_dict_insert_new);
         SET_TABLE_ENTRY(Bytecode::DictOverwriteEntry, op_dict_overwrite_entry);
         SET_TABLE_ENTRY(Bytecode::DictDeleteEntry, op_dict_delete_entry);
-        SET_TABLE_ENTRY(Bytecode::Not, op_not);
         SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
-        SET_TABLE_ENTRY(Bytecode::FinishTruthiness, op_finish_truthiness);
+        SET_TABLE_ENTRY(Bytecode::FinishTruthiness,
+                        op_finish_truthiness<false>);
+        SET_TABLE_ENTRY(Bytecode::FinishTruthinessNot,
+                        op_finish_truthiness<true>);
         SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);

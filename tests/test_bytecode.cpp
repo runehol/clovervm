@@ -538,3 +538,29 @@ TEST(BytecodeInstruction, truthiness_bundles_cache_and_return_target)
     ASSERT_EQ(1u, continuation.sources().size());
     ASSERT_EQ(1u, continuation.destinations().size());
 }
+
+TEST(BytecodeInstruction, negative_truthiness_bundles_cache_and_return_target)
+{
+    test::VmTestContext context;
+    CodeObject *code = context.compile_file(L"1 not in []\n");
+    BytecodeInstruction instruction =
+        find_instruction(*code, Bytecode::ToBoolNot);
+    EXPECT_EQ(BytecodeCompoundRole::Truthiness,
+              bytecode_info(Bytecode::ToBoolNot).compound_role);
+    EXPECT_EQ(3u, bytecode_length(Bytecode::ToBoolNot));
+    ASSERT_EQ(1u, instruction.operands().size());
+    EXPECT_EQ(BytecodeOperandKind::OperatorCache,
+              instruction.operands()[0].kind);
+    ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
+    EXPECT_EQ(instruction.pc_offset() + 2,
+              *instruction.continuation_pc_offset());
+    EXPECT_EQ(instruction.pc_offset() + 3, instruction.next_pc_offset());
+    BytecodeInstruction continuation =
+        decode_instruction(*code, *instruction.continuation_pc_offset());
+    EXPECT_EQ(Bytecode::FinishTruthinessNot, continuation.encoded_opcode());
+    EXPECT_EQ(BytecodeCompoundRole::TruthinessContinuation,
+              bytecode_info(Bytecode::FinishTruthinessNot).compound_role);
+    EXPECT_EQ(instruction.next_pc_offset(), continuation.next_pc_offset());
+    ASSERT_EQ(1u, continuation.sources().size());
+    ASSERT_EQ(1u, continuation.destinations().size());
+}

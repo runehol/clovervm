@@ -141,10 +141,10 @@ Python truthiness supports arbitrary objects through `__bool__`, and then
 `__len__` if `__bool__` is absent. clovervm's conditional jumps currently handle
 immediate truthy/falsy values and use the generic slow path for pointer values.
 
-The same limitation still applies to `ToBoolNot`, used after negative membership
-dispatch, and Python `not`. Positive `ToBool` now dispatches `__bool__`, then
-`__len__`, including Python callbacks and cached lookup. This covers positive
-membership results and the internal equality helper.
+Both explicit conversion opcodes, `ToBool` and `ToBoolNot`, now dispatch
+`__bool__`, then `__len__`, including Python callbacks and cached lookup. Python
+`not` uses `ToBoolNot`. This covers positive and negative membership results and
+the internal equality helper; conditional jumps remain a separate stage.
 
 Length results accept bool, SMI, and heap integers through INT64_MAX. Non-integer
 results with `__index__` remain unsupported and raise TypeError. The native limit
@@ -156,8 +156,8 @@ behavior. Returning it from `__bool__` raises TypeError.
 
 Reason: truthiness protocol integration is staged.
 
-To close: extend negative conversion, Python `not`, and conditional jumps through
-the shared dispatch/validation machinery; handle length-result index coercion
+To close: extend conditional jumps through the shared dispatch/validation
+machinery; handle length-result index coercion
 separately. See the [implementation plan](truthiness-implementation-plan.md).
 
 ## Builtins And Iteration

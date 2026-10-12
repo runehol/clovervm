@@ -1651,11 +1651,11 @@ for mode in range(2):
     except ValueError as e: assert str(e) == "element equality"
     else: raise AssertionError
 class BadTruth:
-    def __bool__(self): raise AssertionError("custom truthiness is deferred")
+    def __bool__(self): raise ValueError("custom truthiness")
 class BadElement:
     def __eq__(self, other): return BadTruth()
 try: (BadElement(),) != (other,)
-except TypeError as e: assert str(e) == "unsupported truthiness for object"
+except ValueError as e: assert str(e) == "custom truthiness"
 else: raise AssertionError
 class Reflected:
     def __eq__(self, other): return "reflected equality"
@@ -1672,10 +1672,9 @@ for answer in (None, False, 0, 0.0):
     assert (Element("false", answer),) != (other,)
 for answer in (True, 1, -1, 1.0):
     assert (Element("true", answer),) == (other,)
-for answer in ("", [], (), 2**100):
-    try: (Element("unsupported", answer),) == (other,)
-    except TypeError as e: assert str(e) == "unsupported truthiness for object"
-    else: raise AssertionError
+for answer in ("", [], ()):
+    assert (Element("false container", answer),) != (other,)
+assert (Element("true bigint", 2**100),) == (other,)
 left = None
 right = None
 class DropsReferences:
@@ -1742,11 +1741,11 @@ for mode in range(2):
     except ValueError as e: assert str(e) == "list equality"
     else: raise AssertionError
 class CustomTruth:
-    def __bool__(self): raise AssertionError
-class Unsupported:
+    def __bool__(self): raise ValueError("list truthiness")
+class TruthElement:
     def __eq__(self, other): return CustomTruth()
-try: [Unsupported()] == [object()]
-except TypeError as e: assert str(e) == "unsupported truthiness for object"
+try: [TruthElement()] == [object()]
+except ValueError as e: assert str(e) == "list truthiness"
 else: raise AssertionError
 class Reflected:
     def __eq__(self, other): return "reflected equality"
@@ -8301,12 +8300,20 @@ TEST(Interpreter, to_bool_dispatches_heap_values_and_validates_lengths)
     {
         Owned<Value> receiver(context.run_file(item.source));
         ASSERT_FALSE(receiver.value().is_exception_marker());
-        CodeObject *code = make_truthiness_conversion_code(
-            context, Bytecode::ToBool, receiver.value());
-        EXPECT_EQ(item.expected,
-                  context.thread()->run_clovervm_code_object(code));
-        EXPECT_EQ(item.expected,
-                  context.thread()->run_clovervm_code_object(code));
+        for(Bytecode opcode: {Bytecode::ToBool, Bytecode::ToBoolNot})
+        {
+            CodeObject *code = make_truthiness_conversion_code(
+                context, opcode, receiver.value());
+            Value expected =
+                opcode == Bytecode::ToBool
+                    ? item.expected
+                    : (item.expected == Value::True() ? Value::False()
+                                                      : Value::True());
+            EXPECT_EQ(expected,
+                      context.thread()->run_clovervm_code_object(code));
+            EXPECT_EQ(expected,
+                      context.thread()->run_clovervm_code_object(code));
+        }
     }
 }
 
@@ -8345,16 +8352,19 @@ TEST(Interpreter, to_bool_propagates_callback_and_return_validation_errors)
         source += L"\nC()\n";
         Owned<Value> receiver(context.run_file(source.c_str()));
         ASSERT_FALSE(receiver.value().is_exception_marker());
-        CodeObject *code = make_truthiness_conversion_code(
-            context, Bytecode::ToBool, receiver.value());
-        for(int replay = 0; replay < 2; ++replay)
+        for(Bytecode opcode: {Bytecode::ToBool, Bytecode::ToBoolNot})
         {
-            EXPECT_TRUE(context.thread()
-                            ->run_clovervm_code_object(code)
-                            .is_exception_marker());
-            expect_thread_python_error(context.thread(), item.type,
-                                       item.message);
-            context.thread()->clear_pending_exception();
+            CodeObject *code = make_truthiness_conversion_code(
+                context, opcode, receiver.value());
+            for(int replay = 0; replay < 2; ++replay)
+            {
+                EXPECT_TRUE(context.thread()
+                                ->run_clovervm_code_object(code)
+                                .is_exception_marker());
+                expect_thread_python_error(context.thread(), item.type,
+                                           item.message);
+                context.thread()->clear_pending_exception();
+            }
         }
     }
 }
@@ -8488,4 +8498,84 @@ TEST(Interpreter,
               context.thread()->run_clovervm_code_object(caller));
     EXPECT_GT(check.observations, 0u);
     context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+}
+
+TEST(Interpreter,
+     to_bool_not_continuation_preserves_kind_across_same_site_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+class Container:
+    def __init__(self, value): self.value = value
+    def __contains__(self, ignored): return self.value
+def convert(value): return 1 not in Container(value)
+class Length:
+    def __len__(self): return 2
+class Bool:
+    def __bool__(self): return True
+class OuterBool:
+    def __bool__(self):
+        convert(Length())
+        return 1
+class OuterLength:
+    def __len__(self):
+        convert(Bool())
+        return 2
+caught = False
+try:
+    convert(OuterBool())
+except TypeError:
+    caught = True
+(caught, convert(OuterLength()))
+)");
+    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    EXPECT_EQ(Value::True(), result.get_ptr<Tuple>()->item_unchecked(0));
+    EXPECT_EQ(Value::False(), result.get_ptr<Tuple>()->item_unchecked(1));
+}
+
+TEST(Interpreter, python_not_and_not_in_call_once_and_follow_class_mutation)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+calls = []
+class C:
+    def __bool__(self):
+        calls.append(1)
+        del C.__bool__
+        return False
+    def __len__(self):
+        calls.append(2)
+        return 3
+class Container:
+    def __contains__(self, value): return value
+def negate(value): return not value
+c = C()
+a = negate(c)
+b = negate(c)
+d = c not in Container()
+(a, b, d, len(calls), calls[0], calls[1], calls[2], not NotImplemented)
+)");
+    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    Tuple *tuple = result.get_ptr<Tuple>();
+    const Value expected[] = {Value::True(),      Value::False(),
+                              Value::False(),     Value::from_smi(3),
+                              Value::from_smi(1), Value::from_smi(2),
+                              Value::from_smi(2), Value::False()};
+    for(size_t idx = 0; idx < std::size(expected); ++idx)
+        EXPECT_EQ(expected[idx], tuple->item_unchecked(idx));
+}
+
+TEST(Interpreter, negative_truthiness_disassembly_hides_embedded_finisher)
+{
+    test::VmTestContext context;
+    CodeObject *code = make_truthiness_conversion_code(
+        context, Bytecode::ToBoolNot, Value::True());
+    std::string printed = fmt::to_string(*code);
+    EXPECT_NE(std::string::npos, printed.find("ToBoolNot"));
+    EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
+    EXPECT_NE(std::string::npos, printed.find("    5 Return"));
+    EXPECT_EQ(Value::False(), context.thread()->run_clovervm_code_object(code));
 }

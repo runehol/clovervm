@@ -10,12 +10,13 @@
 | Validated against | `856bf6c4` (2026-10-12) |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
-This is the agreed target contract. Positive `ToBool` conversion implements the
-cached truthiness table and embedded `FinishTruthiness` return continuation,
-including native int/float __bool__ methods, registered trusted handlers, and
-direct integer-length validation. Negative conversion and conditional jumps
-still support immediate values and floats; their protocol integration remains
-in later stages of the [implementation plan](truthiness-implementation-plan.md).
+This is the agreed target contract. Both `ToBool` and `ToBoolNot` implement the
+cached truthiness table and their embedded return continuations. Python `not`
+uses `ToBoolNot`; the duplicate `Not` opcode has been retired. Native int/float
+__bool__ methods, registered trusted handlers, and direct integer-length
+validation are implemented. Conditional jumps still support immediate values
+and floats; their protocol integration remains in the final stage of the
+[implementation plan](truthiness-implementation-plan.md).
 
 ## Truthiness semantics and call path
 
