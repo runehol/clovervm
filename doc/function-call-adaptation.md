@@ -4,14 +4,14 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Implemented |
+| Implementation | Explicit calls and callee adaptation implemented; caller expansion remains a design sketch |
 | Scope | Python argument binding and adaptation above the managed frame convention |
 | Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
 | Validated against | `a909d10` (2026-06-25) |
 | Supersedes | N/A |
 
 This note records the implemented function-call adaptation model for Python
-keyword calls and the remaining design work for richer signatures. It builds on
+keyword calls and the current design direction for caller argument expansion. It builds on
 the low-level frame mechanics documented in
 [CloverVM Function Calling Convention](function-calling-convention.md).
 Call-span lifetime, method-lookup ordering, alignment, and lazy traceback
@@ -82,49 +82,217 @@ first callee parameter slot that has a default.
 
 ## Call Argument Shape
 
-Call arguments use explicit AST nodes distinct from signature parameters. The
-implemented runtime slice supports:
+Implemented calls represent positional and explicit keyword arguments with
+call-argument AST nodes distinct from signature parameters. Caller `*iterable`
+and `**mapping` expansion, including mixed and repeated sources, is not yet
+implemented.
 
-- positional argument: `f(value)`;
-- keyword argument: `f(name=value)`.
+## Expanded Calls: Current Design Direction
 
-Caller-side expansion is a distinct call-site shape:
-
-- starred positional expansion: `f(*values)`;
-- keyword mapping expansion: `f(**mapping)`;
-- mixed repeated expansions.
-
-Following CPython's broad shape, any call site that contains caller `*` or
-`**` expansion should normalize its dynamic argument sources before callee
-binding instead of trying to force them into the compact `CallKeyword` shape.
-The normalized call payload is:
+The direction agreed during discussion on 2026-10-13 is container-building
+precode followed by a container-input call adapter, called the **expander** here.
+This is a design sketch, not an implementation-ready contract or implementation
+plan. Ordinary calls without expansion keep their existing fast paths.
 
 ```text
-callable
-args_tuple
-optional kwargs_dict
+evaluate callable into an ordinary register
+precode -> exact positional tuple + optional fresh exact keyword dict
+expander -> normalized callee parameter window -> frame entry
 ```
 
-`*values` accepts any iterable and materializes the positional arguments into a
-tuple. If the operand is already an exact tuple, the normalized payload may reuse
-it; otherwise the call site performs iterable-to-tuple coercion and reports the
-`TypeError` before entering the callee.
+Precode owns evaluation, iterable/mapping callbacks, container construction, and
+expansion validation. The expander owns callable/signature resolution, argument
+binding, defaults, collector handling, and frame entry. A new dynamically indexed
+managed argument area is not required by this direction.
 
-`**mapping` accepts mapping-like objects, including `dict` subclasses and custom
-objects that provide mapping-style key lookup. It does not accept arbitrary
-iterables of key/value pairs. The call site always allocates a fresh plain
-kwargs dict when any caller keyword expansion or explicit keyword in an
-expanded call needs keyword transport. It then merges explicit keyword runs and
-`**mapping` operands into that dict in source order. This merge is responsible
-for runtime mapping validation, duplicate keyword detection, and string-key
-validation.
+### Positional precode
 
-The parser rejects repeated explicit keyword names at the call site with a
-`SyntaxError`. Repeated names that involve `**mapping` operands remain runtime
-errors because the keys are dynamic.
+For a single `*source`, reuse an exact tuple; otherwise consume the iterable into
+an exact tuple. Tuple subclasses go through iterable conversion so overrides of
+`__iter__` are honored. For mixed positional arguments or multiple starred
+sources, use a growing list builder, append ordinary values, extend from each
+starred iterable, and convert to an exact tuple when the final count is known.
+Tuple storage requires its size up front; arbitrary iterables do not provide
+that count in advance. With no positional sources, an empty tuple suffices.
 
-The fresh kwargs dict is a call-owned transport object. It must not alias the
-user mapping passed to `**mapping`, and callee binding may rely on owning it.
+```text
+f(x, *a, y, *b)
+
+callable_reg = evaluate f
+builder = list containing evaluated x
+extend builder from evaluated a
+append evaluated y
+extend builder from evaluated b
+args_tuple = convert builder to an exact tuple
+```
+
+These operations preserve Python evaluation and expansion sequencing. Iteration
+is outside the expander, leaving separate specialization points for expansion
+and binding. Copy element references, not the elements themselves.
+
+### Keyword precode and error context
+
+Explicit keyword runs and repeated `**mapping` sources build one fresh exact
+transport dict. Merge operations reject duplicate names rather than overwriting
+them. A mapping source must support mapping-style key enumeration and value
+lookup; arbitrary iterables of pairs are not accepted. Validate string keyword
+names before binding.
+
+For a single `**source` with no other keyword sources, an exact dict can use a
+direct native copy into a fresh exact dict. Its keys are already unique, so no
+cross-source duplicate checking is needed; string-key validation still applies.
+Other mappings, including dict subclasses, use the general mapping merge path.
+Never reuse the caller's mutable dictionary as transport.
+
+The callable is evaluated first and remains rooted in an ordinary register while
+arguments are constructed. Normalization and merge operations receive that
+register where needed for call-specific errors. They do not need the signature
+merely to name the callable in an expansion error.
+
+```text
+args_tuple = NormalizeStarArgs callable_reg, args_source
+kwargs_dict = NormalizeStarKeywords callable_reg, kwargs_source
+CallExpanded callable_reg, args_tuple, kwargs_dict
+```
+
+These opcode names are provisional. Mixed sources use builder/merge precode
+before the same adapter. Whether absent keywords use an absent transport operand
+or a fresh empty dict remains an encoding decision; a callee kwargs collector
+must always receive a fresh dict.
+
+Duplicate keywords across sources are detected during container merging, before
+insertion loses the duplicate information. This allows CPython's early error
+boundaries, including stopping before later keyword-source expressions and,
+for generic mappings, before fetching a duplicate key's value. Positional versus
+keyword parameter conflicts are detected later by signature binding. Earlier
+discussion allowed best-effort early duplicate timing for register-span
+transport; that latitude is recorded under alternatives rather than used to
+justify overwriting duplicates in dictionary transport.
+
+### Expander and two call-site IC modes
+
+Inputs are the callable, an exact positional tuple, and an optional fresh exact
+keyword dict. All user iterable/mapping protocols have already run. Resolve the
+callable through existing function/constructor-thunk machinery, then select:
+
+- **Pure collector:** the signature is exactly `(*args, **kwargs)`, with no named
+  positional or keyword-only parameters. Install the exact tuple and fresh dict
+  directly into the two parameter slots. Allocate a fresh empty dict if keyword
+  transport is absent. No positional repacking or second dict is needed.
+- **General binding:** bind native tuple elements and dict entries into the
+  signature's parameter slots, validate arity and positional/keyword conflicts,
+  supply defaults, and pack collector leftovers. Enter only after successful
+  normalization. See [Expanded Call Binding](#expanded-call-binding).
+
+The IC guards the resolved callable/signature and applicable lookup validity and
+records the adapter mode. Mode selection does not depend on keyword names.
+General binding still validates dynamic tuple length and keyword contents unless
+those facts are separately guarded. The fresh dict may be consumed by deleting
+bound keys, leaving unmatched entries for direct handoff to `**kwargs`; choosing
+that strategy versus preserving transport inputs remains open.
+
+### Optional general-binding plan cache
+
+The same name-resolution optimization considered for register spans could apply
+to container input. A successful cold binding can record ordered keyword names,
+parameter or collector destinations, positional count, and adaptation/default
+placement. Cache only successfully validated plans, and retain cached name
+references through the code object's cache ownership and tracing machinery.
+
+A plan hit requires the callable and valid lookup dependencies, the same
+positional and keyword counts, and `string_eq` for each corresponding incoming
+and cached name. Values are irrelevant. Reordered names may miss despite
+binding identically. Incoming names need not be interned: existing `string_eq`
+accepts pointer identity, rejects distinct interned strings, and otherwise
+compares contents. Dynamic binding needs the same content-based correctness.
+The current explicit-keyword cache assumes constant names and cannot be reused
+without this additional guard.
+
+On a hit, use cached destinations instead of repeating name resolution and
+conflict/required-parameter validation. Read defaults from current function
+storage rather than freezing default values. The tuple/dict must remain intact
+for all guard and source reads needed before any destructive adaptation.
+
+The comparison is guard plus plan application versus cold plan construction
+plus the same application. With K keywords and P keyword-bindable parameters,
+an ordered-name guard uses K comparisons; search-based construction may use
+K*P parameter comparisons plus K*(K-1)/2 duplicate comparisons for a source
+representation that retains duplicates, and required/default checks. Dictionary
+transport has already rejected keyword-source duplicates. Stable names are a
+promising cache case, not a measured guarantee. Measure reused key objects,
+new equal strings, and changing names: changing names pay a failed guard before
+binding. Collector allocation/packing is common work, not eliminated by the
+cache. The additional plan cache remains a design option within general mode.
+
+### JIT boundary and unresolved details
+
+Tuples and dicts are ordinary values; indexed accesses operate on native
+container memory rather than logical bytecode registers. The IC-guarded target
+signature identifies destination parameter slots. Pure collection has two clear
+assignments; general binding may initially be a guarded adapter operation with
+explicit parameter-window effects instead of a fully static move sequence.
+
+Concrete opcode encodings, generic protocol continuations, tuple-suffix packing,
+dict consumption, ownership transfer, rooting across callbacks, failure cleanup,
+frame placement, and JIT lowering/exception exits still need coherent sketches.
+The current direction does not authorize implementation of these open details.
+
+## Alternatives Considered and Tradeoffs
+
+### Managed argument area
+
+Expand positional values and parallel keyword-name/value spans into an
+addressable managed area, then bind using runtime counts. Its main attraction
+is avoiding transport container allocation for mixed calls into named
+signatures. Exact tuples can copy references directly; other sources iterate.
+Collectors then pack positional leftovers and unmatched keywords into containers.
+
+The area must be outside the logical bytecode register file. The JIT tracks
+statically identified slots as individual SSA values; forcing indexed registers
+onto the stack does not resolve which values an indexed store replaces. Ordinary
+registers would hold an area handle/descriptor, counts, and expansion operands;
+area accesses would be explicit memory operations.
+
+Its representation remains unclear: the logical spans do not require three
+adjacent physical arrays. Allocation/growth, live extent, stack capacity,
+ownership/rooting, nested callbacks, cleanup, JIT memory effects, side exits,
+and transfer into the callee window need a new contract. Managed-stack storage
+is possible, not settled. Operator calls might share the area for arguments and
+continuation state, but their fixed scratch prefix is only an existing pattern
+for comparison, not proof that a dynamic area already exists. Unification is
+an option, not a required migration.
+
+A register-span binder could retain duplicate keyword entries until final
+binding. Early duplicate detection was accepted as best effort for that option:
+final-adapter detection may allow later callbacks or another error first, but
+must still reject duplicates before callee entry. Any implemented timing
+deviation would need documentation and tests. This latitude does not relax
+general argument evaluation or expansion sequencing.
+
+### Hybrid forwarding containers and mixed-source area
+
+Normalize exactly `f(*args, **kwargs)` into an exact tuple and fresh dict, but
+use the managed area for mixed sources. This preserves pure collector handoff
+while avoiding some allocations for mixed ordinary-signature calls. It requires
+two binding input forms plus the managed-area contract. They might share
+signature validation, destination plans, and parameter placement, but that
+sharing has not been designed. Container-input general binding reads native
+storage without repeating user iteration.
+
+### Uniform heap transport: accepted tradeoff of the current sketch
+
+Container precode uses existing ownership, rooting, and addressable storage,
+removes the managed-area subsystem, and gives every expanded call one adapter
+boundary. Exact tuple reuse and fresh-dict collector handoff favor forwarding
+chains. Mixed positional calls may allocate both a list builder and a final
+tuple; named signatures then copy contents into parameter slots, and keyword
+transport may allocate even when no kwargs collector is needed.
+
+The tradeoff is allocation, reference copying, and temporary garbage against
+storage/lifetime/JIT complexity. Compare regular-signature calls, mixed
+expansions, and forwarding chains before considering another storage form.
+Precode remains separate from binding, so using containers does not force one
+large opcode to perform all expansion and call work.
 
 ## Keyword Call Bytecode
 
