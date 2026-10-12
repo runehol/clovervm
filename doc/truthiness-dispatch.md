@@ -5,9 +5,9 @@
 | Document type | Architecture contract |
 | Status | Accepted |
 | Implementation | Partial |
-| Scope | Truth conversion semantics, cached special-method dispatch, result validation, and Python return continuations |
+| Scope | Truth conversion and conditional branches, cached special-method dispatch, result validation, and Python return continuations |
 | Owning layers | Builtin numeric methods and integer validation; runtime dispatch and caches; interpreter continuations; codegen and bytecode metadata |
-| Validated against | `856bf6c4` (2026-10-12) |
+| Validated against | `5bbb5323` (2026-10-12); conditional-jump extension agreed, pending implementation |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
 This is the agreed target contract. Both `ToBool` and `ToBoolNot` implement the
@@ -126,12 +126,78 @@ entries or reconsider the method already selected. Callback exceptions unwind
 normally, and return-validation exceptions belong to the original conversion
 site. Error paths use canonical VM exception classes.
 
-## Conditional jumps and deferred surface
+## Conditional jumps
 
-Conditional jumps will reuse this dispatch and validation policy in a subsequent
-slice. They must retain the original operand when needed for short-circuit
-expression results. The branch-specific continuation encoding needs a readiness
-review before implementation; it is not fixed by this contract.
+`JumpIfTrue` and `JumpIfFalse` combine truth conversion and branching in one
+instruction. Do not lower them into a conversion followed by a separate jump:
+the immediate path must perform its direct bitmask test and PC adjustment with
+one opcode dispatch, without consulting the cache or executing a continuation.
+
+The accepted five-byte layouts are:
+
+| Byte offset | JumpIfTrue bundle | JumpIfFalse bundle |
+|---|---|---|
+| 0 | JumpIfTrue opcode | JumpIfFalse opcode |
+| 1 | OperatorInlineCache index | OperatorInlineCache index |
+| 2 | FinishJumpIfTrue opcode | FinishJumpIfFalse opcode |
+| 3-4 | Signed little-endian int16 displacement | Signed little-endian int16 displacement |
+
+The displacement follows the embedded finisher so both parent and finisher can
+read it directly. Its base is the end of the complete five-byte bundle,
+preserving the existing end-of-displacement relocation convention. From the
+parent, fallthrough is `pc + 5`; from the finisher it is `pc + 3`. A taken branch
+adds the displacement to that same fallthrough address. Do not copy the branch
+destination or displacement into per-invocation scratch state.
+
+Emitters produce the complete bundle, including its cache and embedded finisher.
+Decoding and ordinary disassembly expose one conditional instruction with its
+cache, jump target, and fallthrough. Bytecode format metadata must describe the
+cache at offset 1, continuation at offset 2, and displacement at offset 3;
+existing conversion bundles have a trailing continuation, so that assumption
+must not be applied to branch bundles. The finisher is a physical interpreter
+return target, not an ordinary fallthrough instruction or a separate semantic
+basic-block boundary. Branch targets must remain at semantic instruction
+boundaries.
+
+### Preserve the tested value
+
+Conditional jumps preserve the original accumulator value on successful taken
+and untaken branches. This is an explicit bytecode contract, shared by `if`,
+`while`, conditional expressions, and short-circuit `and`/`or`. Codegen does not
+insert operand save/restore instructions around jumps merely to preserve a
+short-circuit expression's result. Explicit conversions still replace the
+accumulator with a boolean.
+
+The three execution paths implement that contract as follows:
+
+- Immediate: test the existing value directly and branch, leaving it untouched.
+  The cache and finisher are skipped; the displacement need only be read when
+  taking the branch.
+- Trusted: replay the selected unary handler and validate its result using the
+  shared Bool/Length policy. Branch on that separate result while preserving the
+  original operand; do not execute the embedded finisher.
+- Python function: save Bool/Length and the original operand in the existing
+  aligned caller scratch prefix, with call arguments below it. Return to the
+  embedded finisher, validate the callback result, restore the saved operand to
+  the accumulator, and branch. Restoration is required even when the caller
+  does not subsequently use the operand.
+
+The prefix already roots the receiver for the Python call. Its result kind and
+original operand belong to that invocation and remain visible to frame/root
+scanning. Re-entry may replace the site's IC, but the outer finisher must use
+the saved kind and operand. The two finisher opcodes encode branch direction;
+no additional direction flag, cache family, or second method lookup is needed.
+Each execution calls at most one selected method. Invalid returns and callback
+exceptions propagate without taking either normal branch, with validation
+errors attributed to the original conditional jump.
+
+The JIT retains its existing guarded immediate conditional-branch path and
+preserves the operand in outgoing state. Heap operands exit to the interpreter
+at the parent jump, where the cache and Python continuation execute. Do not
+apply an immediate truth test to an unguarded pointer or resume a JIT exit at
+the embedded finisher without its per-invocation state.
+
+## Deferred surface
 
 Python `not` uses the negative conversion path. Non-integer length-result index
 coercion, conditional-jump integration, and correcting sys.maxsize remain deferred

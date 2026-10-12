@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Cached truth conversion, result validation, and staged conditional-jump integration |
 | Owning layers | Builtin numeric methods and integer validation; runtime dispatch and caches; interpreter continuations; codegen and bytecode metadata |
-| Validated against | `856bf6c4` (2026-10-12) |
+| Validated against | `5bbb5323` (2026-10-12); conditional-jump extension agreed, pending implementation |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
 This plan records the agreed implementation direction and separates it into
@@ -102,26 +102,68 @@ coverage until their respective stages land.
 
 ### 5. Conditional jumps
 
-- [ ] Take a readiness review for cached JumpIfTrue/JumpIfFalse integration,
-  reusing the now-implemented truth dispatch and return-validation policy.
-- [ ] Preserve original operand values for short-circuit `and`/`or` expressions;
-  normalization for the branch must not replace their Python-visible result.
+- [x] Agree on cached JumpIfTrue/JumpIfFalse integration, reusing truth dispatch
+  and return validation, with the branch layout and value-preservation contract
+  recorded in [Truthiness Dispatch](truthiness-dispatch.md#conditional-jumps).
+- [x] Before changing conditional jumps, capture the full existing release
+  benchmark suite as a machine-readable baseline. Record the source revision,
+  command, and environment; use the same machine and benchmark settings after
+  implementation.
+- [ ] Emit both five-byte bundles: parent opcode, cache index, embedded
+  FinishJumpIfTrue/FinishJumpIfFalse, then signed int16 displacement. Update
+  relocation, format offsets, decoding, effects, and disassembly together;
+  both execution paths use the bundle end as the displacement base.
+- [ ] Keep immediate tests and branches in one dispatch. Trusted paths validate
+  a separate result and branch directly; neither executes the embedded finisher.
+- [ ] Preserve the original accumulator on both normal edges. Only Python calls
+  save/restore it through the existing scratch prefix, alongside the result kind;
+  codegen must not add preservation instructions around short-circuit jumps.
+- [ ] Implement the Python return finishers with shared validation, saved
+  per-invocation state, normal exception propagation, and attribution to the
+  parent jump. Branch direction comes from the finisher opcode.
+- [ ] Preserve the JIT's guarded immediate branch path and original outgoing
+  value; heap exits resume at the parent jump.
 - [ ] Cover `if`, `while`, conditional expressions, short-circuit operators,
   mutation/re-entry, callback errors, bytecode control flow, and JIT guard/exit
-  behavior.
+  behavior. Verify operand identity on both normal edges, one method call per
+  test, forward/backward relocation, embedded return offsets, and frame/root
+  visibility across Python calls.
+- [ ] After correctness and opcode-frame checks pass, rerun the full release
+  benchmark suite and compare every result with the baseline. Highlight speedups
+  and regressions, and repeat affected measurements when noise makes a delta
+  uncertain. Investigate material regressions before finalizing this stage.
 
-The precise branch continuation encoding belongs to that review. This plan does
-not select a second cache family or silently broaden the conversion stages into
-branch implementation work.
+The conditional-jump architecture is agreed; this stage implements it without
+adding a second cache family or expanding into length-result index coercion.
 
 ## Verification and completion
 
 Run focused checks while implementing each stage and `ninja -C build-debug all
 check` before finalizing implementation changes. For the interpreter/frame
 stages, also run the release `check_opcode_frames` target; update the hot-handler
-list for new or renamed hot handlers. No new benchmark suite is part of this
-plan. Release measurements become relevant if later work makes a specific
-performance claim.
+list for new or renamed hot handlers. Conditional-jump integration also requires
+before/after measurements using the existing full release benchmark suite; no
+new benchmark suite is required. Save JSON output on both sides using:
+
+```bash
+build-release/benchmark/bench_clovervm --benchmark_min_time=2s --benchmark_counters_tabular=true --benchmark_out=/tmp/clover_truthiness_jumps_before.json --benchmark_out_format=json
+build-release/benchmark/bench_clovervm --benchmark_min_time=2s --benchmark_counters_tabular=true --benchmark_out=/tmp/clover_truthiness_jumps_after.json --benchmark_out_format=json
+```
+
+Build the release benchmark executable before each measurement. Report all
+results with CPU time as the primary comparison, retaining wall-time and
+throughput data. Positive percentages mean improvement: `(before / after - 1)
+* 100` for time measurements, or `(after / before - 1) * 100` for throughput.
+Retain the baseline until the conditional-jump comparison is complete.
+
+The baseline was captured at `5bbb5323` before runtime changes, with 65
+successful benchmark results. Local artifacts are
+`/tmp/clover_truthiness_jumps_before.json`,
+`/tmp/clover_truthiness_jumps_before_metadata.json`, and
+`/tmp/clover_truthiness_jumps_before.log`. The metadata records the full revision,
+command, machine context, and primary metric. After measurements remain pending
+implementation of the conditional jumps.
+
 
 Keep the stage checkboxes current as work lands. Update
 [Python Deviations](python-deviations.md#truthiness) for each newly supported
