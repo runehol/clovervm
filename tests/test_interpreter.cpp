@@ -1586,6 +1586,257 @@ finally:
     ASSERT_FALSE(result.is_exception_marker());
 }
 
+TEST(Interpreter, tuple_equality_values_and_identity_shortcuts)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+import math
+assert () == ()
+assert not (() != ())
+assert (1, "x", (2, 3)) == (1.0, "x", (2, 3))
+assert not ((1, "x") != (1.0, "x"))
+assert (1, 2) != (1, 3)
+assert (1,) != (1, 2)
+assert () != (1,)
+assert not ((1,) == [1])
+assert (1,) != [1]
+assert tuple.__eq__((1,), [1]) is NotImplemented
+assert tuple.__ne__((1,), [1]) is NotImplemented
+nan = math.nan
+assert (nan,) == (nan,)
+assert not ((nan,) != (nan,))
+class Bomb:
+    def __eq__(self, other): raise AssertionError
+    def __ne__(self, other): raise AssertionError
+x = Bomb()
+assert (x,) == (x,)
+assert not ((x,) != (x,))
+assert tuple.__eq__((x,), (x,)) is True
+assert tuple.__ne__((x,), (x,)) is False
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, tuple_equality_callbacks_and_truthiness)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+log = []
+class Element:
+    def __init__(self, label, answer):
+        self.label = label
+        self.answer = answer
+    def __eq__(self, other):
+        log.append(self.label)
+        return self.answer
+    def __ne__(self, other): raise AssertionError("element ne called")
+a = Element("first", 1)
+b = Element("second", 0)
+c = Element("unreached", True)
+other = object()
+for mode in range(2):
+    log.clear()
+    if mode == 0: assert not ((a, b, c) == (other, other, other))
+    else: assert (a, b, c) != (other, other, other)
+    assert len(log) == 2
+    assert log[0] == "first"
+    assert log[1] == "second"
+log.clear()
+assert (a,) != (other, other)
+assert len(log) == 1
+class Raises:
+    def __eq__(self, other): raise ValueError("element equality")
+for mode in range(2):
+    try:
+        if mode == 0: (Raises(),) == (other, other)
+        else: (Raises(),) != (other, other)
+    except ValueError as e: assert str(e) == "element equality"
+    else: raise AssertionError
+class BadTruth:
+    def __bool__(self): raise AssertionError("custom truthiness is deferred")
+class BadElement:
+    def __eq__(self, other): return BadTruth()
+try: (BadElement(),) != (other,)
+except TypeError as e: assert str(e) == "unsupported truthiness for object"
+else: raise AssertionError
+class Reflected:
+    def __eq__(self, other): return "reflected equality"
+    def __ne__(self, other): return "reflected inequality"
+assert (() == Reflected()) == "reflected equality"
+assert (() != Reflected()) == "reflected inequality"
+class Declines:
+    def __eq__(self, other): return NotImplemented
+assert (Declines(),) != (Declines(),)
+class Reentrant:
+    def __eq__(self, other): return (1, (2,)) == (1.0, (2.0,))
+assert (Reentrant(),) == (other,)
+for answer in (None, False, 0, 0.0):
+    assert (Element("false", answer),) != (other,)
+for answer in (True, 1, -1, 1.0):
+    assert (Element("true", answer),) == (other,)
+for answer in ("", [], (), 2**100):
+    try: (Element("unsupported", answer),) == (other,)
+    except TypeError as e: assert str(e) == "unsupported truthiness for object"
+    else: raise AssertionError
+left = None
+right = None
+class DropsReferences:
+    def __eq__(self, other):
+        global left, right
+        left = None
+        right = None
+        return (1, (2,)) == (1.0, (2.0,))
+left = (DropsReferences(), 7)
+right = (object(), 7.0)
+assert left == right
+assert left is None
+assert right is None
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, tuple_equality_survives_callback_rebinding)
+{
+    expect_python_error(L"tuple.__eq__(1, ())\n", L"TypeError",
+                        L"tuple.__eq__ expects a tuple receiver");
+    expect_python_error(L"tuple.__ne__(1, ())\n", L"TypeError",
+                        L"tuple.__ne__ expects a tuple receiver");
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+import builtins
+tuple_type = tuple
+type_error = TypeError
+not_implemented = NotImplemented
+original_isinstance = isinstance
+class Rebind:
+    def __eq__(self, other):
+        builtins.tuple = None
+        builtins.isinstance = None
+        builtins.TypeError = None
+        builtins.NotImplemented = None
+        return True
+try:
+    assert (Rebind(), 1) == (object(), 1.0)
+    assert not ((Rebind(), 1) != (object(), 1.0))
+    assert tuple_type.__eq__((), []) is not_implemented
+    assert tuple_type.__ne__((), []) is not_implemented
+    for method in (tuple_type.__eq__, tuple_type.__ne__):
+        try: method(1, ())
+        except type_error: pass
+        else: raise AssertionError
+finally:
+    builtins.tuple = tuple_type
+    builtins.isinstance = original_isinstance
+    builtins.TypeError = type_error
+    builtins.NotImplemented = not_implemented
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, tuple_equality_methods_have_warmed_element_caches)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = context.run_file(LR"py(
+class Element:
+    def __eq__(self, other): return True
+left = (Element(),)
+right = (Element(),)
+for i in range(4):
+    assert left == right
+    assert not (left != right)
+def replacement(self, other): return False
+Element.__eq__ = replacement
+assert left != right
+assert not (left == right)
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+    Value equality = load_attr(Value::from_oop(context.vm().tuple_class()),
+                               interned_string(L"__eq__"));
+    ASSERT_TRUE(can_convert_to<Function>(equality));
+    CodeObject *code = equality.get_ptr<Function>()->code_object.extract();
+    EXPECT_EQ(nullptr, code->trusted_handler_resolver);
+    bool found_element_cache = false;
+    for(const OperatorInlineCache &cache: code->inline_caches.operator_caches)
+    {
+        if(cache.function != nullptr)
+        {
+            found_element_cache = true;
+            EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+            EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+        }
+    }
+    EXPECT_TRUE(found_element_cache);
+    for(const wchar_t *name: {L"__clover_tuple_eq", L"__clover_tuple_ne"})
+    {
+        EXPECT_TRUE(context.vm()
+                        .global_builtins_module()
+                        .extract()
+                        ->get_own_property(interned_string(name))
+                        .is_not_present());
+    }
+}
+
+TEST(Interpreter, tuple_equality_subclasses_preserve_payload_and_dispatch)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *classes = context.compile_file(LR"py(
+class Plain(tuple):
+    def __len__(self): raise AssertionError
+    def __getitem__(self, index): raise AssertionError
+    def __iter__(self): raise AssertionError
+class Derived(Plain):
+    def __eq__(self, other): return "derived equality"
+    def __ne__(self, other): return "derived inequality"
+class OnlyEq(Plain):
+    def __eq__(self, other): return False
+)py");
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(classes)
+                     .is_exception_marker());
+    std::vector<Owned<TValue<Tuple>>> values;
+    values.reserve(3);
+    const wchar_t *class_names[] = {L"Plain", L"Derived", L"OnlyEq"};
+    for(size_t idx = 0; idx < 3; ++idx)
+    {
+        Value cls = load_global_from_module_for_test(
+            classes, interned_string(class_names[idx]));
+        ASSERT_TRUE(can_convert_to<ClassObject>(cls));
+        values.emplace_back(context.thread()->make_internal_value<Tuple>(
+            cls.get_ptr<ClassObject>(), 2));
+        values[idx].extract()->initialize_item_unchecked(0, Value::from_smi(1));
+        values[idx].extract()->initialize_item_unchecked(1, Value::from_smi(2));
+    }
+    CodeObject *checks = context.compile_file(LR"py(
+assert plain == (1, 2)
+assert not (plain != (1, 2))
+assert tuple.__eq__(derived, plain) is True
+assert tuple.__ne__(derived, plain) is False
+assert (plain == derived) == "derived equality"
+assert (plain != derived) == "derived inequality"
+assert not (only_eq == plain)
+assert not (only_eq != plain)
+assert tuple.__eq__(only_eq, plain) is True
+assert tuple.__ne__(only_eq, plain) is False
+def replacement(self, other): return "changed equality"
+plain.__class__.__eq__ = replacement
+assert (plain == (1, 2)) == "changed equality"
+assert not (plain != (1, 2))
+del plain.__class__.__eq__
+assert plain == (1, 2)
+)py");
+    const wchar_t *value_names[] = {L"plain", L"derived", L"only_eq"};
+    for(size_t idx = 0; idx < 3; ++idx)
+    {
+        store_global_to_module_for_test(context, checks, value_names[idx],
+                                        values[idx].value());
+    }
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(checks)
+                     .is_exception_marker());
+}
+
 TEST(Interpreter, sequence_search_methods_bypass_subclass_storage_overrides)
 {
     test::VmTestContext test_context;

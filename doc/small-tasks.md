@@ -20,15 +20,27 @@ fractional values, signed zero, infinities, NaNs, and large integers. Pin the
 behavior against CPython before choosing the hash implementation. Add dictionary
 and set lookup regressions as well as direct `hash()` tests.
 
-### Tuple and list equality
+### List equality
 
-Implement elementwise `__eq__` and `__ne__` for both types. Both are missing:
-separately constructed `(1, 2)` tuples and `[1, 2]` lists currently compare
-unequal, as do empty containers. Cover length mismatches, identity shortcuts for
-elements, subclass behavior, incompatible sequence types, `NotImplemented`, and
-exceptions from element comparisons. List comparisons also need tests for
-mutation and re-entry during equality callbacks. Keep Python callbacks on the
-existing managed dispatch path; settle the continuation design before coding.
+Implement elementwise `__eq__` and `__ne__`. Separately constructed `[1, 2]`
+lists currently compare unequal, as do empty lists. Cover length mismatches,
+identity shortcuts for elements, subclass behavior, incompatible sequence types,
+`NotImplemented`, exceptions, mutation, and re-entry during equality callbacks.
+Prefer Python bytecode with visible calls and ICs, following tuple equality;
+settle mutation behavior and the comparison sketch before coding.
+
+### General truthiness dispatch
+
+Extend conditional truthiness to heap integers and builtin strings/containers,
+and to special-method dispatch through `__bool__`, then `__len__`, and default
+object truth when neither exists. Keep calls and
+their caches explicit for future JIT compilation. Validate result types and
+negative lengths; propagate callback exceptions and lookup invalidation.
+Currently non-float heap objects raise TypeError with the message
+`unsupported truthiness for object`, including results of element equality during
+tuple comparison. Tuple equality uses the currently supported immediate/float
+truthiness types; this protocol expansion is separate work requiring a readiness
+sketch.
 
 ### Conditional expressions
 
@@ -55,7 +67,7 @@ input slice and fallback design before coding.
 
 Verify argument/error behavior, exact and subclass result identity, element
 lifetime, iteration overrides, attributes, operation results, and constructor
-invalidation. Tuple equality is a separate task above. This item remains deferred
+invalidation. Tuple equality is implemented separately. This item remains deferred
 rather than the next active native-constructor stage.
 
 ### Complete small `operator` helpers

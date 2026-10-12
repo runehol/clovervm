@@ -245,9 +245,11 @@ namespace cl
     {
         ModuleObject *builtins = vm->global_builtins_module().extract();
         ClassObject *cls = vm->tuple_class();
-        const wchar_t *method_names[] = {L"count", L"index"};
-        const wchar_t *helper_names[] = {L"__clover_tuple_count",
-                                         L"__clover_tuple_index"};
+        const wchar_t *method_names[] = {L"__eq__", L"__ne__", L"count",
+                                         L"index"};
+        const wchar_t *helper_names[] = {
+            L"__clover_tuple_eq", L"__clover_tuple_ne", L"__clover_tuple_count",
+            L"__clover_tuple_index"};
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
         for(size_t idx = 0; idx < std::size(method_names); ++idx)

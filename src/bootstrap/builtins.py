@@ -293,6 +293,7 @@ _clover_len = len
 _clover_hasattr = hasattr
 _clover_iter = iter
 _clover_stop_iteration = StopIteration
+_clover_not_implemented = NotImplemented
 
 
 def __clover_list_init(self, iterable=(), /):
@@ -343,6 +344,37 @@ def __clover_list_index(self, needle, start=0, stop=_clover_sys.maxsize, /):
             return _clover_int_type(i)
         i += 1
     raise _clover_value_error
+
+
+def __clover_tuple_eq(self, other, /):
+    if not _clover_isinstance(self, _clover_tuple_type):
+        raise _clover_type_error("tuple.__eq__ expects a tuple receiver")
+    if not _clover_isinstance(other, _clover_tuple_type):
+        return _clover_not_implemented
+    left_size = _clover_tuple_type.__len__(self)
+    right_size = _clover_tuple_type.__len__(other)
+    i = 0
+    while i < left_size and i < right_size:
+        a = _clover_tuple_type.__getitem__(self, i)
+        b = _clover_tuple_type.__getitem__(other, i)
+        if a is not b:
+            if not (a == b):
+                return False
+        i += 1
+    return left_size == right_size
+
+
+# Inherited __ne__ compares tuple payloads, not a subclass's __eq__ override.
+_clover_tuple_eq_impl = __clover_tuple_eq
+
+
+def __clover_tuple_ne(self, other, /):
+    if not _clover_isinstance(self, _clover_tuple_type):
+        raise _clover_type_error("tuple.__ne__ expects a tuple receiver")
+    result = _clover_tuple_eq_impl(self, other)
+    if result is _clover_not_implemented:
+        return result
+    return not result
 
 
 def __clover_tuple_count(self, needle, /):
