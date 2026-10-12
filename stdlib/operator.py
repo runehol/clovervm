@@ -164,12 +164,44 @@ def le(a, b):
     return a <= b
 
 
-def length_hint(obj, default=0):
-    default = index(default)
+# Signed platform-size limits for the VM's current 64-bit targets.
+# sys.maxsize currently exposes the narrower SMI limit.
+_SSIZE_MIN = -(2**63)
+_SSIZE_MAX = 2**63 - 1
+
+
+def _check_ssize(value):
+    if value < _SSIZE_MIN or value > _SSIZE_MAX:
+        raise OverflowError("Python int too large to convert to C ssize_t")
+    return value
+
+
+def length_hint(obj, default=0, /):
+    default = _check_ssize(index(default))
     try:
-        return len(obj)
+        length = index(len(obj))
+        if length < 0:
+            raise ValueError("__len__() should return >= 0")
+        length = _check_ssize(length)
+    except TypeError:
+        pass
+    else:
+        return length
+
+    try:
+        hint = __clover_call_special__(
+            obj, "__length_hint__", TypeError, "object has no __length_hint__"
+        )
     except TypeError:
         return default
+    if hint is NotImplemented:
+        return default
+    if not isinstance(hint, int):
+        raise TypeError("__length_hint__ must be an integer")
+    hint = _check_ssize(int(hint))
+    if hint < 0:
+        raise ValueError("__length_hint__() should return >= 0")
+    return hint
 
 
 def lshift(a, b):

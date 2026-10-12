@@ -2020,3 +2020,16 @@ TEST(Codegen, conditional_expression_uses_existing_branches)
               "Constant 0: \"flag\"\n",
               bytecode_str_from_file(L"1 if flag else 2\n"));
 }
+
+TEST(Codegen, operator_length_hint_uses_special_method_call)
+{
+    test::VmTestContext context;
+    Value callable =
+        context.run_file(L"import operator\noperator.length_hint\n");
+    ASSERT_TRUE(can_convert_to<Function>(callable));
+    Function *function = callable.get_ptr<Function>();
+    std::string actual = fmt::to_string(*function->code_object.extract());
+    EXPECT_NE(std::string::npos, actual.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, actual.find("__length_hint__"));
+    EXPECT_EQ(std::string::npos, actual.find("__clover_call_special__"));
+}
