@@ -12,19 +12,6 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
-### General truthiness dispatch
-
-Extend conditional truthiness to heap integers and builtin strings/containers,
-and to special-method dispatch through `__bool__`, then `__len__`, and default
-object truth when neither exists. Keep calls and
-their caches explicit for future JIT compilation. Validate result types and
-negative lengths; propagate callback exceptions and lookup invalidation.
-Currently non-float heap objects raise TypeError with the message
-`unsupported truthiness for object`, including results of element equality during
-sequence comparison. Tuple and list equality use the supported immediate/float
-truthiness types; this protocol expansion is separate work requiring a readiness
-sketch.
-
 ### Tuple construction and subclassing
 
 Deferred after readiness discussion; no tuple constructor is implemented yet.
@@ -76,6 +63,11 @@ for protocol behavior the VM cannot yet execute.
 - **Numeric conversion coverage:** float string parsing and user-defined
   `__float__` / `__index__` conversion remain deferred. Int conversion protocols
   and additional constructor forms need their own semantic sketches too.
+- **Correct `sys.maxsize`:** expose INT64_MAX rather than the SMI maximum on the
+  current 64-bit targets and audit consumers such as sequence search defaults.
+  This is separate from truthiness length validation, which uses the native
+  signed 64-bit limit. See the
+  [truthiness implementation plan](truthiness-implementation-plan.md).
 - **Closure capture for builtin helpers:** once
   [closure cells](closure-cells.md) are implemented, replace persistent private
   bindings in the builtin implementation module with captured builtin

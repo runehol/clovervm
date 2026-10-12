@@ -78,6 +78,12 @@ For bounded work that can land independently of this priority order, see
    binding, call target, and continuation behavior that a JIT would otherwise
    have to rediscover.
 
+   Truthiness now has an accepted
+   [architecture contract](truthiness-dispatch.md) and
+   [staged implementation plan](truthiness-implementation-plan.md): builtin
+   methods and validation, dispatch/cache preparation, conversion continuations,
+   then conditional jumps. It has grown beyond the small-tasks queue.
+
 4. **Traceable iteration protocol and loop plans**
 
    Iteration should be lowered so every implicit call and control-flow edge is
