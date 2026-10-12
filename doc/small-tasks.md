@@ -12,14 +12,6 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
-### Float hashing
-
-Implement hashing for exact floats and float subclasses. Equal numeric values
-must have equal hashes across `float`, `int`, and `bool`; cover integral and
-fractional values, signed zero, infinities, NaNs, and large integers. Pin the
-behavior against CPython before choosing the hash implementation. Add dictionary
-and set lookup regressions as well as direct `hash()` tests.
-
 ### General truthiness dispatch
 
 Extend conditional truthiness to heap integers and builtin strings/containers,

@@ -1,5 +1,6 @@
 #include "builtin_types/float.h"
 
+#include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
@@ -10,6 +11,7 @@
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
 #include <cmath>
+#include <cstdint>
 #include <fmt/format.h>
 #include <iterator>
 #include <string>
@@ -733,6 +735,104 @@ namespace cl
                   TrustedHandlerSemantics Semantics>
         using Handler = TrustedHandlerDefinition<trusted, Effects, Semantics>;
     };
+    static TValue<SMI> float_hash_value(TValue<Float> self)
+    {
+        // CPython 3.14 uses 314159 as the infinity hash. Its
+        // _Py_HashDouble processes the mantissa in 28-bit chunks:
+        // https://github.com/python/cpython/blob/3.14/Python/pyhash.c
+        constexpr int64_t infinity_hash = 314159;
+        constexpr int mantissa_chunk_bits = 28;
+        constexpr double mantissa_chunk_scale =
+            static_cast<double>(uint64_t{1} << mantissa_chunk_bits);
+        static_assert(clover_hash_modulus_bits > mantissa_chunk_bits);
+
+        // Inspired by CPython's four-bit pointer rotation. Clover discards
+        // those alignment bits and reduces with its existing hash modulus:
+        // https://github.com/python/cpython/blob/3.14/Include/internal/pycore_pyhash.h
+        constexpr int nan_pointer_alignment_bits = 4;
+
+        double value = self.extract()->value();
+        if(!std::isfinite(value))
+        {
+            if(std::isinf(value))
+            {
+                return TValue<SMI>::from_smi(value > 0 ? infinity_hash
+                                                       : -infinity_hash);
+            }
+            // Live objects in the current heap have stable addresses. Distinct
+            // NaNs should not all collide merely because they compare unequal.
+            return canonicalize_nonnegative_raw_hash(
+                reinterpret_cast<uintptr_t>(self.extract()) >>
+                nan_pointer_alignment_bits);
+        }
+
+        // Preserve the existing SMI hash policy, including its lower endpoint.
+        // The positive limit is exclusive: double(value_smi_max) rounds upward.
+        if(value >= static_cast<double>(value_smi_min) &&
+           value < -static_cast<double>(value_smi_min) &&
+           std::trunc(value) == value)
+        {
+            int64_t hash = static_cast<int64_t>(value);
+            return TValue<SMI>::from_smi(hash == -1 ? -2 : hash);
+        }
+
+        // Reduce the exact binary value modulo Clover's integer hash modulus.
+        // As in CPython's _Py_HashDouble, powers of two become bit rotations
+        // modulo the Mersenne modulus; no large integer needs to be allocated.
+        int exponent;
+        double mantissa = std::frexp(value, &exponent);
+        int sign = mantissa < 0 ? -1 : 1;
+        mantissa = std::fabs(mantissa);
+        constexpr uint64_t modulus = static_cast<uint64_t>(clover_hash_modulus);
+        uint64_t hash = 0;
+        while(mantissa != 0)
+        {
+            hash = ((hash << mantissa_chunk_bits) & modulus) |
+                   (hash >> (clover_hash_modulus_bits - mantissa_chunk_bits));
+            mantissa *= mantissa_chunk_scale;
+            exponent -= mantissa_chunk_bits;
+            uint64_t digit = static_cast<uint64_t>(mantissa);
+            mantissa -= static_cast<double>(digit);
+            hash += digit;
+            if(hash >= modulus)
+            {
+                hash -= modulus;
+            }
+        }
+        int bits = static_cast<int>(clover_hash_modulus_bits);
+        int rotation = exponent % bits;
+        if(rotation < 0)
+        {
+            rotation += bits;
+        }
+        hash = ((hash << rotation) & modulus) | (hash >> (bits - rotation));
+        int64_t result = static_cast<int64_t>(hash) * sign;
+        return TValue<SMI>::from_smi(result == -1 ? -2 : result);
+    }
+
+    static Value native_float_hash(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__hash__ expects a float receiver");
+        }
+        return float_hash_value(TValue<Float>::from_value_assumed(self))
+            .raw_value();
+    }
+
+    static Value trusted_float_hash(ThreadState *thread, Value self)
+    {
+        (void)thread;
+        return float_hash_value(TValue<Float>::from_value_assumed(self))
+            .raw_value();
+    }
+
+    using FloatHashHandler =
+        TrustedHandlerDefinition<trusted_float_hash,
+                                 TrustedHandlerEffects::None,
+                                 TrustedHandlerSemantics::Generic>;
+
     using FloatAbsHandler =
         FloatAbsOperation::Handler<TrustedHandlerEffects::Allocate,
                                    TrustedHandlerSemantics::Generic>;
@@ -774,6 +874,7 @@ namespace cl
         }
     };
 
+    using FloatHashResolver = FloatUnaryResolver<FloatHashHandler>;
     using FloatAbsResolver = FloatUnaryResolver<FloatAbsHandler>;
     using FloatNegResolver = FloatUnaryResolver<FloatNegHandler>;
     using FloatPosResolver = FloatUnaryResolver<FloatPosHandler>;
@@ -876,6 +977,9 @@ namespace cl
                 vm,
                 builtin_intrinsic_method(L"__ge__", FloatGeOperation::native,
                                          L"Return self >= value.")),
+            with_trusted_handler_resolver<FloatHashResolver>(
+                vm, builtin_intrinsic_method(L"__hash__", native_float_hash,
+                                             L"Return hash(self).")),
             with_trusted_handler_resolver<FloatNegResolver>(
                 vm,
                 builtin_intrinsic_method(L"__neg__", FloatNegOperation::native,
