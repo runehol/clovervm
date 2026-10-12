@@ -57,10 +57,10 @@ namespace cl
         return value.is_smi() || can_convert_to<BigInt>(value);
     }
 
-    Expected<IntToSmiStatus> try_intlike_value_to_smi(Value value,
-                                                      TValue<SMI> *out)
+    NOINLINE Expected<IntToSmiStatus>
+    try_intlike_value_to_smi_slow(Value value, TValue<SMI> *out)
     {
-        if(is_smi_or_bool_value(value))
+        if(value.is_bool())
         {
             *out = TValue<SMI>::from_smi(smi_or_bool_as_int(value));
             return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
