@@ -373,6 +373,8 @@ namespace cl::jit
                 argument_count = 1;
                 guarded_argument_count = 1;
                 break;
+            case BytecodeCompoundRole::Truthiness:
+            case BytecodeCompoundRole::TruthinessContinuation:
             case BytecodeCompoundRole::BinaryOperatorContinuation:
             case BytecodeCompoundRole::TernaryOperatorContinuation:
                 emit_unsupported(block, instruction, state);

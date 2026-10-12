@@ -52,6 +52,7 @@ namespace cl
         ConstantModuleGlobalMutationCache,
         RegisterConstantAttributeReadCache,
         RegisterConstantAttributeMutationCache,
+        OperatorCacheWithContinuation,
         RegisterOperatorCache,
         RegisterOperatorCacheWithContinuation,
         RegisterRegisterOperatorCache,
@@ -94,6 +95,8 @@ namespace cl
         TernaryOperator,
         BinaryOperatorContinuation,
         TernaryOperatorContinuation,
+        Truthiness,
+        TruthinessContinuation,
     };
 
     enum class Bytecode : uint8_t
@@ -201,6 +204,13 @@ namespace cl
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Constant,
                     Operand::AttributeMutationCache);
+            case BytecodeFormat::OperatorCacheWithContinuation:
+                {
+                    BytecodeFormatInfo info =
+                        make_bytecode_format_info(Operand::OperatorCache);
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::RegisterOperatorCache:
                 return make_bytecode_format_info(Operand::Register,
                                                  Operand::OperatorCache);

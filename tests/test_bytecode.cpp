@@ -513,3 +513,28 @@ TEST(BytecodeDecoder, block_instructions_use_stable_cache_snapshots)
     EXPECT_NE(&live_cache, snapshot);
     EXPECT_EQ(12, snapshot->n_args);
 }
+
+TEST(BytecodeInstruction, truthiness_bundles_cache_and_return_target)
+{
+    test::VmTestContext context;
+    CodeObject *code = context.compile_file(L"1 in []\n");
+    BytecodeInstruction instruction = find_instruction(*code, Bytecode::ToBool);
+    EXPECT_EQ(BytecodeCompoundRole::Truthiness,
+              bytecode_info(Bytecode::ToBool).compound_role);
+    EXPECT_EQ(3u, bytecode_length(Bytecode::ToBool));
+    ASSERT_EQ(1u, instruction.operands().size());
+    EXPECT_EQ(BytecodeOperandKind::OperatorCache,
+              instruction.operands()[0].kind);
+    ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
+    EXPECT_EQ(instruction.pc_offset() + 2,
+              *instruction.continuation_pc_offset());
+    EXPECT_EQ(instruction.pc_offset() + 3, instruction.next_pc_offset());
+    BytecodeInstruction continuation =
+        decode_instruction(*code, *instruction.continuation_pc_offset());
+    EXPECT_EQ(Bytecode::FinishTruthiness, continuation.encoded_opcode());
+    EXPECT_EQ(BytecodeCompoundRole::TruthinessContinuation,
+              bytecode_info(Bytecode::FinishTruthiness).compound_role);
+    EXPECT_EQ(instruction.next_pc_offset(), continuation.next_pc_offset());
+    ASSERT_EQ(1u, continuation.sources().size());
+    ASSERT_EQ(1u, continuation.destinations().size());
+}

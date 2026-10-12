@@ -62,26 +62,26 @@ temporary public fallback merely to connect an incomplete stage.
 
 ### 3. Positive conversion and Python return continuation
 
-- [ ] Give ToBool its cache operand and have its emitter append the embedded
+- [x] Give ToBool its cache operand and have its emitter append the embedded
   FinishTruthiness return target, matching the CheckOperatorNotImplemented
   bundle convention. Callers emit only the main instruction. Update all in-repo
   emitters, printers, decoding/effect metadata, and relevant JIT boundaries
   together; ordinary disassembly presents one bundled instruction.
-- [ ] Reserve caller scratch space using the existing operator-continuation
+- [x] Reserve caller scratch space using the existing operator-continuation
   convention. Keep saved state and callback arguments visible to frame/root
   scanning across calls and safepoints.
-- [ ] Implement immediate, trusted, Python-function, and default paths. Trusted
+- [x] Implement immediate, trusted, Python-function, and default paths. Trusted
   and immediate successes skip the finisher; Python returns validate there.
-- [ ] Keep errors and Python dispatch in separate NOINLINE paths and preserve
+- [x] Keep errors and Python dispatch in separate NOINLINE paths and preserve
   the interpreter's PARAMS/ARGS, START/COMPLETE, and MUSTTAIL conventions.
-- [ ] Test custom bool/length returns, builtin containers, boxed integers,
+- [x] Test custom bool/length returns, builtin containers, boxed integers,
   exceptions, invalid returns, inherited overrides, and warmed-cache replay.
-- [ ] Test re-entry that changes the same IC from Bool to Length or vice versa,
+- [x] Test re-entry that changes the same IC from Bool to Length or vice versa,
   and class mutation during a callback. The outer return must use its saved kind.
-- [ ] Check frame/root visibility and exception attribution around continuation
+- [x] Check frame/root visibility and exception attribution around continuation
   returns. JIT support may exit explicitly at the unsupported protocol boundary;
   it must not accidentally use an inline-value truth test on a pointer.
-- [ ] Add structural checks for bundled encoding/disassembly, the Python return
+- [x] Add structural checks for bundled encoding/disassembly, the Python return
   offset, and advancing past the whole bundle on paths that finish directly.
 
 Positive conversion is independently usable by existing membership/dictionary

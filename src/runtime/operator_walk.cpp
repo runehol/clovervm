@@ -209,6 +209,7 @@ namespace cl
             case OperatorDispatchTableId::CompareGt:
             case OperatorDispatchTableId::CompareGe:
             case OperatorDispatchTableId::Contains:
+            case OperatorDispatchTableId::Truthiness:
             case OperatorDispatchTableId::Count:
                 break;
         }

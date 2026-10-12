@@ -10,13 +10,12 @@
 | Validated against | `856bf6c4` (2026-10-12) |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
-This is the agreed target contract. Current conversion opcodes support immediate
-values and floats; full heap truthiness dispatch is not implemented yet. Native
-int/float __bool__ methods, registered trusted handlers, and direct integer-length
-validation are implemented. The truthiness dispatch table, Bool/Length cache
-metadata, and guarded default-true trusted handler are also implemented and
-tested independently of the conversion opcodes. The
-[implementation plan](truthiness-implementation-plan.md) stages the transition.
+This is the agreed target contract. Positive `ToBool` conversion implements the
+cached truthiness table and embedded `FinishTruthiness` return continuation,
+including native int/float __bool__ methods, registered trusted handlers, and
+direct integer-length validation. Negative conversion and conditional jumps
+still support immediate values and floats; their protocol integration remains
+in later stages of the [implementation plan](truthiness-implementation-plan.md).
 
 ## Truthiness semantics and call path
 

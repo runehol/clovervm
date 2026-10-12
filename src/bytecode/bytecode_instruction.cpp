@@ -336,6 +336,7 @@ namespace cl
             case Bytecode::XorSmi:
             case Bytecode::Not:
             case Bytecode::ToBool:
+            case Bytecode::FinishTruthiness:
             case Bytecode::ToBoolNot:
             case Bytecode::Neg:
             case Bytecode::Pos:
@@ -745,6 +746,16 @@ namespace cl
                 {BytecodeOperandKind::Register,
                  code_object.decode_reg(-int8_t(fast_index) -
                                         FrameHeaderSizeBelowFp - 1)});
+        }
+
+        if(info.compound_role == BytecodeCompoundRole::Truthiness)
+        {
+            instruction.continuation_pc_offset_ =
+                instruction.next_pc_offset_ - 1;
+            assert(
+                Bytecode(
+                    code_object.code[*instruction.continuation_pc_offset_]) ==
+                Bytecode::FinishTruthiness);
         }
 
         if(info.compound_role == BytecodeCompoundRole::BinaryOperator ||

@@ -6,6 +6,7 @@
 #include "jit/core_ir_optimization.h"
 #include "jit/instruction.h"
 #include "object_model/validity_cell.h"
+#include "runtime/operator_walk.h"
 #include "test_helpers.h"
 
 #include <gtest/gtest.h>
@@ -1183,6 +1184,37 @@ namespace cl::jit
         ASSERT_EQ(2u, loop_block->predecessor_edges().size());
         EXPECT_EQ(entry_branch.edge(), loop_block->predecessor_edges()[0]);
         EXPECT_EQ(loop_branch.true_edge(), loop_block->predecessor_edges()[1]);
+    }
+
+    TEST(JitCoreBytecodeTranslator, PopulatedTruthinessCacheExitsAtMainOpcode)
+    {
+        TranslatorFixture fixture;
+        Owned<Value> value(fixture.context.run_file(L"1.0"));
+        uint8_t constant =
+            fixture.code_builder.allocate_constant(value.value()).value();
+        fixture.code_builder.emit_lda_constant(0, constant).value();
+        uint32_t conversion_pc = fixture.code_builder.emit_to_bool(0).value();
+        fixture.code_builder.emit_return(0).value();
+        CodeObject *code = fixture.code_builder.finalize().value();
+        auto selected = walk_operator_table(
+            fixture.context.thread(), OperatorDispatchTableId::Truthiness, 0,
+            OperatorCacheability::CacheableDirectOnly, value.value(),
+            Value::not_present(), Value::not_present());
+        ASSERT_EQ(OperatorWalkStatus::CallTrustedHandler, selected.status);
+        code->inline_caches.operator_caches[0] = selected.cache_entry;
+        CoreBytecodeTranslator translator(fixture.context.vm(), *code,
+                                          fixture.graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->normal_entry_block();
+        auto snapshots = instructions_of_kind(entry, InstructionKind::Snapshot);
+        auto resumes =
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, resumes.size());
+        EXPECT_EQ(
+            conversion_pc,
+            snapshots.front().as<SnapshotInstruction>().resume_pc_offset());
+        EXPECT_TRUE(resumes.front().is_block_terminator());
     }
 
     TEST(JitCoreBytecodeTranslator,

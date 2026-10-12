@@ -411,7 +411,7 @@ namespace cl
         expect_pending_exception(thread, L"ValueError");
     }
 
-    TEST(ThreadState, TestEqualPropagatesUnsupportedTruthiness)
+    TEST(ThreadState, TestEqualAcceptsDefaultObjectTruthiness)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -426,8 +426,9 @@ namespace cl
 
         Expected<bool> result = thread->test_equal(object, Value::None());
 
-        EXPECT_TRUE(result.has_exception());
-        expect_pending_exception(thread, L"TypeError");
+        ASSERT_FALSE(result.has_exception());
+        EXPECT_TRUE(result.value());
+        EXPECT_FALSE(thread->has_pending_exception());
     }
 
     TEST(ThreadState, ExceptionFactoriesDistinguishNoArgsFromEmptyString)

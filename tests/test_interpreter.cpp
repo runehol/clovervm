@@ -616,7 +616,7 @@ TEST(Interpreter, truthiness_conversion_handles_float_truthiness)
                                   test_context, Bytecode::ToBoolNot, one));
 }
 
-TEST(Interpreter, truthiness_conversion_rejects_unsupported_pointer_truthiness)
+TEST(Interpreter, truthiness_conversion_handles_string_truthiness)
 {
     test::VmTestContext test_context;
 
@@ -625,9 +625,7 @@ TEST(Interpreter, truthiness_conversion_rejects_unsupported_pointer_truthiness)
                              .raw_value();
     Value result =
         run_truthiness_conversion(test_context, Bytecode::ToBool, string_value);
-    EXPECT_TRUE(result.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"TypeError",
-                               L"unsupported truthiness for object");
+    EXPECT_EQ(Value::True(), result);
 }
 
 TEST(Interpreter, truthiness_conversion_opcodes_are_printed)
@@ -2281,7 +2279,7 @@ TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
+    ASSERT_EQ(2u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
@@ -2289,13 +2287,14 @@ TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
 }
 
-TEST(Interpreter, membership_reports_unsupported_contains_truthiness)
+TEST(Interpreter, membership_converts_string_contains_results)
 {
-    expect_python_error(L"class Container:\n"
-                        L"    def __contains__(self, item):\n"
-                        L"        return 'yes'\n"
-                        L"1 in Container()\n",
-                        L"TypeError", L"unsupported truthiness for object");
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(),
+              context.run_file(L"class Container:\n"
+                               L"    def __contains__(self, item):\n"
+                               L"        return 'yes'\n"
+                               L"1 in Container()\n"));
 }
 
 TEST(Interpreter, native_string_contains_rejects_non_string_needle)
@@ -2326,7 +2325,7 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
     ASSERT_TRUE(can_convert_to<Function>(dict_function_value));
     CodeObject *dict_function_code =
         assume_convert_to<Function>(dict_function_value)->code_object.extract();
-    ASSERT_EQ(1u, dict_function_code->inline_caches.operator_caches.size());
+    ASSERT_EQ(2u, dict_function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &dict_cache =
         dict_function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(dict_cache.trusted_handler.is_null());
@@ -2353,7 +2352,7 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
     ASSERT_TRUE(can_convert_to<Function>(str_function_value));
     CodeObject *str_function_code =
         assume_convert_to<Function>(str_function_value)->code_object.extract();
-    ASSERT_EQ(1u, str_function_code->inline_caches.operator_caches.size());
+    ASSERT_EQ(2u, str_function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &str_cache =
         str_function_code->inline_caches.operator_caches[0];
     EXPECT_FALSE(str_cache.trusted_handler.is_null());
@@ -8252,4 +8251,241 @@ def other_boolean(self): raise AssertionError
         cache = selected.cache_entry;
         EXPECT_TRUE(cache.matches_unary(receiver));
     }
+}
+
+TEST(Interpreter, to_bool_dispatches_heap_values_and_validates_lengths)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    struct Case
+    {
+        const wchar_t *source;
+        Value expected;
+    };
+    const Case cases[] = {
+        {L"[]", Value::False()},
+        {L"[1]", Value::True()},
+        {L"()", Value::False()},
+        {L"(1,)", Value::True()},
+        {L"{}", Value::False()},
+        {L"{1: 2}", Value::True()},
+        {L"''", Value::False()},
+        {L"'x'", Value::True()},
+        {L"b''", Value::False()},
+        {L"b'x'", Value::True()},
+        {L"2**100", Value::True()},
+        {L"object()", Value::True()},
+        {L"class I(int): pass\nI(0)", Value::False()},
+        {L"class I(int): pass\nI(1)", Value::True()},
+        {L"class C:\n    def __bool__(self): return False\n    def "
+         L"__len__(self): raise AssertionError\nC()",
+         Value::False()},
+        {L"class Base:\n    def __bool__(self): return True\nclass C(Base): "
+         L"pass\nC()",
+         Value::True()},
+        {L"class C:\n    def __len__(self): return False\nC()", Value::False()},
+        {L"class C:\n    def __bool__(self, value=False): return value\nC()",
+         Value::False()},
+        {L"class C:\n    def __len__(*args, **kwargs): return len(args)\nC()",
+         Value::True()},
+        {L"class I(int):\n    def __bool__(self): raise AssertionError\nclass "
+         L"C:\n    def __len__(self): return I(0)\nC()",
+         Value::False()},
+        {L"class I(int): pass\nclass C:\n    def __len__(self): return "
+         L"I(1)\nC()",
+         Value::True()},
+        {L"class C:\n    def __len__(self): return 2**63-1\nC()",
+         Value::True()},
+    };
+    for(const auto &item: cases)
+    {
+        Owned<Value> receiver(context.run_file(item.source));
+        ASSERT_FALSE(receiver.value().is_exception_marker());
+        CodeObject *code = make_truthiness_conversion_code(
+            context, Bytecode::ToBool, receiver.value());
+        EXPECT_EQ(item.expected,
+                  context.thread()->run_clovervm_code_object(code));
+        EXPECT_EQ(item.expected,
+                  context.thread()->run_clovervm_code_object(code));
+    }
+}
+
+TEST(Interpreter, to_bool_propagates_callback_and_return_validation_errors)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    struct Case
+    {
+        const wchar_t *body;
+        const wchar_t *type;
+        const wchar_t *message;
+    };
+    const Case cases[] = {
+        {L"def __bool__(self): return 1", L"TypeError",
+         L"__bool__ should return bool"},
+        {L"def __bool__(self): return NotImplemented", L"TypeError",
+         L"__bool__ should return bool"},
+        {L"def __bool__(self): raise RuntimeError('callback')", L"RuntimeError",
+         L"callback"},
+        {L"def __len__(self): return -1", L"ValueError",
+         L"__len__() should return >= 0"},
+        {L"def __len__(self): return -(2**100)", L"ValueError",
+         L"__len__() should return >= 0"},
+        {L"def __len__(self): return 2**63", L"OverflowError",
+         L"integer overflow"},
+        {L"def __len__(self): return 0.0", L"TypeError",
+         L"__len__() should return an integer"},
+        {L"def __len__(self): raise RuntimeError('length callback')",
+         L"RuntimeError", L"length callback"},
+    };
+    for(const auto &item: cases)
+    {
+        std::wstring source = L"class C:\n    ";
+        source += item.body;
+        source += L"\nC()\n";
+        Owned<Value> receiver(context.run_file(source.c_str()));
+        ASSERT_FALSE(receiver.value().is_exception_marker());
+        CodeObject *code = make_truthiness_conversion_code(
+            context, Bytecode::ToBool, receiver.value());
+        for(int replay = 0; replay < 2; ++replay)
+        {
+            EXPECT_TRUE(context.thread()
+                            ->run_clovervm_code_object(code)
+                            .is_exception_marker());
+            expect_thread_python_error(context.thread(), item.type,
+                                       item.message);
+            context.thread()->clear_pending_exception();
+        }
+    }
+}
+
+TEST(Interpreter, to_bool_continuation_preserves_kind_across_same_site_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+class Container:
+    def __init__(self, value): self.value = value
+    def __contains__(self, ignored): return self.value
+def convert(value): return 1 in Container(value)
+class Length:
+    def __len__(self): return 2
+class Bool:
+    def __bool__(self): return True
+class OuterBool:
+    def __bool__(self):
+        convert(Length())
+        return 1
+class OuterLength:
+    def __len__(self):
+        convert(Bool())
+        return 2
+caught = False
+try:
+    convert(OuterBool())
+except TypeError:
+    caught = True
+(caught, convert(OuterLength()))
+)");
+    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    EXPECT_EQ(Value::True(), result.get_ptr<Tuple>()->item_unchecked(0));
+    EXPECT_EQ(Value::True(), result.get_ptr<Tuple>()->item_unchecked(1));
+}
+
+TEST(Interpreter, to_bool_tracks_mutation_and_calls_selected_method_once)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class Container:
+    def __init__(self, value): self.value = value
+    def __contains__(self, ignored): return self.value
+def convert(value): return 1 in Container(value)
+calls = []
+class C:
+    def __bool__(self):
+        calls.append(1)
+        del C.__bool__
+        return False
+    def __len__(self):
+        calls.append(2)
+        return 3
+c = C()
+a = convert(c)
+b = convert(c)
+(a, b, len(calls), calls[0], calls[1])
+)");
+    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    Tuple *tuple = result.get_ptr<Tuple>();
+    EXPECT_EQ(Value::False(), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::True(), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(2));
+    EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(3));
+    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(4));
+}
+
+TEST(Interpreter, to_bool_disassembly_hides_embedded_finisher)
+{
+    test::VmTestContext context;
+    CodeObject *code = make_truthiness_conversion_code(
+        context, Bytecode::ToBool, Value::True());
+    std::string printed = fmt::to_string(*code);
+    EXPECT_NE(std::string::npos, printed.find("ToBool"));
+    EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
+    EXPECT_NE(std::string::npos, printed.find("    5 Return"));
+    EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
+}
+
+struct TruthinessSafepointCheck
+{
+    CodeObject *callback;
+    CodeObject *caller;
+    Value receiver;
+    size_t observations = 0;
+};
+
+static void check_truthiness_callback_roots(void *opaque, ThreadState *, Value,
+                                            Value *fp, CodeObject *code,
+                                            uint32_t,
+                                            const SafepointScanRecord &record)
+{
+    auto &check = *static_cast<TruthinessSafepointCheck *>(opaque);
+    if(code != check.callback)
+        return;
+    Value *caller_fp =
+        decode_frame_payload_ptr<Value *>(fp[FrameHeaderPreviousFpOffset]);
+    Value *prefix = caller_fp + check.caller->get_first_free_arg_encoded_reg();
+    EXPECT_LE(record.lowest_live_stack_slot, prefix - 4);
+    EXPECT_EQ(Value::from_smi(int64_t(TruthResultKind::Bool)), prefix[0]);
+    EXPECT_EQ(check.receiver, prefix[-1]);
+    EXPECT_EQ(check.receiver, prefix[-4]);
+    ++check.observations;
+}
+
+TEST(Interpreter,
+     to_bool_keeps_continuation_state_visible_at_callback_safepoints)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> receiver(context.run_file(
+        L"def ping(): pass\nclass C:\n    def __bool__(self):\n"
+        L"        ping()\n        return False\nC()\n"));
+    Value method = load_attr(
+        Value::from_oop(context.thread()->class_of_value(receiver.value())),
+        interned_string(L"__bool__"));
+    ASSERT_TRUE(can_convert_to<Function>(method));
+    CodeObject *caller = make_truthiness_conversion_code(
+        context, Bytecode::ToBool, receiver.value());
+    TruthinessSafepointCheck check{
+        method.get_ptr<Function>()->code_object.extract(), caller,
+        receiver.value()};
+    context.vm().set_safepoint_callback_for_testing(
+        check_truthiness_callback_roots, &check);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_EQ(Value::False(),
+              context.thread()->run_clovervm_code_object(caller));
+    EXPECT_GT(check.observations, 0u);
+    context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
 }

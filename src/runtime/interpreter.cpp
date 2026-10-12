@@ -4,6 +4,7 @@
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
+#include "builtin_types/int.h"
 #include "builtin_types/list.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
@@ -921,20 +922,6 @@ namespace cl
         accumulator = accumulator.get_ptr<Float>()->value() != 0.0
                           ? Value::False()
                           : Value::True();
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_to_bool_float_truthiness(PARAMS)
-    {
-        START(1);
-        if(!can_convert_to<Float>(accumulator))
-        {
-            MUSTTAIL return unsupported_truthiness_error(ARGS);
-        }
-
-        accumulator = accumulator.get_ptr<Float>()->value() != 0.0
-                          ? Value::True()
-                          : Value::False();
         COMPLETE();
     }
 
@@ -4377,12 +4364,117 @@ namespace cl
         COMPLETE();
     }
 
+    [[nodiscard]] static NOINLINE Value validate_truthiness_result(
+        ThreadState *thread, Value result, TruthResultKind kind)
+    {
+        if(kind == TruthResultKind::Bool)
+        {
+            if(result == Value::True() || result == Value::False())
+                return result;
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__bool__ should return bool");
+        }
+        auto length = validate_length_result(result);
+        if(length.has_exception())
+            return Value::exception_marker();
+        return length.value() != 0 ? Value::True() : Value::False();
+    }
+
+    static NOINLINE DispatchTableEntry enter_truthiness_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
+        CodeObject *&code_object, const OperatorInlineCache &entry,
+        Value receiver)
+    {
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        // Four slots preserve the existing aligned operator-prefix convention.
+        fp[prefix_reg] = Value::from_smi(int64_t(entry.truth_result_kind));
+        fp[prefix_reg - 1] = receiver;
+        fp[prefix_reg - 2] = Value::None();
+        fp[prefix_reg - 3] = Value::None();
+        int32_t first_arg_reg = prefix_reg - 4;
+        Value self = entry.has_self ? receiver : Value::not_present();
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 0, self);
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, 2, entry.adaptation);
+        return target != nullptr ? target : dispatch_entry_for_pc(dispatch, pc);
+    }
+
+    NOINLINE static INTERP_CC Value op_to_bool_dispatch(PARAMS)
+    {
+        Value receiver = accumulator;
+        OperatorInlineCache &cache =
+            code_object->inline_caches.operator_caches[pc[1]];
+        OperatorInlineCache entry;
+        if(cache.matches_unary(receiver))
+        {
+            entry = cache;
+        }
+        else
+        {
+            auto selected = walk_operator_table(
+                thread, OperatorDispatchTableId::Truthiness, 0,
+                OperatorCacheability::CacheableDirectOnly, receiver,
+                Value::not_present(), Value::not_present());
+            if(selected.status == OperatorWalkStatus::PropagatePendingException)
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            assert(selected.status == OperatorWalkStatus::CallTrustedHandler ||
+                   selected.status ==
+                       OperatorWalkStatus::CallUntrustedFunction);
+            install_operator_cache_if_cacheable(&cache, selected);
+            entry = selected.cache_entry;
+        }
+        if(!entry.trusted_handler.is_null())
+        {
+            accumulator = entry.trusted_handler.unary(thread, receiver);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            accumulator = validate_truthiness_result(thread, accumulator,
+                                                     entry.truth_result_kind);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(3);
+            COMPLETE();
+        }
+        DispatchTableEntry target = enter_truthiness_function(
+            thread, fp, pc, dispatch, code_object, entry, receiver);
+        MUSTTAIL return target(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_finish_truthiness(PARAMS)
+    {
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        Value saved_kind = fp[prefix_reg];
+        assert(saved_kind.is_smi());
+        assert(saved_kind.get_smi() == int64_t(TruthResultKind::Bool) ||
+               saved_kind.get_smi() == int64_t(TruthResultKind::Length));
+        accumulator = validate_truthiness_result(
+            thread, accumulator, TruthResultKind(saved_kind.get_smi()));
+        if(unlikely(accumulator.is_exception_marker()))
+        {
+            // Attribute validation errors to the bundled conversion site.
+            pc -= 2;
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+        START(1);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_to_bool(PARAMS)
     {
-        START_UNARY_ACC();
+        START(3);
+        Value a = accumulator;
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_to_bool_float_truthiness(ARGS);
+            MUSTTAIL return op_to_bool_dispatch(ARGS);
         }
 
         accumulator = a.is_truthy() ? Value::True() : Value::False();
@@ -6333,6 +6425,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DictDeleteEntry, op_dict_delete_entry);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
         SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
+        SET_TABLE_ENTRY(Bytecode::FinishTruthiness, op_finish_truthiness);
         SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
