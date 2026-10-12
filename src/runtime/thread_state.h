@@ -325,6 +325,7 @@ namespace cl
         {
             return shape_of_value(value)->get_class();
         }
+        // Delegates to the VM's immutable canonical builtin class registry.
         ClassObject *class_for_builtin_name(const wchar_t *name) const;
         ModuleObject *make_module_object(TValue<String> name, Value builtins,
                                          Value doc, Value package, Value loader,

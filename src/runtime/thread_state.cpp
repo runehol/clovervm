@@ -384,13 +384,7 @@ namespace cl
     {
         TValue<String> name_value =
             machine->get_or_create_interned_string_value(std::wstring(name));
-        Value value =
-            machine->global_builtins_module().extract()->get_own_property(
-                name_value);
-        assert(value.is_ptr());
-        assert(value.get_ptr<Object>()->native_layout_id() ==
-               NativeLayoutId::ClassObject);
-        return value.get_ptr<ClassObject>();
+        return machine->builtin_class_by_name(name_value);
     }
 
     ModuleObject *ThreadState::make_module_object(TValue<String> name,

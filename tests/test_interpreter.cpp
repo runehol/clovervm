@@ -7881,3 +7881,65 @@ assert count == 1
 True
 )"));
 }
+
+TEST(Interpreter,
+     native_and_compiler_errors_use_canonical_rebound_exception_classes)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ModuleObject *builtins = context.vm().global_builtins_module().extract();
+    const wchar_t *names[] = {L"TypeError", L"AssertionError", L"NameError",
+                              L"ValueError"};
+    ClassObject *classes[std::size(names)];
+    for(size_t idx = 0; idx < std::size(names); ++idx)
+    {
+        classes[idx] = context.thread()->class_for_builtin_name(names[idx]);
+        ASSERT_TRUE(builtins->set_own_property(interned_string(names[idx]),
+                                               Value::None()));
+    }
+    // Compile after rebinding: with-statement lowering embeds a canonical
+    // TypeError, and runtime assertion/global/native errors must do the same.
+    CodeObject *code = context.compile_file(LR"(
+import builtins
+assert TypeError is None
+assert builtins.AssertionError is None
+try:
+    int.__new__(float, 4)
+except OriginalTypeError:
+    pass
+else:
+    assert False
+try:
+    with object():
+        pass
+except OriginalTypeError:
+    pass
+else:
+    assert False
+try:
+    assert False
+except OriginalAssertionError:
+    pass
+try:
+    missing_global
+except OriginalNameError:
+    pass
+else:
+    assert False
+try:
+    int("invalid integer")
+except OriginalValueError:
+    pass
+else:
+    assert False
+True
+)");
+    for(size_t idx = 0; idx < std::size(names); ++idx)
+    {
+        TValue<String> alias = context.vm().get_or_create_interned_string_value(
+            std::wstring(L"Original") + names[idx]);
+        ASSERT_TRUE(code->get_defining_module().extract()->set_own_property(
+            alias, Value::from_oop(classes[idx])));
+    }
+    EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
+}

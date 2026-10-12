@@ -243,3 +243,15 @@ namespace. Exporting and installing preserve the original Function and
 CodeObject identities, global caches, and method dispatch. CodeObjects retain
 their defining module; the VM keeps it alive for the same lifetime as builtins
 and sys. Caller-sensitive globals()/locals() keep their existing frame rules.
+
+## Canonical builtin class lookup
+
+The existing builtin registration pass records every public and internal class
+in a VM-owned registry keyed by its interned name. Names and classes have VM
+lifetime, and the registry is immutable after initialization, so reads need no
+locking or per-thread cache. `ThreadState::class_for_builtin_name()` interns its
+argument and delegates to the VM registry.
+
+Native error helpers and compiler-generated exception constants use these
+canonical identities. Rebinding or deleting a public builtin class name still
+changes ordinary Python name lookup, but cannot redirect internal exceptions.

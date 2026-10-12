@@ -4,8 +4,11 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
+#include "import_system/module_global.h"
+#include "object_model/class_object.h"
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
+#include "object_model/shape.h"
 #include "object_model/shape_key.h"
 #include "object_model/value_string.h"
 #include "runtime/exception_object.h"
@@ -787,4 +790,92 @@ namespace cl
         }
     }
 
+    TEST(ThreadState, CanonicalBuiltinRegistryIncludesPublicAndInternalClasses)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        ModuleObject *builtins =
+            context.vm().global_builtins_module().extract();
+        Shape *shape = builtins->get_shape();
+        size_t class_count = 0;
+        for(uint32_t idx = 0; idx < shape->property_count(); ++idx)
+        {
+            TValue<String> name = shape->get_property_name(idx);
+            Value value = builtins->get_own_property(name);
+            if(can_convert_to<ClassObject>(value))
+            {
+                ++class_count;
+                name = value.get_ptr<ClassObject>()->get_name();
+                EXPECT_EQ(value.get_ptr<ClassObject>(),
+                          context.vm().builtin_class_by_name(name));
+                EXPECT_EQ(value.get_ptr<ClassObject>(),
+                          context.thread()->class_for_builtin_name(
+                              name.extract()->data));
+            }
+        }
+        EXPECT_GT(class_count, 20u);
+        for(ClassObject *cls:
+            {context.vm().none_type_class(),
+             context.vm().not_implemented_type_class(),
+             context.vm().ellipsis_type_class(), context.vm().slotdict_class()})
+        {
+            EXPECT_TRUE(
+                builtins->get_own_property(cls->get_name()).is_not_present());
+            EXPECT_EQ(cls, context.vm().builtin_class_by_name(cls->get_name()));
+            EXPECT_EQ(cls, context.thread()->class_for_builtin_name(
+                               cls->get_name().extract()->data));
+        }
+        for(size_t idx = 1; idx < static_cast<size_t>(NativeLayoutId::Count);
+            ++idx)
+        {
+            ClassObject *cls = context.vm().class_for_native_layout(
+                static_cast<NativeLayoutId>(idx));
+            if(cls != nullptr)
+            {
+                EXPECT_EQ(cls,
+                          context.vm().builtin_class_by_name(cls->get_name()));
+            }
+        }
+    }
+
+    TEST(ThreadState, CanonicalExceptionLookupIgnoresRebindingAndDeletion)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        ModuleObject *builtins =
+            context.vm().global_builtins_module().extract();
+        TValue<String> name =
+            context.vm().get_or_create_interned_string_value(L"TypeError");
+        ClassObject *canonical =
+            context.thread()->class_for_builtin_name(L"TypeError");
+        for(Value replacement: {Value::None(), Value::from_smi(7),
+                                Value::from_oop(context.vm().int_class())})
+        {
+            ASSERT_TRUE(builtins->set_own_property(name, replacement));
+            EXPECT_EQ(canonical,
+                      context.thread()->class_for_builtin_name(L"TypeError"));
+            EXPECT_TRUE(context.thread()
+                            ->set_pending_builtin_exception_string(
+                                L"TypeError", L"native failure")
+                            .is_exception_marker());
+            EXPECT_EQ(canonical, context.thread()
+                                     ->pending_exception_object()
+                                     .extract()
+                                     ->get_shape()
+                                     ->get_class());
+            context.thread()->clear_pending_exception();
+        }
+        ASSERT_TRUE(delete_module_global(builtins, name));
+        EXPECT_EQ(canonical,
+                  context.thread()->class_for_builtin_name(L"TypeError"));
+        EXPECT_TRUE(context.thread()
+                        ->set_pending_builtin_exception_none(L"TypeError")
+                        .is_exception_marker());
+        EXPECT_EQ(canonical, context.thread()
+                                 ->pending_exception_object()
+                                 .extract()
+                                 ->get_shape()
+                                 ->get_class());
+        context.thread()->clear_pending_exception();
+    }
 }  // namespace cl

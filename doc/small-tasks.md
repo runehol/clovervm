@@ -73,10 +73,6 @@ for protocol behavior the VM cannot yet execute.
   bytes-input shortcut does not honor this yet. Keep this separate from native
   subclass allocation. Also distinguish an omitted bytes source from explicit
   `None`: the current default uses `None` and accepts `bytes(None)` as empty.
-- **Native exception lookup:** stop resolving internal exception classes through
-  mutable public builtin bindings. Rebinding `builtins.TypeError` can currently
-  trigger a debug assertion when native code raises an error. Keep this separate
-  from the private bindings used by Python sequence helpers.
 - **Numeric conversion coverage:** float string parsing and user-defined
   `__float__` / `__index__` conversion remain deferred. Int conversion protocols
   and additional constructor forms need their own semantic sketches too.

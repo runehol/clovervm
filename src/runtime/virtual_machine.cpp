@@ -925,6 +925,12 @@ namespace cl
         std::vector<BuiltinClassDefinition> builtin_classes;
         auto register_builtin_class = [&](BuiltinClassDefinition definition) {
             install_native_layout_mappings(definition);
+            bool inserted = builtin_classes_by_name_
+                                .emplace(definition.cls->get_name().extract(),
+                                         definition.cls)
+                                .second;
+            assert(inserted);
+            (void)inserted;
             builtin_classes.push_back(definition);
         };
 

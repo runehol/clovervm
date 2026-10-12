@@ -148,6 +148,14 @@ namespace cl
             stdout_file_ = file;
         }
 
+        // Canonical builtin identities, independent of public module bindings.
+        ClassObject *builtin_class_by_name(TValue<String> interned_name) const
+        {
+            auto found = builtin_classes_by_name_.find(interned_name.extract());
+            assert(found != builtin_classes_by_name_.end());
+            return found->second;
+        }
+
         ClassObject *class_for_native_layout(NativeLayoutId id) const
         {
             return class_for_native_layouts[static_cast<size_t>(id)];
@@ -421,6 +429,9 @@ namespace cl
         GlobalHeap interned_global_heap;
         std::vector<std::unique_ptr<ThreadState>> threads;
         InternStore<std::wstring, String> interned_strings;
+        // Populated only during builtin registration; immutable afterward.
+        // Interned names and builtin classes have VM lifetime.
+        absl::flat_hash_map<String *, ClassObject *> builtin_classes_by_name_;
         ClassObject *type_class_ = nullptr;
         ClassObject *str_class_ = nullptr;
         ClassObject *int_class_ = nullptr;
