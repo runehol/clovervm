@@ -11,6 +11,22 @@
 
 namespace cl
 {
+    static Value trusted_truth_default_true(ThreadState *thread, Value receiver)
+    {
+        (void)thread;
+        (void)receiver;
+        return Value::True();
+    }
+
+    using TruthDefaultTrueHandler =
+        TrustedHandlerDefinition<trusted_truth_default_true,
+                                 TrustedHandlerEffects::None>;
+
+    void register_truthiness_dispatch_handlers(VirtualMachine &vm)
+    {
+        TruthDefaultTrueHandler::register_with(vm);
+    }
+
     OperatorWalkDescriptor OperatorWalkDescriptor::native_result(Value result)
     {
         OperatorWalkDescriptor descriptor;
@@ -272,6 +288,25 @@ namespace cl
 
             switch(step.action)
             {
+                case OperatorStepAction::TruthDefaultTrue:
+                    {
+                        assert(table_id == OperatorDispatchTableId::Truthiness);
+                        assert(step.applicability ==
+                               OperatorStepApplicability::Always);
+                        if(cacheability == OperatorCacheability::Uncacheable)
+                        {
+                            return OperatorWalkDescriptor::native_result(
+                                Value::True());
+                        }
+                        // This MRO cell guards both preceding negative lookups.
+                        return OperatorWalkDescriptor::call_trusted_handler(
+                            step.action, operand0_shape_key, operand1_shape_key,
+                            TruthDefaultTrueHandler::resolution(),
+                            operator_lookup_validity_cell_for_operand(thread,
+                                                                      operand0),
+                            nullptr);
+                    }
+
                 case OperatorStepAction::IdentityEq:
                     assert(step.applicability ==
                            OperatorStepApplicability::Always);
@@ -437,6 +472,13 @@ namespace cl
 
                                 case TrustedResolutionKind::
                                     KnownNotImplementedSkipMethod:
+                                    if(table_id ==
+                                       OperatorDispatchTableId::Truthiness)
+                                    {
+                                        // Truth fallback requires absence, not
+                                        // a resolver's arithmetic skip hint.
+                                        break;
+                                    }
                                     index = failed_applicability_index;
                                     continue;
                             }
@@ -452,17 +494,26 @@ namespace cl
 
                         if(trusted_resolution.has_trusted_handler())
                         {
-                            return OperatorWalkDescriptor::call_trusted_handler(
-                                step.action, operand0_shape_key,
-                                operand1_shape_key, trusted_resolution,
-                                operand0_lookup_validity_cell, nullptr);
+                            OperatorWalkDescriptor descriptor =
+                                OperatorWalkDescriptor::call_trusted_handler(
+                                    step.action, operand0_shape_key,
+                                    operand1_shape_key, trusted_resolution,
+                                    operand0_lookup_validity_cell, nullptr);
+                            descriptor.cache_entry.truth_result_kind =
+                                step.truth_result_kind;
+                            return descriptor;
                         }
 
-                        return OperatorWalkDescriptor::call_untrusted_function(
-                            step.action, index + 1,
-                            OperatorOperandOrder::Normal, operand0_shape_key,
-                            operand1_shape_key, function, n_args, adaptation,
-                            has_self, operand0_lookup_validity_cell, nullptr);
+                        OperatorWalkDescriptor descriptor =
+                            OperatorWalkDescriptor::call_untrusted_function(
+                                step.action, index + 1,
+                                OperatorOperandOrder::Normal,
+                                operand0_shape_key, operand1_shape_key,
+                                function, n_args, adaptation, has_self,
+                                operand0_lookup_validity_cell, nullptr);
+                        descriptor.cache_entry.truth_result_kind =
+                            step.truth_result_kind;
+                        return descriptor;
                     }
 
                 case OperatorStepAction::CallBinary:

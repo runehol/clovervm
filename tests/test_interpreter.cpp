@@ -8031,3 +8031,225 @@ TEST(Interpreter, int_bool_resolver_registers_allocation_free_exact_handlers)
                           TrustedHandlerArity::Binary)
                      .has_trusted_handler());
 }
+
+static OperatorWalkDescriptor
+walk_truthiness_for_test(test::VmTestContext &context, Value receiver)
+{
+    return walk_operator_table(
+        context.thread(), OperatorDispatchTableId::Truthiness, 0,
+        OperatorCacheability::CacheableDirectOnly, receiver,
+        Value::not_present(), Value::not_present());
+}
+
+TEST(Interpreter, truthiness_walker_selects_methods_without_calling_python)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> values(context.run_file(LR"(
+class Both:
+    def __bool__(self): raise AssertionError
+    def __len__(self): raise AssertionError
+class Inherited(Both): pass
+class Length:
+    def __len__(self): raise AssertionError
+(Both(), Inherited(), Length())
+)"));
+    ASSERT_TRUE(can_convert_to<Tuple>(values.value()));
+    Tuple *tuple = values.value().get_ptr<Tuple>();
+    for(size_t idx = 0; idx < tuple->size(); ++idx)
+    {
+        Value receiver = tuple->item_unchecked(idx);
+        auto selected = walk_truthiness_for_test(context, receiver);
+        ASSERT_EQ(OperatorWalkStatus::CallUntrustedFunction, selected.status);
+        const wchar_t *name = idx == 2 ? L"__len__" : L"__bool__";
+        Value expected = load_attr(
+            Value::from_oop(context.thread()->class_of_value(receiver)),
+            interned_string(name));
+        ASSERT_TRUE(can_convert_to<Function>(expected));
+        EXPECT_EQ(expected.get_ptr<Function>(), selected.cache_entry.function);
+        EXPECT_EQ(idx == 2 ? TruthResultKind::Length : TruthResultKind::Bool,
+                  selected.cache_entry.truth_result_kind);
+        EXPECT_TRUE(selected.cache_entry.matches_unary(receiver));
+        EXPECT_TRUE(selected.cache_entry.has_self);
+        EXPECT_EQ(1u, selected.cache_entry.n_args);
+        EXPECT_FALSE(context.thread()->has_pending_exception());
+        OperatorInlineCache copy = selected.cache_entry;
+        EXPECT_EQ(selected.cache_entry.truth_result_kind,
+                  copy.truth_result_kind);
+        copy.clear();
+        EXPECT_TRUE(copy.empty());
+        EXPECT_EQ(TruthResultKind::Bool, copy.truth_result_kind);
+    }
+}
+
+TEST(Interpreter,
+     truthiness_walker_replays_registered_numeric_and_default_handlers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    const wchar_t *sources[] = {L"0\n", L"2**100\n", L"0.0\n", L"1.5\n",
+                                L"object()\n"};
+    const Value expected[] = {Value::False(), Value::True(), Value::False(),
+                              Value::True(), Value::True()};
+    for(size_t idx = 0; idx < std::size(sources); ++idx)
+    {
+        Owned<Value> receiver(context.run_file(sources[idx]));
+        auto selected = walk_truthiness_for_test(context, receiver.value());
+        ASSERT_EQ(OperatorWalkStatus::CallTrustedHandler, selected.status);
+        EXPECT_EQ(TruthResultKind::Bool,
+                  selected.cache_entry.truth_result_kind);
+        ASSERT_TRUE(selected.cache_entry.matches_unary(receiver.value()));
+        EXPECT_EQ(expected[idx], selected.cache_entry.trusted_handler.unary(
+                                     context.thread(), receiver.value()));
+        auto metadata = context.vm().trusted_handler_metadata(
+            selected.cache_entry.trusted_handler.target(
+                TrustedHandlerArity::Unary));
+        ASSERT_TRUE(metadata.has_value());
+        EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+    }
+    Owned<Value> receiver(context.run_file(L"object()\n"));
+    auto uncached = walk_operator_table(
+        context.thread(), OperatorDispatchTableId::Truthiness, 0,
+        OperatorCacheability::Uncacheable, receiver.value(),
+        Value::not_present(), Value::not_present());
+    EXPECT_EQ(OperatorWalkStatus::NativeResult, uncached.status);
+    EXPECT_EQ(Value::True(), uncached.result);
+    EXPECT_TRUE(uncached.cache_entry.empty());
+}
+
+TEST(Interpreter,
+     truthiness_length_selection_tracks_current_container_not_cached_truth)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> values(context.run_file(L"([], (), {}, '', b'')\n"));
+    ASSERT_TRUE(can_convert_to<Tuple>(values.value()));
+    Tuple *tuple = values.value().get_ptr<Tuple>();
+    for(size_t idx = 0; idx < tuple->size(); ++idx)
+    {
+        auto selected =
+            walk_truthiness_for_test(context, tuple->item_unchecked(idx));
+        ASSERT_EQ(OperatorWalkStatus::CallUntrustedFunction, selected.status);
+        EXPECT_EQ(TruthResultKind::Length,
+                  selected.cache_entry.truth_result_kind);
+        EXPECT_TRUE(
+            selected.cache_entry.matches_unary(tuple->item_unchecked(idx)));
+    }
+    Value receiver = tuple->item_unchecked(0);
+    auto selected = walk_truthiness_for_test(context, receiver);
+    receiver.get_ptr<List>()->append(Value::from_smi(1));
+    EXPECT_TRUE(selected.cache_entry.matches_unary(receiver));
+    auto after = walk_truthiness_for_test(context, receiver);
+    EXPECT_EQ(selected.cache_entry.function, after.cache_entry.function);
+    EXPECT_EQ(TruthResultKind::Length, after.cache_entry.truth_result_kind);
+}
+
+TEST(Interpreter, truthiness_walker_does_not_fall_back_from_present_bad_methods)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    const wchar_t *sources[] = {
+        L"class C:\n    __bool__ = None\n    def __len__(self): raise "
+        L"AssertionError\nC()\n",
+        L"class C:\n    def __bool__(self, extra): raise AssertionError\n    "
+        L"def __len__(self): raise AssertionError\nC()\n",
+        L"class C:\n    __len__ = None\nC()\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        Owned<Value> receiver(context.run_file(source));
+        ASSERT_FALSE(receiver.value().is_exception_marker());
+        auto selected = walk_truthiness_for_test(context, receiver.value());
+        EXPECT_EQ(OperatorWalkStatus::PropagatePendingException,
+                  selected.status);
+        ASSERT_TRUE(context.thread()->has_pending_exception());
+        EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+                  context.thread()
+                      ->pending_exception_object()
+                      .extract()
+                      ->get_shape()
+                      ->get_class());
+        context.thread()->clear_pending_exception();
+    }
+}
+
+static TrustedResolution truth_test_skip_resolver(VirtualMachine *, ShapeKey,
+                                                  ShapeKey,
+                                                  TrustedHandlerOperandOrder,
+                                                  TrustedHandlerArity)
+{
+    return TrustedResolution::known_not_implemented_skip_method();
+}
+
+TEST(Interpreter, truthiness_walker_retains_callable_after_arithmetic_skip_hint)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> receiver(context.run_file(
+        L"class C:\n    def __bool__(self): return NotImplemented\n    def "
+        L"__len__(self): raise AssertionError\nC()\n"));
+    Value method = load_attr(
+        Value::from_oop(context.thread()->class_of_value(receiver.value())),
+        interned_string(L"__bool__"));
+    ASSERT_TRUE(can_convert_to<Function>(method));
+    CodeObject *code = method.get_ptr<Function>()->code_object.extract();
+    code->trusted_handler_resolver = truth_test_skip_resolver;
+    auto selected = walk_truthiness_for_test(context, receiver.value());
+    EXPECT_EQ(OperatorWalkStatus::CallUntrustedFunction, selected.status);
+    EXPECT_EQ(method.get_ptr<Function>(), selected.cache_entry.function);
+    EXPECT_EQ(TruthResultKind::Bool, selected.cache_entry.truth_result_kind);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
+TEST(
+    Interpreter,
+    truthiness_cache_guards_method_addition_replacement_deletion_and_inheritance)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Base: pass
+class C(Base): pass
+value = C()
+def length(self): raise AssertionError
+def boolean(self): raise AssertionError
+def other_boolean(self): raise AssertionError
+)");
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+    Value receiver =
+        load_global_from_module_for_test(code, interned_string(L"value"));
+    // Store the entry in a CodeObject so callable/cell roots follow production
+    // ownership.
+    code->inline_caches.operator_caches.emplace_back();
+    OperatorInlineCache &cache = code->inline_caches.operator_caches.back();
+    const wchar_t *mutations[] = {
+        L"Base.__len__ = length\n", L"Base.__bool__ = boolean\n",
+        L"Base.__bool__ = other_boolean\n", L"del Base.__bool__\n",
+        L"del Base.__len__\n"};
+    const TruthResultKind expected[] = {
+        TruthResultKind::Length, TruthResultKind::Bool, TruthResultKind::Bool,
+        TruthResultKind::Length, TruthResultKind::Bool};
+    cache = walk_truthiness_for_test(context, receiver).cache_entry;
+    ASSERT_FALSE(cache.trusted_handler.is_null());
+    for(size_t idx = 0; idx < std::size(mutations); ++idx)
+    {
+        ASSERT_TRUE(cache.matches_unary(receiver));
+        auto change = context.thread()->compile_in_module(
+            mutations[idx], StartRule::File,
+            code->get_defining_module().extract(),
+            LanguageMode::StandardsCompliant);
+        ASSERT_FALSE(change.has_exception());
+        ASSERT_FALSE(context.thread()
+                         ->run_clovervm_code_object(change.value())
+                         .is_exception_marker());
+        EXPECT_FALSE(cache.matches_unary(receiver));
+        auto selected = walk_truthiness_for_test(context, receiver);
+        EXPECT_EQ(expected[idx], selected.cache_entry.truth_result_kind);
+        EXPECT_EQ(idx == 4 ? OperatorWalkStatus::CallTrustedHandler
+                           : OperatorWalkStatus::CallUntrustedFunction,
+                  selected.status);
+        cache = selected.cache_entry;
+        EXPECT_TRUE(cache.matches_unary(receiver));
+    }
+}

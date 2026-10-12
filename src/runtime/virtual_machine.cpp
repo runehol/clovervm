@@ -39,6 +39,7 @@
 #include "runtime/exception_object.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/fatal.h"
+#include "runtime/operator_walk.h"
 #include "runtime/protocol_helper_functions.h"
 #include "runtime/thread_state.h"
 #include <bit>
@@ -738,6 +739,23 @@ namespace cl
                     OperatorDispatchTable{steps.data(),
                                           static_cast<uint8_t>(steps.size())};
             };
+
+        register_truthiness_dispatch_handlers(*this);
+        auto &truth_steps = operator_dispatch_steps_[static_cast<size_t>(
+            OperatorDispatchTableId::Truthiness)];
+        truth_steps[0] = OperatorStep::call_unary(
+            get_or_create_interned_string_raw(L"__bool__"),
+            OperatorStepApplicability::IfMethodFound, 0, TruthResultKind::Bool);
+        truth_steps[1] = OperatorStep::call_unary(
+            get_or_create_interned_string_raw(L"__len__"),
+            OperatorStepApplicability::IfMethodFound, 0,
+            TruthResultKind::Length);
+        truth_steps[2] =
+            OperatorStep{nullptr, OperatorStepAction::TruthDefaultTrue,
+                         OperatorStepApplicability::Always};
+        operator_dispatch_tables_[static_cast<size_t>(
+            OperatorDispatchTableId::Truthiness)] =
+            OperatorDispatchTable{truth_steps.data(), 3};
 
         auto install_unary_operator_table =
             [this](OperatorDispatchTableId table_id, String *dunder) {

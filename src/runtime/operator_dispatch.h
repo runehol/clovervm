@@ -21,6 +21,7 @@ namespace cl
         CallTernaryReflected = 13,
         CallIterMembershipFallback = 14,
         CallSequenceMembershipFallback = 16,
+        TruthDefaultTrue = 18,
     };
 
     static constexpr bool
@@ -51,6 +52,15 @@ namespace cl
         OperatorStepAction::CallIterMembershipFallback));
     static_assert(!operator_step_action_is_reflected(
         OperatorStepAction::CallSequenceMembershipFallback));
+
+    static_assert(!operator_step_action_is_reflected(
+        OperatorStepAction::TruthDefaultTrue));
+
+    enum class TruthResultKind : uint8_t
+    {
+        Bool,
+        Length,
+    };
 
     enum class OperatorStepApplicability : uint8_t
     {
@@ -97,6 +107,7 @@ namespace cl
         SetItem,
         DelItem,
         Contains,
+        Truthiness,
         Count,
     };
 
@@ -107,6 +118,7 @@ namespace cl
         OperatorStepApplicability applicability =
             OperatorStepApplicability::Always;
         uint8_t else_skip = 0;
+        TruthResultKind truth_result_kind = TruthResultKind::Bool;
 
         static constexpr OperatorStep
         call_binary(String *dunder_name,
@@ -119,10 +131,11 @@ namespace cl
 
         static constexpr OperatorStep
         call_unary(String *dunder_name, OperatorStepApplicability applicability,
-                   uint8_t else_skip = 0)
+                   uint8_t else_skip = 0,
+                   TruthResultKind truth_result_kind = TruthResultKind::Bool)
         {
             return OperatorStep{dunder_name, OperatorStepAction::CallUnary,
-                                applicability, else_skip};
+                                applicability, else_skip, truth_result_kind};
         }
 
         static constexpr OperatorStep

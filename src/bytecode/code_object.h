@@ -14,6 +14,7 @@
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "object_model/vm_array.h"
+#include "runtime/operator_dispatch.h"
 #include "runtime/trusted_handler.h"
 #include <algorithm>
 #include <cassert>
@@ -261,6 +262,7 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         bool reflected_untrusted_call = false;
         bool has_self = false;
+        TruthResultKind truth_result_kind = TruthResultKind::Bool;
 
         bool empty() const { return !operand_shape_keys[0].is_valid(); }
 
@@ -378,6 +380,7 @@ namespace cl
             adaptation = FunctionCallAdaptation::FixedArity;
             reflected_untrusted_call = false;
             has_self = false;
+            truth_result_kind = TruthResultKind::Bool;
         }
 
     private:

@@ -47,14 +47,14 @@ handle numeric objects correctly.
 
 ### 2. Dispatch selection and cache metadata
 
-- [ ] Add the truthiness table, explicit Bool/Length selection metadata, and the
+- [x] Add the truthiness table, explicit Bool/Length selection metadata, and the
   guarded default-true replay handler in the existing dispatch/walker substrate.
-- [ ] Update cache construction, copying, reset, and inspection as needed for
+- [x] Update cache construction, copying, reset, and inspection as needed for
   the new metadata; preserve existing operator behavior and cache ownership.
-- [ ] Verify selection without entering interpreter callbacks: bool priority,
+- [x] Verify selection without entering interpreter callbacks: bool priority,
   missing-bool length selection, default true, invalid callable errors, trusted
   versus Python-function targets, and required validity guards.
-- [ ] Verify that changing a class invalidates previously selected fallback
+- [x] Verify that changing a class invalidates previously selected fallback
   paths, including adding a method after negative lookup.
 
 This is substrate preparation. Do not emit unusable new bytecode or add a

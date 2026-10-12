@@ -13,6 +13,9 @@ namespace cl
 {
     class Function;
     class ThreadState;
+    class VirtualMachine;
+
+    void register_truthiness_dispatch_handlers(VirtualMachine &vm);
 
     enum class OperatorOperandOrder
     {

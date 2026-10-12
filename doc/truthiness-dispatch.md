@@ -13,7 +13,9 @@
 This is the agreed target contract. Current conversion opcodes support immediate
 values and floats; full heap truthiness dispatch is not implemented yet. Native
 int/float __bool__ methods, registered trusted handlers, and direct integer-length
-validation are implemented. The
+validation are implemented. The truthiness dispatch table, Bool/Length cache
+metadata, and guarded default-true trusted handler are also implemented and
+tested independently of the conversion opcodes. The
 [implementation plan](truthiness-implementation-plan.md) stages the transition.
 
 ## Truthiness semantics and call path
