@@ -1695,6 +1695,250 @@ assert right is None
     ASSERT_FALSE(result.is_exception_marker());
 }
 
+TEST(Interpreter, list_equality_values_callbacks_and_subclasses)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+import math
+assert [] == []
+assert not ([] != [])
+assert [1, "x", [2, 3]] == [1.0, "x", [2, 3]]
+assert [1, 2] != [1, 3]
+assert [1] != [1, 2]
+assert not ([1] == (1,))
+assert [1] != (1,)
+assert list.__eq__([1], (1,)) is NotImplemented
+assert list.__ne__([1], (1,)) is NotImplemented
+nan = math.nan
+assert [nan] == [nan]
+class Bomb:
+    def __eq__(self, other): raise AssertionError
+    def __ne__(self, other): raise AssertionError
+x = Bomb()
+assert [x] == [x]
+assert not ([x] != [x])
+assert [x] != [object(), object()]
+assert not ([x] == [object(), object()])
+log = []
+class Element:
+    def __init__(self, label, answer):
+        self.label = label
+        self.answer = answer
+    def __eq__(self, other):
+        log.append(self.label)
+        return self.answer
+    def __ne__(self, other): raise AssertionError
+for mode in range(2):
+    log.clear()
+    left = [Element("first", 1), Element("second", 0), Bomb()]
+    right = [object(), object(), object()]
+    if mode == 0: assert not (left == right)
+    else: assert left != right
+    assert log == ["first", "second"]
+class Raises:
+    def __eq__(self, other): raise ValueError("list equality")
+for mode in range(2):
+    try:
+        if mode == 0: [Raises()] == [object()]
+        else: [Raises()] != [object()]
+    except ValueError as e: assert str(e) == "list equality"
+    else: raise AssertionError
+class CustomTruth:
+    def __bool__(self): raise AssertionError
+class Unsupported:
+    def __eq__(self, other): return CustomTruth()
+try: [Unsupported()] == [object()]
+except TypeError as e: assert str(e) == "unsupported truthiness for object"
+else: raise AssertionError
+class Reflected:
+    def __eq__(self, other): return "reflected equality"
+    def __ne__(self, other): return "reflected inequality"
+assert ([] == Reflected()) == "reflected equality"
+assert ([] != Reflected()) == "reflected inequality"
+class Plain(list):
+    def __len__(self): raise AssertionError
+    def __getitem__(self, i): raise AssertionError
+    def __iter__(self): raise AssertionError
+class Derived(Plain):
+    def __eq__(self, other): return "derived equality"
+    def __ne__(self, other): return "derived inequality"
+class OnlyEq(Plain):
+    def __eq__(self, other): return False
+plain = Plain([1, 2])
+derived = Derived([1, 2])
+only_eq = OnlyEq([1, 2])
+assert plain == [1, 2]
+assert not (plain != [1, 2])
+assert list.__eq__(derived, plain) is True
+assert list.__ne__(derived, plain) is False
+assert (plain == derived) == "derived equality"
+assert (plain != derived) == "derived inequality"
+assert not (only_eq == plain)
+assert not (only_eq != plain)
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, list_equality_mutation_and_reference_lifetime)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+left = []
+right = []
+class Clear:
+    def __init__(self, answer): self.answer = answer
+    def __eq__(self, other):
+        left.clear()
+        right.clear()
+        return self.answer
+for answer in (True, False):
+    for mode in range(2):
+        left = [Clear(answer), 1]
+        right = [object(), 2]
+        if mode == 0: assert left == right
+        else: assert not (left != right)
+        assert left == []
+        assert right == []
+class ClearOne:
+    def __eq__(self, other):
+        left.clear()
+        return True
+left = [ClearOne()]
+right = [object()]
+assert left != right
+class Grow:
+    def __eq__(self, other):
+        left.append(1)
+        right.append(2)
+        return True
+left = [Grow()]
+right = [object()]
+assert left != right
+class Replace:
+    def __eq__(self, other):
+        left[1] = 7
+        right[1] = 7.0
+        return True
+left = [Replace(), 1]
+right = [object(), 2]
+assert left == right
+class Delete:
+    def __eq__(self, other):
+        del left[0]
+        del right[0]
+        return True
+left = [Delete(), 1]
+right = [object(), 2]
+assert left == right
+class DropOwners:
+    def __eq__(self, other):
+        global left, right
+        left = None
+        right = None
+        return [1, [2]] == [1.0, [2.0]]
+left = [DropOwners(), 3]
+right = [object(), 3.0]
+assert left == right
+assert left is None
+assert right is None
+# Both removed elements remain alive until the callback finishes.
+class Retain:
+    def __init__(self): self.value = 9
+    def __eq__(self, other):
+        left.clear()
+        right.clear()
+        assert self.value == 9
+        assert other.value == 9
+        return True
+left = [Retain()]
+right = [Retain()]
+assert left == right
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, list_equality_survives_callback_rebinding)
+{
+    expect_python_error(L"list.__eq__(1, ())\n", L"TypeError",
+                        L"list.__eq__ expects a list receiver");
+    expect_python_error(L"list.__ne__(1, ())\n", L"TypeError",
+                        L"list.__ne__ expects a list receiver");
+    test::VmTestContext context;
+    Value result = context.run_file(LR"py(
+import builtins
+list_type = list
+type_error = TypeError
+not_implemented = NotImplemented
+original_isinstance = isinstance
+class Rebind:
+    def __eq__(self, other):
+        builtins.list = None
+        builtins.isinstance = None
+        builtins.TypeError = None
+        builtins.NotImplemented = None
+        return True
+try:
+    assert [Rebind(), 1] == [object(), 1.0]
+    assert not ([Rebind(), 1] != [object(), 1.0])
+    assert list_type.__eq__([], ()) is not_implemented
+    assert list_type.__ne__([], ()) is not_implemented
+    for method in (list_type.__eq__, list_type.__ne__):
+        try: method(1, ())
+        except type_error: pass
+        else: raise AssertionError
+finally:
+    builtins.list = list_type
+    builtins.isinstance = original_isinstance
+    builtins.TypeError = type_error
+    builtins.NotImplemented = not_implemented
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(Interpreter, list_equality_methods_have_warmed_element_caches)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = context.run_file(LR"py(
+class Element:
+    def __eq__(self, other): return True
+left = [Element()]
+right = [Element()]
+for i in range(4):
+    assert left == right
+    assert not (left != right)
+def replacement(self, other): return False
+Element.__eq__ = replacement
+assert left != right
+assert not (left == right)
+)py");
+    ASSERT_FALSE(result.is_exception_marker());
+    Value equality = load_attr(Value::from_oop(context.vm().list_class()),
+                               interned_string(L"__eq__"));
+    ASSERT_TRUE(can_convert_to<Function>(equality));
+    CodeObject *code = equality.get_ptr<Function>()->code_object.extract();
+    EXPECT_EQ(nullptr, code->trusted_handler_resolver);
+    bool found_element_cache = false;
+    for(const OperatorInlineCache &cache: code->inline_caches.operator_caches)
+    {
+        if(cache.function != nullptr)
+        {
+            found_element_cache = true;
+            EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+            EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+        }
+    }
+    EXPECT_TRUE(found_element_cache);
+    for(const wchar_t *name: {L"__clover_list_eq", L"__clover_list_ne"})
+    {
+        EXPECT_TRUE(context.vm()
+                        .global_builtins_module()
+                        .extract()
+                        ->get_own_property(interned_string(name))
+                        .is_not_present());
+    }
+}
+
 TEST(Interpreter, tuple_equality_survives_callback_rebinding)
 {
     expect_python_error(L"tuple.__eq__(1, ())\n", L"TypeError",

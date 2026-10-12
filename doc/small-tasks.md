@@ -20,15 +20,6 @@ fractional values, signed zero, infinities, NaNs, and large integers. Pin the
 behavior against CPython before choosing the hash implementation. Add dictionary
 and set lookup regressions as well as direct `hash()` tests.
 
-### List equality
-
-Implement elementwise `__eq__` and `__ne__`. Separately constructed `[1, 2]`
-lists currently compare unequal, as do empty lists. Cover length mismatches,
-identity shortcuts for elements, subclass behavior, incompatible sequence types,
-`NotImplemented`, exceptions, mutation, and re-entry during equality callbacks.
-Prefer Python bytecode with visible calls and ICs, following tuple equality;
-settle mutation behavior and the comparison sketch before coding.
-
 ### General truthiness dispatch
 
 Extend conditional truthiness to heap integers and builtin strings/containers,
@@ -38,7 +29,7 @@ their caches explicit for future JIT compilation. Validate result types and
 negative lengths; propagate callback exceptions and lookup invalidation.
 Currently non-float heap objects raise TypeError with the message
 `unsupported truthiness for object`, including results of element equality during
-tuple comparison. Tuple equality uses the currently supported immediate/float
+sequence comparison. Tuple and list equality use the supported immediate/float
 truthiness types; this protocol expansion is separate work requiring a readiness
 sketch.
 

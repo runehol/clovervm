@@ -444,10 +444,11 @@ namespace cl
     {
         ModuleObject *builtins = vm->global_builtins_module().extract();
         ClassObject *cls = vm->list_class();
-        const wchar_t *method_names[] = {L"__init__", L"count", L"index",
-                                         L"remove"};
+        const wchar_t *method_names[] = {L"__init__", L"__eq__", L"__ne__",
+                                         L"count",    L"index",  L"remove"};
         const wchar_t *helper_names[] = {
-            L"__clover_list_init", L"__clover_list_count",
+            L"__clover_list_init",  L"__clover_list_eq",
+            L"__clover_list_ne",    L"__clover_list_count",
             L"__clover_list_index", L"__clover_list_remove"};
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);

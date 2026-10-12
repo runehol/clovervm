@@ -306,6 +306,40 @@ def __clover_list_init(self, iterable=(), /):
 import sys as _clover_sys
 
 
+def __clover_list_eq(self, other, /):
+    if not _clover_isinstance(self, _clover_list_type):
+        raise _clover_type_error("list.__eq__ expects a list receiver")
+    if not _clover_isinstance(other, _clover_list_type):
+        return _clover_not_implemented
+    if _clover_list_type.__len__(self) != _clover_list_type.__len__(other):
+        return False
+    i = 0
+    while i < _clover_list_type.__len__(self) and i < _clover_list_type.__len__(other):
+        a = _clover_list_type.__getitem__(self, i)
+        b = _clover_list_type.__getitem__(other, i)
+        if a is not b:
+            if not (a == b):
+                break
+        i += 1
+    # A callback can exhaust either list even when its comparison was false.
+    if i >= _clover_list_type.__len__(self) or i >= _clover_list_type.__len__(other):
+        return _clover_list_type.__len__(self) == _clover_list_type.__len__(other)
+    return False
+
+
+# Inherited __ne__ compares list payloads, not a subclass's __eq__ override.
+_clover_list_eq_impl = __clover_list_eq
+
+
+def __clover_list_ne(self, other, /):
+    if not _clover_isinstance(self, _clover_list_type):
+        raise _clover_type_error("list.__ne__ expects a list receiver")
+    result = _clover_list_eq_impl(self, other)
+    if result is _clover_not_implemented:
+        return result
+    return not result
+
+
 def __clover_list_count(self, needle, /):
     """Return number of occurrences of value."""
     if not _clover_isinstance(self, _clover_list_type):
