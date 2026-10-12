@@ -885,9 +885,23 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::Jump:
             case cl::Bytecode::JumpIfTrue:
             case cl::Bytecode::JumpIfFalse:
+                fmt::format_to(out, " ");
+                disassemble_operator_cache(code_obj, out, pc++);
+                assert(cl::Bytecode(code_obj.code[pc]) ==
+                       (cl::Bytecode(code_obj.code[pc - 2]) ==
+                                cl::Bytecode::JumpIfTrue
+                            ? cl::Bytecode::FinishJumpIfTrue
+                            : cl::Bytecode::FinishJumpIfFalse));
+                ++pc;
+                fmt::format_to(out, ", ");
+                disassemble_jump_target(code_obj, out, pc);
+                pc += 2;
+                break;
+            case cl::Bytecode::Jump:
+            case cl::Bytecode::FinishJumpIfTrue:
+            case cl::Bytecode::FinishJumpIfFalse:
                 fmt::format_to(out, " ");
                 disassemble_jump_target(code_obj, out, pc);
                 pc += 2;

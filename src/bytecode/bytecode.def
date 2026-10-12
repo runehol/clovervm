@@ -227,8 +227,14 @@ CL_BYTECODE(DrainActiveExceptionInto, Register, Sequential, None)
 CL_BYTECODE(ClearActiveException, NoOperands, Sequential, None)
 CL_BYTECODE(ReraiseActiveException, NoOperands, Terminator, None)
 CL_BYTECODE(Jump, RelativeJump, UnconditionalJump, None)
-CL_BYTECODE(JumpIfTrue, RelativeJump, ConditionalJump, None)
-CL_BYTECODE(JumpIfFalse, RelativeJump, ConditionalJump, None)
+CL_BYTECODE(JumpIfTrue, OperatorCacheContinuationRelativeJump, ConditionalJump,
+            ConditionalTruthiness)
+CL_BYTECODE(FinishJumpIfTrue, RelativeJump, ConditionalJump,
+            ConditionalTruthinessContinuation)
+CL_BYTECODE(JumpIfFalse, OperatorCacheContinuationRelativeJump, ConditionalJump,
+            ConditionalTruthiness)
+CL_BYTECODE(FinishJumpIfFalse, RelativeJump, ConditionalJump,
+            ConditionalTruthinessContinuation)
 CL_BYTECODE(JumpIfEqualSmi, Smi8RelativeJump, ConditionalJump, None)
 
 CL_BYTECODE(Invalid, Invalid, Invalid, None)

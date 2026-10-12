@@ -3179,11 +3179,11 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(2u, function_code->inline_caches.operator_caches.size());
+    ASSERT_EQ(3u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &general_cache =
-        function_code->inline_caches.operator_caches[0];
-    const OperatorInlineCache &none_cache =
         function_code->inline_caches.operator_caches[1];
+    const OperatorInlineCache &none_cache =
+        function_code->inline_caches.operator_caches[2];
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_general_shape()),
               general_cache.operand_shape_keys[1]);
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
@@ -7700,8 +7700,9 @@ TEST(Interpreter, conditional_expression_propagates_exceptions)
     expect_python_error(L"def fail(): raise ValueError('arm')\n"
                         L"1 if False else fail()\n",
                         L"ValueError", L"arm");
-    expect_python_error(L"1 if 'unsupported' else 2\n", L"TypeError",
-                        L"unsupported truthiness for object");
+    test::VmTestContext context;
+    EXPECT_EQ(Value::from_smi(1),
+              context.run_file(L"1 if 'supported' else 2\n"));
 }
 
 TEST(Interpreter, conditional_expression_analyzes_local_reads_in_both_arms)
@@ -8578,4 +8579,211 @@ TEST(Interpreter, negative_truthiness_disassembly_hides_embedded_finisher)
     EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
     EXPECT_NE(std::string::npos, printed.find("    5 Return"));
     EXPECT_EQ(Value::False(), context.thread()->run_clovervm_code_object(code));
+}
+
+TEST(Interpreter, conditional_truthiness_preserves_values_and_calls_once)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+log = []
+class Bool:
+    def __init__(self, answer): self.answer = answer
+    def __bool__(self):
+        log.append(1)
+        return self.answer
+    def __len__(self): raise AssertionError
+class Length:
+    def __init__(self, answer): self.answer = answer
+    def __len__(self):
+        log.append(2)
+        return self.answer
+class I(int):
+    def __bool__(self): raise AssertionError
+class BoxedLength:
+    def __len__(self): return I(0)
+other = object()
+def choose_or(value): return value or other
+def choose_and(value): return value and other
+for value in (Bool(True), Length(2), object(), [1], (1,), {'x': 1}, 'x', b'x', 2**100, 1.0):
+    assert choose_or(value) is value
+    assert choose_or(value) is value
+    assert choose_and(value) is other
+for value in (Bool(False), Length(0), BoxedLength(), [], (), {}, '', b'', 0.0):
+    assert choose_or(value) is other
+    assert choose_and(value) is value
+    assert choose_and(value) is value
+log.clear()
+t = Bool(True)
+f = Bool(False)
+assert (t if t else f) is t
+assert (t if f else f) is f
+assert len(log) == 2
+assert NotImplemented or other is NotImplemented
+assert (NotImplemented and other) is other
+class Countdown:
+    def __init__(self): self.remaining = 3
+    def __bool__(self):
+        self.remaining -= 1
+        return self.remaining >= 0
+counter = Countdown()
+n = 0
+while counter: n += 1
+assert n == 3
+assert counter.remaining == -1
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+}
+
+TEST(Interpreter, conditional_truthiness_reentry_and_mutation_use_saved_state)
+{
+    test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+other = object()
+def choose_or(value): return value or other
+def choose_and(value): return value and other
+class InnerLength:
+    def __len__(self): return 0
+class InnerBool:
+    def __bool__(self): return False
+class OuterBool:
+    def __bool__(self):
+        choose_or(InnerLength())
+        choose_and(InnerLength())
+        return 1
+class OuterLength:
+    def __len__(self):
+        choose_or(InnerBool())
+        choose_and(InnerBool())
+        return 2
+for fn in (choose_or, choose_and):
+    try: fn(OuterBool())
+    except TypeError: pass
+    else: raise AssertionError
+outer = OuterLength()
+assert choose_or(outer) is outer
+assert choose_and(outer) is other
+log = []
+class Mutates:
+    def __bool__(self):
+        log.append(1)
+        del Mutates.__bool__
+        return False
+    def __len__(self):
+        log.append(2)
+        return 2
+m = Mutates()
+assert choose_or(m) is other
+assert choose_or(m) is m
+assert choose_and(m) is other
+assert log == [1, 2, 2]
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+}
+
+TEST(Interpreter, conditional_truthiness_validates_before_branching)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+def test_true(value): return value or 1
+def test_false(value): return value and 1
+class BadBool:
+    def __bool__(self): return NotImplemented
+    def __len__(self): raise AssertionError
+class BadLength:
+    def __len__(self): return 0.0
+class NegativeLength:
+    def __len__(self): return -(2**100)
+class OverflowLength:
+    def __len__(self): return 2**63
+class Raises:
+    def __bool__(self): raise RuntimeError('callback')
+class MaximumLength:
+    def __len__(self): return 2**63-1
+for fn in (test_true, test_false):
+    for value in (BadBool(), BadLength()):
+        try: fn(value)
+        except TypeError: pass
+        else: raise AssertionError
+    try: fn(NegativeLength())
+    except ValueError: pass
+    else: raise AssertionError
+    try: fn(OverflowLength())
+    except OverflowError: pass
+    else: raise AssertionError
+    try: fn(Raises())
+    except RuntimeError as e: assert str(e) == 'callback'
+    else: raise AssertionError
+maximum = MaximumLength()
+assert test_true(maximum) is maximum
+assert test_false(maximum) == 1
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+}
+
+static CodeObject *
+make_conditional_truthiness_code(test::VmTestContext &context, Bytecode opcode,
+                                 Value value)
+{
+    TValue<String> name = context.vm().get_or_create_interned_string_value(
+        L"<conditional-truthiness-test>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    uint8_t constant = builder.allocate_constant(value).value();
+    builder.emit_lda_constant(0, constant).value();
+    JumpTarget taken(&builder);
+    if(opcode == Bytecode::JumpIfTrue)
+        builder.emit_jump_if_true(0, taken).value();
+    else
+        builder.emit_jump_if_false(0, taken).value();
+    builder.emit_return(0).value();
+    taken.resolve().value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
+}
+
+TEST(Interpreter, conditional_truthiness_roots_saved_operand_and_hides_finisher)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(bool answer: {false, true})
+    {
+        Owned<Value> receiver(context.run_file(
+            answer ? L"def ping(): pass\nclass C:\n    def __bool__(self):\n   "
+                     L"     ping()\n        return True\nC()\n"
+                   : L"def ping(): pass\nclass C:\n    def __bool__(self):\n   "
+                     L"     ping()\n        return False\nC()\n"));
+        Value method = load_attr(
+            Value::from_oop(context.thread()->class_of_value(receiver.value())),
+            interned_string(L"__bool__"));
+        ASSERT_TRUE(can_convert_to<Function>(method));
+        for(Bytecode opcode: {Bytecode::JumpIfTrue, Bytecode::JumpIfFalse})
+        {
+            CodeObject *caller = make_conditional_truthiness_code(
+                context, opcode, receiver.value());
+            TruthinessSafepointCheck check{
+                method.get_ptr<Function>()->code_object.extract(), caller,
+                receiver.value()};
+            context.vm().set_safepoint_callback_for_testing(
+                check_truthiness_callback_roots, &check);
+            context.vm().set_fire_every_safepoint_for_testing(true);
+            context.vm().request_safepoint();
+            EXPECT_EQ(receiver.value(),
+                      context.thread()->run_clovervm_code_object(caller));
+            EXPECT_EQ(receiver.value(),
+                      context.thread()->run_clovervm_code_object(caller));
+            EXPECT_GT(check.observations, 0u);
+            context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+            std::string printed = fmt::to_string(*caller);
+            EXPECT_EQ(std::string::npos, printed.find("FinishJump"));
+            EXPECT_NE(std::string::npos, printed.find("operator_ic[0]"));
+        }
+    }
 }

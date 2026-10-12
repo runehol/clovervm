@@ -1509,6 +1509,15 @@ namespace cl
     {
         assert(c != Bytecode::Invalid);
         uint32_t result = emplace_back(source_offset, uint8_t(c));
+        if(c == Bytecode::JumpIfTrue || c == Bytecode::JumpIfFalse)
+        {
+            uint8_t cache_idx = CL_TRY(allocate_operator_cache());
+            emplace_back(source_offset, cache_idx);
+            CL_TRY(
+                emit_opcode(source_offset, c == Bytecode::JumpIfTrue
+                                               ? Bytecode::FinishJumpIfTrue
+                                               : Bytecode::FinishJumpIfFalse));
+        }
         uint32_t pos = code_obj->code.size();
         emplace_back(source_offset, 0);
         emplace_back(source_offset, 0);

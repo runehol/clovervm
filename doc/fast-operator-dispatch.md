@@ -924,7 +924,10 @@ operator fallback rules.
 
 ### Truth, Length, Call, Iteration, And Representation
 
-These protocols need their own cache shapes when optimized:
+These protocols need explicit sequencing and result-validation contracts when
+optimized. Truthiness now reuses the unary OperatorInlineCache, with receiver
+shape, MRO validity, and Bool/Length result-kind metadata; see
+[Truthiness Dispatch](truthiness-dispatch.md).
 
 | Operation | Protocol call |
 | --- | --- |
@@ -940,8 +943,13 @@ These protocols need their own cache shapes when optimized:
 | `format(obj, spec)` | `type(obj).__format__(obj, spec)` |
 | `bytes(obj)` | `type(obj).__bytes__(obj)` |
 
-Jump opcodes should preserve direct inline truthiness for values that do not
-need protocol dispatch. Iteration has sentinel exceptions and fallback rules.
+Jump opcodes preserve direct inline truthiness without cache access for immediate
+values. Heap operands use the truthiness table, while embedded FinishJumpIfTrue
+or FinishJumpIfFalse validates Python returns and restores the tested operand.
+The five-byte bundles contain the displacement after the finisher; both normal
+edges preserve the original accumulator. Continuations use saved per-invocation
+result kinds and do not inspect or install the IC. Iteration has sentinel
+exceptions and fallback rules.
 Call dispatch probably belongs with the existing function-call IC machinery.
 
 ## Installation Rule

@@ -4,19 +4,19 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial |
+| Implementation | Implemented |
 | Scope | Truth conversion and conditional branches, cached special-method dispatch, result validation, and Python return continuations |
 | Owning layers | Builtin numeric methods and integer validation; runtime dispatch and caches; interpreter continuations; codegen and bytecode metadata |
-| Validated against | `5bbb5323` (2026-10-12); conditional-jump extension agreed, pending implementation |
+| Validated against | `3f5095c7` plus verified implementation working tree (2026-10-12) |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
-This is the agreed target contract. Both `ToBool` and `ToBoolNot` implement the
-cached truthiness table and their embedded return continuations. Python `not`
-uses `ToBoolNot`; the duplicate `Not` opcode has been retired. Native int/float
+Both explicit conversions and conditional jumps implement this contract.
+`ToBool`/`ToBoolNot` use embedded finishing opcodes, and Python `not` uses
+`ToBoolNot`. `JumpIfTrue`/`JumpIfFalse` combine cached truth conversion and
+branching, preserving the tested value on both normal edges. Native int/float
 __bool__ methods, registered trusted handlers, and direct integer-length
-validation are implemented. Conditional jumps still support immediate values
-and floats; their protocol integration remains in the final stage of the
-[implementation plan](truthiness-implementation-plan.md).
+validation are implemented. Length-result index coercion and correcting
+sys.maxsize remain separate follow-ups.
 
 ## Truthiness semantics and call path
 
@@ -200,6 +200,6 @@ the embedded finisher without its per-invocation state.
 ## Deferred surface
 
 Python `not` uses the negative conversion path. Non-integer length-result index
-coercion, conditional-jump integration, and correcting sys.maxsize remain deferred
-until their planned slices. The older immediate NotImplemented truth behavior is
-an intentional policy, not a deferred error check.
+coercion and correcting sys.maxsize remain deferred. The older immediate
+NotImplemented truth behavior is an intentional policy, not a deferred error
+check.

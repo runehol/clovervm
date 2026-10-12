@@ -67,7 +67,7 @@ for protocol behavior the VM cannot yet execute.
   current 64-bit targets and audit consumers such as sequence search defaults.
   This is separate from truthiness length validation, which uses the native
   signed 64-bit limit. See the
-  [truthiness implementation plan](truthiness-implementation-plan.md).
+  [truthiness architecture contract](truthiness-dispatch.md).
 - **Closure capture for builtin helpers:** once
   [closure cells](closure-cells.md) are implemented, replace persistent private
   bindings in the builtin implementation module with captured builtin

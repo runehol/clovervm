@@ -375,6 +375,8 @@ namespace cl::jit
                 break;
             case BytecodeCompoundRole::Truthiness:
             case BytecodeCompoundRole::TruthinessContinuation:
+            case BytecodeCompoundRole::ConditionalTruthiness:
+            case BytecodeCompoundRole::ConditionalTruthinessContinuation:
             case BytecodeCompoundRole::BinaryOperatorContinuation:
             case BytecodeCompoundRole::TernaryOperatorContinuation:
                 emit_unsupported(block, instruction, state);

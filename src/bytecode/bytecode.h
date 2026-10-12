@@ -53,6 +53,7 @@ namespace cl
         RegisterConstantAttributeReadCache,
         RegisterConstantAttributeMutationCache,
         OperatorCacheWithContinuation,
+        OperatorCacheContinuationRelativeJump,
         RegisterOperatorCache,
         RegisterOperatorCacheWithContinuation,
         RegisterRegisterOperatorCache,
@@ -97,6 +98,8 @@ namespace cl
         TernaryOperatorContinuation,
         Truthiness,
         TruthinessContinuation,
+        ConditionalTruthiness,
+        ConditionalTruthinessContinuation,
     };
 
     enum class Bytecode : uint8_t
@@ -115,6 +118,7 @@ namespace cl
         uint8_t operand_count = 0;
         uint8_t byte_length = 0;
         bool valid = false;
+        uint8_t continuation_offset = 0;
 
         constexpr uint8_t operand_width(size_t idx) const
         {
@@ -131,6 +135,8 @@ namespace cl
             {
                 offset += operand_width(operand_idx);
             }
+            if(continuation_offset != 0 && offset >= continuation_offset)
+                ++offset;
             return offset;
         }
 
@@ -204,10 +210,19 @@ namespace cl
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Constant,
                     Operand::AttributeMutationCache);
+            case BytecodeFormat::OperatorCacheContinuationRelativeJump:
+                {
+                    BytecodeFormatInfo info = make_bytecode_format_info(
+                        Operand::OperatorCache, Operand::RelativeJumpI16);
+                    info.continuation_offset = 2;
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::OperatorCacheWithContinuation:
                 {
                     BytecodeFormatInfo info =
                         make_bytecode_format_info(Operand::OperatorCache);
+                    info.continuation_offset = info.byte_length;
                     ++info.byte_length;
                     return info;
                 }
@@ -218,6 +233,7 @@ namespace cl
                 {
                     BytecodeFormatInfo info = make_bytecode_format_info(
                         Operand::Register, Operand::OperatorCache);
+                    info.continuation_offset = info.byte_length;
                     ++info.byte_length;
                     return info;
                 }
@@ -230,6 +246,7 @@ namespace cl
                     BytecodeFormatInfo info = make_bytecode_format_info(
                         Operand::Register, Operand::Register,
                         Operand::OperatorCache);
+                    info.continuation_offset = info.byte_length;
                     ++info.byte_length;
                     return info;
                 }
@@ -257,6 +274,7 @@ namespace cl
                 {
                     BytecodeFormatInfo info = make_bytecode_format_info(
                         Operand::Smi8, Operand::OperatorCache);
+                    info.continuation_offset = info.byte_length;
                     ++info.byte_length;
                     return info;
                 }

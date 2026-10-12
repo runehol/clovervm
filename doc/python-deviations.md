@@ -135,30 +135,23 @@ cache behavior.
 
 ## Truthiness
 
-### Conditional jumps do not yet call `__bool__`
+### Length-result index coercion and sys.maxsize
 
-Python truthiness supports arbitrary objects through `__bool__`, and then
-`__len__` if `__bool__` is absent. clovervm's conditional jumps currently handle
-immediate truthy/falsy values and use the generic slow path for pointer values.
-
-Both explicit conversion opcodes, `ToBool` and `ToBoolNot`, now dispatch
-`__bool__`, then `__len__`, including Python callbacks and cached lookup. Python
-`not` uses `ToBoolNot`. This covers positive and negative membership results and
-the internal equality helper; conditional jumps remain a separate stage.
+Explicit conversions, Python `not`, and conditional jumps now dispatch
+`__bool__`, then `__len__`, using cached special-method lookup and Python return
+continuations. Conditional jumps preserve operand identity for short-circuit
+expressions. See [Truthiness Dispatch](truthiness-dispatch.md).
 
 Length results accept bool, SMI, and heap integers through INT64_MAX. Non-integer
 results with `__index__` remain unsupported and raise TypeError. The native limit
 is independent of the current SMI-sized `sys.maxsize`, whose correction is
-separate work.
+separate work. Index coercion needs a separate return-validation stage.
+
+### NotImplemented retains its older boolean behavior
 
 Immediate `NotImplemented` deliberately remains truthy, preserving older Python
-behavior. Returning it from `__bool__` raises TypeError.
-
-Reason: truthiness protocol integration is staged.
-
-To close: extend conditional jumps through the shared dispatch/validation
-machinery; handle length-result index coercion
-separately. See the [implementation plan](truthiness-implementation-plan.md).
+behavior. Returning it from `__bool__` raises TypeError. The immediate fast path
+keeps this behavior intentionally; it is not a pending protocol implementation.
 
 ## Builtins And Iteration
 

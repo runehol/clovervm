@@ -216,18 +216,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value unsupported_truthiness_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"unsupported truthiness for object");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE INTERP_CC Value invalid_range_iteration_state_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -909,42 +897,6 @@ namespace cl
     NOINLINE static INTERP_CC Value overflow_path(PARAMS)
     {
         MUSTTAIL return raise_overflow_error(ARGS);
-    }
-
-    NOINLINE static INTERP_CC Value op_jump_if_true_float_truthiness(PARAMS)
-    {
-        int16_t rel_target = read_int16_le(&pc[1]);
-        if(!can_convert_to<Float>(accumulator))
-        {
-            MUSTTAIL return unsupported_truthiness_error(ARGS);
-        }
-
-        pc += 3;
-        if(accumulator.get_ptr<Float>()->value() != 0.0)
-        {
-            pc += rel_target;
-        }
-
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_jump_if_false_float_truthiness(PARAMS)
-    {
-        int16_t rel_target = read_int16_le(&pc[1]);
-        if(!can_convert_to<Float>(accumulator))
-        {
-            MUSTTAIL return unsupported_truthiness_error(ARGS);
-        }
-
-        pc += 3;
-        if(accumulator.get_ptr<Float>()->value() == 0.0)
-        {
-            pc += rel_target;
-        }
-
-        START(0);
-        COMPLETE();
     }
 
     static ALWAYSINLINE int64_t floor_div_smi_values(int64_t left,
@@ -4353,7 +4305,40 @@ namespace cl
         return target != nullptr ? target : dispatch_entry_for_pc(dispatch, pc);
     }
 
-    template <bool Invert>
+    enum class TruthinessCompletion
+    {
+        Bool,
+        NotBool,
+        JumpTrue,
+        JumpFalse
+    };
+
+    template <TruthinessCompletion Completion, bool FromContinuation>
+    static ALWAYSINLINE void
+    complete_truthiness_result(Value &accumulator, Value result, Value receiver,
+                               const uint8_t *&pc)
+    {
+        if constexpr(Completion == TruthinessCompletion::JumpTrue ||
+                     Completion == TruthinessCompletion::JumpFalse)
+        {
+            bool take = (result == Value::True()) ==
+                        (Completion == TruthinessCompletion::JumpTrue);
+            const uint8_t *offset = pc + (FromContinuation ? 1 : 3);
+            pc += FromContinuation ? 3 : 5;
+            if(take)
+                pc += read_int16_le(offset);
+            accumulator = receiver;
+        }
+        else
+        {
+            if constexpr(Completion == TruthinessCompletion::NotBool)
+                result.as.integer ^= int64_t{1} << value_tag_bits;
+            accumulator = result;
+            pc += FromContinuation ? 1 : 3;
+        }
+    }
+
+    template <TruthinessCompletion Completion>
     NOINLINE static INTERP_CC Value op_truthiness_dispatch(PARAMS)
     {
         Value receiver = accumulator;
@@ -4382,21 +4367,20 @@ namespace cl
         }
         if(!entry.trusted_handler.is_null())
         {
-            accumulator = entry.trusted_handler.unary(thread, receiver);
-            if(unlikely(accumulator.is_exception_marker()))
+            Value result = entry.trusted_handler.unary(thread, receiver);
+            if(unlikely(result.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
             }
-            accumulator = validate_truthiness_result(thread, accumulator,
-                                                     entry.truth_result_kind);
-            if(unlikely(accumulator.is_exception_marker()))
+            result = validate_truthiness_result(thread, result,
+                                                entry.truth_result_kind);
+            if(unlikely(result.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
             }
-            if constexpr(Invert)
-                accumulator = accumulator == Value::True() ? Value::False()
-                                                           : Value::True();
-            START(3);
+            complete_truthiness_result<Completion, false>(accumulator, result,
+                                                          receiver, pc);
+            START(0);
             COMPLETE();
         }
         DispatchTableEntry target = enter_truthiness_function(
@@ -4404,7 +4388,7 @@ namespace cl
         MUSTTAIL return target(ARGS);
     }
 
-    template <bool Invert>
+    template <TruthinessCompletion Completion>
     NOINLINE static INTERP_CC Value op_finish_truthiness(PARAMS)
     {
         int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
@@ -4420,10 +4404,13 @@ namespace cl
             pc -= 2;
             MUSTTAIL return propagate_pending_exception(ARGS);
         }
-        if constexpr(Invert)
-            accumulator =
-                accumulator == Value::True() ? Value::False() : Value::True();
-        START(1);
+        Value receiver = Value::not_present();
+        if constexpr(Completion == TruthinessCompletion::JumpTrue ||
+                     Completion == TruthinessCompletion::JumpFalse)
+            receiver = fp[prefix_reg - 1];
+        complete_truthiness_result<Completion, true>(accumulator, accumulator,
+                                                     receiver, pc);
+        START(0);
         COMPLETE();
     }
 
@@ -4433,7 +4420,8 @@ namespace cl
         Value a = accumulator;
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_truthiness_dispatch<false>(ARGS);
+            MUSTTAIL return op_truthiness_dispatch<TruthinessCompletion::Bool>(
+                ARGS);
         }
 
         accumulator = a.is_truthy() ? Value::True() : Value::False();
@@ -4446,7 +4434,8 @@ namespace cl
         Value a = accumulator;
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_truthiness_dispatch<true>(ARGS);
+            MUSTTAIL return op_truthiness_dispatch<
+                TruthinessCompletion::NotBool>(ARGS);
         }
 
         accumulator = a.is_truthy() ? Value::False() : Value::True();
@@ -4739,36 +4728,30 @@ namespace cl
 
     static INTERP_CC Value op_jump_if_true(PARAMS)
     {
-        int16_t rel_target = read_int16_le(&pc[1]);
         if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_jump_if_true_float_truthiness(ARGS);
+            MUSTTAIL return op_truthiness_dispatch<
+                TruthinessCompletion::JumpTrue>(ARGS);
         }
-
-        pc += 3;
+        const uint8_t *offset = pc + 3;
+        pc += 5;
         if(accumulator.is_truthy())
-        {
-            pc += rel_target;
-        }
-
+            pc += read_int16_le(offset);
         START(0);
         COMPLETE();
     }
 
     static INTERP_CC Value op_jump_if_false(PARAMS)
     {
-        int16_t rel_target = read_int16_le(&pc[1]);
         if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
         {
-            MUSTTAIL return op_jump_if_false_float_truthiness(ARGS);
+            MUSTTAIL return op_truthiness_dispatch<
+                TruthinessCompletion::JumpFalse>(ARGS);
         }
-
-        pc += 3;
+        const uint8_t *offset = pc + 3;
+        pc += 5;
         if(accumulator.is_falsy())
-        {
-            pc += rel_target;
-        }
-
+            pc += read_int16_le(offset);
         START(0);
         COMPLETE();
     }
@@ -6385,9 +6368,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DictDeleteEntry, op_dict_delete_entry);
         SET_TABLE_ENTRY(Bytecode::ToBool, op_to_bool);
         SET_TABLE_ENTRY(Bytecode::FinishTruthiness,
-                        op_finish_truthiness<false>);
+                        op_finish_truthiness<TruthinessCompletion::Bool>);
         SET_TABLE_ENTRY(Bytecode::FinishTruthinessNot,
-                        op_finish_truthiness<true>);
+                        op_finish_truthiness<TruthinessCompletion::NotBool>);
         SET_TABLE_ENTRY(Bytecode::ToBoolNot, op_to_bool_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
@@ -6454,6 +6437,10 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::Jump, op_jump);
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
+        SET_TABLE_ENTRY(Bytecode::FinishJumpIfTrue,
+                        op_finish_truthiness<TruthinessCompletion::JumpTrue>);
+        SET_TABLE_ENTRY(Bytecode::FinishJumpIfFalse,
+                        op_finish_truthiness<TruthinessCompletion::JumpFalse>);
         SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
         SET_TABLE_ENTRY(Bytecode::JumpIfEqualSmi, op_jump_if_equal_smi);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);

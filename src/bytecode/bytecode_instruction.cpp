@@ -337,6 +337,8 @@ namespace cl
             case Bytecode::ToBool:
             case Bytecode::FinishTruthiness:
             case Bytecode::FinishTruthinessNot:
+            case Bytecode::FinishJumpIfTrue:
+            case Bytecode::FinishJumpIfFalse:
             case Bytecode::ToBoolNot:
             case Bytecode::Neg:
             case Bytecode::Pos:
@@ -748,10 +750,22 @@ namespace cl
                                         FrameHeaderSizeBelowFp - 1)});
         }
 
+        if(info.compound_role == BytecodeCompoundRole::ConditionalTruthiness)
+        {
+            instruction.continuation_pc_offset_ =
+                pc_offset + format.continuation_offset;
+            assert(
+                Bytecode(
+                    code_object.code[*instruction.continuation_pc_offset_]) ==
+                (instruction.encoded_opcode_ == Bytecode::JumpIfTrue
+                     ? Bytecode::FinishJumpIfTrue
+                     : Bytecode::FinishJumpIfFalse));
+        }
+
         if(info.compound_role == BytecodeCompoundRole::Truthiness)
         {
             instruction.continuation_pc_offset_ =
-                instruction.next_pc_offset_ - 1;
+                pc_offset + format.continuation_offset;
             assert(
                 Bytecode(
                     code_object.code[*instruction.continuation_pc_offset_]) ==
@@ -764,7 +778,7 @@ namespace cl
            info.compound_role == BytecodeCompoundRole::TernaryOperator)
         {
             instruction.continuation_pc_offset_ =
-                instruction.next_pc_offset_ - 1;
+                pc_offset + format.continuation_offset;
             assert(
                 Bytecode(
                     code_object.code[*instruction.continuation_pc_offset_]) ==

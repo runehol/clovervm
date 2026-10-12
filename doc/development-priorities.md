@@ -78,11 +78,10 @@ For bounded work that can land independently of this priority order, see
    binding, call target, and continuation behavior that a JIT would otherwise
    have to rediscover.
 
-   Truthiness now has an accepted
-   [architecture contract](truthiness-dispatch.md) and
-   [staged implementation plan](truthiness-implementation-plan.md): builtin
-   methods and validation, dispatch/cache preparation, conversion continuations,
-   then conditional jumps. It has grown beyond the small-tasks queue.
+   [Truthiness dispatch](truthiness-dispatch.md) now implements cached explicit
+   conversions and combined conditional jumps, with embedded Python return
+   validation and preserved short-circuit operands. Length-result index coercion
+   and correcting sys.maxsize remain separate follow-ups.
 
 4. **Traceable iteration protocol and loop plans**
 

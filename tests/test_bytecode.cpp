@@ -111,7 +111,7 @@ TEST(BytecodeFormat, control_flow_metadata_identifies_jump_operands)
     constexpr TestCase test_cases[] = {
         {Bytecode::LdaNone, BytecodeControlFlow::Sequential, -1},
         {Bytecode::Jump, BytecodeControlFlow::UnconditionalJump, 1},
-        {Bytecode::JumpIfTrue, BytecodeControlFlow::ConditionalJump, 1},
+        {Bytecode::JumpIfTrue, BytecodeControlFlow::ConditionalJump, 3},
         {Bytecode::JumpIfEqualSmi, BytecodeControlFlow::ConditionalJump, 2},
         {Bytecode::ForIter, BytecodeControlFlow::ConditionalJump, 2},
         {Bytecode::BuildClass, BytecodeControlFlow::Terminator, -1},
@@ -563,4 +563,53 @@ TEST(BytecodeInstruction, negative_truthiness_bundles_cache_and_return_target)
     EXPECT_EQ(instruction.next_pc_offset(), continuation.next_pc_offset());
     ASSERT_EQ(1u, continuation.sources().size());
     ASSERT_EQ(1u, continuation.destinations().size());
+}
+
+TEST(BytecodeInstruction, conditional_truthiness_bundles_share_branch_base)
+{
+    test::VmTestContext context;
+    CodeObject *code = context.compile_file(
+        L"x = 0\nwhile x < 2:\n    x += 1\n    if x or False: pass\nx\n");
+    size_t forward = 0, backward = 0;
+    BytecodeDecoder decoder(*code);
+    for(const BytecodeBlock &block: decoder.blocks())
+    {
+        for(const BytecodeInstruction &instruction: block.instructions())
+        {
+            Bytecode opcode = instruction.encoded_opcode();
+            if(opcode != Bytecode::JumpIfTrue &&
+               opcode != Bytecode::JumpIfFalse)
+                continue;
+            auto format = bytecode_info(opcode).format_info();
+            EXPECT_EQ(5u, format.length());
+            EXPECT_EQ(2u, format.continuation_offset);
+            EXPECT_EQ(1u, format.operand_offset(0));
+            EXPECT_EQ(3, format.relative_jump_operand_offset());
+            ASSERT_EQ(2u, instruction.operands().size());
+            EXPECT_EQ(BytecodeOperandKind::OperatorCache,
+                      instruction.operands()[0].kind);
+            ASSERT_TRUE(instruction.continuation_pc_offset().has_value());
+            EXPECT_EQ(instruction.pc_offset() + 2,
+                      *instruction.continuation_pc_offset());
+            BytecodeInstruction finish = decode_instruction(
+                *code, *instruction.continuation_pc_offset());
+            EXPECT_EQ(opcode == Bytecode::JumpIfTrue
+                          ? Bytecode::FinishJumpIfTrue
+                          : Bytecode::FinishJumpIfFalse,
+                      finish.encoded_opcode());
+            EXPECT_EQ(instruction.next_pc_offset(), finish.next_pc_offset());
+            EXPECT_EQ(instruction.jump_target_pc_offset(),
+                      finish.jump_target_pc_offset());
+            EXPECT_TRUE(instruction.destinations().empty());
+            if(*instruction.jump_target_pc_offset() < instruction.pc_offset())
+                ++backward;
+            else
+                ++forward;
+            for(const BytecodeBlock &candidate: decoder.blocks())
+                EXPECT_NE(*instruction.continuation_pc_offset(),
+                          candidate.start_pc_offset());
+        }
+    }
+    EXPECT_GT(forward, 0u);
+    EXPECT_GT(backward, 0u);
 }
