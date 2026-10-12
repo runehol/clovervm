@@ -2947,6 +2947,21 @@ namespace cl
                         break;
                     }
 
+                case AstNodeKind::EXPRESSION_IF:
+                    {
+                        JumpTarget alternative_target(code_obj);
+                        JumpTarget done_target(code_obj);
+                        CL_TRY(codegen_node(children[0]));
+                        CL_TRY(code_obj->emit_jump_if_false(
+                            source_offset, alternative_target));
+                        CL_TRY(codegen_node(children[1]));
+                        CL_TRY(code_obj->emit_jump(source_offset, done_target));
+                        CL_TRY(alternative_target.resolve());
+                        CL_TRY(codegen_node(children[2]));
+                        CL_TRY(done_target.resolve());
+                        break;
+                    }
+
                 case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
                     {
                         JumpTarget skip_target(code_obj);

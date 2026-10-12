@@ -67,6 +67,8 @@ namespace cl
                                 // and 1..n-1 comparison fragments
         EXPRESSION_COMPARISON_FRAGMENT,
         EXPRESSION_SHORTCUTTING_BINARY,
+        // Matches CPython IfExp(test, body, orelse); children use that order.
+        EXPRESSION_IF,
         EXPRESSION_CALL,
         EXPRESSION_ATTRIBUTE,
         EXPRESSION_SLICE,
@@ -124,6 +126,7 @@ namespace cl
             case AstNodeKind::EXPRESSION_COMPARISON:
             case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
             case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+            case AstNodeKind::EXPRESSION_IF:
             case AstNodeKind::EXPRESSION_CALL:
             case AstNodeKind::EXPRESSION_ATTRIBUTE:
             case AstNodeKind::EXPRESSION_SLICE:
@@ -209,6 +212,7 @@ namespace cl
     enum class ExpressionPrecedence : uint32_t
     {
         Lowest,
+        Conditional,
         Disjunction,
         Conjunction,
         Inversion,
@@ -233,7 +237,11 @@ namespace cl
 
     constexpr ExpressionPrecedence precedence_for_kind(AstKind k)
     {
-        if(k.node_kind == AstNodeKind::EXPRESSION_COMPARISON)
+        if(k.node_kind == AstNodeKind::EXPRESSION_IF)
+        {
+            return ExpressionPrecedence::Conditional;
+        }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_COMPARISON)
         {
             return ExpressionPrecedence::Comparison;
         }

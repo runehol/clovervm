@@ -1023,3 +1023,43 @@ TEST(Parser, parse_error_reports_crlf_line_numbers)
                        "SyntaxError: incomplete input at offset 24 (line 3, "
                        "column 1), near \"\"");
 }
+
+TEST(Parser, conditional_expression_precedence_and_associativity)
+{
+    EXPECT_EQ("a or b if c and d else e or f\n",
+              parse(L"a or b if c and d else e or f\n"));
+    EXPECT_EQ("a if b else c if d else e\n",
+              parse(L"a if b else c if d else e\n"));
+    EXPECT_EQ("(a if b else c) if d else e\n",
+              parse(L"(a if b else c) if d else e\n"));
+    EXPECT_EQ("a if (b if c else d) else e\n",
+              parse(L"a if (b if c else d) else e\n"));
+    EXPECT_EQ("(a if b else c) + d\n", parse(L"(a if b else c) + d\n"));
+}
+
+TEST(Parser, conditional_expression_uses_ifexp_child_order)
+{
+    test::ParsedFile parsed(L"body if test else alternative\n");
+    const AstVector &av = parsed.ast;
+    int32_t expression = av.children[av.children[av.root_node][0]][0];
+    ASSERT_TRUE(av.kinds[expression].node_kind == AstNodeKind::EXPRESSION_IF);
+    const AstChildren &children = av.children[expression];
+    ASSERT_EQ(3u, children.size());
+    EXPECT_STREQ(L"test", string_as_wchar_t(TValue<String>::from_value_assumed(
+                              av.constants[children[0]])));
+    EXPECT_STREQ(L"body", string_as_wchar_t(TValue<String>::from_value_assumed(
+                              av.constants[children[1]])));
+    EXPECT_STREQ(L"alternative",
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
+                     av.constants[children[2]])));
+}
+
+TEST(Parser, conditional_expression_rejects_incomplete_syntax)
+{
+    for(const wchar_t *source: {L"a if b\n", L"a if else c\n", L"a if b else\n",
+                                L"a if b else c = 1\n"})
+    {
+        EXPECT_TRUE(
+            parse_ast_with_start_rule(source, StartRule::File).has_exception());
+    }
+}

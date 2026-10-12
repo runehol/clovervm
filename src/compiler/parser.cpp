@@ -834,7 +834,21 @@ namespace cl
             }
         }
 
-        Expected<int32_t> expression() { return disjunction(); }
+        Expected<int32_t> expression()
+        {
+            int32_t body = CL_TRY(disjunction());
+            if(peek() != Token::IF)
+            {
+                return Expected<int32_t>::ok(body);
+            }
+            uint32_t source_pos = source_pos_and_advance();
+            int32_t test = CL_TRY(disjunction());
+            CL_TRY(consume(Token::ELSE));
+            int32_t orelse = CL_TRY(expression());
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::EXPRESSION_IF, source_pos,
+                                 AstChildren{test, body, orelse}));
+        }
 
         Expected<int32_t> assignment_expression()
         {

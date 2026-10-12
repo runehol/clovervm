@@ -25,14 +25,6 @@ sequence comparison. Tuple and list equality use the supported immediate/float
 truthiness types; this protocol expansion is separate work requiring a readiness
 sketch.
 
-### Conditional expressions
-
-Support `body if test else alternative`. The parser currently rejects this
-syntax. Use CPython's `IfExp` AST structure where it fits, lower it to existing
-branches, and evaluate only the selected expression. Cover precedence, nested
-expressions, truthiness callbacks, side effects, and exception propagation with
-parser and interpreter tests.
-
 ### Tuple construction and subclassing
 
 Deferred after readiness discussion; no tuple constructor is implemented yet.

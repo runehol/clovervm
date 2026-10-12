@@ -2007,3 +2007,16 @@ TEST(Codegen, user_clover_ternary_pow_name_is_ordinary_call)
     EXPECT_EQ(std::string::npos, actual.find("TernaryPow"));
     EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
+
+TEST(Codegen, conditional_expression_uses_existing_branches)
+{
+    EXPECT_EQ("Code object:\n"
+              "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
+              "    3 JumpIfFalse 11\n"
+              "    6 LdaSmi 1\n"
+              "    8 Jump 13\n"
+              "   11 LdaSmi 2\n"
+              "   13 Return\n"
+              "Constant 0: \"flag\"\n",
+              bytecode_str_from_file(L"1 if flag else 2\n"));
+}
