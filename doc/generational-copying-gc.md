@@ -11,19 +11,21 @@
 | Supersedes | Earlier non-moving generational mark-sweep direction |
 
 This document sketches an alternative garbage-collection direction for CloverVM:
-a generational, moving collector that copies ordinary VM objects and handles
-native boundaries through updateable roots, pinning, and stable storage.
+a generational collector that copies ordinary VM objects and handles native
+boundaries through updateable roots and a separate permanently non-moving heap.
 
 This design supersedes the earlier non-moving generational mark-sweep direction.
 It allows ordinary VM objects to move, so it is incompatible with a collector
-strategy that preserves raw managed-object addresses for native code.
+strategy that preserves raw addresses for all managed objects. Raw-address
+exposure beyond a relocation-exclusion scope instead requires permanent
+placement in the non-moving heap.
 
 The collector goal is a stop-the-world generational copying runtime:
 
-- normal VM objects are allocated in moving generations and may be copied during
-  stop-the-world collection;
-- old or stable storage may use a non-moving policy where copying is not
-  appropriate, such as extension-owned objects or exported storage;
+- normal VM objects start in a moving nursery and are promoted on survival;
+- the movement policy for the ordinary old generation remains open;
+- a separate permanently non-moving heap holds extension-owned objects and
+  objects or backing storage whose raw addresses must be exposed;
 - roots and heap references are updated after object movement.
 
 Native API support follows from that collector choice:
@@ -34,7 +36,8 @@ Native API support follows from that collector choice:
   `clover_handle` values that can survive collections through VM-managed
   indirection, but do not guarantee stable handle identity;
 - CloverVM C API operations that expose raw object or backing-storage addresses
-  establish scoped pins or use stable storage;
+  ensure stable placement and export/lifetime protection, or use the restricted
+  scoped string-access option described below;
 - non-moving objects still participate in tracing and remembered-set policy.
 
 The proposed CPython Limited API wrapper system is specified separately in
@@ -81,7 +84,7 @@ discover object identities:
 - ordinary object fields and backing arrays;
 - remembered old-to-young references for minor collections;
 - CloverVM C API handle storage;
-- pinned and stable objects that expose trace/update hooks.
+- stable objects that expose trace/update hooks.
 
 Objects in stable storage are not copied by this ordinary evacuation path. They
 are still part of the traced object graph if they can reference or be referenced
@@ -114,11 +117,13 @@ existing refcount/lifecycle fields and the new GC fields. Once tracing is the
 lifetime authority and the ZCT is retired, the refcount fields can be removed
 and the final header repacked.
 
-The GC header must represent at least generation/remembered state and whether an
-otherwise movable object is pinned. The exact pin-count or pin-flag encoding is
-not yet selected. Allocation space supplies the normal movement policy, but is
-not sufficient by itself: a pinned object in a normally moving space must not be
-evacuated until its pin is released.
+The GC state must represent generation/remembered state and any state required
+by the eventual old-generation and stable-heap collection policies. Allocation
+space determines whether an object may move: objects in the stable heap never
+move, and no object is pinned in place in a moving space. The collector therefore
+does not need movement-pin flags or counts. Export accounting still protects
+lifetime and prevents address-invalidating operations; its representation is a
+separate storage/API concern.
 
 The forwarding target can be written into the from-space object itself after
 the object has been copied. A reference repair path can then recognize a
@@ -188,7 +193,8 @@ The first policy should be a stop-the-world generational collector:
 
 - young generation for newly allocated movable objects;
 - old generation for objects that survive a minor collection;
-- stable storage for extension-owned objects and storage that must not move.
+- a separate permanently non-moving stable heap for extension-owned objects
+  and objects or backing storage that must expose stable raw addresses.
 
 Young collections evacuate live young objects and update references from roots
 and remembered old objects. They must not scan the entire old generation.
@@ -196,8 +202,10 @@ Old-to-young stores therefore need a remembered-set barrier, even though the
 collector itself is stop-the-world.
 
 The simple first policy is immediate promotion: every live young object that
-survives a minor collection is copied out of the nursery and becomes old. Dead
-young objects are not copied. After the minor collection, the nursery can be
+survives a minor collection is copied out of the nursery and becomes old. The
+normal destination is the ordinary old generation; allocations requested for
+raw-address exposure go directly to the stable heap and are treated as old for
+generational barriers. Dead young objects are not copied. After the minor collection, the nursery can be
 reused wholesale.
 
 Minor collection should evacuate the full young generation reachable from roots
@@ -219,8 +227,8 @@ if(owner->generation_state == HeapGenerationState::Old &&
 If the owner is already `OldRemembered`, the barrier does nothing. The
 `Old -> OldRemembered` transition is the duplicate-entry guard.
 
-Remembered sets store old objects that may contain references into the nursery.
-They never store nursery objects.
+Remembered sets store old objects that may contain references into the nursery,
+including stable-heap participants. They never store nursery objects.
 
 Each `ThreadState` should own a remembered set. That keeps ordinary barriers
 lock-free in the common case: a mutator records old-to-young stores in its own
@@ -318,12 +326,18 @@ not make modules permanent roots or scan all modules on every minor collection.
 More precise module-slot entries should wait until profiling shows module
 scanning is a material minor-GC cost.
 
-Major collections may collect both young and old movable generations. The exact
-old-generation policy is still open: old objects may continue to move during
-major collection, or the old generation may use a non-moving mark-sweep policy
-for objects that are expensive or risky to copy. That choice is independent from
-the C API handle contract: native code still cannot observe raw addresses for
-ordinary movable objects.
+The stable heap is separate from the ordinary old generation. Objects may be
+allocated there directly or promoted there before raw-address exposure. Stable
+placement is permanent for the allocation, including after its last export is
+released; stable objects remain collectible and participate in tracing and
+remembered-set policy.
+
+Major collections may collect young, ordinary old, and stable objects. The
+ordinary old-generation policy remains open: old objects may move during major
+collection, or the old generation may use a non-moving policy. Stable-heap
+objects never move under either choice. The exact reclamation policy for stable
+participants remains to be specified. Native handles remain updateable. Raw
+addresses exposed beyond a relocation-exclusion scope require stable storage.
 
 ## Native API Layers
 
@@ -399,21 +413,23 @@ adapters live in
 ### Movable VM Objects
 
 These are ordinary Clover/Python objects used by the interpreter and managed
-code. They are allocated in generational moving heaps. A stop-the-world
-young-generation collection may copy them and update all managed references
-before execution resumes.
+code. They start in the moving nursery and normally survive into the ordinary
+old generation, whose movement policy remains open. A stop-the-world
+young-generation collection copies nursery survivors and updates managed
+references before execution resumes.
 
 Interpreter and VM-internal code may use direct managed object references while
 the object is protected by ordinary managed-root rules. A direct address exposed
-outside managed execution requires a pin or stable placement for the complete
-exposure lifetime.
+outside managed execution requires permanent stable placement before exposure
+and lifetime protection, except for the restricted scoped string-access option
+below.
 
 ### Stable GC Participants
 
 Objects that require stable addresses are not outside GC. They remain trace
 sources and targets, may require remembered-set barriers for nursery references,
 and may be collectible by a non-moving policy. Examples include native handle
-storage and pinned or permanently stable backing storage. CPython
+storage, promoted objects, and permanently stable backing storage. CPython
 extension-owned bodies are different: their managed indirection terminates at
 stable `PyObject *` wrappers, as specified in the separate wrapper design.
 
@@ -427,18 +443,61 @@ Some APIs expose raw memory rather than just object identity. Examples include:
 - memoryviews;
 - internal native fast paths that temporarily need a direct storage address.
 
-These cases use explicit storage export and pinning rules:
+Exports use explicit storage export and stable-placement rules. Temporary string
+access through the CloverVM C API may instead use the scoped callback described
+below:
 
 ```text
 object
   -> backing storage
        export_count
-       movable normally, but non-moving or stable while exported
+       permanently non-moving before the address is exposed
 ```
 
-An active export may pin the backing storage or object, allocate it directly in
-stable storage, and prevent resizing until the export is released. Which unit is
-pinned follows the address actually exposed by the C API.
+Before an export exposes an address, the allocation containing that address
+must be promoted to the stable heap or already reside in stable storage. Which
+unit needs stable placement follows the address actually exposed: stabilizing an
+object does not stabilize a separately allocated backing store. An active export
+keeps the exposed allocation alive and prevents resizing, replacement, or other
+operations that would invalidate the address until the export is released.
+
+### CloverVM C API String Access Options
+
+The CloverVM C API may offer two alternatives to exporting a stable pointer for
+string access. These options do not require promotion of the string or its
+backing store merely to access its contents.
+
+**Scoped callback access.** The API roots the string and invokes a native
+callback with a read-only data pointer and byte length inside a
+relocation-exclusion scope. The pointer is valid only during that callback and
+must not escape it. The callback must not re-enter the VM or allocate through
+the VM, including indirectly through other API calls or Python callbacks.
+Native work that cannot re-enter the VM is allowed. The C surface uses a callback
+and caller context; a C++ convenience wrapper may accept a lambda.
+
+Any encoding conversion or other preparation that needs VM allocation finishes
+before entering the scope. The API derives the pointer only after entering the
+scope and re-reading the rooted reference. The allocation remains alive and
+cannot move until the callback returns. Exclusion must prevent relocation by
+other threads as well as collection initiated by the current thread. The runtime
+must enforce the no-re-entry/no-VM-allocation restriction rather than permit
+allocation and silently defer collection. How exclusion and enforcement are
+implemented remains open.
+
+**Query size and copy.** The caller queries the required byte count for a chosen
+representation, allocates its own buffer, and asks the API to copy into that
+buffer with an explicit capacity. No pointer into managed storage escapes the
+operation. The caller owns the copied bytes and may retain them across VM calls
+and collections. The copy operation must check capacity before writing; the
+size query and copy must agree on encoding and whether any terminator is included
+in the required capacity. Embedded NUL bytes must be handled through explicit
+lengths. Exact API signatures and insufficient-capacity reporting remain to be
+specified.
+
+The string handle remains subject to the ordinary active-native-call lifetime
+rules across the size query and copy. Each operation roots any managed state it
+needs across safepoints. An internal copy loop must likewise protect its source
+address from relocation while reading it.
 
 ## CloverVM C API Handles
 
@@ -533,34 +592,58 @@ graph unless a particular stable category defines a different lifetime policy.
 
 ## Pinning Policy
 
-Pinning is required when CloverVM's C API or an internal native operation exposes
-a raw address into an otherwise movable object or backing store. A
-`clover_handle` alone does not pin its target because the handle denotes an
-updateable slot rather than the target address.
+A `clover_handle` alone does not pin its target because the handle denotes an
+updateable slot rather than the target address. When CloverVM's C API, the
+CPython C API, or an internal native operation needs a raw address into an object
+or backing store beyond a relocation-exclusion scope, it must establish
+permanent stable placement before exposing that address. The CloverVM C API
+string callback described above is the restricted temporary-access exception;
+querying size and copying into a caller buffer exposes no managed address.
+There are no pinned objects in the nursery or any other moving space.
 
-The policies are:
+The initial acquisition path is:
 
-- expose raw storage through explicit export objects;
-- count active exports;
-- prevent movement or resizing of exported storage while the export is live;
-- allocate frequently exported storage in a stable storage class if needed;
-- make pin acquisition and release scoped and nestable;
-- keep long-lived pins uncommon and move frequently exported storage into a
-  stable class when that is cheaper.
+1. Publish updateable strong roots for the allocation to be exposed and any
+   managed values needed across the safepoint.
+2. If that allocation is in the nursery, reach a safepoint and run a full minor
+   collection. Promote the requested allocation directly into the stable heap;
+   other nursery survivors follow the ordinary promotion policy. The nursery
+   is fully evacuated and can be reused wholesale.
+3. If the allocation is already in the ordinary old generation, relocate it into
+   the stable heap at a safepoint before exposure. This path must repair all
+   references to it, including incoming heap references; a minor collection's
+   roots and remembered sets alone do not suffice for an old target. The exact
+   mechanism for this old-to-stable relocation remains open.
+4. Complete reference repair before mutators resume. Re-read the updated rooted
+   reference and only then derive and return the raw address. Never retain an
+   address derived before relocation across the safepoint.
 
-Pinning overrides the normal movement policy implied by generation and
-allocation space. A collection must retain a pinned object at its current
-address, while still tracing and updating its outgoing references. The header
-must contain enough state to answer whether the object may move; the precise
-pin-count or flag representation remains open.
+Allocations already in permanently non-moving storage need no relocation.
+CPython extension-owned bodies are allocated in stable storage from the start,
+as specified in the separate wrapper design. Frequently exported managed storage
+may also be allocated directly in the stable heap.
+
+Stable placement persists after export release, so later collections cannot
+invalidate an exposed address by moving the allocation. It does not by itself
+keep the allocation alive or prevent backing-store replacement. Exports must
+therefore retain the exposed allocation, count active exports where needed, and
+prevent resizing or other address-invalidating operations for the promised
+exposure lifetime. Acquisition and release remain scoped and nestable. These
+are export/lifetime rules, not GC movement-pin state.
+
+Stable objects still expose precise trace/update slots. References they hold to
+movable objects are repaired during collection, and stores into the nursery
+obey the remembered-set barrier contract.
 
 ## Open Questions
 
 - What is the transitional and final packed GC header layout?
-- Is pinning represented by an in-header count, an in-header flag with external
-  accounting, or another scheme?
-- How are pinned nursery objects handled when the rest of the nursery is
-  evacuated?
-- Which storage classes support raw exports, and when do they pin versus move
-  to stable storage?
-- What major-collection policy applies to old and stable participants?
+- Should nursery-to-stable promotion always trigger a full minor collection, or
+  can a later optimization safely promote selected allocations before exposure?
+- How is ordinary old-to-stable relocation implemented, including discovery and
+  repair of all incoming references?
+- Which storage classes support raw exports, and when should they allocate
+  directly in stable storage rather than promote on first exposure?
+- What major-collection policy applies to the ordinary old generation, including
+  whether it moves?
+- What non-moving reclamation policy applies to stable participants?
