@@ -282,7 +282,8 @@ or VM allocation. It is not a general replacement for stable placement in
 Limited-API operations that return pointers. Query-and-copy access instead
 exposes no managed address. See
 [String Access Options](generational-copying-gc.md#clovervm-c-api-string-access-options)
-and [Stable Placement and Export Acquisition](generational-copying-gc.md#pinning-policy)
+and [Export Lifetime Rules](generational-copying-gc.md#lifetime-and-address-stability)
+and [Whole-Object Relocation](generational-copying-gc.md#whole-object-stable-relocation)
 for the owning contracts. Relocation-exclusion enforcement, old-to-stable
 reference repair, and stable-heap reclamation remain open there.
 

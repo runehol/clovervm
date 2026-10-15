@@ -5,7 +5,7 @@
 | Document type | Design |
 | Status | Proposed |
 | Implementation | Not started |
-| Scope | Generational moving collection, root and slot rewriting, pinning, stable GC participants, and CloverVM native handles |
+| Scope | Generational moving collection, root and slot rewriting, stable placement and exports, and CloverVM native handles |
 | Owning layers | The memory manager owns collection; object layouts, root publication, and native APIs provide trace/update boundaries |
 | Validated against | `d99f5e99` (2026-08-12) |
 | Supersedes | Earlier non-moving generational mark-sweep direction |
@@ -45,6 +45,11 @@ The proposed CPython Limited API wrapper system is specified separately in
 It is a prospective client of the collector's stable-storage and trace/update
 contracts, not part of the collector itself.
 
+The sections below separate the collector's movement/tracing rules from native
+root publication, stable buffer exports, and unresolved identity choices.
+Stable export shadows are the preferred buffer direction; whole-object stable
+relocation remains a separate option with unresolved old-generation repair.
+
 ## Collector Model
 
 The collector assumed by this proposal is generational, moving, and
@@ -54,6 +59,53 @@ During a collection, mutator threads and native extension execution are stopped
 at safepoints. The collector may copy movable VM objects, update roots, repair
 managed heap references, and trace non-moving participants before mutators
 resume.
+
+## Heap Spaces and Movement Policy
+
+The first policy should be a stop-the-world generational collector:
+
+- young generation for newly allocated movable objects;
+- old generation for objects that survive a minor collection;
+- a separate permanently non-moving stable heap for extension-owned objects
+  and objects or backing storage that must expose stable raw addresses.
+
+The stable heap is separate from the ordinary old generation. Objects may be
+allocated there directly or promoted there before raw-address exposure. Stable
+placement is permanent for the allocation, including after its last export is
+released; stable objects remain collectible and participate in tracing and
+remembered-set policy.
+
+Major collections may collect young, ordinary old, and stable objects. The
+ordinary old-generation policy remains open: old objects may move during major
+collection, or the old generation may use a non-moving policy. Stable-heap
+objects never move under either choice. The exact reclamation policy for stable
+participants remains to be specified. Native handles remain updateable. Raw
+addresses exposed beyond a relocation-exclusion scope require stable storage.
+
+## Object and Storage Categories
+
+### Movable VM Objects
+
+These are ordinary Clover/Python objects used by the interpreter and managed
+code. They start in the moving nursery and normally survive into the ordinary
+old generation, whose movement policy remains open. A stop-the-world
+young-generation collection copies nursery survivors and updates managed
+references before execution resumes.
+
+Interpreter and VM-internal code may use direct managed object references while
+the object is protected by ordinary managed-root rules. A direct address exposed
+outside managed execution requires permanent stable placement before exposure
+and lifetime protection, except for the restricted scoped string-access option
+below.
+
+### Stable GC Participants
+
+Objects that require stable addresses are not outside GC. They remain trace
+sources and targets, may require remembered-set barriers for nursery references,
+and may be collectible by a non-moving policy. Examples include native handle
+storage, promoted objects, and permanently stable backing storage. CPython
+extension-owned bodies are different: their managed indirection terminates at
+stable `PyObject *` wrappers, as specified in the separate wrapper design.
 
 ## Copying Collection Shape
 
@@ -102,59 +154,6 @@ discover object identities:
 Objects in stable storage are not copied by this ordinary evacuation path. They
 are still part of the traced object graph if they can reference or be referenced
 by movable VM objects.
-
-### Python Object Identity
-
-`id(obj)` must remain constant throughout the object's lifetime and be unique
-among simultaneously live objects, including across nursery evacuation,
-promotion to stable storage, and any old-generation relocation. Relocation must
-not be observable as a change in `id(obj)`. Returning the current memory address
-is therefore insufficient for movable objects. The identity representation and
-how it survives relocation remain open; this requirement does not select an
-incoming-reference index or general reference indirection scheme. See the
-[Python identity contract](https://docs.python.org/3/library/functions.html#id).
-
-Relocation must also preserve identity-derived hashes used by containers. The
-current NaN hash uses the object address and needs a relocation-safe policy
-before objects can move. One open alternative is PyPy-style NaN bit-pattern
-hashing; finite-float hashing must still agree with equal integers. Adopting
-NaN bit-pattern hashing alone would let distinct NaNs with identical bits share
-a hash, potentially creating collision-heavy dictionaries. PyPy also treats
-builtin floats with matching bit patterns as identical under `is`, changing
-`id()` and container behavior. Whether to change hashing alone, adopt those
-identity semantics too, or preserve per-object identity hashing is undecided.
-These are separate decisions; no float identity change is implied here. See
-[PyPy's float identity semantics](https://doc.pypy.org/en/latest/cpython_differences.html#object-identity-of-primitive-values-is-and-id).
-
-One option to consider is PyPy's `incminimark` shadow approach. When an identity
-or identity hash is requested for a nursery object, the collector reserves a
-same-sized destination outside the nursery and records it as that object's
-shadow. The reported identity uses the reserved destination's address; the
-object stays in the nursery until a later minor collection copies it into that
-destination. This avoids forcing immediate evacuation just to obtain an
-identity, and ordinary references still point directly to the object rather
-than through the shadow. See
-[PyPy's shadow and identity implementation](https://github.com/pypy/pypy/blob/main/rpython/memory/gc/incminimark.py#L2694-L2724).
-
-This option relies on objects outside the nursery remaining non-moving, so the
-reserved address remains valid as an identity after promotion. Clover's
-old-generation movement policy is still open, and even non-moving ordinary old
-storage would not by itself cover a later old-to-stable relocation. Reserving
-permanently stable destinations or preserving identity independently of later
-addresses would require further design. The shadow approach is an alternative
-to evaluate, not the selected identity mechanism or an implementation plan.
-
-The export-shadow direction below suggests a related `id()` option: associate
-an object with a permanently stable shadow, use the shadow address as its
-identity, and leave ordinary references pointing to the original until a
-collection can repair them together. Identity lookup could reuse a compatible
-export shadow rather than introduce general reference indirection. If identity
-was observed before export acquisition, that existing identity must not change;
-export and identity shadows therefore need a coherent association, not two
-independently chosen addresses. Reservation size/layout, lookup repair after
-movement, lifetime/reclamation, and whether these shadows can actually be shared
-remain open. Reserving a permanently stable identity destination could avoid
-depending on non-moving ordinary old storage, but is not yet a selected scheme.
 
 ## Heap Object Metadata
 
@@ -231,38 +230,7 @@ Forwarding state is separate from generation state. `Forwarded` is a temporary
 evacuation state that changes how from-space memory is interpreted.
 `OldRemembered` is a persistent generational barrier state.
 
-## Stable JIT Metadata and Compiled Constants
-
-Shapes and validity cells are compiler-facing identity metadata and are
-allocated from dedicated non-moving stable pools. Generated machine code may
-embed their addresses directly. Every compiled code object also records those
-addresses in a stable-metadata array; the collector treats that array as the
-authoritative lifetime and tracing boundary for metadata referenced by code.
-Pool entries may be reclaimed and their addresses reused only after no runtime
-object, IC, compilation session, or executable compiled code references them.
-
-Managed Python constants remain movable. Each compiled code object owns a
-separate constant array whose slots have stable addresses but whose `Value`
-contents are traced and rewritten by the collector. Machine code reaches these
-slots through PC-relative loads and must not embed the current managed-object
-pointer as an immediate. Collection therefore updates constant slots without
-decoding, rewriting, or making instruction pages writable.
-
-The JIT backend records both kinds of reference during emission, and compiled
-code verification checks that every embedded stable-metadata pointer is listed
-and every managed constant use names a traced slot. Compiled code and both
-arrays remain alive as one lifecycle unit. Stable-pool entries that themselves
-own managed references participate in ordinary precise tracing even though the
-entries are not relocated.
-
-## Generations
-
-The first policy should be a stop-the-world generational collector:
-
-- young generation for newly allocated movable objects;
-- old generation for objects that survive a minor collection;
-- a separate permanently non-moving stable heap for extension-owned objects
-  and objects or backing storage that must expose stable raw addresses.
+## Generational Barriers and Minor Collection
 
 Young collections evacuate live young objects and update references from roots
 and remembered old objects. They must not scan the entire old generation.
@@ -271,10 +239,11 @@ collector itself is stop-the-world.
 
 The simple first policy is immediate promotion: every live young object that
 survives a minor collection is copied out of the nursery and becomes old. The
-normal destination is the ordinary old generation; allocations requested for
-raw-address exposure go directly to the stable heap and are treated as old for
-generational barriers. Dead young objects are not copied. After the minor collection, the nursery can be
-reused wholesale.
+normal destination is the ordinary old generation; objects selected for direct
+stable promotion go to the stable heap and are treated as old for generational
+barriers. Export shadows can instead provide stable data without relocating the
+original. Dead young objects are not copied. After the minor collection, the
+nursery can be reused wholesale.
 
 Minor collection should evacuate the full young generation reachable from roots
 and remembered old objects. Promoted objects should normally end the collection
@@ -330,82 +299,123 @@ Construction paths, young-owner stores, immediate values, and caller-proven
 old-child stores may use specialized no-op paths, but the proof must be local to
 the store path and must not hide a possible old-to-young edge.
 
-### Write Barrier Implementation Lessons
+## Cross-Space References
 
-A minimal remembered-set experiment showed that the barrier is not free, but it
-is not a deal breaker if the hot-path entry points are shaped carefully.
-
-The correctness policy can be shared:
+CloverVM C API handle to movable object:
 
 ```text
-old owner stores young child -> remember old owner
+clover_handle -> VM-owned handle -> movable VM object
 ```
 
-The hot implementation should not force every caller through one generic helper.
-Different stores know different facts, and the barrier API should expose those
-facts so irrelevant checks disappear from common paths:
+Live CloverVM C API handles are scanned as native roots. If a target moves, the
+handle's value slot is updated. The handle itself does not need to be canonical
+for the target object.
 
-- a `Value` store should reject non-refcounted immediates before computing the
-  owner or checking generation state;
-- a caller that already proved the child is refcounted should use a
-  known-refcounted entry point and skip repeated tag/pointer validation;
-- a caller that already has `ThreadState *` should pass it to the barrier;
-- a caller without `ThreadState *` may lazily call `active_thread()`, but only
-  after proving that the store really needs to record an old-to-young edge;
-- `ValueArray<Value>` should use a single-cell fast path;
-- composite value arrays, such as dictionary entries, should scan their value
-  cells, compute the backing owner only if at least one cell is refcounted, and
-  then reuse the same owner for all remembered checks.
-
-This matters for dense container writes. A list item benchmark that writes only
-small integers should not pay for remembered-set insertion or thread-local state
-lookup. Profiling confirmed that the hot cost was not TLS lookup: the benchmark
-never reached the actual record path because the stored values were immediates.
-The cost came from entering a generic element barrier and doing owner/backing
-and generation-shaped work before rejecting the immediate value.
-
-Factoring the helper so `ValueArray<Value>` rejects non-refcounted values first
-recovered a meaningful part of the regression, but the list item write path
-still remained visibly slower than the no-barrier baseline. The lesson is that
-shared barrier tests and shared correctness policy are good; a single shared
-hot-path implementation is not. Barrier entry points should be small and
-specialized by caller knowledge, with the generic helper reserved for callers
-that really do not know more.
-
-Module globals are the first likely refinement. If module slot storage can keep
-a cheap remembered bit close to each slot, then a global write of a young value
-into an old module should record the exact slot instead of remembering the whole
-module object:
+Stable participant to movable object:
 
 ```text
-remembered module slot entry:
-  module object
-  slot index
+stable object field -> movable VM object
 ```
 
-The per-slot remembered bit is the duplicate-entry guard for that slot. Minor GC
-can scan only the recorded module slots, update copied young targets, and clear
-the slot bit when the slot no longer contains a young reference. This keeps
-module global churn from forcing every minor GC to rescan all module storage.
+Stable objects expose updateable trace slots so the collector can discover and
+repair references into moving spaces. Writes from stable objects into the
+nursery obey the remembered-set/barrier policy.
 
-That refinement should not be part of the first collector. The initial collector
-should remember whole module objects or use a dirty-module list, and it should
-not make modules permanent roots or scan all modules on every minor collection.
-More precise module-slot entries should wait until profiling shows module
-scanning is a material minor-GC cost.
+Movable object to stable object:
 
-The stable heap is separate from the ordinary old generation. Objects may be
-allocated there directly or promoted there before raw-address exposure. Stable
-placement is permanent for the allocation, including after its last export is
-released; stable objects remain collectible and participate in tracing and
-remembered-set policy.
+```text
+movable object field -> stable object
+```
 
-Major collections may collect young, ordinary old, and stable objects. The
-ordinary old-generation policy remains open: old objects may move during major
-collection, or the old generation may use a non-moving policy. Stable-heap
-objects never move under either choice. The exact reclamation policy for stable
-participants remains to be specified. Native handles remain updateable. Raw
-addresses exposed beyond a relocation-exclusion scope require stable storage.
+Managed tracing must understand stable objects as heap references. Stable
+objects may be non-moving, but their liveness is still part of the object graph
+unless they are immortal or otherwise explicitly outside collection.
+
+Cycles that cross movable and stable participants remain part of one tracing
+graph unless a particular stable category defines a different lifetime policy.
+
+## Python Object Identity
+
+`id(obj)` must remain constant throughout the object's lifetime and be unique
+among simultaneously live objects, including across nursery evacuation,
+promotion to stable storage, and any old-generation relocation. Relocation must
+not be observable as a change in `id(obj)`. Returning the current memory address
+is therefore insufficient for movable objects. The identity representation and
+how it survives relocation remain open; this requirement does not select an
+incoming-reference index or general reference indirection scheme. See the
+[Python identity contract](https://docs.python.org/3/library/functions.html#id).
+
+### Hashing and Float Identity Decision
+
+Relocation must also preserve identity-derived hashes used by containers. The
+current NaN hash uses the object address and needs a relocation-safe policy
+before objects can move. One open alternative is PyPy-style NaN bit-pattern
+hashing; finite-float hashing must still agree with equal integers. Adopting
+NaN bit-pattern hashing alone would let distinct NaNs with identical bits share
+a hash, potentially creating collision-heavy dictionaries. PyPy also treats
+builtin floats with matching bit patterns as identical under `is`, changing
+`id()` and container behavior. Whether to change hashing alone, adopt those
+identity semantics too, or preserve per-object identity hashing is undecided.
+These are separate decisions; no float identity change is implied here. See
+[PyPy's float identity semantics](https://doc.pypy.org/en/latest/cpython_differences.html#object-identity-of-primitive-values-is-and-id).
+
+### PyPy Shadow Reservation Option
+
+One option to consider is PyPy's `incminimark` shadow approach. When an identity
+or identity hash is requested for a nursery object, the collector reserves a
+same-sized destination outside the nursery and records it as that object's
+shadow. The reported identity uses the reserved destination's address; the
+object stays in the nursery until a later minor collection copies it into that
+destination. This avoids forcing immediate evacuation just to obtain an
+identity, and ordinary references still point directly to the object rather
+than through the shadow. See
+[PyPy's shadow and identity implementation](https://github.com/pypy/pypy/blob/main/rpython/memory/gc/incminimark.py#L2694-L2724).
+
+This option relies on objects outside the nursery remaining non-moving, so the
+reserved address remains valid as an identity after promotion. Clover's
+old-generation movement policy is still open, and even non-moving ordinary old
+storage would not by itself cover a later old-to-stable relocation. Reserving
+permanently stable destinations or preserving identity independently of later
+addresses would require further design. The shadow approach is an alternative
+to evaluate, not the selected identity mechanism or an implementation plan.
+
+### Sharing Identity and Export Shadows
+
+The export-shadow direction below suggests a related `id()` option: associate
+an object with a permanently stable shadow, use the shadow address as its
+identity, and leave ordinary references pointing to the original until a
+collection can repair them together. Identity lookup could reuse a compatible
+export shadow rather than introduce general reference indirection. If identity
+was observed before export acquisition, that existing identity must not change;
+export and identity shadows therefore need a coherent association, not two
+independently chosen addresses. Reservation size/layout, lookup repair after
+movement, lifetime/reclamation, and whether these shadows can actually be shared
+remain open. Reserving a permanently stable identity destination could avoid
+depending on non-moving ordinary old storage, but is not yet a selected scheme.
+
+## Stable JIT Metadata and Compiled Constants
+
+Shapes and validity cells are compiler-facing identity metadata and are
+allocated from dedicated non-moving stable pools. Generated machine code may
+embed their addresses directly. Every compiled code object also records those
+addresses in a stable-metadata array; the collector treats that array as the
+authoritative lifetime and tracing boundary for metadata referenced by code.
+Pool entries may be reclaimed and their addresses reused only after no runtime
+object, IC, compilation session, or executable compiled code references them.
+
+Managed Python constants remain movable. Each compiled code object owns a
+separate constant array whose slots have stable addresses but whose `Value`
+contents are traced and rewritten by the collector. Machine code reaches these
+slots through PC-relative loads and must not embed the current managed-object
+pointer as an immediate. Collection therefore updates constant slots without
+decoding, rewriting, or making instruction pages writable.
+
+The JIT backend records both kinds of reference during emission, and compiled
+code verification checks that every embedded stable-metadata pointer is listed
+and every managed constant use names a traced slot. Compiled code and both
+arrays remain alive as one lifecycle unit. Stable-pool entries that themselves
+own managed references participate in ordinary precise tracing even though the
+entries are not relocated.
 
 ## Native API Layers
 
@@ -458,6 +468,62 @@ Ordinary `clover_handle` values are transitory handles, valid only for the
 active API entry that produced or received them. Persistent native roots are
 explicitly deferred and are not specified by this design.
 
+### CloverVM C API Handle Storage
+
+The compile-time-switchable representation and storage design is specified in
+[Switchable Indirect Native Handles](indirect-native-handles.md). The public
+`clover_handle` remains an opaque machine word in both modes.
+
+With indirect handles enabled, a handle is internally a pointer to a rooted
+`Value` slot. Incoming arguments use their existing managed frame slots. Values
+created through the C API use fixed storage in that frame and then stable,
+managed `HandleChunk` objects linked through the final cell of each chunk. The
+collector updates the slot when its target moves; the handle pointer itself
+remains unchanged.
+
+Transitory `clover_handle` values are owned by the active native call and
+`clover_context`. Native code must not retain them in globals, module state,
+native heap allocations, callbacks, or any other storage that outlives that
+call. A future persistent-root API will be designed separately when an existing
+native-module use requires it.
+
+```text
+clover_handle
+  -> rooted Value slot
+       storage -> managed native frame or stable managed HandleChunk
+       value -> movable VM object or immediate Value
+       lifetime -> active native call
+```
+
+Every CloverVM C API function resolves the opaque handle and then reads or
+updates its value slot:
+
+```text
+clover_* API(ctx, handle)
+  slot = resolve_handle(handle)
+  read or update *slot
+```
+
+A valid active `clover_context *` and handles produced for that context are API
+preconditions. Null, fabricated, foreign, stale, or otherwise invalid handles
+are extension misuse; runtime validation is not part of the contract.
+
+When a CloverVM C API operation stores a value into VM-owned storage, it stores
+the underlying managed value, not the `clover_handle` itself. For example, a
+future `clover_list_set_item(ctx, list, index, item)` would resolve `item`
+through its handle and then perform a normal managed list store
+with the collector's write barrier. The list would not retain the transitory
+handle, and the native extension could not keep using `item` after the call
+returns.
+
+The same object exposed twice may receive two distinct `clover_handle` values.
+That is allowed unless a specific CloverVM C API function documents identity
+semantics. Extension code must use API operations for equality, hashing, and
+object behavior rather than comparing handle pointer values.
+
+Native code must not rely on transitory handles surviving after the current API
+entry returns. Persistent native roots remain deferred.
+
 ### Prospective CPython Limited API
 
 The collector must support the following requirements without owning the full
@@ -476,32 +542,7 @@ The wrapper ABI, canonical identity table, native refcount mechanics, and call
 adapters live in
 [CPython Limited API Stable Wrappers](cpython-limited-api-stable-wrappers.md).
 
-## Object And Storage Categories
-
-### Movable VM Objects
-
-These are ordinary Clover/Python objects used by the interpreter and managed
-code. They start in the moving nursery and normally survive into the ordinary
-old generation, whose movement policy remains open. A stop-the-world
-young-generation collection copies nursery survivors and updates managed
-references before execution resumes.
-
-Interpreter and VM-internal code may use direct managed object references while
-the object is protected by ordinary managed-root rules. A direct address exposed
-outside managed execution requires permanent stable placement before exposure
-and lifetime protection, except for the restricted scoped string-access option
-below.
-
-### Stable GC Participants
-
-Objects that require stable addresses are not outside GC. They remain trace
-sources and targets, may require remembered-set barriers for nursery references,
-and may be collectible by a non-moving policy. Examples include native handle
-storage, promoted objects, and permanently stable backing storage. CPython
-extension-owned bodies are different: their managed indirection terminates at
-stable `PyObject *` wrappers, as specified in the separate wrapper design.
-
-### Exported Storage
+## Stable Buffer Exports
 
 Some APIs expose raw memory rather than just object identity. Examples include:
 
@@ -529,6 +570,30 @@ not stabilize a separately allocated backing store. An active export keeps the
 exposed allocation alive and prevents operations that would invalidate the
 address until the export is released.
 
+### Lifetime and Address Stability
+
+A `clover_handle` alone does not pin its target because the handle denotes an
+updateable slot rather than the target address. When CloverVM's C API, the
+CPython C API, or an internal native operation needs a raw address into an object
+or backing store beyond a relocation-exclusion scope, it must establish
+permanent stable placement before exposing that address. The CloverVM C API
+string callback described below is the restricted temporary-access exception;
+querying size and copying into a caller buffer exposes no managed address.
+There are no pinned objects in the nursery or any other moving space.
+
+Stable placement persists after export release, so later collections cannot
+invalidate an exposed address by moving the allocation. It does not by itself
+keep the allocation alive or prevent backing-store replacement. Exports must
+therefore retain the exposed allocation, count active exports where needed, and
+prevent resizing or other address-invalidating operations for the promised
+exposure lifetime. Acquisition and release remain scoped and nestable. These
+are export/lifetime rules, not GC movement-pin state.
+
+Stable shadows and backing stores that contain managed references expose
+precise trace/update slots. Their references into moving spaces are repaired
+during collection, and nursery references obey the remembered-set barrier
+contract.
+
 ### Preferred Buffer Export Direction: Stable Shadows and Backing Stores
 
 For immutable inline data, create or reuse a stable shadow containing a copy of
@@ -540,10 +605,12 @@ reference repair. This works for nursery and ordinary old originals alike.
 Only immutable contents may be duplicated this way; copying an object's mutable
 attributes or metadata does not make those copies authoritative.
 
-At a later collection that can repair all aliases, the shadow might become the
-canonical destination. That transition is optional and must preserve any
-previously observed identity and the existing exported address. A minor
-collection alone cannot repair arbitrary incoming references to an old original.
+A data-only shadow is not automatically a valid full object destination. Only
+a compatible full allocation with current object metadata could become the
+canonical destination at a later collection that can repair all aliases. That
+transition is optional and must preserve any previously observed identity and
+the existing exported address. A minor collection alone cannot repair arbitrary
+incoming references to an old original.
 Export lookup must remain valid when the original moves; its metadata must not
 retain dead originals forever. Exports retain the stable shadow for their
 promised lifetime. The lookup and reclamation mechanisms remain open.
@@ -607,107 +674,7 @@ rules across the size query and copy. Each operation roots any managed state it
 needs across safepoints. An internal copy loop must likewise protect its source
 address from relocation while reading it.
 
-## CloverVM C API Handles
-
-The compile-time-switchable representation and storage design is specified in
-[Switchable Indirect Native Handles](indirect-native-handles.md). The public
-`clover_handle` remains an opaque machine word in both modes.
-
-With indirect handles enabled, a handle is internally a pointer to a rooted
-`Value` slot. Incoming arguments use their existing managed frame slots. Values
-created through the C API use fixed storage in that frame and then stable,
-managed `HandleChunk` objects linked through the final cell of each chunk. The
-collector updates the slot when its target moves; the handle pointer itself
-remains unchanged.
-
-Transitory `clover_handle` values are owned by the active native call and
-`clover_context`. Native code must not retain them in globals, module state,
-native heap allocations, callbacks, or any other storage that outlives that
-call. A future persistent-root API will be designed separately when an existing
-native-module use requires it.
-
-```text
-clover_handle
-  -> rooted Value slot
-       storage -> managed native frame or stable managed HandleChunk
-       value -> movable VM object or immediate Value
-       lifetime -> active native call
-```
-
-Every CloverVM C API function resolves the opaque handle and then reads or
-updates its value slot:
-
-```text
-clover_* API(ctx, handle)
-  slot = resolve_handle(handle)
-  read or update *slot
-```
-
-A valid active `clover_context *` and handles produced for that context are API
-preconditions. Null, fabricated, foreign, stale, or otherwise invalid handles
-are extension misuse; runtime validation is not part of the contract.
-
-When a CloverVM C API operation stores a value into VM-owned storage, it stores
-the underlying managed value, not the `clover_handle` itself. For example, a
-future `clover_list_set_item(ctx, list, index, item)` would resolve `item`
-through its handle and then perform a normal managed list store
-with the collector's write barrier. The list would not retain the transitory
-handle, and the native extension could not keep using `item` after the call
-returns.
-
-The same object exposed twice may receive two distinct `clover_handle` values.
-That is allowed unless a specific CloverVM C API function documents identity
-semantics. Extension code must use API operations for equality, hashing, and
-object behavior rather than comparing handle pointer values.
-
-Native code must not rely on transitory handles surviving after the current API
-entry returns. Persistent native roots remain deferred.
-
-## Cross-Space References
-
-CloverVM C API handle to movable object:
-
-```text
-clover_handle -> VM-owned handle -> movable VM object
-```
-
-Live CloverVM C API handles are scanned as native roots. If a target moves, the
-handle's value slot is updated. The handle itself does not need to be canonical
-for the target object.
-
-Stable participant to movable object:
-
-```text
-stable object field -> movable VM object
-```
-
-Stable objects expose updateable trace slots so the collector can discover and
-repair references into moving spaces. Writes from stable objects into the
-nursery obey the remembered-set/barrier policy.
-
-Movable object to stable object:
-
-```text
-movable object field -> stable object
-```
-
-Managed tracing must understand stable objects as heap references. Stable
-objects may be non-moving, but their liveness is still part of the object graph
-unless they are immortal or otherwise explicitly outside collection.
-
-Cycles that cross movable and stable participants remain part of one tracing
-graph unless a particular stable category defines a different lifetime policy.
-
-## Pinning Policy
-
-A `clover_handle` alone does not pin its target because the handle denotes an
-updateable slot rather than the target address. When CloverVM's C API, the
-CPython C API, or an internal native operation needs a raw address into an object
-or backing store beyond a relocation-exclusion scope, it must establish
-permanent stable placement before exposing that address. The CloverVM C API
-string callback described above is the restricted temporary-access exception;
-querying size and copying into a caller buffer exposes no managed address.
-There are no pinned objects in the nursery or any other moving space.
+### Whole-Object Stable Relocation
 
 The preferred buffer acquisition paths are the stable-shadow and backing-store
 paths above. Whole-object relocation is a separate option for APIs that truly
@@ -719,10 +686,10 @@ expose compatible buffer data. If used, its acquisition path is:
 2. If that allocation is in the nursery, reach a safepoint and run a full minor
    collection. Establish its stable destination before root scanning so any
    first encounter selects that destination. Promote it directly into the stable
-   heap and enqueue it for stable-promotion scanning; other nursery survivors follow
-   the ordinary promotion policy. Drain both that queue and the Cheney scan to
-   closure, repairing their outgoing references. The nursery is fully evacuated
-   and can be reused wholesale only after that work completes.
+   heap and enqueue it for stable-promotion scanning; other nursery survivors
+   follow the ordinary promotion policy. Drain both that queue and the Cheney
+   scan to closure, repairing their outgoing references. The nursery is fully
+   evacuated and can be reused wholesale only after that work completes.
 3. If the allocation is already in the ordinary old generation, relocate it into
    the stable heap at a safepoint before exposure. This path must repair all
    references to it, including incoming heap references; a minor collection's
@@ -737,17 +704,69 @@ CPython extension-owned bodies are allocated in stable storage from the start,
 as specified in the separate wrapper design. Frequently exported managed storage
 may also be allocated directly in the stable heap.
 
-Stable placement persists after export release, so later collections cannot
-invalidate an exposed address by moving the allocation. It does not by itself
-keep the allocation alive or prevent backing-store replacement. Exports must
-therefore retain the exposed allocation, count active exports where needed, and
-prevent resizing or other address-invalidating operations for the promised
-exposure lifetime. Acquisition and release remain scoped and nestable. These
-are export/lifetime rules, not GC movement-pin state.
+## Write Barrier Implementation Lessons
 
-Stable objects still expose precise trace/update slots. References they hold to
-movable objects are repaired during collection, and stores into the nursery
-obey the remembered-set barrier contract.
+A minimal remembered-set experiment showed that the barrier is not free, but it
+is not a deal breaker if the hot-path entry points are shaped carefully.
+
+The correctness policy can be shared:
+
+```text
+old owner stores young child -> remember old owner
+```
+
+The hot implementation should not force every caller through one generic helper.
+Different stores know different facts, and the barrier API should expose those
+facts so irrelevant checks disappear from common paths:
+
+- a `Value` store should reject non-refcounted immediates before computing the
+  owner or checking generation state;
+- a caller that already proved the child is refcounted should use a
+  known-refcounted entry point and skip repeated tag/pointer validation;
+- a caller that already has `ThreadState *` should pass it to the barrier;
+- a caller without `ThreadState *` may lazily call `active_thread()`, but only
+  after proving that the store really needs to record an old-to-young edge;
+- `ValueArray<Value>` should use a single-cell fast path;
+- composite value arrays, such as dictionary entries, should scan their value
+  cells, compute the backing owner only if at least one cell is refcounted, and
+  then reuse the same owner for all remembered checks.
+
+This matters for dense container writes. A list item benchmark that writes only
+small integers should not pay for remembered-set insertion or thread-local state
+lookup. Profiling confirmed that the hot cost was not TLS lookup: the benchmark
+never reached the actual record path because the stored values were immediates.
+The cost came from entering a generic element barrier and doing owner/backing
+and generation-shaped work before rejecting the immediate value.
+
+Factoring the helper so `ValueArray<Value>` rejects non-refcounted values first
+recovered a meaningful part of the regression, but the list item write path
+still remained visibly slower than the no-barrier baseline. The lesson is that
+shared barrier tests and shared correctness policy are good; a single shared
+hot-path implementation is not. Barrier entry points should be small and
+specialized by caller knowledge, with the generic helper reserved for callers
+that really do not know more.
+
+Module globals are the first likely refinement. If module slot storage can keep
+a cheap remembered bit close to each slot, then a global write of a young value
+into an old module should record the exact slot instead of remembering the whole
+module object:
+
+```text
+remembered module slot entry:
+  module object
+  slot index
+```
+
+The per-slot remembered bit is the duplicate-entry guard for that slot. Minor GC
+can scan only the recorded module slots, update copied young targets, and clear
+the slot bit when the slot no longer contains a young reference. This keeps
+module global churn from forcing every minor GC to rescan all module storage.
+
+That refinement should not be part of the first collector. The initial collector
+should remember whole module objects or use a dirty-module list, and it should
+not make modules permanent roots or scan all modules on every minor collection.
+More precise module-slot entries should wait until profiling shows module
+scanning is a material minor-GC cost.
 
 ## Open Questions
 
