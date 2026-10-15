@@ -252,12 +252,39 @@ The supported cycle semantics are therefore constrained by the Limited API and
 wrapper-refcount contract; the collector must not assume it can discover
 otherwise opaque extension-owned fields.
 
-## Relationship To Pinning
+## Raw Addresses and Stable Placement
 
-Pinning is not the mechanism that makes a Limited-API `PyObject *` stable. The
-stable wrapper supplies C-visible pointer identity while its managed target may
-move. Pinning remains relevant when an API exposes a raw address into an object
-body or backing store rather than an opaque `PyObject *`.
+The stable wrapper supplies C-visible `PyObject *` identity while its managed
+target may move. That indirection does not make a raw address into the target's
+body or backing store stable.
+
+Raw-address exposure beyond a relocation-exclusion scope requires permanent
+stable placement of the allocation containing the address before exposure,
+plus lifetime protection and prevention of address-invalidating operations for
+the promised exposure lifetime. Stabilizing an object does not stabilize a
+separately allocated backing store. Releasing an export does not return the
+allocation to a moving space; it also does not make stable placement a lifetime
+root. Objects are not pinned in place within moving generations.
+
+Stable exported storage may be an immutable data shadow rather than the
+original managed allocation. Mutable out-of-line storage may instead transfer
+to stable storage at a safepoint when all backing aliases can be repaired.
+Neither path inherently requires a tracing collection; the owning
+[Buffer Export Direction](generational-copying-gc.md#preferred-buffer-export-direction-stable-shadows-and-backing-stores)
+keeps the shadow lookup, identity association, and alias contracts open. A data
+shadow does not replace the canonical `PyObject *` wrapper or change which
+managed object it denotes.
+
+The collector design defines a restricted scoped string-access alternative for
+the CloverVM C API: a rooted, read-only pointer is valid only during a native
+callback under relocation exclusion, cannot escape, and permits no VM re-entry
+or VM allocation. It is not a general replacement for stable placement in
+Limited-API operations that return pointers. Query-and-copy access instead
+exposes no managed address. See
+[String Access Options](generational-copying-gc.md#clovervm-c-api-string-access-options)
+and [Stable Placement and Export Acquisition](generational-copying-gc.md#pinning-policy)
+for the owning contracts. Relocation-exclusion enforcement, old-to-stable
+reference repair, and stable-heap reclamation remain open there.
 
 ## Open Questions
 

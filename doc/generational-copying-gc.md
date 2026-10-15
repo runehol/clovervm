@@ -73,8 +73,21 @@ traversal. Roots and remembered old references copy their young targets into
 to-space and append those copied objects to the evacuation worklist. The
 collector then advances a scan frontier through to-space: scanning each copied
 object's outgoing references, copying any not-yet-forwarded collected objects,
-and appending those copies after the frontier. The worklist is complete when the
-scan frontier catches up with the allocation frontier.
+and appending those copies after the frontier.
+
+Objects evacuated directly into the stable heap are outside that to-space
+frontier. On first evacuation, install their forwarding target and append the
+stable destination to a separate stable-promotion scan queue. Scan its precise
+outgoing slots using the same evacuation and reference-repair rules as the
+Cheney scan. A later encounter with the forwarded source repairs the incoming
+slot without copying or enqueueing the object again.
+
+Either scan can discover work for either destination. Continue draining both
+until the to-space scan frontier reaches its allocation frontier and the
+stable-promotion scan queue is empty. Only then is evacuation closure complete;
+finish reference repair before reclaiming the nursery or resuming mutators.
+In particular, a nursery child reachable only through a newly stable object
+must be evacuated and its slot in that stable object rewritten.
 
 The collector must be able to enumerate and update precise slots, not just
 discover object identities:
@@ -89,6 +102,47 @@ discover object identities:
 Objects in stable storage are not copied by this ordinary evacuation path. They
 are still part of the traced object graph if they can reference or be referenced
 by movable VM objects.
+
+### Python Object Identity
+
+`id(obj)` must remain constant throughout the object's lifetime and be unique
+among simultaneously live objects, including across nursery evacuation,
+promotion to stable storage, and any old-generation relocation. Relocation must
+not be observable as a change in `id(obj)`. Returning the current memory address
+is therefore insufficient for movable objects. The identity representation and
+how it survives relocation remain open; this requirement does not select an
+incoming-reference index or general reference indirection scheme. See the
+[Python identity contract](https://docs.python.org/3/library/functions.html#id).
+
+One option to consider is PyPy's `incminimark` shadow approach. When an identity
+or identity hash is requested for a nursery object, the collector reserves a
+same-sized destination outside the nursery and records it as that object's
+shadow. The reported identity uses the reserved destination's address; the
+object stays in the nursery until a later minor collection copies it into that
+destination. This avoids forcing immediate evacuation just to obtain an
+identity, and ordinary references still point directly to the object rather
+than through the shadow. See
+[PyPy's shadow and identity implementation](https://github.com/pypy/pypy/blob/main/rpython/memory/gc/incminimark.py#L2694-L2724).
+
+This option relies on objects outside the nursery remaining non-moving, so the
+reserved address remains valid as an identity after promotion. Clover's
+old-generation movement policy is still open, and even non-moving ordinary old
+storage would not by itself cover a later old-to-stable relocation. Reserving
+permanently stable destinations or preserving identity independently of later
+addresses would require further design. The shadow approach is an alternative
+to evaluate, not the selected identity mechanism or an implementation plan.
+
+The export-shadow direction below suggests a related `id()` option: associate
+an object with a permanently stable shadow, use the shadow address as its
+identity, and leave ordinary references pointing to the original until a
+collection can repair them together. Identity lookup could reuse a compatible
+export shadow rather than introduce general reference indirection. If identity
+was observed before export acquisition, that existing identity must not change;
+export and identity shadows therefore need a coherent association, not two
+independently chosen addresses. Reservation size/layout, lookup repair after
+movement, lifetime/reclamation, and whether these shadows can actually be shared
+remain open. Reserving a permanently stable identity destination could avoid
+depending on non-moving ordinary old storage, but is not yet a selected scheme.
 
 ## Heap Object Metadata
 
@@ -142,7 +196,9 @@ The grey/black distinction can be represented by the evacuation scan queue and
 its scan frontier rather than by header bits. With the Cheney scan, copied
 objects before the scan frontier are black, copied objects between the scan
 frontier and the to-space allocation frontier are grey, and not-yet-forwarded
-objects in from-space are white.
+objects in from-space are white. For direct stable promotions, pending entries
+in the stable-promotion scan queue are grey and completed entries are black;
+their scan state cannot be inferred from the ordinary to-space frontier.
 
 The first implementation should use object-level generation state in the header:
 
@@ -454,12 +510,52 @@ object
        permanently non-moving before the address is exposed
 ```
 
-Before an export exposes an address, the allocation containing that address
-must be promoted to the stable heap or already reside in stable storage. Which
-unit needs stable placement follows the address actually exposed: stabilizing an
-object does not stabilize a separately allocated backing store. An active export
-keeps the exposed allocation alive and prevents resizing, replacement, or other
-operations that would invalidate the address until the export is released.
+Before an export exposes an address, the allocation actually supplying that
+address must reside in stable storage. It need not be the original managed
+object: an immutable export may use a stable shadow. Stabilizing an object does
+not stabilize a separately allocated backing store. An active export keeps the
+exposed allocation alive and prevents operations that would invalidate the
+address until the export is released.
+
+### Preferred Buffer Export Direction: Stable Shadows and Backing Stores
+
+For immutable inline data, create or reuse a stable shadow containing a copy of
+the exported contents. Keep ordinary managed references pointing to the original
+object and use an identity-style lookup to find its shadow for subsequent
+exports. The copy is not published as a second canonical Python object, so
+acquiring an export does not split Python identity or require immediate incoming
+reference repair. This works for nursery and ordinary old originals alike.
+Only immutable contents may be duplicated this way; copying an object's mutable
+attributes or metadata does not make those copies authoritative.
+
+At a later collection that can repair all aliases, the shadow might become the
+canonical destination. That transition is optional and must preserve any
+previously observed identity and the existing exported address. A minor
+collection alone cannot repair arbitrary incoming references to an old original.
+Export lookup must remain valid when the original moves; its metadata must not
+retain dead originals forever. Exports retain the stable shadow for their
+promised lifetime. The lookup and reclamation mechanisms remain open.
+
+Strings and bytes illustrate immutable byte storage. Tuple-like inline storage
+contains managed references: any live shadow slots must participate in tracing,
+reference repair, and remembered-set policy even though the sequence itself is
+immutable. This is an internal storage distinction, not a claim that tuples
+implement the Python buffer protocol.
+
+For mutable out-of-line storage, keep one authoritative backing allocation.
+At a safepoint, copy/move it into stable storage and update the owner's backing
+reference and every other accounted-for alias before resuming access. This path
+is valid only when all such aliases are known and can be repaired; outstanding
+raw pointers cannot silently be invalidated. It preserves the managed owner's
+identity and needs no tracing collection merely to perform that transfer.
+Exports prevent subsequent resizing/replacement for their lifetime. Exact alias
+accounting and synchronization remain storage-specific design work.
+
+Neither preferred acquisition path inherently forces a minor or whole-heap
+collection. Allocation may still trigger collection under normal policy, and
+mutable transfer still pays safepoint coordination and copying costs. The
+shadow/lookup, ownership, and storage contracts need concrete design before
+implementation.
 
 ### CloverVM C API String Access Options
 
@@ -601,14 +697,20 @@ string callback described above is the restricted temporary-access exception;
 querying size and copying into a caller buffer exposes no managed address.
 There are no pinned objects in the nursery or any other moving space.
 
-The initial acquisition path is:
+The preferred buffer acquisition paths are the stable-shadow and backing-store
+paths above. Whole-object relocation is a separate option for APIs that truly
+require the original allocation to become stable; it is not required merely to
+expose compatible buffer data. If used, its acquisition path is:
 
 1. Publish updateable strong roots for the allocation to be exposed and any
    managed values needed across the safepoint.
 2. If that allocation is in the nursery, reach a safepoint and run a full minor
-   collection. Promote the requested allocation directly into the stable heap;
-   other nursery survivors follow the ordinary promotion policy. The nursery
-   is fully evacuated and can be reused wholesale.
+   collection. Establish its stable destination before root scanning so any
+   first encounter selects that destination. Promote it directly into the stable
+   heap and enqueue it for stable-promotion scanning; other nursery survivors follow
+   the ordinary promotion policy. Drain both that queue and the Cheney scan to
+   closure, repairing their outgoing references. The nursery is fully evacuated
+   and can be reused wholesale only after that work completes.
 3. If the allocation is already in the ordinary old generation, relocate it into
    the stable heap at a safepoint before exposure. This path must repair all
    references to it, including incoming heap references; a minor collection's
@@ -637,9 +739,15 @@ obey the remembered-set barrier contract.
 
 ## Open Questions
 
+- How is Python object identity represented so `id(obj)` remains unique among
+  live objects and stable across every relocation?
 - What is the transitional and final packed GC header layout?
-- Should nursery-to-stable promotion always trigger a full minor collection, or
-  can a later optimization safely promote selected allocations before exposure?
+- How are export shadows indexed, rooted, repaired after original movement, and
+  reclaimed, and can their storage/lookup be shared with `id()` shadows?
+- What alias and synchronization contracts permit mutable backing-store
+  transfer at a safepoint without a collection?
+- If whole-object nursery-to-stable relocation is needed, can it avoid the full
+  minor collection required by the baseline relocation path?
 - How is ordinary old-to-stable relocation implemented, including discovery and
   repair of all incoming references?
 - Which storage classes support raw exports, and when should they allocate
