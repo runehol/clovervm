@@ -114,6 +114,18 @@ how it survives relocation remain open; this requirement does not select an
 incoming-reference index or general reference indirection scheme. See the
 [Python identity contract](https://docs.python.org/3/library/functions.html#id).
 
+Relocation must also preserve identity-derived hashes used by containers. The
+current NaN hash uses the object address and needs a relocation-safe policy
+before objects can move. One open alternative is PyPy-style NaN bit-pattern
+hashing; finite-float hashing must still agree with equal integers. Adopting
+NaN bit-pattern hashing alone would let distinct NaNs with identical bits share
+a hash, potentially creating collision-heavy dictionaries. PyPy also treats
+builtin floats with matching bit patterns as identical under `is`, changing
+`id()` and container behavior. Whether to change hashing alone, adopt those
+identity semantics too, or preserve per-object identity hashing is undecided.
+These are separate decisions; no float identity change is implied here. See
+[PyPy's float identity semantics](https://doc.pypy.org/en/latest/cpython_differences.html#object-identity-of-primitive-values-is-and-id).
+
 One option to consider is PyPy's `incminimark` shadow approach. When an identity
 or identity hash is requested for a nursery object, the collector reserves a
 same-sized destination outside the nursery and records it as that object's
@@ -741,6 +753,9 @@ obey the remembered-set barrier contract.
 
 - How is Python object identity represented so `id(obj)` remains unique among
   live objects and stable across every relocation?
+- Should NaNs use relocation-stable per-object identity hashes or bit-pattern
+  hashes, and should float identity semantics change independently? Account for
+  same-payload NaN collisions without implicitly changing `is` or `id()`.
 - What is the transitional and final packed GC header layout?
 - How are export shadows indexed, rooted, repaired after original movement, and
   reclaimed, and can their storage/lookup be shared with `id()` shadows?
