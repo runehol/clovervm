@@ -226,6 +226,21 @@ Never reuse the caller's mutable dictionary as transport. Precode always
 provides a fresh exact dict, including a fresh empty dict for `f(*args)` when
 there are no keyword sources.
 
+Here "exact dict" means the builtin dict class, not a restriction to its
+string-keyed storage shape. Keyword keys may be string subclasses and must be
+preserved as the original objects, without conversion to exact strings. CPython
+3.14.5 preserves key identity and subclass attributes when the callee captures
+the key in `**kwparams`. A key consumed by a named parameter does not appear in
+that collector.
+
+Exact builtin string keys use string-keyed storage. A string-subclass key uses
+general dict storage, promoting the destination when needed and honoring its
+hash/equality protocols. Non-string keys raise `TypeError`. Both keyword builder
+operations and `CallExpanded` must support either dict storage shape; neither
+may assume that an exact dict has only exact string keys. General binding must
+also preserve the original key objects when packing leftover keywords into a
+callee's `**kwargs` dict.
+
 The callable is evaluated first and remains rooted in an ordinary register while
 arguments are constructed. Normalization and merge operations receive that
 register where needed for call-specific errors. They do not need the signature
@@ -244,7 +259,9 @@ MergeCallKeywords callable_reg, dict_reg
 `BuildCallKeywords` creates a fresh exact dict in `dict_reg`, using the native
 copy fast path for an exact dict source. `MergeCallKeywords` extends the existing
 exact, call-owned dict in `dict_reg`, rejecting duplicate keys instead of
-replacing values. The destination is stable across operations; no `Star` is
+replacing values. Both operations accept either source/destination dict storage
+shape, preserving string-subclass keys and promoting the destination as needed.
+The destination is stable across operations; no `Star` is
 needed between building the dictionary and subsequent merges. The accumulator
 is the source operand, not the dictionary result interface.
 
@@ -315,7 +332,8 @@ justify overwriting duplicates in dictionary transport.
 
 Inputs are the callable and the adjacent exact positional tuple/fresh exact
 keyword dict pair. Both containers are always present. All user iterable/mapping
-protocols have already run. Resolve the
+expansion protocols have already run. The keyword dict may have either
+string-keyed or general storage. Resolve the
 callable through existing function/constructor-thunk machinery, then select:
 
 - **Pure collector:** the signature is exactly `(*args, **kwargs)`, with no named
@@ -487,8 +505,9 @@ with values and gives `KeywordCallInlineCache` a compact guard key.
 ## Expanded Call Binding
 
 Expanded calls consume the normalized `args_tuple` and fresh exact kwargs dict
-from the adjacent register pair. Both are always present. They should share the
-same callee signature semantics as ordinary
+from the adjacent register pair. The dict may use string-keyed or general
+storage, retaining string-subclass key identity. Both are always present. They
+should share the same callee signature semantics as ordinary
 keyword calls, but they cannot reuse the existing keyword-call cache structure
 directly because the keyword set is runtime data rather than a static names
 tuple.
