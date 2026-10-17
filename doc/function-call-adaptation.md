@@ -431,9 +431,9 @@ callable through existing function/constructor-thunk machinery, then select:
 The IC guards the resolved callable/signature and applicable lookup validity and
 records the adapter mode. Mode selection does not depend on keyword names.
 General binding still validates dynamic tuple length and keyword contents unless
-those facts are separately guarded. The fresh dict may be consumed by deleting
-bound keys, leaving unmatched entries for direct handoff to `**kwargs`; choosing
-that strategy versus preserving transport inputs remains open.
+those facts are separately guarded. Transport remains intact: when the callee
+has `**kwargs`, the plan selects direct transport reuse if no incoming keywords
+matched named parameters, or construction of a fresh leftovers dict otherwise.
 
 ### Optional general-binding plan cache
 
@@ -459,7 +459,9 @@ applied or installed in the cache. Only a fully validated plan reaches the
 application path.
 
 The plan records ordered keyword names, parameter or collector destinations,
-positional count, and adaptation/default placement. It is not built directly
+positional count, adaptation/default placement, and the collector action
+(`ReuseTransport` or `BuildLeftovers`) when the callee has `**kwargs`.
+It is not built directly
 into the live IC. Installing a successfully validated plan in the binding-plan
 cache is optional and separate from applying it. Cached and temporary plans use
 the same application path. Callable/signature resolution and adapter-mode
@@ -493,7 +495,7 @@ has already proved key validity; it need not run a second validation pass.
 On a hit, use cached destinations instead of repeating name resolution and
 conflict/required-parameter validation. Read defaults from current function
 storage rather than freezing default values. The tuple/dict must remain intact
-for all guard and source reads needed before any destructive adaptation.
+for all guard and source reads. Applying the plan does not mutate transport.
 
 The comparison is guard plus plan application versus cold plan construction
 plus the same application. With K keywords and P keyword-bindable parameters,
@@ -515,7 +517,7 @@ assignments; general binding may initially be a guarded adapter operation with
 explicit parameter-window effects instead of a fully static move sequence.
 
 Operand widths and byte encoding, generic protocol continuations, tuple-suffix packing,
-dict consumption, ownership transfer, rooting across callbacks, failure cleanup,
+collector construction, ownership transfer, rooting across callbacks, failure cleanup,
 frame placement, and JIT lowering/exception exits still need coherent sketches.
 The current direction does not authorize implementation of these open details.
 
@@ -687,10 +689,29 @@ such a name is collected by `**kwargs` like any other unmatched keyword, or
 rejected if there is no collector.
 
 Unmatched entries retain their original key objects and relative insertion
-order in the callee's `**kwargs` dict. Whether general binding builds a separate
-collector dict or removes matched entries from the fresh, call-owned transport
-dict remains open. Either strategy must preserve the matching and callback
-order above; it must not replace parameter matching with ordinary dict lookup.
+order in the callee's `**kwargs` dict. After successful planning, application
+uses the collector action selected during planning:
+
+- `ReuseTransport`: no incoming keyword matched a named parameter. Install the
+  fresh transport dict directly as `**kwargs`, including when parameters were
+  supplied positionally or satisfied by defaults.
+- `BuildLeftovers`: at least one incoming keyword matched a named parameter.
+  Allocate a second fresh dict and insert only unmatched entries, in incoming
+  order. If all incoming keywords matched, this is a fresh empty collector.
+
+Transport remains intact in both cases. Cached plans may retain the collector
+action along with keyword destinations. Callees without `**kwargs` need neither
+action; unmatched keywords are rejected during planning.
+
+This intentionally differs from CPython's collector callback behavior. CPython
+3.14.5 rehashes unmatched string-subclass keys while constructing a collector,
+interleaved with keyword matching, even for a pure `def f(**kwargs)` call.
+Clover does not reproduce those extra hash/equality calls or their timing:
+transport reuse skips reinsertion, and leftovers construction happens only
+after successful planning. Differences in callback side effects and which
+exception wins are accepted for collector construction. Named-parameter matching
+still runs subclass rich equality in incoming keyword order on every uncached
+call; it must not be replaced with ordinary dict lookup.
 
 When an expanded call has no keyword sources, precode supplies a fresh empty
 transport dict. A callee `**kwargs` collector can receive that dict directly;
