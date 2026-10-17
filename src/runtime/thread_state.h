@@ -107,10 +107,7 @@ namespace cl
         ThreadState(VirtualMachine *_machine);
 
         void refresh_class_for_native_layout_cache();
-        void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls)
-        {
-            class_for_native_layouts[static_cast<size_t>(id)] = cls;
-        }
+        void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls);
         void cache_exact_dict_shapes(Shape *string_key_shape,
                                      Shape *general_shape)
         {
@@ -300,6 +297,11 @@ namespace cl
             assert(cls != nullptr);
             return cls;
         }
+        Shape *get_exact_string_shape() const
+        {
+            assert(exact_string_shape_ != nullptr);
+            return exact_string_shape_;
+        }
         Shape *get_exact_dict_string_key_shape() const
         {
             assert(exact_dict_string_key_shape_ != nullptr);
@@ -427,6 +429,7 @@ namespace cl
         ThreadLocalHeap refcounted_heap;
         std::array<ClassObject *, static_cast<size_t>(NativeLayoutId::Count)>
             class_for_native_layouts = {};
+        Shape *exact_string_shape_ = nullptr;
         Shape *exact_dict_string_key_shape_ = nullptr;
         Shape *exact_dict_general_shape_ = nullptr;
 

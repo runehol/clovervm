@@ -90,11 +90,23 @@ namespace cl
     {
         for(size_t idx = 0; idx < class_for_native_layouts.size(); ++idx)
         {
-            class_for_native_layouts[idx] = machine->class_for_native_layout(
-                static_cast<NativeLayoutId>(idx));
+            NativeLayoutId id = static_cast<NativeLayoutId>(idx);
+            cache_class_for_native_layout(id,
+                                          machine->class_for_native_layout(id));
         }
         cache_exact_dict_shapes(machine->exact_dict_string_key_shape(),
                                 machine->exact_dict_general_shape());
+    }
+
+    void ThreadState::cache_class_for_native_layout(NativeLayoutId id,
+                                                    ClassObject *cls)
+    {
+        class_for_native_layouts[static_cast<size_t>(id)] = cls;
+        if(id == NativeLayoutId::String)
+        {
+            exact_string_shape_ =
+                cls != nullptr ? cls->get_instance_root_shape() : nullptr;
+        }
     }
 
     void

@@ -21,6 +21,13 @@
 
 namespace cl
 {
+    bool is_exact_string(ThreadState *thread, Value value)
+    {
+        return can_convert_to<String>(value) &&
+               value.get_ptr<String>()->get_shape() ==
+                   thread->get_exact_string_shape();
+    }
+
     static Value smi_to_str_string(ThreadState *thread, Value value)
     {
         assert(value.is_smi());

@@ -1,4 +1,5 @@
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
@@ -110,6 +111,78 @@ namespace
     int NonTrivialPayload::copy_assigns = 0;
     int NonTrivialPayload::move_assigns = 0;
 }  // namespace
+
+TEST(StringPredicates, ExactStringAcceptsAllocatedAndInternedStrings)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<TValue<String>> allocated(
+        context.thread()->make_object_value<String>(L"text"));
+    EXPECT_TRUE(is_exact_string(context.thread(), allocated.raw_value()));
+    EXPECT_TRUE(is_exact_string(
+        context.thread(),
+        context.vm().get_or_create_interned_string_value(L"").raw_value()));
+    EXPECT_TRUE(is_exact_string(
+        context.thread(),
+        context.vm().get_or_create_interned_string_value(L"text").raw_value()));
+}
+
+TEST(StringPredicates, ExactStringRejectsSubclassesWithStringStorage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> result(context.run_file(LR"(
+class S(str): pass
+class T(S): pass
+s = S("text")
+t = T("")
+t.extra = 1
+(s, t)
+)"));
+    ASSERT_FALSE(result.value().is_exception_marker());
+    ASSERT_TRUE(can_convert_to<Tuple>(result.value()));
+    Tuple *values = result.value().get_ptr<Tuple>();
+    for(size_t i = 0; i < values->size(); ++i)
+    {
+        Value value = values->item_unchecked(i);
+        EXPECT_TRUE(can_convert_to<String>(value));
+        EXPECT_FALSE(is_exact_string(context.thread(), value));
+    }
+}
+
+TEST(StringPredicates, ExactStringShapeIsCachedOnNewThreads)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<TValue<String>> value(
+        context.thread()->make_object_value<String>(L"text"));
+    ThreadState *thread = context.vm().make_new_thread();
+    EXPECT_EQ(context.thread()->get_exact_string_shape(),
+              thread->get_exact_string_shape());
+    ThreadState::ActivationScope child_activation(thread);
+    EXPECT_TRUE(is_exact_string(thread, value.raw_value()));
+}
+
+TEST(StringPredicates, ExactStringRejectsNonStrings)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> result(context.run_file(L"(None, True, False, 0, 1, 2**100, "
+                                         L"1.25, b'text', [], {}, (), str)\n"));
+    ASSERT_FALSE(result.value().is_exception_marker());
+    ASSERT_TRUE(can_convert_to<Tuple>(result.value()));
+    Tuple *values = result.value().get_ptr<Tuple>();
+    for(size_t i = 0; i < values->size(); ++i)
+    {
+        EXPECT_FALSE(
+            is_exact_string(context.thread(), values->item_unchecked(i)))
+            << i;
+    }
+    EXPECT_FALSE(is_exact_string(context.thread(), Value::not_present()));
+    EXPECT_FALSE(is_exact_string(context.thread(), Value::exception_marker()));
+    EXPECT_FALSE(is_exact_string(context.thread(), Value::NotImplemented()));
+    EXPECT_FALSE(is_exact_string(context.thread(), Value::Ellipsis()));
+}
 
 TEST(TValue, SmiUsesSameBasicProtocolAsTValue)
 {
