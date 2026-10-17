@@ -246,14 +246,15 @@ arguments are constructed. Normalization and merge operations receive that
 register where needed for call-specific errors. They do not need the signature
 merely to name the callable in an expansion error.
 
-#### Keyword builder and merge bytecodes
+#### Keyword builder, merge, and insertion bytecodes
 
-Both keyword operations take their source mapping from the accumulator and have
+The two mapping operations take their source mapping from the accumulator and have
 an explicit callable-context register and destination register:
 
 ```text
 BuildCallKeywords callable_reg, dict_reg
 MergeCallKeywords callable_reg, dict_reg
+AddCallKeyword callable_reg, dict_reg, name_const
 ```
 
 `BuildCallKeywords` creates a fresh exact dict in `dict_reg`, using the native
@@ -264,6 +265,24 @@ shape, preserving string-subclass keys and promoting the destination as needed.
 The destination is stable across operations; no `Star` is
 needed between building the dictionary and subsequent merges. The accumulator
 is the source operand, not the dictionary result interface.
+
+`AddCallKeyword` inserts one explicit `name=value` argument into the existing
+exact, call-owned dict in `dict_reg`. The accumulator holds the evaluated value;
+`name_const` identifies the exact builtin string name in the constant pool.
+It rejects an existing equal key instead of replacing its value, using
+`callable_reg` for duplicate-keyword error context. It supports both destination
+storage shapes; general storage must honor string-subclass keys' hash/equality
+protocols during duplicate detection. Successful insertion appends the new entry
+in keyword order. The destination remains in its register, without a subsequent
+`Star`.
+
+For an initial explicit keyword, codegen first creates a fresh empty dict in the
+destination register, then evaluates and inserts each explicit keyword value.
+Later explicit keywords use the same operation, interleaved with
+`MergeCallKeywords` for `**mapping` sources in keyword order. Duplicate detection
+happens after evaluating that keyword's value and before evaluating subsequent
+keyword sources. These operations build transport only; parameter matching and
+positional-versus-keyword conflicts remain the binder's responsibility.
 
 The callable register supplies context for duplicate-keyword, invalid-mapping,
 and non-string-key errors. Signature resolution is not needed for these errors.
@@ -298,9 +317,9 @@ CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx
 ```
 
 Here `next_container_reg` denotes the next logical register after
-`containers_reg`. Explicit keyword runs use the same destination and uniqueness
-rule; their concrete insertion lowering remains open. With no keyword sources,
-precode creates a fresh empty dict in that register.
+`containers_reg`. Explicit keywords use `AddCallKeyword` with the same destination
+and uniqueness rule. With no keyword sources, precode creates a fresh empty dict
+in that register.
 
 Mixed sources use builder/merge precode before the same call opcode. Codegen
 reserves two adjacent logical
