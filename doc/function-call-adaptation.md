@@ -152,11 +152,12 @@ expansion and binding. Copy element references, not the elements themselves.
 #### List-builder bytecodes
 
 Use the existing `CreateList` with zero items to allocate an empty exact list,
-and add two mechanical builder operations:
+and add these builder operations:
 
 ```text
 CreateList ..., 0     -> empty exact list in accumulator
 ListAppend builder   <- append the item in accumulator
+ListExtend builder   <- extend from the iterable in accumulator
 ListToTuple builder  -> exact tuple in accumulator
 ```
 
@@ -167,9 +168,29 @@ copied element references. Converting to a tuple does not mutate the builder.
 Codegen keeps the builder rooted while evaluating expressions and running any
 iteration code that supplies items.
 
-These operations cover building mixed positional arguments. They do not perform
-iterable expansion themselves. Keyword merging and the detailed iteration/error
-contracts still need concrete sketches before implementation.
+`ListExtend` requires an exact destination list in `builder` and takes its source
+from the accumulator. It completes extension before advancing to the following
+instruction. Source handling has three paths:
+
+- Exact tuple: append references directly from native tuple storage.
+- Exact list: append references directly from native list storage. Handle
+  source/destination aliasing, extending from the original source extent rather
+  than repeatedly consuming newly appended items.
+- Every other source: enter a VM-owned managed helper that iterates the source
+  and appends each yielded item with the trusted `ListAppend` intrinsic.
+
+List and tuple subclasses take the managed path so their iterator overrides
+run. Existing iterators also use the ordinary iterator protocol. The helper uses
+normal compiled Python loop control, iteration ICs, and StopIteration handling,
+following the managed-helper approach used by `ToExactTuple`; it does not run a
+recursive C++ interpreter loop. Native exact-container paths perform no Python
+method lookup or callbacks.
+
+Keep both destination and source rooted across managed callbacks, and retain
+each appended element. If iteration raises, propagate the exception without
+resuming after `ListExtend`; elements already appended remain in the builder.
+Managed helper scratch placement and return mechanics remain part of the
+runtime implementation sketch.
 
 #### Single-source conversion: ToExactTuple
 
