@@ -254,7 +254,7 @@ an explicit callable-context register and destination register:
 ```text
 BuildCallKeywords callable_reg, dict_reg
 MergeCallKeywords callable_reg, dict_reg
-AddCallKeyword callable_reg, dict_reg, name_const
+AddCallKeyword callable_reg, dict_reg, name_const, value_reg
 ```
 
 `BuildCallKeywords` creates a fresh exact dict in `dict_reg`, using the native
@@ -267,7 +267,7 @@ needed between building the dictionary and subsequent merges. The accumulator
 is the source operand, not the dictionary result interface.
 
 `AddCallKeyword` inserts one explicit `name=value` argument into the existing
-exact, call-owned dict in `dict_reg`. The accumulator holds the evaluated value;
+exact, call-owned dict in `dict_reg`. `value_reg` holds the evaluated value;
 `name_const` identifies the exact builtin string name in the constant pool.
 It rejects an existing equal key instead of replacing its value, using
 `callable_reg` for duplicate-keyword error context. It supports both destination
@@ -276,13 +276,18 @@ protocols during duplicate detection. Successful insertion appends the new entry
 in keyword order. The destination remains in its register, without a subsequent
 `Star`.
 
-For an initial explicit keyword, codegen first creates a fresh empty dict in the
-destination register, then evaluates and inserts each explicit keyword value.
-Later explicit keywords use the same operation, interleaved with
-`MergeCallKeywords` for `**mapping` sources in keyword order. Duplicate detection
-happens after evaluating that keyword's value and before evaluating subsequent
-keyword sources. These operations build transport only; parameter matching and
-positional-versus-keyword conflicts remain the binder's responsibility.
+Codegen evaluates every value in a consecutive explicit keyword run into
+temporary registers, in order, before emitting that run's `AddCallKeyword`
+operations in the same order. The values remain rooted through evaluation and
+insertion, including hash/equality callbacks. No accumulator reload is needed
+for insertion. An initial explicit run uses a fresh empty destination dict.
+Explicit runs and `MergeCallKeywords` operations alternate in keyword order.
+
+For `f(**d, a=first(), b=second(), **later())`, both `first()` and `second()` run
+before either explicit keyword is inserted. If inserting `a` detects a duplicate,
+the call fails before evaluating `later()`. These operations build transport
+only; parameter matching and positional-versus-keyword conflicts remain the
+binder's responsibility.
 
 The callable register supplies context for duplicate-keyword, invalid-mapping,
 and non-string-key errors. Signature resolution is not needed for these errors.
@@ -291,9 +296,20 @@ with the destination before inserting them.
 
 Generic sources, including dict subclasses, use a managed helper receiving
 `(callable, destination, source)`. Build starts with a fresh empty destination;
-merge supplies the existing one. The helper calls `source.keys()`, iterates the
-keys, checks each key for a duplicate before fetching `source[key]`, and inserts
-the value. It validates string keyword names before binding; detailed validation
+merge supplies the existing one. The helper calls `source.keys()` and normalizes
+the result to an exact list: reuse an exact list unchanged; materialize every
+other iterable, including list subclasses, into a fresh exact list. Materialization
+finishes before any `source[key]` lookup or insertion from this source. If it
+raises, no values from this source have been fetched or inserted.
+
+The merge then visits that list in order, checks each key for a duplicate before
+fetching `source[key]`, and inserts the value. Reusing an exact list is observable:
+if a value lookup changes a later entry in the returned list, the merge sees the
+changed key. Do not snapshot an exact list into a copy or tuple. The list and
+source remain rooted across callbacks. The exact list-conversion lowering and
+mutation-during-traversal mechanics still need an implementation sketch.
+
+The helper validates string keyword names before binding; detailed validation
 and error timing still need a semantic sketch. An iterable of pairs without a
 mapping interface is not accepted. Calls and iteration use normal managed ICs.
 
@@ -374,18 +390,32 @@ that strategy versus preserving transport inputs remains open.
 
 ### Optional general-binding plan cache
 
-The same name-resolution optimization considered for register spans could apply
-to container input. A successful cold binding can record ordered keyword names,
-parameter or collector destinations, positional count, and adaptation/default
-placement. Cache only successfully validated plans, and retain cached name
-references through the code object's cache ownership and tracing machinery.
+General binding constructs a temporary per-call plan, validates it, then applies
+it. The plan records ordered keyword names, parameter or collector destinations,
+positional count, and adaptation/default placement. It is not built directly
+into the live IC. Installing a successfully validated plan in the binding-plan
+cache is optional and separate from applying it. Cached and temporary plans use
+the same application path. Callable/signature resolution and adapter-mode
+caching remain independent of keyword binding-plan eligibility.
 
-A plan hit requires the callable and valid lookup dependencies, the same
-positional and keyword counts, and `string_eq` for each corresponding incoming
-and cached name. Values are irrelevant. Reordered names may miss despite
-binding identically. Incoming names need not be interned: existing `string_eq`
+Only calls whose incoming keyword keys are all exact builtin strings are
+eligible to construct or hit a cached binding plan. Calls containing a
+string-subclass key run the ordered binder afresh, including rich comparisons
+and their side effects, then apply the temporary plan without installing it.
+They bypass the binding-plan cache without evicting an existing exact-string
+plan. Key identity or subclass-shape guards cannot justify skipping comparisons:
+even the same key object may have changing comparison results or observable
+effects on each call. Retain installed name references through the code object's
+cache ownership and tracing machinery.
+
+A plan hit requires exact-string incoming keys, the callable and valid lookup
+dependencies, the same positional and keyword counts, and `string_eq` for each
+corresponding incoming and cached name. Values are irrelevant. Reordered names
+may miss despite binding identically. Exact-string names need not be interned:
+existing `string_eq`
 accepts pointer identity, rejects distinct interned strings, and otherwise
-compares contents. Dynamic binding needs the same content-based correctness.
+compares contents. These native comparisons are only sufficient for exact-string
+names; subclass names require the uncached rich-comparison binder.
 The current explicit-keyword cache assumes constant names and cannot be reused
 without this additional guard.
 
@@ -547,30 +577,47 @@ error. This applies to both positional-or-keyword parameters and keyword-only
 parameters. Defaults are copied as references to the stored Python values, not
 deep-copied.
 
-The keyword phase may destructively consume the fresh kwargs transport dict:
+The keyword phase visits incoming entries in insertion order, rather than
+probing the transport dict once per parameter. Positional assignment first marks
+its destination slots filled:
 
 ```text
-for each keyword-bindable callee parameter:
-  if the name is present and the slot was filled positionally:
-    raise duplicate-value TypeError
-  if the name is present:
-    copy the value into the callee slot
-    delete the key from the transport dict
-  if the name is absent and no default can fill the slot:
-    raise missing-argument TypeError
+for each (key, value) in incoming keyword insertion order:
+  scan keyword-bindable parameters in declaration order for the first match
+  if a parameter matches:
+    if its slot is already filled:
+      raise duplicate-value TypeError
+    copy value into its slot
+    mark the slot filled
+  else:
+    if the callee has no **kwargs collector:
+      raise unexpected-keyword TypeError
+    retain the original key and value as an unmatched keyword
+
+after all keywords have been processed:
+  fill defaults into unfilled parameter slots
+  reject remaining missing required parameters
 ```
 
-Only keyword-bindable parameters participate in this deletion pass:
-positional-or-keyword and keyword-only parameters. Positional-only parameter
-names are not keyword targets. If a matching keyword remains in the transport
-dict and the callee has `**kwargs`, it is collected there like any other
-unmatched keyword; otherwise it is an unexpected-keyword error.
+Exact builtin string keys can use native string comparison against parameter
+names. String-subclass keys require normal rich equality, including subclass
+dispatch, truth conversion, and exception propagation. Parameter matching does
+not use the incoming key's hash. Distinct keys that coexist in the transport
+dict can match the same parameter; the filled-slot check must reject the second
+match. Comparison callbacks run in incoming keyword order and, within each
+keyword, parameter declaration order. Missing-parameter checks happen only
+after this keyword pass, not during parameter matching.
 
-After the keyword-bindable pass, any remaining entries in the transport dict are
-the unmatched keyword arguments. If the callee has `**kwargs`, the remaining
-dict can be installed as the callee `**kwargs` value because it is fresh and
-call-owned. If the callee has no `**kwargs`, a non-empty transport dict is an
-unexpected-keyword error.
+Only positional-or-keyword and keyword-only parameters are keyword targets.
+Positional-only names do not participate in matching. An incoming keyword with
+such a name is collected by `**kwargs` like any other unmatched keyword, or
+rejected if there is no collector.
+
+Unmatched entries retain their original key objects and relative insertion
+order in the callee's `**kwargs` dict. Whether general binding builds a separate
+collector dict or removes matched entries from the fresh, call-owned transport
+dict remains open. Either strategy must preserve the matching and callback
+order above; it must not replace parameter matching with ordinary dict lookup.
 
 When an expanded call has no keyword sources, precode supplies a fresh empty
 transport dict. A callee `**kwargs` collector can receive that dict directly;
