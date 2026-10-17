@@ -116,6 +116,25 @@ starred iterable, and convert to an exact tuple when the final count is known.
 Tuple storage requires its size up front; arbitrary iterables do not provide
 that count in advance. With no positional sources, an empty tuple suffices.
 
+Codegen groups positional items (ordinary arguments and starred sources)
+separately from keyword items. Evaluate positional expressions before keyword
+expressions, even when a starred source is written after an explicit keyword.
+The timing of iterable conversion follows CPython's construction strategy:
+
+- If there is exactly one starred positional source and no ordinary positional
+  arguments, evaluate and root the source first, build all keywords, then emit
+  `ToExactTuple`. Keyword items do not affect eligibility for this case.
+- Otherwise, expand starred sources into the positional list builder as they
+  are encountered and convert the completed builder to a tuple before building
+  keywords. Calls with no starred sources construct their positional tuple
+  before keywords as well.
+
+For `f(*source, x=value())`, `value()` runs before iteration of `source`.
+For `f(0, *source, x=value())`, iteration runs before `value()`. The expression
+producing `source` is evaluated before `value()` in both cases. This special
+case deliberately matches observable CPython behavior; `CallExpanded` still
+receives the same adjacent exact tuple and fresh dict after precode completes.
+
 ```text
 f(x, *a, y, *b)
 
@@ -127,9 +146,8 @@ extend builder from evaluated b
 args_tuple = convert builder to an exact tuple
 ```
 
-These operations preserve Python evaluation and expansion sequencing. Iteration
-is outside the expander, leaving separate specialization points for expansion
-and binding. Copy element references, not the elements themselves.
+Iteration is outside the expander, leaving separate specialization points for
+expansion and binding. Copy element references, not the elements themselves.
 
 #### List-builder bytecodes
 
@@ -328,12 +346,14 @@ For a first keyword mapping followed by another mapping, precode is:
 
 ```text
 accumulator = args_source
-ToExactTuple
-Star containers_reg
+Star saved_source_reg
 accumulator = first_keyword_source
 BuildCallKeywords callable_reg, next_container_reg
 accumulator = next_keyword_source
 MergeCallKeywords callable_reg, next_container_reg
+Ldar saved_source_reg
+ToExactTuple
+Star containers_reg
 CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx
 ```
 
