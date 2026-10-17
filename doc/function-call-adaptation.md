@@ -7,7 +7,7 @@
 | Implementation | Explicit calls and callee adaptation implemented; caller expansion remains a design sketch |
 | Scope | Python argument binding and adaptation above the managed frame convention |
 | Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
-| Validated against | `a909d10` (2026-06-25) |
+| Validated against | `a909d10` (2026-06-25); expanded-call operand contract agreed 2026-10-17 |
 | Supersedes | N/A |
 
 This note records the implemented function-call adaptation model for Python
@@ -89,14 +89,15 @@ implemented.
 
 ## Expanded Calls: Current Design Direction
 
-The direction agreed during discussion on 2026-10-13 is container-building
-precode followed by a container-input call adapter, called the **expander** here.
+The direction agreed during discussion on 2026-10-13, with the input layout
+settled on 2026-10-17, is container-building precode followed by a container-input
+call adapter, called the **expander** here.
 This is a design sketch, not an implementation-ready contract or implementation
 plan. Ordinary calls without expansion keep their existing fast paths.
 
 ```text
 evaluate callable into an ordinary register
-precode -> exact positional tuple + optional fresh exact keyword dict
+precode -> adjacent exact positional tuple + fresh exact keyword dict
 expander -> normalized callee parameter window -> frame entry
 ```
 
@@ -130,6 +131,82 @@ These operations preserve Python evaluation and expansion sequencing. Iteration
 is outside the expander, leaving separate specialization points for expansion
 and binding. Copy element references, not the elements themselves.
 
+#### List-builder bytecodes
+
+Use the existing `CreateList` with zero items to allocate an empty exact list,
+and add two mechanical builder operations:
+
+```text
+CreateList ..., 0     -> empty exact list in accumulator
+ListAppend builder   <- append the item in accumulator
+ListToTuple builder  -> exact tuple in accumulator
+```
+
+`ListAppend` and `ListToTuple` require an exact list builder created by generated
+precode. They access native list storage directly, without Python method lookup
+or callbacks. Append retains the stored item; tuple construction retains the
+copied element references. Converting to a tuple does not mutate the builder.
+Codegen keeps the builder rooted while evaluating expressions and running any
+iteration code that supplies items.
+
+These operations cover building mixed positional arguments. They do not perform
+iterable expansion themselves. Keyword merging and the detailed iteration/error
+contracts still need concrete sketches before implementation.
+
+#### Single-source conversion: ToExactTuple
+
+`ToExactTuple` takes an iterable source in the accumulator and returns an exact
+tuple in the accumulator. An exact tuple passes through unchanged, preserving
+identity and avoiding allocation. Every other input, including tuple subclasses,
+takes the iteration path so subclass `__iter__` overrides are honored.
+
+The fallback is an ordinary managed call to a VM-owned helper Function compiled
+once from trusted Python source with the other builtin implementations:
+
+```python
+def _clover_iterable_to_exact_tuple(source):
+    builder = []
+    for item in source:
+        __clover_list_append__(builder, item)
+    return __clover_list_to_tuple__(builder)
+```
+
+The two `__clover_*` spellings are proposed trusted compiler intrinsics, lowered
+directly to `ListAppend` and `ListToTuple`, not runtime function calls. The list
+literal uses existing list allocation. Ordinary loop compilation supplies the
+iterator protocol calls and their ICs, loop control, and StopIteration handling;
+the loop and exception tables are not hand-emitted in C++.
+
+The VM retains the resulting Function and the opcode enters it directly, without
+public builtin lookup. Its CodeObject owns the normal iteration ICs, shared by
+fallback calls. Exact-tuple reuse remains in the opcode; the helper only collects
+an iterable. A future tuple constructor can reuse this conversion machinery.
+
+A general iterator does not supply a reliable final element count. Collection
+therefore uses growable list storage before allocating the fixed-size tuple and
+copying element references. An exact-list-to-tuple fast path could avoid the
+intermediate builder later; it is not required by this slice.
+
+The opcode's exact-tuple guard advances directly on a hit. Otherwise it
+tail-dispatches to a slow handler, which places the source in a one-argument
+outgoing window below the caller's live registers and enters the helper through
+existing managed frame-entry machinery. The saved return PC points immediately
+after `ToExactTuple`. The helper's ordinary return restores the caller with the
+tuple in the accumulator:
+
+```text
+Ldar source
+ToExactTuple
+Star containers_reg
+```
+
+The source parameter, builder local, and iterator state use normal managed
+rooting. Iterator callbacks make normal managed calls; failures propagate
+through existing exception unwinding instead of resuming at the following
+`Star`. No recursive C++ interpreter invocation or separate continuation-state
+structure is introduced. Detailed scratch-window placement and expansion-error
+context must be resolved before implementation.
+
 ### Keyword precode and error context
 
 Explicit keyword runs and repeated `**mapping` sources build one fresh exact
@@ -138,27 +215,92 @@ them. A mapping source must support mapping-style key enumeration and value
 lookup; arbitrary iterables of pairs are not accepted. Validate string keyword
 names before binding.
 
-For a single `**source` with no other keyword sources, an exact dict can use a
-direct native copy into a fresh exact dict. Its keys are already unique, so no
-cross-source duplicate checking is needed; string-key validation still applies.
+For the first `**source`, when no keyword destination has been built yet, an
+exact dict can use a direct native copy into a fresh exact dict. Its keys are
+already unique, so that copy needs no duplicate checking; string-key validation
+still applies. A generic mapping can repeat keys even within the first source,
+so its fallback must still reject duplicates before fetching the repeated key's
+value.
 Other mappings, including dict subclasses, use the general mapping merge path.
-Never reuse the caller's mutable dictionary as transport.
+Never reuse the caller's mutable dictionary as transport. Precode always
+provides a fresh exact dict, including a fresh empty dict for `f(*args)` when
+there are no keyword sources.
 
 The callable is evaluated first and remains rooted in an ordinary register while
 arguments are constructed. Normalization and merge operations receive that
 register where needed for call-specific errors. They do not need the signature
 merely to name the callable in an expansion error.
 
+#### Keyword builder and merge bytecodes
+
+Both keyword operations take their source mapping from the accumulator and have
+an explicit callable-context register and destination register:
+
 ```text
-args_tuple = NormalizeStarArgs callable_reg, args_source
-kwargs_dict = NormalizeStarKeywords callable_reg, kwargs_source
-CallExpanded callable_reg, args_tuple, kwargs_dict
+BuildCallKeywords callable_reg, dict_reg
+MergeCallKeywords callable_reg, dict_reg
 ```
 
-These opcode names are provisional. Mixed sources use builder/merge precode
-before the same adapter. Whether absent keywords use an absent transport operand
-or a fresh empty dict remains an encoding decision; a callee kwargs collector
-must always receive a fresh dict.
+`BuildCallKeywords` creates a fresh exact dict in `dict_reg`, using the native
+copy fast path for an exact dict source. `MergeCallKeywords` extends the existing
+exact, call-owned dict in `dict_reg`, rejecting duplicate keys instead of
+replacing values. The destination is stable across operations; no `Star` is
+needed between building the dictionary and subsequent merges. The accumulator
+is the source operand, not the dictionary result interface.
+
+The callable register supplies context for duplicate-keyword, invalid-mapping,
+and non-string-key errors. Signature resolution is not needed for these errors.
+The exact-dict merge fast path reads native entries but must check for collisions
+with the destination before inserting them.
+
+Generic sources, including dict subclasses, use a managed helper receiving
+`(callable, destination, source)`. Build starts with a fresh empty destination;
+merge supplies the existing one. The helper calls `source.keys()`, iterates the
+keys, checks each key for a duplicate before fetching `source[key]`, and inserts
+the value. It validates string keyword names before binding; detailed validation
+and error timing still need a semantic sketch. An iterable of pairs without a
+mapping interface is not accepted. Calls and iteration use normal managed ICs.
+
+The destination must remain rooted in its register while callbacks run. Managed
+fallback entry/return must preserve the direct destination-register contract;
+it must not rely on a caller-emitted `Star` after the operation. A build fallback
+can establish the empty destination before entering the shared merge helper.
+Detailed continuation and failure-cleanup mechanics remain to be specified.
+
+For a first keyword mapping followed by another mapping, precode is:
+
+```text
+accumulator = args_source
+ToExactTuple
+Star containers_reg
+accumulator = first_keyword_source
+BuildCallKeywords callable_reg, next_container_reg
+accumulator = next_keyword_source
+MergeCallKeywords callable_reg, next_container_reg
+CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx
+```
+
+Here `next_container_reg` denotes the next logical register after
+`containers_reg`. Explicit keyword runs use the same destination and uniqueness
+rule; their concrete insertion lowering remains open. With no keyword sources,
+precode creates a fresh empty dict in that register.
+
+Mixed sources use builder/merge precode before the same call opcode. Codegen
+reserves two adjacent logical
+registers: `containers_reg` holds the exact positional tuple and the next logical
+register holds the fresh exact keyword dict. Only the first register is encoded;
+there are no separate tuple and keyword-register operands.
+
+`first_arg_reg` is a separate outgoing parameter-window anchor, following the
+existing managed call convention. Keep the callable and input pair outside that
+window so parameter binding cannot overwrite inputs it still needs to read.
+`cache_idx` identifies the expanded-call cache; the result returns through the
+accumulator. Runtime container sizes supply argument counts.
+
+There is one expanded-call opcode and one input layout. Both containers are
+always present. There is no tuple-only variant, absent-keyword flag, or None
+sentinel for the keyword input. Ordinary calls without expansion retain their
+existing opcodes.
 
 Duplicate keywords across sources are detected during container merging, before
 insertion loses the duplicate information. This allows CPython's early error
@@ -171,14 +313,16 @@ justify overwriting duplicates in dictionary transport.
 
 ### Expander and two call-site IC modes
 
-Inputs are the callable, an exact positional tuple, and an optional fresh exact
-keyword dict. All user iterable/mapping protocols have already run. Resolve the
+Inputs are the callable and the adjacent exact positional tuple/fresh exact
+keyword dict pair. Both containers are always present. All user iterable/mapping
+protocols have already run. Resolve the
 callable through existing function/constructor-thunk machinery, then select:
 
 - **Pure collector:** the signature is exactly `(*args, **kwargs)`, with no named
   positional or keyword-only parameters. Install the exact tuple and fresh dict
-  directly into the two parameter slots. Allocate a fresh empty dict if keyword
-  transport is absent. No positional repacking or second dict is needed.
+  directly into the two parameter slots, including the fresh empty dict built
+  by precode when no keywords were supplied. No positional repacking or second
+  dict is needed.
 - **General binding:** bind native tuple elements and dict entries into the
   signature's parameter slots, validate arity and positional/keyword conflicts,
   supply defaults, and pack collector leftovers. Enter only after successful
@@ -232,7 +376,7 @@ signature identifies destination parameter slots. Pure collection has two clear
 assignments; general binding may initially be a guarded adapter operation with
 explicit parameter-window effects instead of a fully static move sequence.
 
-Concrete opcode encodings, generic protocol continuations, tuple-suffix packing,
+Operand widths and byte encoding, generic protocol continuations, tuple-suffix packing,
 dict consumption, ownership transfer, rooting across callbacks, failure cleanup,
 frame placement, and JIT lowering/exception exits still need coherent sketches.
 The current direction does not authorize implementation of these open details.
@@ -342,8 +486,9 @@ with values and gives `KeywordCallInlineCache` a compact guard key.
 
 ## Expanded Call Binding
 
-Expanded calls consume the normalized `args_tuple` plus an optional fresh
-kwargs dict. They should share the same callee signature semantics as ordinary
+Expanded calls consume the normalized `args_tuple` and fresh exact kwargs dict
+from the adjacent register pair. Both are always present. They should share the
+same callee signature semantics as ordinary
 keyword calls, but they cannot reuse the existing keyword-call cache structure
 directly because the keyword set is runtime data rather than a static names
 tuple.
@@ -389,9 +534,10 @@ dict can be installed as the callee `**kwargs` value because it is fresh and
 call-owned. If the callee has no `**kwargs`, a non-empty transport dict is an
 unexpected-keyword error.
 
-When an expanded call has no keyword transport dict but the callee has
-`**kwargs`, frame entry must still provide a fresh empty dict for the callee
-parameter. The empty-dict case must not use `None` or a shared mutable object.
+When an expanded call has no keyword sources, precode supplies a fresh empty
+transport dict. A callee `**kwargs` collector can receive that dict directly;
+frame entry needs no absent-keyword case or additional empty-dict allocation.
+The keyword input must never be `None` or a shared mutable object.
 
 The first useful fast path is the pure collector signature:
 
@@ -401,8 +547,9 @@ def f(*args, **kwargs):
 ```
 
 For that shape, expanded entry can install the normalized positional tuple and
-the fresh kwargs transport dict directly, allocating only a fresh empty dict
-when the caller supplied no keyword transport.
+the fresh kwargs transport dict directly. Precode has already allocated the
+fresh dict even when the caller supplied no keyword sources; the adapter does
+not allocate another one.
 
 ## Runtime Scope
 
