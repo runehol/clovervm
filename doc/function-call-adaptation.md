@@ -246,6 +246,31 @@ through existing exception unwinding instead of resuming at the following
 structure is introduced. Detailed scratch-window placement and expansion-error
 context must be resolved before implementation.
 
+#### List normalization: ToExactList
+
+`ToExactList` takes a source in the accumulator and returns an exact list in the
+accumulator. An exact list passes through unchanged, preserving identity and
+its live contents. Every other source, including list subclasses, takes a
+managed iteration path into a fresh exact list:
+
+```python
+def _clover_iterable_to_exact_list(source):
+    builder = []
+    for item in source:
+        __clover_list_append__(builder, item)
+    return builder
+```
+
+The trusted append intrinsic lowers to `ListAppend`. The VM owns the helper
+Function and enters it using the same managed-call and return pattern as
+`ToExactTuple`, with normal iteration ICs, rooting, and exception propagation.
+The exact-list guard is in the opcode; the fallback helper does not repeat it.
+No final list-to-tuple conversion is needed. Managed helper scratch placement
+remains part of the runtime implementation sketch.
+
+Mapping merge helpers apply `ToExactList` to the result of `source.keys()` via a
+trusted compiler intrinsic, then traverse the resulting list normally.
+
 ### Keyword precode and error context
 
 Explicit keyword runs and repeated `**mapping` sources build one fresh exact
@@ -352,8 +377,8 @@ and removing entries can skip keys shifted behind the iterator. Replacing a
 later entry changes the key subsequently fetched. Inserting before the current
 position can cause a key to be visited again and rejected as a duplicate. These
 behaviors match the CPython 3.14.5 mutation probes. The list, iterator, current
-key, and source remain rooted across callbacks. Exact list-conversion lowering
-still needs an implementation sketch.
+key, and source remain rooted across callbacks. Key-list normalization uses
+`ToExactList` as specified above.
 
 The helper does not reject non-string keys. Build and merge accept arbitrary
 keys while constructing transport, so later keyword sources still run; a later
