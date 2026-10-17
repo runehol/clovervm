@@ -423,6 +423,20 @@ parameter matching. This happens inside `CallExpanded`, after keyword
 construction and callable resolution. The pure collector path performs the same
 validation even though it does not need a binding plan.
 
+`CallExpanded` plan construction enforces binding-error precedence in this order:
+
+1. Validate all keyword keys are strings.
+2. Match incoming keywords in order, rejecting unexpected names or duplicate
+   parameter assignments and propagating comparison failures.
+3. Reject excess positional arguments if there is no `*args` collector.
+4. Resolve defaults and reject missing required arguments.
+
+Plan construction can mark positional parameter slots filled before keyword
+matching, but must defer the excess-positional error until step 3. Any failure
+aborts construction and propagates the exception; an erroneous plan is never
+applied or installed in the cache. Only a fully validated plan reaches the
+application path.
+
 The plan records ordered keyword names, parameter or collector destinations,
 positional count, and adaptation/default placement. It is not built directly
 into the live IC. Installing a successfully validated plan in the binding-plan
@@ -599,8 +613,9 @@ tuple.
 
 The positional phase copies values from `args_tuple` into positional formal
 slots until either the tuple or the positional parameter range is exhausted.
-Remaining tuple items are an error unless the callee has `*args`; with
-`*args`, the callee receives a tuple containing the remaining positional suffix.
+Remaining tuple items are an error unless the callee has `*args`, but that error
+is deferred until keyword matching succeeds. With `*args`, the callee receives
+a tuple containing the remaining positional suffix.
 For the pure collector case `def f(*args, **kwargs)`, the normalized
 `args_tuple` can be installed directly as the callee `*args` value.
 
@@ -631,6 +646,7 @@ for each (key, value) in incoming keyword insertion order:
     retain the original key and value as an unmatched keyword
 
 after all keywords have been processed:
+  reject excess positional arguments if there is no *args collector
   fill defaults into unfilled parameter slots
   reject remaining missing required parameters
 ```
