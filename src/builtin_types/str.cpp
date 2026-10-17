@@ -23,9 +23,8 @@ namespace cl
 {
     bool is_exact_string(ThreadState *thread, Value value)
     {
-        return can_convert_to<String>(value) &&
-               value.get_ptr<String>()->get_shape() ==
-                   thread->get_exact_string_shape();
+        return value.is_ptr() && value.get_ptr<Object>()->get_shape() ==
+                                     thread->get_exact_string_shape();
     }
 
     static Value smi_to_str_string(ThreadState *thread, Value value)
@@ -113,9 +112,7 @@ namespace cl
                NativeLayoutId::String);
         assert(cls.extract()->get_instance_inline_slot_capacity() == 0);
         Value converted;
-        if(can_convert_to<String>(obj) &&
-           obj.get_ptr<String>()->get_shape()->get_class() ==
-               thread->get_machine()->str_class())
+        if(is_exact_string(thread, obj))
         {
             converted = obj;
         }
@@ -140,9 +137,7 @@ namespace cl
         {
             return str_new_subclass_slow(thread, cls_value, obj);
         }
-        if(can_convert_to<String>(obj) &&
-           obj.get_ptr<String>()->get_shape()->get_class() ==
-               thread->get_machine()->str_class())
+        if(is_exact_string(thread, obj))
         {
             return obj;
         }
@@ -160,8 +155,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__str__ expects a str receiver");
         }
-        if(self.get_ptr<String>()->get_shape()->get_class() ==
-           thread->get_machine()->str_class())
+        if(is_exact_string(thread, self))
         {
             return self;
         }

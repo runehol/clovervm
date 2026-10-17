@@ -74,9 +74,7 @@ namespace cl
         {
             Value arg = args.extract()->item_unchecked(0);
             // Native diagnostics must work before string methods are installed.
-            if(can_convert_to<String>(arg) &&
-               arg.get_ptr<String>()->get_shape()->get_class() ==
-                   thread->class_for_native_layout(NativeLayoutId::String))
+            if(is_exact_string(thread, arg))
             {
                 return arg;
             }

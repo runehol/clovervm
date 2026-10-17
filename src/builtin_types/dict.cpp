@@ -24,11 +24,14 @@ namespace cl
 
     static TValue<SMI> string_keyed_hash(TValue<String> key)
     {
+        assert(is_exact_string(active_thread(), key.raw_value()));
         return string_hash_normalized(key);
     }
 
     static bool string_keyed_equal(TValue<String> a, TValue<String> b)
     {
+        assert(is_exact_string(active_thread(), a.raw_value()));
+        assert(is_exact_string(active_thread(), b.raw_value()));
         return string_eq(a, b);
     }
 
@@ -71,7 +74,7 @@ namespace cl
         key.assert_not_vm_sentinel();
         default_value.assert_not_vm_sentinel();
         assert(is_exact_dict_string_key_shape(thread, dict));
-        if(!can_convert_to<String>(key))
+        if(!is_exact_string(thread, key))
         {
             dict->promote_to_general_shape(thread);
             return {false, Value::None()};
@@ -96,7 +99,7 @@ namespace cl
     {
         key.assert_not_vm_sentinel();
         assert(is_exact_dict_string_key_shape(thread, dict));
-        if(!can_convert_to<String>(key))
+        if(!is_exact_string(thread, key))
         {
             dict->promote_to_general_shape(thread);
             return {PopGeneral, Value::None()};
@@ -1378,7 +1381,7 @@ namespace cl
                                                          Value key)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
+           is_exact_string(thread, key))
         {
             int32_t idx =
                 *find_entry(TValue<String>::from_value_unchecked(key));
@@ -1406,7 +1409,7 @@ namespace cl
     Expected<void> Dict::set_item(ThreadState *thread, Value key, Value value)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
+           is_exact_string(thread, key))
         {
             return set_item_for_str(
                 thread, TValue<String>::from_value_unchecked(key), value);
@@ -1418,7 +1421,7 @@ namespace cl
     Expected<void> Dict::del_item(ThreadState *thread, Value key)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
+           is_exact_string(thread, key))
         {
             return del_item_for_str(thread,
                                     TValue<String>::from_value_unchecked(key));
@@ -1430,7 +1433,7 @@ namespace cl
     Expected<bool> Dict::contains(ThreadState *thread, Value key)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
+           is_exact_string(thread, key))
         {
             return contains_for_str(thread,
                                     TValue<String>::from_value_unchecked(key));
@@ -1453,7 +1456,7 @@ namespace cl
                                                          Value key)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
+           is_exact_string(thread, key))
         {
             int32_t *entry =
                 find_entry(TValue<String>::from_value_unchecked(key));
@@ -1488,7 +1491,7 @@ namespace cl
                                    Value default_value)
     {
         if(is_exact_dict_string_key_shape(thread, this) &&
-           can_convert_to<String>(key))
+           is_exact_string(thread, key))
         {
             TValue<String> string_key =
                 TValue<String>::from_value_unchecked(key);
@@ -1521,18 +1524,21 @@ namespace cl
     Expected<void> Dict::set_item_for_str(ThreadState *thread,
                                           TValue<String> key, Value value)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           is_exact_string(thread, key.raw_value()))
         {
             string_keyed_insert(key, value);
             return Expected<void>::ok();
         }
+        maybe_promote_to_general_shape(thread);
         return general_set_item(thread, key.raw_value(), value);
     }
 
     Expected<void> Dict::del_item_for_str(ThreadState *thread,
                                           TValue<String> key)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           is_exact_string(thread, key.raw_value()))
         {
             Value result = string_keyed_delete(key);
             if(result.is_exception_marker())
@@ -1541,16 +1547,19 @@ namespace cl
             }
             return Expected<void>::ok();
         }
+        maybe_promote_to_general_shape(thread);
         return general_del_item(thread, key.raw_value());
     }
 
     Expected<bool> Dict::contains_for_str(ThreadState *thread,
                                           TValue<String> key)
     {
-        if(is_exact_dict_string_key_shape(thread, this))
+        if(is_exact_dict_string_key_shape(thread, this) &&
+           is_exact_string(thread, key.raw_value()))
         {
             return Expected<bool>::ok(string_keyed_contains(key));
         }
+        maybe_promote_to_general_shape(thread);
         return general_contains(thread, key.raw_value());
     }
 
@@ -1768,7 +1777,7 @@ namespace cl
 
         if(is_exact_dict_string_key_shape(thread, this))
         {
-            if(can_convert_to<String>(key))
+            if(is_exact_string(thread, key))
             {
                 string_keyed_insert(TValue<String>::from_value_unchecked(key),
                                     value);

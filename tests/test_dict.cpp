@@ -21,7 +21,7 @@ namespace
 {
     static Value make_string(test::VmTestContext &context, const wchar_t *text)
     {
-        return context.thread()->make_internal_value<String>(text).raw_value();
+        return context.thread()->make_object_value<String>(text).raw_value();
     }
 
     static TValue<String> string_key(Value key)
@@ -228,6 +228,266 @@ TEST(Dict, SemanticApiGetItemIfPresentPropagatesHashFailure)
         dict->get_item_if_present(thread, bad_hash_key).has_exception());
     expect_pending_exception(thread, L"TypeError",
                              L"__hash__ method should return an integer");
+}
+
+TEST(Dict, StringSubclassKeysPromoteEverySemanticEntryPoint)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<Value> key(context.run_file(L"class S(str): pass\nS('key')\n"));
+    ASSERT_FALSE(key.value().is_exception_marker());
+    Owned<TValue<String>> exact(thread->make_object_value<String>(L"key"));
+    Owned<TValue<String>> kept(thread->make_object_value<String>(L"kept"));
+    for(int operation = 0; operation < 15; ++operation)
+    {
+        SCOPED_TRACE(operation);
+        Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+        ASSERT_FALSE(
+            dict.extract()
+                ->set_item(thread, exact.raw_value(), Value::from_smi(7))
+                .has_exception());
+        ASSERT_FALSE(
+            dict.extract()
+                ->set_item(thread, kept.raw_value(), Value::from_smi(9))
+                .has_exception());
+        ASSERT_EQ(thread->get_exact_dict_string_key_shape(),
+                  dict.extract()->get_shape());
+        TValue<String> typed = TValue<String>::from_value_assumed(key.value());
+        switch(operation)
+        {
+            case 0:
+                ASSERT_FALSE(
+                    dict.extract()
+                        ->set_item(thread, key.value(), Value::from_smi(8))
+                        .has_exception());
+                break;
+            case 1:
+                ASSERT_FALSE(dict.extract()
+                                 ->get_item(thread, key.value())
+                                 .has_exception());
+                break;
+            case 2:
+                ASSERT_TRUE(
+                    dict.extract()->contains(thread, key.value()).value());
+                break;
+            case 3:
+                ASSERT_FALSE(dict.extract()
+                                 ->del_item(thread, key.value())
+                                 .has_exception());
+                break;
+            case 4:
+                ASSERT_FALSE(
+                    dict.extract()->pop(thread, key.value()).has_exception());
+                break;
+            case 5:
+                ASSERT_FALSE(
+                    dict.extract()
+                        ->setdefault(thread, key.value(), Value::None())
+                        .has_exception());
+                break;
+            case 6:
+                ASSERT_FALSE(
+                    dict.extract()
+                        ->set_item_for_str(thread, typed, Value::from_smi(8))
+                        .has_exception());
+                break;
+            case 7:
+                ASSERT_FALSE(dict.extract()
+                                 ->get_item_for_str(thread, typed)
+                                 .has_exception());
+                break;
+            case 8:
+                ASSERT_TRUE(
+                    dict.extract()->contains_for_str(thread, typed).value());
+                break;
+            case 9:
+                ASSERT_FALSE(dict.extract()
+                                 ->del_item_for_str(thread, typed)
+                                 .has_exception());
+                break;
+            case 10:
+                ASSERT_FALSE(
+                    dict.extract()->pop_for_str(thread, typed).has_exception());
+                break;
+            case 11:
+                ASSERT_FALSE(
+                    dict.extract()
+                        ->setdefault_for_str(thread, typed, Value::None())
+                        .has_exception());
+                break;
+            case 12:
+                {
+                    Owned<TValue<Dict>> source(
+                        thread->make_object_value<Dict>());
+                    ASSERT_FALSE(
+                        source.extract()
+                            ->set_item(thread, key.value(), Value::from_smi(8))
+                            .has_exception());
+                    ASSERT_FALSE(
+                        dict.extract()
+                            ->update_from_dict(thread, source.extract())
+                            .has_exception());
+                    break;
+                }
+            case 13:
+                EXPECT_EQ(TrustedDictBytecodeAccess::PopGeneral,
+                          TrustedDictBytecodeAccess::try_string_keyed_pop(
+                              thread, dict.extract(), key.value())
+                              .status);
+                break;
+            case 14:
+                EXPECT_FALSE(
+                    TrustedDictBytecodeAccess::try_string_keyed_setdefault(
+                        thread, dict.extract(), key.value(), Value::None())
+                        .handled);
+                break;
+        }
+        EXPECT_EQ(thread->get_exact_dict_general_shape(),
+                  dict.extract()->get_shape());
+        EXPECT_EQ(1u, dict.extract()->table_generation());
+        auto value = dict.extract()->get_item(thread, kept.raw_value());
+        ASSERT_FALSE(value.has_exception());
+        EXPECT_EQ(Value::from_smi(9), value.value());
+    }
+}
+
+TEST(Dict, StringSubclassHashFailuresPreservePromotionAndContents)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<Value> key(context.run_file(LR"(
+class S(str):
+    def __hash__(self): raise ValueError("hash failed")
+S("key")
+)"));
+    ASSERT_FALSE(key.value().is_exception_marker());
+    Owned<TValue<String>> exact(thread->make_object_value<String>(L"key"));
+    for(int operation = 0; operation < 6; ++operation)
+    {
+        SCOPED_TRACE(operation);
+        Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+        ASSERT_FALSE(
+            dict.extract()
+                ->set_item(thread, exact.raw_value(), Value::from_smi(7))
+                .has_exception());
+        switch(operation)
+        {
+            case 0:
+                EXPECT_TRUE(dict.extract()
+                                ->set_item(thread, key.value(), Value::None())
+                                .has_exception());
+                break;
+            case 1:
+                EXPECT_TRUE(dict.extract()
+                                ->get_item(thread, key.value())
+                                .has_exception());
+                break;
+            case 2:
+                EXPECT_TRUE(dict.extract()
+                                ->contains(thread, key.value())
+                                .has_exception());
+                break;
+            case 3:
+                EXPECT_TRUE(dict.extract()
+                                ->del_item(thread, key.value())
+                                .has_exception());
+                break;
+            case 4:
+                EXPECT_TRUE(
+                    dict.extract()->pop(thread, key.value()).has_exception());
+                break;
+            case 5:
+                EXPECT_TRUE(dict.extract()
+                                ->setdefault(thread, key.value(), Value::None())
+                                .has_exception());
+                break;
+        }
+        expect_pending_exception(thread, L"ValueError", L"hash failed");
+        thread->clear_pending_exception();
+        EXPECT_EQ(thread->get_exact_dict_general_shape(),
+                  dict.extract()->get_shape());
+        EXPECT_EQ(1u, dict.extract()->table_generation());
+        EXPECT_EQ(1u, dict.extract()->size());
+        auto value = dict.extract()->get_item(thread, exact.raw_value());
+        ASSERT_FALSE(value.has_exception());
+        EXPECT_EQ(Value::from_smi(7), value.value());
+    }
+}
+
+TEST(Dict, StringSubclassProtocolsAndWarmedCaches)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+events = []
+class Key(str):
+    def __hash__(self):
+        events.append("hash")
+        return str.__hash__(self)
+    def __eq__(self, other):
+        events.append("eq")
+        return False
+key = Key("key")
+# Same string payload and hash, but the subclass comparison says unequal.
+d = {"key": 1, key: 2}
+assert len(d) == 2
+assert "hash" in events
+assert "eq" in events
+assert d["key"] == 1
+assert d[key] == 2
+assert d.copy()[key] == 2
+class DifferentHash(str):
+    def __hash__(self): return str.__hash__(self) ^ 1
+other = DifferentHash("key")
+d = {"key": 1, other: 2}
+assert len(d) == 2
+assert d[other] == 2
+class EqualKey(str):
+    def __hash__(self):
+        events.append("hash")
+        return str.__hash__(self)
+    def __eq__(self, other):
+        events.append("eq")
+        return str.__eq__(self, other)
+equal = EqualKey("key")
+def exercise(d, key, mode):
+    if mode == 0: return d[key]
+    if mode == 1: return key in d
+    if mode == 2: return d.get(key)
+    if mode == 3: return d.setdefault(key, 8)
+    if mode == 4: return d.pop(key)
+    if mode == 5:
+        d[key] = 8
+        return None
+    del d[key]
+for mode in range(7):
+    for repeat in range(3):
+        exercise({"key": 7}, "key", mode)
+    events.clear()
+    d = {"key": 7}
+    exercise(d, equal, mode)
+    assert "hash" in events
+    assert "eq" in events
+    # Exact string keys must still work after promotion.
+    if mode == 4 or mode == 6:
+        assert len(d) == 0
+    else:
+        assert d["key"] == 7 or d["key"] == 8
+class Explodes(str):
+    def __hash__(self): return str.__hash__(self)
+    def __eq__(self, other): raise ValueError("comparison failed")
+d = {"key": 7}
+try:
+    d.setdefault(Explodes("key"), 9)
+except ValueError as error:
+    assert error.args[0] == "comparison failed"
+else:
+    raise AssertionError
+assert d["key"] == 7
+assert len(d) == 1
+)");
+    ASSERT_FALSE(result.is_exception_marker());
 }
 
 TEST(Dict, SemanticApiLookupAndContainsPromoteNonStringMisses)
