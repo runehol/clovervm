@@ -212,13 +212,14 @@ context must be resolved before implementation.
 Explicit keyword runs and repeated `**mapping` sources build one fresh exact
 transport dict. Merge operations reject duplicate names rather than overwriting
 them. A mapping source must support mapping-style key enumeration and value
-lookup; arbitrary iterables of pairs are not accepted. Validate string keyword
-names before binding.
+lookup; arbitrary iterables of pairs are not accepted. String-key validation is
+deferred to `CallExpanded`, after keyword construction and before binding.
 
 For the first `**source`, when no keyword destination has been built yet, an
 exact dict can use a direct native copy into a fresh exact dict. Its keys are
-already unique, so that copy needs no duplicate checking; string-key validation
-still applies. A generic mapping can repeat keys even within the first source,
+already unique, so that copy needs no duplicate checking. It preserves even
+non-string keys for later call-entry validation. A generic mapping can repeat
+keys even within the first source,
 so its fallback must still reject duplicates before fetching the repeated key's
 value.
 Other mappings, including dict subclasses, use the general mapping merge path.
@@ -235,7 +236,8 @@ that collector.
 
 Exact builtin string keys use string-keyed storage. A string-subclass key uses
 general dict storage, promoting the destination when needed and honoring its
-hash/equality protocols. Non-string keys raise `TypeError`. Both keyword builder
+hash/equality protocols. Non-string keys also use general storage temporarily;
+`CallExpanded` rejects them with `TypeError`. Both keyword builder
 operations and `CallExpanded` must support either dict storage shape; neither
 may assume that an exact dict has only exact string keys. General binding must
 also preserve the original key objects when packing leftover keywords into a
@@ -289,8 +291,8 @@ the call fails before evaluating `later()`. These operations build transport
 only; parameter matching and positional-versus-keyword conflicts remain the
 binder's responsibility.
 
-The callable register supplies context for duplicate-keyword, invalid-mapping,
-and non-string-key errors. Signature resolution is not needed for these errors.
+The callable register supplies context for duplicate-keyword and invalid-mapping
+errors during construction. Signature resolution is not needed for these errors.
 The exact-dict merge fast path reads native entries but must check for collisions
 with the destination before inserting them.
 
@@ -309,9 +311,12 @@ changed key. Do not snapshot an exact list into a copy or tuple. The list and
 source remain rooted across callbacks. The exact list-conversion lowering and
 mutation-during-traversal mechanics still need an implementation sketch.
 
-The helper validates string keyword names before binding; detailed validation
-and error timing still need a semantic sketch. An iterable of pairs without a
-mapping interface is not accepted. Calls and iteration use normal managed ICs.
+The helper does not reject non-string keys. Build and merge accept arbitrary
+keys while constructing transport, so later keyword sources still run; a later
+mapping failure or duplicate-key error can win over a non-string-key error.
+`AddCallKeyword` supplies an exact string name by construction. An iterable of
+pairs without a mapping interface is not accepted. Calls and iteration use
+normal managed ICs.
 
 The destination must remain rooted in its register while callbacks run. Managed
 fallback entry/return must preserve the direct destination-register contract;
@@ -372,7 +377,8 @@ string-keyed or general storage. Resolve the
 callable through existing function/constructor-thunk machinery, then select:
 
 - **Pure collector:** the signature is exactly `(*args, **kwargs)`, with no named
-  positional or keyword-only parameters. Install the exact tuple and fresh dict
+  positional or keyword-only parameters. Validate every keyword key is a string,
+  accepting subclasses, then install the exact tuple and fresh dict
   directly into the two parameter slots, including the fresh empty dict built
   by precode when no keywords were supplied. No positional repacking or second
   dict is needed.
@@ -391,7 +397,13 @@ that strategy versus preserving transport inputs remains open.
 ### Optional general-binding plan cache
 
 General binding constructs a temporary per-call plan, validates it, then applies
-it. The plan records ordered keyword names, parameter or collector destinations,
+it. Plan construction first validates every incoming keyword key is a string,
+accepting subclasses and raising `TypeError` for any non-string key before any
+parameter matching. This happens inside `CallExpanded`, after keyword
+construction and callable resolution. The pure collector path performs the same
+validation even though it does not need a binding plan.
+
+The plan records ordered keyword names, parameter or collector destinations,
 positional count, and adaptation/default placement. It is not built directly
 into the live IC. Installing a successfully validated plan in the binding-plan
 cache is optional and separate from applying it. Cached and temporary plans use
@@ -418,6 +430,10 @@ compares contents. These native comparisons are only sufficient for exact-string
 names; subclass names require the uncached rich-comparison binder.
 The current explicit-keyword cache assumes constant names and cannot be reused
 without this additional guard.
+
+Non-string keys naturally fail the exact-string cache guard and reach plan
+construction, where full string-key validation rejects them. A successful guard
+has already proved key validity; it need not run a second validation pass.
 
 On a hit, use cached destinations instead of repeating name resolution and
 conflict/required-parameter validation. Read defaults from current function
