@@ -343,12 +343,17 @@ other iterable, including list subclasses, into a fresh exact list. Materializat
 finishes before any `source[key]` lookup or insertion from this source. If it
 raises, no values from this source have been fetched or inserted.
 
-The merge then visits that list in order, checks each key for a duplicate before
-fetching `source[key]`, and inserts the value. Reusing an exact list is observable:
-if a value lookup changes a later entry in the returned list, the merge sees the
-changed key. Do not snapshot an exact list into a copy or tuple. The list and
-source remain rooted across callbacks. The exact list-conversion lowering and
-mutation-during-traversal mechanics still need an implementation sketch.
+The merge uses an ordinary list iterator over that live list, checks each key
+for a duplicate before fetching `source[key]`, and inserts the value. Do not
+snapshot an exact list into a copy or tuple, or capture its initial length.
+The iterator advances by index using the current list contents and length:
+appended keys are visited, clearing or truncating the list can end traversal,
+and removing entries can skip keys shifted behind the iterator. Replacing a
+later entry changes the key subsequently fetched. Inserting before the current
+position can cause a key to be visited again and rejected as a duplicate. These
+behaviors match the CPython 3.14.5 mutation probes. The list, iterator, current
+key, and source remain rooted across callbacks. Exact list-conversion lowering
+still needs an implementation sketch.
 
 The helper does not reject non-string keys. Build and merge accept arbitrary
 keys while constructing transport, so later keyword sources still run; a later
