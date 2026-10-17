@@ -538,7 +538,42 @@ new equal strings, and changing names: changing names pay a failed guard before
 binding. Collector allocation/packing is common work, not eliminated by the
 cache. The additional plan cache remains a design option within general mode.
 
-### JIT boundary and unresolved details
+### Runtime implementation direction
+
+Codegen reserves an ordinary outgoing call window for managed helper fallback
+calls. Slow opcode handlers enter VM-owned helper Functions through existing
+managed frame-entry machinery, saving the return PC immediately after the
+operation. Results return in the accumulator. Build/Merge helpers mutate the
+dict already rooted in the destination register; their return value is not used
+to install that destination. Exact scratch sizes and placement are resolved per
+opcode during its implementation review, following existing alignment and
+argument-window conventions.
+
+Source, builder, callable, and destination remain rooted in managed registers
+or helper locals across Python execution. Use ordinary return and exception
+unwinding rather than a separate continuation-state mechanism. On call failure,
+partially built transport containers are discarded through normal lifetime
+handling; builder operations do not roll back already appended items.
+
+The uncached binder's callback-capable path runs in managed code so subclass-key
+rich equality and truth conversion use normal managed calls. Exact-string plan
+construction can use native comparisons. Do not introduce recursive C++
+interpreter entry to run binding callbacks. The managed binder's temporary plan
+representation and handoff to plan application need a concrete sketch before
+stage 3, rather than blocking the container-building stages.
+
+`CallExpanded` keeps the callable and adjacent tuple/dict input pair outside the
+outgoing parameter window. After plan validation, application fills that window,
+including defaults and collectors, then enters the target using the existing
+prepared-argument frame-entry convention. Tuple-suffix packing and collector
+construction belong to plan application. Callback failures during application
+propagate without entering the callee.
+
+Follow existing register, constant-index, and cache-index operand encoding
+conventions. Settle concrete operand widths alongside each bytecode declaration
+and codegen implementation, without introducing a separate encoding scheme.
+
+### JIT boundary
 
 Tuples and dicts are ordinary values; indexed accesses operate on native
 container memory rather than logical bytecode registers. The IC-guarded target
@@ -546,10 +581,37 @@ signature identifies destination parameter slots. Pure collection has two clear
 assignments; general binding may initially be a guarded adapter operation with
 explicit parameter-window effects instead of a fully static move sequence.
 
-Operand widths and byte encoding, generic protocol continuations, tuple-suffix packing,
-collector construction, ownership transfer, rooting across callbacks, failure cleanup,
-frame placement, and JIT lowering/exception exits still need coherent sketches.
-The current direction does not authorize implementation of these open details.
+Treat callback-capable operations as call boundaries with visible register and
+memory effects and normal exception exits. Initially use existing interpreter
+fallback support where adding JIT lowering would expand the implementation
+slice. Inspect the fallback contract for each new operation; no new JIT
+continuation mechanism is implied. More specialized lowering is later work.
+
+### Expanded-call implementation stages
+
+Each stage gets focused semantic tests and the required full debug checks.
+Interpreter frame changes also get the release opcode-frame checks. Keep
+unsupported syntax explicit until its complete execution path is available.
+
+1. **List primitives and conversions.** Implement `ListAppend`, `ListExtend`,
+   `ListToTuple`, `ToExactTuple`, and `ToExactList`, including trusted intrinsics
+   and managed fallbacks. Test exact-container identity, subclass iteration,
+   aliasing, partial extension, and failures during iteration.
+2. **Keyword construction.** Implement `BuildCallKeywords`, `MergeCallKeywords`,
+   and `AddCallKeyword`, plus mapping helpers. Test duplicate handling, explicit
+   keyword-run evaluation, key-list normalization and live iteration, both dict
+   storage shapes, and deferred string-key validation. Use helper/opcode tests
+   until expanded-call syntax is enabled end to end.
+3. **Expanded call entry.** Sketch the managed binder's plan representation,
+   then implement uncached planning, collectors, parameter-window application,
+   and end-to-end parser/codegen support. Test late lone-star conversion,
+   keyword order, error precedence, defaults, collectors, subclass comparisons,
+   callable resolution, and exception unwinding. Cache callable resolution and
+   adapter mode independently; keyword binding-plan caching is not required.
+4. **Optional binding-plan cache.** After the uncached path is correct, measure
+   whether exact-string plan reuse is worthwhile. If implemented, test guarded
+   hits, changing names/counts, callable invalidation, current defaults, and
+   subclass-key bypass without evicting an existing eligible plan.
 
 ## Alternatives Considered and Tradeoffs
 
