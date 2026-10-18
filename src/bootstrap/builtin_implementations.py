@@ -454,3 +454,9 @@ def _clover_iterable_to_exact_list(source):
     for item in source:
         __clover_list_append__(builder, item)
     return builder
+
+
+def _clover_list_extend(builder, source):
+    for item in source:
+        __clover_list_append__(builder, item)
+    return None

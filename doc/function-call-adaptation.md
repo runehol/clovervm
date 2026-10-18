@@ -175,8 +175,10 @@ Codegen keeps the builder rooted while evaluating expressions and running any
 iteration code that supplies items.
 
 `ListExtend` requires an exact destination list in `builder` and takes its source
-from the accumulator. It completes extension before advancing to the following
-instruction. Source handling has three paths:
+from the accumulator. It leaves the destination register pointing to the same
+list and writes `None` to the accumulator on every successful path. It completes
+extension before advancing to the following instruction. Source handling has
+three paths:
 
 - Exact tuple: append references directly from native tuple storage.
 - Exact list: append references directly from native list storage. Handle
@@ -195,8 +197,10 @@ method lookup or callbacks.
 Keep both destination and source rooted across managed callbacks, and retain
 each appended element. If iteration raises, propagate the exception without
 resuming after `ListExtend`; elements already appended remain in the builder.
-Managed helper scratch placement and return mechanics remain part of the
-runtime implementation sketch.
+The managed helper receives `(builder, source)` in the outgoing window derived
+from `get_first_free_arg_encoded_reg()` and returns `None` through the ordinary
+managed return path. A single direct `NOINLINE` opcode handler handles native
+extension and managed entry; it is not on the hot-handler list.
 
 #### Single-source conversion: ToExactTuple
 

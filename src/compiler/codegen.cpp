@@ -855,6 +855,7 @@ namespace cl
             TernaryPow,
             CanonicalizeHash,
             ListAppend,
+            ListExtend,
             ListToTuple,
             ToExactTuple,
             ToExactList,
@@ -944,6 +945,12 @@ namespace cl
             {
                 return Expected<TrustedCloverCall>::ok(
                     TrustedCloverCall::ToExactList);
+            }
+            if(name_value ==
+               interned_string(L"__clover_list_extend__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::ListExtend);
             }
             return Expected<TrustedCloverCall>::raise_exception(
                 L"SyntaxError", L"unknown trusted __clover_* helper");
@@ -1210,6 +1217,26 @@ namespace cl
         }
 
         Expected<void>
+        codegen_trusted_clover_list_extend(uint32_t source_offset,
+                                           AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_list_extend__"));
+            if(args.size() != 2)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_list_extend__ expects exactly 2 arguments");
+            }
+            TemporaryReg builder(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), builder));
+            CL_TRY(codegen_node(call_argument_value(args[1])));
+            CL_TRY(code_obj->emit_list_extend(source_offset, builder));
+            return Expected<void>::ok();
+        }
+
+        Expected<void>
         codegen_trusted_clover_list_to_tuple(uint32_t source_offset,
                                              AstChildren args)
         {
@@ -1283,6 +1310,10 @@ namespace cl
                 case TrustedCloverCall::ToExactList:
                     CL_TRY(codegen_trusted_clover_to_exact_list(source_offset,
                                                                 args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::ListExtend:
+                    CL_TRY(codegen_trusted_clover_list_extend(source_offset,
+                                                              args));
                     return Expected<bool>::ok(true);
                 case TrustedCloverCall::ListAppend:
                     CL_TRY(codegen_trusted_clover_list_append(source_offset,

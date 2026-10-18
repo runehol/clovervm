@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. No expanded-call implementation stages are complete yet.
+`3a84a6a2`. Stage 1 is complete; later stages have not started.
 
 ## Working rules
 
@@ -84,21 +84,26 @@ list. Stage 1a was subsequently committed as `90b35a36`.
 
 Verification: seven focused conversion/codegen tests passed. Full debug checks
 passed with 1,665 tests passed and one skipped, including bootstrap/new-thread
-shape-cache coverage. Release `check_opcode_frames` passed. Stage 1b changes
-remain uncommitted for user review.
+shape-cache coverage. Release `check_opcode_frames` passed. Stage 1b was
+subsequently committed as `49a50623`.
 
 ### 1c: List extension
 
-- [ ] Add `ListExtend builder_reg`, taking the source from the accumulator.
-- [ ] Implement exact tuple/list native paths, including self-extension from
+- [x] Add `ListExtend builder_reg`, taking the source from the accumulator
+  and returning `None` in the accumulator on every successful path.
+- [x] Implement exact tuple/list native paths, including self-extension from
   the original extent and correct storage growth/reference ownership.
-- [ ] Add the managed helper for other sources, including list/tuple subclasses,
+- [x] Add the managed helper for other sources, including list/tuple subclasses,
   using an ordinary loop and the trusted append intrinsic.
-- [ ] Preserve builder and source across callbacks; propagate failure with
+- [x] Preserve builder and source across callbacks; propagate failure with
   already appended elements retained and without resuming after the operation.
-- [ ] Test all three paths, self-extension, subclass overrides, nested calls,
+- [x] Test all three paths, self-extension, subclass overrides, nested calls,
   and partial extension followed by an exception.
-- [ ] Run required checks and leave changes uncommitted for review.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: eight focused tests passed. Full debug checks passed with 1,672
+tests passed and one skipped. Release `check_opcode_frames` passed. Stage 1c
+changes remain uncommitted for user review.
 
 ## Stage 2: Keyword construction
 

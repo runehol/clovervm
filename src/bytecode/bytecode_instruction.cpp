@@ -230,6 +230,12 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::ListExtend:
+                effects.source_register(0);
+                effects.source_accumulator();
+                effects.destination_accumulator();
+                break;
+
             case Bytecode::ListAppend:
                 effects.source_register(0);
                 effects.source_accumulator();

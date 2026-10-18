@@ -15,8 +15,7 @@ using namespace cl;
 namespace
 {
     [[nodiscard]] static Value
-    run_trusted_conversion_test(test::VmTestContext &context,
-                                const wchar_t *source)
+    run_trusted_list_test(test::VmTestContext &context, const wchar_t *source)
     {
         auto name = context.vm().get_or_create_interned_string_value(
             L"<container-conversion-test>");
@@ -301,7 +300,7 @@ TEST(ExactContainerConversion, IdentityCopiesAndRepeatedFastSlowCalls)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
-    Value result = run_trusted_conversion_test(context, LR"(
+    Value result = run_trusted_list_test(context, LR"(
 def to_tuple(source):
     return __clover_to_exact_tuple__(source)
 def to_list(source):
@@ -391,6 +390,12 @@ assert a is not xs and b is not ys
 assert __clover_to_exact_tuple__(xs) == (7, 8)
 assert __clover_to_exact_list__(ys) == [9, 10]
 assert events == ['list', 'tuple', 'list', 'tuple']
+builder = []
+assert __clover_list_extend__(builder, xs) is None
+assert builder == [7, 8]
+assert __clover_list_extend__(builder, ys) is None
+assert builder == [7, 8, 9, 10]
+assert events == ['list', 'tuple', 'list', 'tuple', 'list', 'tuple']
 assert xs[0] == 1 and ys[0] == 2
 )",
                                   StartRule::File, module.extract(),
@@ -405,7 +410,7 @@ TEST(ExactContainerConversion, NestedCallbacksAndCallerExceptionHandlers)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
-    Value result = run_trusted_conversion_test(context, LR"(
+    Value result = run_trusted_list_test(context, LR"(
 class Source:
     def __init__(self): self.position = 0
     def __iter__(self): return self
@@ -468,6 +473,137 @@ for mode in range(2):
     else:
         raise AssertionError
 assert __clover_to_exact_list__(Source()) == [(0,), (1,), (2,)]
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(ListExtension, NativePathsPreserveReferencesAndHandleSelfExtension)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_list_test(context, LR"(
+builder = []
+alias = builder
+item = []
+source = [item, 2]
+assert __clover_list_extend__(builder, source) is None
+assert builder is alias
+assert builder == [item, 2]
+assert builder[0] is item and source[0] is item
+assert __clover_list_extend__(builder, (item, 3)) is None
+assert builder == [item, 2, item, 3]
+assert builder[2] is item
+assert __clover_list_extend__(builder, []) is None
+assert __clover_list_extend__(builder, ()) is None
+assert builder == [item, 2, item, 3]
+assert source == [item, 2]
+large = []
+for i in range(70):
+    __clover_list_append__(large, [i])
+assert __clover_list_extend__(large, large) is None
+assert len(large) == 140
+for i in range(70):
+    assert large[i] is large[i + 70]
+    assert large[i][0] == i
+empty = []
+assert __clover_list_extend__(empty, empty) is None
+assert len(empty) == 0
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(ListExtension, GenericSourcesNestedCallbacksAndEvaluationOrder)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_list_test(context, LR"(
+events = []
+builder = []
+def get_builder():
+    events.append('builder')
+    return builder
+def get_source():
+    events.append('source')
+    return (1, 2)
+assert __clover_list_extend__(get_builder(), get_source()) is None
+assert events == ['builder', 'source']
+assert builder == [1, 2]
+class Source:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        if self.position == 3: raise StopIteration
+        current = self.position
+        self.position += 1
+        nested = []
+        assert __clover_list_extend__(nested, iter((current,))) is None
+        return nested[0]
+source = Source()
+keep = []
+def pair(a, b, c):
+    assert a is keep and c is keep
+    assert b is None
+    return b
+assert pair(keep, __clover_list_extend__(builder, source), keep) is None
+assert builder == [1, 2, 0, 1, 2]
+assert source.position == 3
+assert __clover_list_extend__(builder, iter(())) is None
+assert __clover_list_extend__(builder, range(2)) is None
+assert builder == [1, 2, 0, 1, 2, 0, 1]
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(ListExtension, IterationFailuresKeepPartialDestinationAndUnwind)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_list_test(context, LR"(
+item = []
+class BadIter:
+    def __iter__(self): raise ValueError('iter failed')
+class BadNext:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        self.position += 1
+        if self.position == 1: return item
+        raise ValueError('next failed')
+builder = [42]
+alias = builder
+bad = BadNext()
+reached = False
+try:
+    __clover_list_extend__(builder, bad)
+    reached = True
+except ValueError as error:
+    assert error.args[0] == 'next failed'
+assert not reached
+assert builder is alias
+assert len(builder) == 2 and builder[0] == 42 and builder[1] is item
+assert bad.position == 2
+try:
+    __clover_list_extend__(builder, BadIter())
+except ValueError as error:
+    assert error.args[0] == 'iter failed'
+else:
+    raise AssertionError
+assert len(builder) == 2
+try:
+    __clover_list_extend__(builder, 42)
+except TypeError:
+    pass
+else:
+    raise AssertionError
+assert len(builder) == 2
+assert __clover_list_extend__(builder, iter((7,))) is None
+assert len(builder) == 3 and builder[2] == 7
 )");
     ASSERT_FALSE(result.is_exception_marker())
         << string_as_wchar_t(test::native_exception_message(

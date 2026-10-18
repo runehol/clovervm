@@ -4598,6 +4598,50 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_list_extend(PARAMS)
+    {
+        int8_t builder_reg = pc[1];
+        assert(can_convert_to<List>(fp[builder_reg]));
+        List *builder = fp[builder_reg].get_ptr<List>();
+        assert(builder->get_shape() == thread->get_exact_list_shape());
+        Value source = accumulator;
+        Shape *source_shape =
+            source.is_ptr() ? source.get_ptr<Object>()->get_shape() : nullptr;
+        if(source_shape == thread->get_exact_tuple_shape())
+        {
+            builder->extend_from_tuple(source.get_ptr<Tuple>());
+            accumulator = Value::None();
+            START(2);
+            COMPLETE();
+        }
+        if(source_shape == thread->get_exact_list_shape())
+        {
+            builder->extend_from_list(source.get_ptr<List>());
+            accumulator = Value::None();
+            START(2);
+            COMPLETE();
+        }
+
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = fp[builder_reg];
+        fp[first_arg_reg - 1] = source;
+        TValue<Function> function =
+            thread->get_machine()->list_extend_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 2,
+            2, FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_list_to_tuple(PARAMS)
     {
         START(2);
@@ -6471,6 +6515,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
         SET_TABLE_ENTRY(Bytecode::ListAppend, op_list_append);
+        SET_TABLE_ENTRY(Bytecode::ListExtend, op_list_extend);
         SET_TABLE_ENTRY(Bytecode::ListToTuple, op_list_to_tuple);
         SET_TABLE_ENTRY(Bytecode::ToExactTuple, op_to_exact_tuple);
         SET_TABLE_ENTRY(Bytecode::ToExactList, op_to_exact_list);

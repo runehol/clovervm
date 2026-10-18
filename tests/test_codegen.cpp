@@ -2103,3 +2103,31 @@ TEST(Codegen, user_exact_container_conversion_names_are_ordinary_calls)
     EXPECT_EQ(std::string::npos, actual.find("ToExactList"));
     EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
+
+TEST(Codegen, trusted_list_extend_lowers_to_opcode)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def extend(builder, source):\n"
+        L"    return __clover_list_extend__(builder, source)\n");
+    EXPECT_NE(std::string::npos, actual.find("ListExtend"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_list_extend_validates_arguments)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_list_extend__([])\n", L"SyntaxError",
+        L"__clover_list_extend__ expects exactly 2 arguments");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_list_extend__([], source=[])\n", L"SyntaxError",
+        L"__clover_list_extend__ does not accept keyword arguments");
+}
+
+TEST(Codegen, user_list_extend_name_is_ordinary_call)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def extend(builder, source):\n"
+        L"    return __clover_list_extend__(builder, source)\n");
+    EXPECT_EQ(std::string::npos, actual.find("ListExtend"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
+}

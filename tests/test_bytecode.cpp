@@ -719,3 +719,38 @@ TEST(BytecodeInstruction,
         }
     }
 }
+
+TEST(BytecodeInstruction,
+     list_extend_reads_builder_and_accumulator_and_returns_none)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<extend-effects>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    {
+        CodeObjectBuilder::TemporaryReg destination(builder);
+        builder.emit_create_list(0, destination, 0).value();
+        builder.emit_star(0, destination).value();
+        builder.emit_create_tuple(0, destination, 0).value();
+        builder.emit_list_extend(0, destination).value();
+        builder.emit_return(0).value();
+    }
+    CodeObject *code = builder.finalize().value();
+    auto instruction = find_instruction(*code, Bytecode::ListExtend);
+    ASSERT_EQ(1u, instruction.operands().size());
+    ASSERT_EQ(2u, instruction.sources().size());
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
+              instruction.sources()[0].kind);
+    EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
+              instruction.sources()[1].kind);
+    ASSERT_EQ(1u, instruction.destinations().size());
+    EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
+              instruction.destinations()[0].kind);
+    EXPECT_FALSE(instruction.continuation_pc_offset().has_value());
+    EXPECT_EQ(Value::None(), context.thread()->run_clovervm_code_object(code));
+}

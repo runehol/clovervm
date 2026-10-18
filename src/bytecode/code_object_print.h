@@ -343,6 +343,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Star:
             case cl::Bytecode::DelLocal:
             case cl::Bytecode::ListAppend:
+            case cl::Bytecode::ListExtend:
             case cl::Bytecode::ListToTuple:
             case cl::Bytecode::ToExactTuple:
             case cl::Bytecode::ToExactList:

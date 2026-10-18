@@ -1383,6 +1383,16 @@ namespace cl
         iterable_to_exact_list_function_ = Optional<TValue<Function>>::some(
             TValue<Function>::from_value_assumed(to_exact_list));
 
+        Value list_extend = implementation_module->get_own_property(
+            get_or_create_interned_string_value(L"_clover_list_extend"));
+        if(!can_convert_to<Function>(list_extend))
+        {
+            fatal("trusted builtin_implementations.py did not define "
+                  "list-extend helper");
+        }
+        list_extend_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(list_extend));
+
         const wchar_t *export_names[] = {
             L"abs",     L"iter",    L"next",    L"repr", L"hash",
             L"len",     L"getattr", L"hasattr", L"vars", L"dir",
@@ -1467,6 +1477,12 @@ namespace cl
     {
         assert(iterable_to_exact_list_function_.value().has_value());
         return iterable_to_exact_list_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::list_extend_function() const
+    {
+        assert(list_extend_function_.value().has_value());
+        return list_extend_function_.value().value();
     }
 
     TValue<Function> VirtualMachine::membership_iter_fallback_function() const
