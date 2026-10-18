@@ -158,13 +158,17 @@ and add these builder operations:
 CreateList ..., 0     -> empty exact list in accumulator
 ListAppend builder   <- append the item in accumulator
 ListExtend builder   <- extend from the iterable in accumulator
-ListToTuple builder  -> exact tuple in accumulator
+ListToTuple builder  -> replace builder register with an exact tuple
 ```
 
 `ListAppend` and `ListToTuple` require an exact list builder created by generated
 precode. They access native list storage directly, without Python method lookup
 or callbacks. Append retains the stored item; tuple construction retains the
-copied element references. Converting to a tuple does not mutate the builder.
+copied element references. `ListToTuple` reads the exact list from its register
+and writes the resulting exact tuple back to that same register, replacing the
+register's list reference. It does not mutate the source list object. Codegen
+loads the tuple from that register if a subsequent operation needs it in the
+accumulator; `ListToTuple` itself has no accumulator input or result.
 Codegen keeps the builder rooted while evaluating expressions and running any
 iteration code that supplies items.
 
@@ -194,8 +198,9 @@ runtime implementation sketch.
 
 #### Single-source conversion: ToExactTuple
 
-`ToExactTuple` takes an iterable source in the accumulator and returns an exact
-tuple in the accumulator. An exact tuple passes through unchanged, preserving
+`ToExactTuple value_reg` reads an iterable source from `value_reg` and replaces
+that same register with an exact tuple. It has no accumulator input or result.
+An exact tuple passes through unchanged, preserving
 identity and avoiding allocation. Every other input, including tuple subclasses,
 takes the iteration path so subclass `__iter__` overrides are honored.
 
@@ -230,26 +235,27 @@ The opcode's exact-tuple guard advances directly on a hit. Otherwise it
 tail-dispatches to a slow handler, which places the source in a one-argument
 outgoing window below the caller's live registers and enters the helper through
 existing managed frame-entry machinery. The saved return PC points immediately
-after `ToExactTuple`. The helper's ordinary return restores the caller with the
-tuple in the accumulator:
+after `ToExactTuple`. Managed fallback completion installs the helper's tuple
+result in the original operand register before resuming the caller. The
+destination-register return plumbing must be resolved in the helper-entry
+implementation sketch; callers do not emit a `Star` to install the result:
 
 ```text
-Ldar source
-ToExactTuple
-Star containers_reg
+ToExactTuple source_reg
 ```
 
 The source parameter, builder local, and iterator state use normal managed
 rooting. Iterator callbacks make normal managed calls; failures propagate
-through existing exception unwinding instead of resuming at the following
-`Star`. No recursive C++ interpreter invocation or separate continuation-state
+through existing exception unwinding instead of resuming after the conversion.
+No recursive C++ interpreter invocation or separate continuation-state
 structure is introduced. Detailed scratch-window placement and expansion-error
 context must be resolved before implementation.
 
 #### List normalization: ToExactList
 
-`ToExactList` takes a source in the accumulator and returns an exact list in the
-accumulator. An exact list passes through unchanged, preserving identity and
+`ToExactList value_reg` reads a source from `value_reg` and replaces that same
+register with an exact list. It has no accumulator input or result. An exact
+list passes through unchanged, preserving identity and
 its live contents. Every other source, including list subclasses, takes a
 managed iteration path into a fresh exact list:
 
@@ -263,7 +269,8 @@ def _clover_iterable_to_exact_list(source):
 
 The trusted append intrinsic lowers to `ListAppend`. The VM owns the helper
 Function and enters it using the same managed-call and return pattern as
-`ToExactTuple`, with normal iteration ICs, rooting, and exception propagation.
+`ToExactTuple`, including installing the helper result in the operand register
+before resuming, with normal iteration ICs, rooting, and exception propagation.
 The exact-list guard is in the opcode; the fallback helper does not repeat it.
 No final list-to-tuple conversion is needed. Managed helper scratch placement
 remains part of the runtime implementation sketch.
@@ -397,14 +404,12 @@ For a first keyword mapping followed by another mapping, precode is:
 
 ```text
 accumulator = args_source
-Star saved_source_reg
+Star containers_reg
 accumulator = first_keyword_source
 BuildCallKeywords callable_reg, next_container_reg
 accumulator = next_keyword_source
 MergeCallKeywords callable_reg, next_container_reg
-Ldar saved_source_reg
-ToExactTuple
-Star containers_reg
+ToExactTuple containers_reg
 CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx
 ```
 
@@ -543,7 +548,10 @@ cache. The additional plan cache remains a design option within general mode.
 Codegen reserves an ordinary outgoing call window for managed helper fallback
 calls. Slow opcode handlers enter VM-owned helper Functions through existing
 managed frame-entry machinery, saving the return PC immediately after the
-operation. Results return in the accumulator. Build/Merge helpers mutate the
+operation. `ToExactTuple` and `ToExactList` fallback completion must install the
+returned helper value into the opcode's operand register before resuming;
+there is no accumulator result or caller-emitted `Star` for these operations.
+Build/Merge helpers mutate the
 dict already rooted in the destination register; their return value is not used
 to install that destination. Exact scratch sizes and placement are resolved per
 opcode during its implementation review, following existing alignment and
@@ -588,6 +596,11 @@ slice. Inspect the fallback contract for each new operation; no new JIT
 continuation mechanism is implied. More specialized lowering is later work.
 
 ### Expanded-call implementation stages
+
+Track checkpoint completion in the
+[expanded-call implementation plan](expanded-call-implementation-plan.md).
+Implementation changes remain uncommitted for user review unless explicitly
+requested otherwise.
 
 Each stage gets focused semantic tests and the required full debug checks.
 Interpreter frame changes also get the release opcode-frame checks. Keep
