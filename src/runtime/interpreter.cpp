@@ -4610,6 +4610,76 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_to_exact_tuple_slow(PARAMS)
+    {
+        int8_t source_reg = pc[1];
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = fp[source_reg];
+        TValue<Function> function =
+            thread->get_machine()->iterable_to_exact_tuple_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 1,
+            2, FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_to_exact_list_slow(PARAMS)
+    {
+        int8_t source_reg = pc[1];
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = fp[source_reg];
+        TValue<Function> function =
+            thread->get_machine()->iterable_to_exact_list_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 1,
+            2, FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_to_exact_tuple(PARAMS)
+    {
+        Value source = fp[int8_t(pc[1])];
+        if(likely(source.is_ptr() && source.get_ptr<Object>()->get_shape() ==
+                                         thread->get_exact_tuple_shape()))
+        {
+            accumulator = source;
+            START(2);
+            COMPLETE();
+        }
+        MUSTTAIL return op_to_exact_tuple_slow(ARGS);
+    }
+
+    static INTERP_CC Value op_to_exact_list(PARAMS)
+    {
+        Value source = fp[int8_t(pc[1])];
+        if(likely(source.is_ptr() && source.get_ptr<Object>()->get_shape() ==
+                                         thread->get_exact_list_shape()))
+        {
+            accumulator = source;
+            START(2);
+            COMPLETE();
+        }
+        MUSTTAIL return op_to_exact_list_slow(ARGS);
+    }
+
     static INTERP_CC Value op_create_tuple(PARAMS)
     {
         START(3);
@@ -6402,6 +6472,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
         SET_TABLE_ENTRY(Bytecode::ListAppend, op_list_append);
         SET_TABLE_ENTRY(Bytecode::ListToTuple, op_list_to_tuple);
+        SET_TABLE_ENTRY(Bytecode::ToExactTuple, op_to_exact_tuple);
+        SET_TABLE_ENTRY(Bytecode::ToExactList, op_to_exact_list);
         SET_TABLE_ENTRY(Bytecode::CreateBinarySlice, op_create_binary_slice);
         SET_TABLE_ENTRY(Bytecode::CreateTernarySlice, op_create_ternary_slice);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);

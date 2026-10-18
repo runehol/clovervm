@@ -856,6 +856,8 @@ namespace cl
             CanonicalizeHash,
             ListAppend,
             ListToTuple,
+            ToExactTuple,
+            ToExactList,
         };
 
         Expected<TrustedCloverCall>
@@ -930,6 +932,18 @@ namespace cl
             {
                 return Expected<TrustedCloverCall>::ok(
                     TrustedCloverCall::ListToTuple);
+            }
+            if(name_value ==
+               interned_string(L"__clover_to_exact_tuple__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::ToExactTuple);
+            }
+            if(name_value ==
+               interned_string(L"__clover_to_exact_list__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::ToExactList);
             }
             return Expected<TrustedCloverCall>::raise_exception(
                 L"SyntaxError", L"unknown trusted __clover_* helper");
@@ -1216,6 +1230,44 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        codegen_trusted_clover_to_exact_tuple(uint32_t source_offset,
+                                              AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_to_exact_tuple__"));
+            if(args.size() != 1)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_to_exact_tuple__ expects exactly 1 argument");
+            }
+            TemporaryReg source(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), source));
+            CL_TRY(code_obj->emit_to_exact_tuple(source_offset, source));
+            return Expected<void>::ok();
+        }
+
+        Expected<void>
+        codegen_trusted_clover_to_exact_list(uint32_t source_offset,
+                                             AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_to_exact_list__"));
+            if(args.size() != 1)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_to_exact_list__ expects exactly 1 argument");
+            }
+            TemporaryReg source(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), source));
+            CL_TRY(code_obj->emit_to_exact_list(source_offset, source));
+            return Expected<void>::ok();
+        }
+
         Expected<bool> try_codegen_trusted_clover_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1224,6 +1276,14 @@ namespace cl
 
             switch(CL_TRY(trusted_clover_call_kind(node_idx)))
             {
+                case TrustedCloverCall::ToExactTuple:
+                    CL_TRY(codegen_trusted_clover_to_exact_tuple(source_offset,
+                                                                 args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::ToExactList:
+                    CL_TRY(codegen_trusted_clover_to_exact_list(source_offset,
+                                                                args));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::ListAppend:
                     CL_TRY(codegen_trusted_clover_list_append(source_offset,
                                                               args));

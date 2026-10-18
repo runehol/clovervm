@@ -52,35 +52,40 @@ builders/decoders/disassembly, `src/compiler/codegen.*`,
 Verification: six focused tests passed; `ninja -C build-debug all check` passed
 with 1,657 tests passed and one skipped. Release `check_opcode_frames` passed.
 The opcode handlers contain their bodies directly and are not on the hot-handler
-list. Changes are uncommitted.
+list. Stage 1a was subsequently committed as `90b35a36`.
 
 ### 1b: Exact-container conversion and managed helper entry
 
-- [ ] Use `code_object->get_first_free_arg_encoded_reg()` for helper arguments
+- [x] Use `code_object->get_first_free_arg_encoded_reg()` for helper arguments
   without an extra opcode operand. Confirm alignment, saved return
   PC, stack capacity, ordinary accumulator return, and exception path before
   coding. Use ordinary `Star` for result storage, without conversion-specific
   finish instructions or accumulator preservation scratch.
-- [ ] Add `ToExactTuple value_reg`, reading the source register without changing
+- [x] Add `ToExactTuple value_reg`, reading the source register without changing
   it and always writing the accumulator on success: reuse exact tuples;
-  otherwise enter the
-  VM-owned managed collection helper and convert its list builder to a tuple.
-- [ ] Add `ToExactList value_reg`, reading the source register without changing
+  otherwise enter the VM-owned managed collection helper and convert its list builder to a tuple.
+- [x] Add `ToExactList value_reg`, reading the source register without changing
   it and always writing the accumulator on success: reuse exact lists;
-  otherwise enter the
-  VM-owned managed collection helper returning a fresh exact list.
-- [ ] Add trusted conversion intrinsics for use by later mapping helpers.
-- [ ] Retain helper Functions on the VM following existing builtin/helper
+  otherwise enter the VM-owned managed collection helper returning a fresh exact list.
+- [x] Cache exact tuple/list root shapes on `ThreadState`, following the string
+  cache, and verify bootstrap registration and newly created threads.
+- [x] Add trusted conversion intrinsics for use by later mapping helpers.
+- [x] Retain helper Functions on the VM following existing builtin/helper
   ownership patterns. Preserve source, builder, and iterator roots across calls.
-- [ ] Use normal managed frame entry, returns, iteration ICs, and exception
+- [x] Use normal managed frame entry, returns, iteration ICs, and exception
   unwinding; do not recursively enter the interpreter from C++.
-- [ ] Test exact-container identity, list/tuple subclass iterator overrides,
+- [x] Test exact-container identity, list/tuple subclass iterator overrides,
   generic iterables and existing iterators, empty sources, noniterables, and
   failures during iterator acquisition and advancement.
-- [ ] Verify nested callbacks preserve caller live registers, conversion leaves
+- [x] Verify nested callbacks preserve caller live registers, conversion leaves
   its source register unchanged, both paths overwrite the accumulator, and
   execution resumes only after successful conversion.
-- [ ] Run required checks and leave changes uncommitted for review.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: seven focused conversion/codegen tests passed. Full debug checks
+passed with 1,665 tests passed and one skipped, including bootstrap/new-thread
+shape-cache coverage. Release `check_opcode_frames` passed. Stage 1b changes
+remain uncommitted for user review.
 
 ### 1c: List extension
 

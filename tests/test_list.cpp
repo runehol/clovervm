@@ -14,6 +14,25 @@ using namespace cl;
 
 namespace
 {
+    [[nodiscard]] static Value
+    run_trusted_conversion_test(test::VmTestContext &context,
+                                const wchar_t *source)
+    {
+        auto name = context.vm().get_or_create_interned_string_value(
+            L"<container-conversion-test>");
+        Owned<TValue<ModuleObject>> module(
+            TValue<ModuleObject>::from_oop(context.make_test_module_object(
+                name, context.vm().global_builtins_module().raw_value())));
+        auto compiled = context.thread()->compile_in_module(
+            source, StartRule::File, module.extract(),
+            LanguageMode::TrustedCloverExtensions);
+        if(compiled.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        return context.thread()->run_clovervm_code_object(compiled.value());
+    }
+
     static String *make_string(test::VmTestContext &context,
                                const wchar_t *text)
     {
@@ -276,4 +295,181 @@ assert len(empty) == 100
             test::native_exception_message(thread->pending_exception_object()));
     }
     ASSERT_FALSE(result.is_exception_marker());
+}
+
+TEST(ExactContainerConversion, IdentityCopiesAndRepeatedFastSlowCalls)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_conversion_test(context, LR"(
+def to_tuple(source):
+    return __clover_to_exact_tuple__(source)
+def to_list(source):
+    return __clover_to_exact_list__(source)
+item = []
+xs = [item, 2]
+ys = (item, 2)
+for repeat in range(10):
+    assert to_tuple(ys) is ys
+    assert to_list(xs) is xs
+    copied_tuple = to_tuple(xs)
+    copied_list = to_list(ys)
+    assert copied_tuple.__class__ is tuple
+    assert copied_list.__class__ is list
+    assert copied_tuple == ys
+    assert copied_list == xs
+    assert copied_tuple[0] is item
+    assert copied_list[0] is item
+    assert to_tuple(iter(xs)) == ys
+    assert to_list(iter(ys)) == xs
+    assert to_tuple(range(3)) == (0, 1, 2)
+    assert to_list(range(3)) == [0, 1, 2]
+assert to_tuple([]) == ()
+assert to_list(()) == []
+assert to_list(()) is not to_list(())
+xs.append(3)
+assert len(copied_tuple) == 2
+assert len(copied_list) == 2
+assert len(xs) == 3
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(ExactContainerConversion, SubclassesUseIteratorOverrides)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    auto name = context.vm().get_or_create_interned_string_value(
+        L"<conversion-subclasses>");
+    Owned<TValue<ModuleObject>> module(
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())));
+    auto classes =
+        thread->compile_in_module(LR"(
+events = []
+class L(list):
+    def __iter__(self):
+        events.append('list')
+        return iter((7, 8))
+class T(tuple):
+    def __iter__(self):
+        events.append('tuple')
+        return iter((9, 10))
+)",
+                                  StartRule::File, module.extract(),
+                                  LanguageMode::TrustedCloverExtensions);
+    ASSERT_FALSE(classes.has_exception());
+    ASSERT_FALSE(thread->run_clovervm_code_object(classes.value())
+                     .is_exception_marker());
+    auto cls = [&](const wchar_t *text) {
+        return module.extract()
+            ->get_own_property(
+                context.vm().get_or_create_interned_string_value(text))
+            .get_ptr<ClassObject>();
+    };
+    Owned<TValue<List>> list(thread->make_internal_value<List>(cls(L"L")));
+    list.extract()->append(Value::from_smi(1));
+    Owned<TValue<Tuple>> tuple(
+        thread->make_internal_value<Tuple>(cls(L"T"), 1));
+    tuple.extract()->initialize_item_unchecked(0, Value::from_smi(2));
+    ASSERT_TRUE(module.extract()->set_own_property(
+        context.vm().get_or_create_interned_string_value(L"xs"),
+        list.raw_value()));
+    ASSERT_TRUE(module.extract()->set_own_property(
+        context.vm().get_or_create_interned_string_value(L"ys"),
+        tuple.raw_value()));
+    auto compiled =
+        thread->compile_in_module(LR"(
+a = __clover_to_exact_list__(xs)
+b = __clover_to_exact_tuple__(ys)
+assert a.__class__ is list and a == [7, 8]
+assert b.__class__ is tuple and b == (9, 10)
+assert a is not xs and b is not ys
+assert __clover_to_exact_tuple__(xs) == (7, 8)
+assert __clover_to_exact_list__(ys) == [9, 10]
+assert events == ['list', 'tuple', 'list', 'tuple']
+assert xs[0] == 1 and ys[0] == 2
+)",
+                                  StartRule::File, module.extract(),
+                                  LanguageMode::TrustedCloverExtensions);
+    ASSERT_FALSE(compiled.has_exception());
+    Value result = thread->run_clovervm_code_object(compiled.value());
+    ASSERT_FALSE(result.is_exception_marker()) << string_as_wchar_t(
+        test::native_exception_message(thread->pending_exception_object()));
+}
+
+TEST(ExactContainerConversion, NestedCallbacksAndCallerExceptionHandlers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_conversion_test(context, LR"(
+class Source:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        if self.position == 3: raise StopIteration
+        current = self.position
+        self.position += 1
+        # Re-enter the same conversion helper from an iterator callback.
+        nested = __clover_to_exact_tuple__([current])
+        assert nested == (current,)
+        return nested
+source = Source()
+keep = []
+# Earlier expression results must survive the conversion's implicit call window.
+def pair(a, b, c):
+    assert a is keep and c is keep
+    return b
+result = pair(keep, __clover_to_exact_list__(source), keep)
+assert result == [(0,), (1,), (2,)]
+assert source.position == 3
+assert source.__class__ is Source
+class BadIter:
+    def __iter__(self): raise ValueError('iter failed')
+class BadNext:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        self.position += 1
+        if self.position == 1: return keep
+        raise ValueError('next failed')
+for mode in range(2):
+    bad = BadNext()
+    reached = False
+    try:
+        if mode == 0:
+            __clover_to_exact_tuple__(bad)
+        else:
+            __clover_to_exact_list__(bad)
+        reached = True
+    except ValueError as error:
+        assert error.args[0] == 'next failed'
+    assert not reached
+    assert bad.position == 2
+    try:
+        if mode == 0:
+            __clover_to_exact_tuple__(BadIter())
+        else:
+            __clover_to_exact_list__(BadIter())
+    except ValueError as error:
+        assert error.args[0] == 'iter failed'
+    else:
+        raise AssertionError
+    try:
+        if mode == 0:
+            __clover_to_exact_tuple__(42)
+        else:
+            __clover_to_exact_list__(42)
+    except TypeError:
+        pass
+    else:
+        raise AssertionError
+assert __clover_to_exact_list__(Source()) == [(0,), (1,), (2,)]
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
 }

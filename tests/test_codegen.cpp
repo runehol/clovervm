@@ -2068,3 +2068,38 @@ TEST(Codegen, user_list_builder_intrinsic_names_are_ordinary_calls)
     EXPECT_EQ(std::string::npos, actual.find("ListToTuple"));
     EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
+
+TEST(Codegen, trusted_exact_container_conversions_lower_to_register_opcodes)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def convert(source):\n"
+        L"    __clover_to_exact_tuple__(source)\n"
+        L"    return __clover_to_exact_list__(source)\n");
+    EXPECT_NE(std::string::npos, actual.find("ToExactTuple"));
+    EXPECT_NE(std::string::npos, actual.find("ToExactList"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_exact_container_conversions_validate_arguments)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_to_exact_tuple__()\n", L"SyntaxError",
+        L"__clover_to_exact_tuple__ expects exactly 1 argument");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_to_exact_list__([], [])\n", L"SyntaxError",
+        L"__clover_to_exact_list__ expects exactly 1 argument");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_to_exact_list__(source=[])\n", L"SyntaxError",
+        L"__clover_to_exact_list__ does not accept keyword arguments");
+}
+
+TEST(Codegen, user_exact_container_conversion_names_are_ordinary_calls)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def convert(source):\n"
+        L"    __clover_to_exact_tuple__(source)\n"
+        L"    return __clover_to_exact_list__(source)\n");
+    EXPECT_EQ(std::string::npos, actual.find("ToExactTuple"));
+    EXPECT_EQ(std::string::npos, actual.find("ToExactList"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
+}

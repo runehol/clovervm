@@ -302,6 +302,16 @@ namespace cl
             assert(exact_string_shape_ != nullptr);
             return exact_string_shape_;
         }
+        Shape *get_exact_tuple_shape() const
+        {
+            assert(exact_tuple_shape_ != nullptr);
+            return exact_tuple_shape_;
+        }
+        Shape *get_exact_list_shape() const
+        {
+            assert(exact_list_shape_ != nullptr);
+            return exact_list_shape_;
+        }
         Shape *get_exact_dict_string_key_shape() const
         {
             assert(exact_dict_string_key_shape_ != nullptr);
@@ -430,6 +440,8 @@ namespace cl
         std::array<ClassObject *, static_cast<size_t>(NativeLayoutId::Count)>
             class_for_native_layouts = {};
         Shape *exact_string_shape_ = nullptr;
+        Shape *exact_tuple_shape_ = nullptr;
+        Shape *exact_list_shape_ = nullptr;
         Shape *exact_dict_string_key_shape_ = nullptr;
         Shape *exact_dict_general_shape_ = nullptr;
 

@@ -1,3 +1,4 @@
+#include "builtin_types/list.h"
 #include "bytecode/bytecode.h"
 #include "bytecode/bytecode_decoder.h"
 #include "bytecode/bytecode_instruction.h"
@@ -653,4 +654,68 @@ TEST(BytecodeInstruction,
               convert.sources()[0].frame_offset);
     EXPECT_EQ(Value::from_smi(42),
               context.thread()->run_clovervm_code_object(code));
+}
+
+TEST(BytecodeInstruction,
+     exact_container_conversion_reads_register_and_writes_accumulator)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(Bytecode opcode: {Bytecode::ToExactTuple, Bytecode::ToExactList})
+    {
+        for(bool exact: {false, true})
+        {
+            for(bool return_source: {false, true})
+            {
+                SCOPED_TRACE(static_cast<int>(opcode));
+                SCOPED_TRACE(exact);
+                SCOPED_TRACE(return_source);
+                auto name = context.vm().get_or_create_interned_string_value(
+                    L"<conversion-effects>");
+                CodeObjectBuilder builder(
+                    &context.vm(), nullptr,
+                    TValue<ModuleObject>::from_oop(
+                        context.make_test_module_object(
+                            name,
+                            context.vm().global_builtins_module().raw_value())),
+                    nullptr, name);
+                {
+                    CodeObjectBuilder::TemporaryReg source(builder);
+                    if((opcode == Bytecode::ToExactList) == exact)
+                        builder.emit_create_list(0, source, 0).value();
+                    else
+                        builder.emit_create_tuple(0, source, 0).value();
+                    builder.emit_star(0, source).value();
+                    builder.emit_lda_smi(0, 42).value();
+                    if(opcode == Bytecode::ToExactTuple)
+                        builder.emit_to_exact_tuple(0, source).value();
+                    else
+                        builder.emit_to_exact_list(0, source).value();
+                    if(return_source)
+                        builder.emit_ldar(0, source).value();
+                    builder.emit_return(0).value();
+                }
+                CodeObject *code = builder.finalize().value();
+                auto instruction = find_instruction(*code, opcode);
+                ASSERT_EQ(1u, instruction.operands().size());
+                ASSERT_EQ(1u, instruction.sources().size());
+                EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
+                          instruction.sources()[0].kind);
+                ASSERT_EQ(1u, instruction.destinations().size());
+                EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
+                          instruction.destinations()[0].kind);
+                EXPECT_FALSE(instruction.continuation_pc_offset().has_value());
+                Owned<Value> result(
+                    context.thread()->run_clovervm_code_object(code));
+                ASSERT_FALSE(result.value().is_exception_marker());
+                bool expect_tuple = opcode == Bytecode::ToExactTuple;
+                if(return_source && !exact)
+                    expect_tuple = !expect_tuple;
+                if(expect_tuple)
+                    EXPECT_TRUE(can_convert_to<Tuple>(result.value()));
+                else
+                    EXPECT_TRUE(can_convert_to<List>(result.value()));
+            }
+        }
+    }
 }

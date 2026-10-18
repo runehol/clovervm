@@ -102,10 +102,22 @@ namespace cl
                                                     ClassObject *cls)
     {
         class_for_native_layouts[static_cast<size_t>(id)] = cls;
-        if(id == NativeLayoutId::String)
+        if(cls != nullptr)
         {
-            exact_string_shape_ =
-                cls != nullptr ? cls->get_instance_root_shape() : nullptr;
+            switch(id)
+            {
+                case NativeLayoutId::String:
+                    exact_string_shape_ = cls->get_instance_root_shape();
+                    break;
+                case NativeLayoutId::Tuple:
+                    exact_tuple_shape_ = cls->get_instance_root_shape();
+                    break;
+                case NativeLayoutId::List:
+                    exact_list_shape_ = cls->get_instance_root_shape();
+                    break;
+                default:
+                    break;
+            }
         }
     }
 

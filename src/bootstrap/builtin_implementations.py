@@ -440,3 +440,17 @@ def _clover_list_remove(self, needle, /):
             return None
         i += 1
     raise ValueError
+
+
+def _clover_iterable_to_exact_tuple(source):
+    builder = []
+    for item in source:
+        __clover_list_append__(builder, item)
+    return __clover_list_to_tuple__(builder)
+
+
+def _clover_iterable_to_exact_list(source):
+    builder = []
+    for item in source:
+        __clover_list_append__(builder, item)
+    return builder

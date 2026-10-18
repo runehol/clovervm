@@ -203,8 +203,9 @@ runtime implementation sketch.
 `ToExactTuple value_reg` reads an iterable source from `value_reg` and writes an
 exact tuple to the accumulator, leaving the source register unchanged. It always
 writes the accumulator on success, on both fast and managed paths. An exact
-tuple is returned by identity without allocation. Every other input, including tuple subclasses,
-takes the iteration path so subclass `__iter__` overrides are honored.
+tuple is returned by identity without allocation. Every other input, including
+tuple subclasses, takes the iteration path so subclass `__iter__` overrides
+are honored.
 
 The fallback is an ordinary managed call to a VM-owned helper Function compiled
 once from trusted Python source with the other builtin implementations:
@@ -233,6 +234,8 @@ therefore uses growable list storage before allocating the fixed-size tuple and
 copying element references. An exact-list-to-tuple fast path could avoid the
 intermediate builder later; it is not required by this slice.
 
+The exact-container guards compare the pointer tag and shape against the tuple
+or list root shape cached on `ThreadState`, following the string-shape cache.
 The opcode's exact-tuple guard advances directly on a hit. Otherwise it
 tail-dispatches to a slow handler, which places the source in a one-argument
 outgoing window at `code_object->get_first_free_arg_encoded_reg()`, beyond
@@ -260,8 +263,8 @@ context must be resolved before implementation.
 `ToExactList value_reg` reads a source from `value_reg` and writes an exact list
 to the accumulator, leaving the source register unchanged. It always writes the
 accumulator on success, on both fast and managed paths. An exact list is returned
-by identity, preserving its live contents. Every other source, including list subclasses, takes a
-managed iteration path into a fresh exact list:
+by identity, preserving its live contents. Every other source, including list
+subclasses, takes a managed iteration path into a fresh exact list:
 
 ```python
 def _clover_iterable_to_exact_list(source):

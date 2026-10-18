@@ -1,6 +1,7 @@
 #include "bytecode/code_object_builder.h"
 #include "test_helpers.h"
 
+#include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
@@ -196,6 +197,25 @@ namespace cl
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
         member.release_ref();
+    }
+
+    TEST(ThreadState, ExactContainerShapesAreCachedForBootstrapAndNewThreads)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<List>> list(thread->make_object_value<List>());
+        Owned<TValue<Tuple>> tuple(thread->make_object_value<Tuple>(0));
+        EXPECT_EQ(list.extract()->get_shape(), thread->get_exact_list_shape());
+        EXPECT_EQ(tuple.extract()->get_shape(),
+                  thread->get_exact_tuple_shape());
+        ThreadState *child = context.vm().make_new_thread();
+        EXPECT_EQ(thread->get_exact_list_shape(),
+                  child->get_exact_list_shape());
+        EXPECT_EQ(thread->get_exact_tuple_shape(),
+                  child->get_exact_tuple_shape());
+        EXPECT_EQ(thread->get_exact_string_shape(),
+                  child->get_exact_string_shape());
     }
 
     TEST(ThreadState, SafepointRequestReadsVmFlag)

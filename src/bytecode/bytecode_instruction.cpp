@@ -224,6 +224,12 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::ToExactTuple:
+            case Bytecode::ToExactList:
+                effects.source_register(0);
+                effects.destination_accumulator();
+                break;
+
             case Bytecode::ListAppend:
                 effects.source_register(0);
                 effects.source_accumulator();

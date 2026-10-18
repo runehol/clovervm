@@ -605,6 +605,22 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_to_exact_tuple(uint32_t source_offset,
+                                           uint32_t source_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::ToExactTuple,
+                               source_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_to_exact_list(uint32_t source_offset,
+                                          uint32_t source_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::ToExactList,
+                               source_reg);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_create_dict(uint32_t source_offset,
                                         uint32_t first_reg, uint8_t n_entries)
     {

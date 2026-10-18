@@ -1361,6 +1361,28 @@ namespace cl
                 thread, "initializing trusted builtin_implementations.py");
         }
 
+        Value to_exact_tuple = implementation_module->get_own_property(
+            get_or_create_interned_string_value(
+                L"_clover_iterable_to_exact_tuple"));
+        if(!can_convert_to<Function>(to_exact_tuple))
+        {
+            fatal("trusted builtin_implementations.py did not define "
+                  "exact-tuple helper");
+        }
+        iterable_to_exact_tuple_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(to_exact_tuple));
+
+        Value to_exact_list = implementation_module->get_own_property(
+            get_or_create_interned_string_value(
+                L"_clover_iterable_to_exact_list"));
+        if(!can_convert_to<Function>(to_exact_list))
+        {
+            fatal("trusted builtin_implementations.py did not define "
+                  "exact-list helper");
+        }
+        iterable_to_exact_list_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(to_exact_list));
+
         const wchar_t *export_names[] = {
             L"abs",     L"iter",    L"next",    L"repr", L"hash",
             L"len",     L"getattr", L"hasattr", L"vars", L"dir",
@@ -1433,6 +1455,18 @@ namespace cl
         {
             definition.cls->freeze();
         }
+    }
+
+    TValue<Function> VirtualMachine::iterable_to_exact_tuple_function() const
+    {
+        assert(iterable_to_exact_tuple_function_.value().has_value());
+        return iterable_to_exact_tuple_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::iterable_to_exact_list_function() const
+    {
+        assert(iterable_to_exact_list_function_.value().has_value());
+        return iterable_to_exact_list_function_.value().value();
     }
 
     TValue<Function> VirtualMachine::membership_iter_fallback_function() const
