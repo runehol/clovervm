@@ -200,10 +200,10 @@ runtime implementation sketch.
 
 #### Single-source conversion: ToExactTuple
 
-`ToExactTuple value_reg` reads an iterable source from `value_reg` and replaces
-that same register with an exact tuple. It has no accumulator input or result.
-An exact tuple passes through unchanged, preserving
-identity and avoiding allocation. Every other input, including tuple subclasses,
+`ToExactTuple value_reg` reads an iterable source from `value_reg` and writes an
+exact tuple to the accumulator, leaving the source register unchanged. It always
+writes the accumulator on success, on both fast and managed paths. An exact
+tuple is returned by identity without allocation. Every other input, including tuple subclasses,
 takes the iteration path so subclass `__iter__` overrides are honored.
 
 The fallback is an ordinary managed call to a VM-owned helper Function compiled
@@ -238,13 +238,14 @@ tail-dispatches to a slow handler, which places the source in a one-argument
 outgoing window at `code_object->get_first_free_arg_encoded_reg()`, beyond
 the caller's live temporaries, and enters the helper through
 existing managed frame-entry machinery. The saved return PC points immediately
-after `ToExactTuple`. Managed fallback completion installs the helper's tuple
-result in the original operand register before resuming the caller. The
-destination-register return plumbing must be resolved in the helper-entry
-implementation sketch; callers do not emit a `Star` to install the result:
+after `ToExactTuple`. The helper returns normally with the tuple in the
+accumulator. Codegen emits `Star` when it needs to store the result. There is no
+conversion-specific finish instruction, accumulator preservation prefix, or
+change to the ordinary managed return convention:
 
 ```text
 ToExactTuple source_reg
+Star containers_reg
 ```
 
 The source parameter, builder local, and iterator state use normal managed
@@ -256,10 +257,10 @@ context must be resolved before implementation.
 
 #### List normalization: ToExactList
 
-`ToExactList value_reg` reads a source from `value_reg` and replaces that same
-register with an exact list. It has no accumulator input or result. An exact
-list passes through unchanged, preserving identity and
-its live contents. Every other source, including list subclasses, takes a
+`ToExactList value_reg` reads a source from `value_reg` and writes an exact list
+to the accumulator, leaving the source register unchanged. It always writes the
+accumulator on success, on both fast and managed paths. An exact list is returned
+by identity, preserving its live contents. Every other source, including list subclasses, takes a
 managed iteration path into a fresh exact list:
 
 ```python
@@ -272,8 +273,8 @@ def _clover_iterable_to_exact_list(source):
 
 The trusted append intrinsic lowers to `ListAppend`. The VM owns the helper
 Function and enters it using the same managed-call and return pattern as
-`ToExactTuple`, including installing the helper result in the operand register
-before resuming, with normal iteration ICs, rooting, and exception propagation.
+`ToExactTuple`, returning the result in the accumulator with normal iteration
+ICs, rooting, and exception propagation.
 The exact-list guard is in the opcode; the fallback helper does not repeat it.
 No final list-to-tuple conversion is needed. Managed helper scratch placement
 remains part of the runtime implementation sketch.
@@ -413,6 +414,7 @@ BuildCallKeywords callable_reg, next_container_reg
 accumulator = next_keyword_source
 MergeCallKeywords callable_reg, next_container_reg
 ToExactTuple containers_reg
+Star containers_reg
 CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx
 ```
 
@@ -553,10 +555,10 @@ Managed helper fallback calls use the ordinary outgoing window at
 additional argument-window operand is encoded in the helper opcodes. Slow opcode
 handlers enter VM-owned helper Functions through existing
 managed frame-entry machinery, saving the return PC immediately after the
-operation. `ToExactTuple` and `ToExactList` fallback completion must install the
-returned helper value into the opcode's operand register before resuming;
-there is no accumulator result or caller-emitted `Star` for these operations.
-Build/Merge helpers mutate the
+operation. `ToExactTuple` and `ToExactList` return in the accumulator using the
+ordinary managed return convention; their exact-container fast paths write the
+accumulator too. Codegen emits `Star` when the result needs storing. No special
+return plumbing or conversion continuation is needed. Build/Merge helpers mutate the
 dict already rooted in the destination register; their return value is not used
 to install that destination. Exact scratch sizes and placement are resolved per
 opcode during its implementation review, following existing alignment and

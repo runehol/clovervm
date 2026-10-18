@@ -58,13 +58,16 @@ list. Changes are uncommitted.
 
 - [ ] Use `code_object->get_first_free_arg_encoded_reg()` for helper arguments
   without an extra opcode operand. Confirm alignment, saved return
-  PC, stack capacity, destination-register result installation, and exception
-  path before coding. Conversion callers must not need a trailing `Star`.
-- [ ] Add `ToExactTuple value_reg`, reading and replacing that same register
-  with no accumulator input or result: reuse exact tuples; otherwise enter the
+  PC, stack capacity, ordinary accumulator return, and exception path before
+  coding. Use ordinary `Star` for result storage, without conversion-specific
+  finish instructions or accumulator preservation scratch.
+- [ ] Add `ToExactTuple value_reg`, reading the source register without changing
+  it and always writing the accumulator on success: reuse exact tuples;
+  otherwise enter the
   VM-owned managed collection helper and convert its list builder to a tuple.
-- [ ] Add `ToExactList value_reg`, reading and replacing that same register
-  with no accumulator input or result: reuse exact lists; otherwise enter the
+- [ ] Add `ToExactList value_reg`, reading the source register without changing
+  it and always writing the accumulator on success: reuse exact lists;
+  otherwise enter the
   VM-owned managed collection helper returning a fresh exact list.
 - [ ] Add trusted conversion intrinsics for use by later mapping helpers.
 - [ ] Retain helper Functions on the VM following existing builtin/helper
@@ -74,8 +77,9 @@ list. Changes are uncommitted.
 - [ ] Test exact-container identity, list/tuple subclass iterator overrides,
   generic iterables and existing iterators, empty sources, noniterables, and
   failures during iterator acquisition and advancement.
-- [ ] Verify nested callbacks preserve caller live registers and resume only
-  after successful conversion.
+- [ ] Verify nested callbacks preserve caller live registers, conversion leaves
+  its source register unchanged, both paths overwrite the accumulator, and
+  execution resumes only after successful conversion.
 - [ ] Run required checks and leave changes uncommitted for review.
 
 ### 1c: List extension
