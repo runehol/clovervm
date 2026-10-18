@@ -470,6 +470,17 @@ namespace cl
         return result;
     }
 
+    TValue<Tuple> List::to_tuple(ThreadState *thread) const
+    {
+        TValue<Tuple> result = thread->make_object_value<Tuple>(size());
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            result.extract()->initialize_item_unchecked(idx,
+                                                        item_unchecked(idx));
+        }
+        return result;
+    }
+
     void List::extend_from_list(const List *other)
     {
         size_t original_size = other->size();

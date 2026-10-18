@@ -4586,6 +4586,30 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_list_append(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        assert(can_convert_to<List>(fp[reg]));
+        List *builder = fp[reg].get_ptr<List>();
+        assert(builder->get_shape() ==
+               thread->get_machine()->list_class()->get_instance_root_shape());
+        builder->append(accumulator);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_list_to_tuple(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        assert(can_convert_to<List>(fp[reg]));
+        List *builder = fp[reg].get_ptr<List>();
+        assert(builder->get_shape() ==
+               thread->get_machine()->list_class()->get_instance_root_shape());
+        fp[reg] = builder->to_tuple(thread).raw_value();
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_create_tuple(PARAMS)
     {
         START(3);
@@ -6376,6 +6400,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
+        SET_TABLE_ENTRY(Bytecode::ListAppend, op_list_append);
+        SET_TABLE_ENTRY(Bytecode::ListToTuple, op_list_to_tuple);
         SET_TABLE_ENTRY(Bytecode::CreateBinarySlice, op_create_binary_slice);
         SET_TABLE_ENTRY(Bytecode::CreateTernarySlice, op_create_ternary_slice);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);

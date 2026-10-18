@@ -2033,3 +2033,38 @@ TEST(Codegen, operator_length_hint_uses_special_method_call)
     EXPECT_NE(std::string::npos, actual.find("__length_hint__"));
     EXPECT_EQ(std::string::npos, actual.find("__clover_call_special__"));
 }
+
+TEST(Codegen, trusted_list_builder_intrinsics_lower_to_opcodes)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def build(builder, item):\n"
+        L"    __clover_list_append__(builder, item)\n"
+        L"    return __clover_list_to_tuple__(builder)\n");
+    EXPECT_NE(std::string::npos, actual.find("ListAppend"));
+    EXPECT_NE(std::string::npos, actual.find("ListToTuple"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_list_builder_intrinsics_validate_arguments)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_list_append__([])\n", L"SyntaxError",
+        L"__clover_list_append__ expects exactly 2 arguments");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_list_to_tuple__([], [])\n", L"SyntaxError",
+        L"__clover_list_to_tuple__ expects exactly 1 argument");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_list_append__([], item=1)\n", L"SyntaxError",
+        L"__clover_list_append__ does not accept keyword arguments");
+}
+
+TEST(Codegen, user_list_builder_intrinsic_names_are_ordinary_calls)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def build(builder, item):\n"
+        L"    __clover_list_append__(builder, item)\n"
+        L"    return __clover_list_to_tuple__(builder)\n");
+    EXPECT_EQ(std::string::npos, actual.find("ListAppend"));
+    EXPECT_EQ(std::string::npos, actual.find("ListToTuple"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
+}

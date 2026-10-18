@@ -613,3 +613,44 @@ TEST(BytecodeInstruction, conditional_truthiness_bundles_share_branch_base)
     EXPECT_GT(forward, 0u);
     EXPECT_GT(backward, 0u);
 }
+
+TEST(BytecodeInstruction,
+     list_builder_register_effects_and_accumulator_preservation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto name = context.vm().get_or_create_interned_string_value(
+        L"<list-builder-effects>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    {
+        CodeObjectBuilder::TemporaryReg list_reg(builder);
+        builder.emit_create_list(0, list_reg, 0).value();
+        builder.emit_star(0, list_reg).value();
+        builder.emit_lda_smi(0, 42).value();
+        builder.emit_list_append(0, list_reg).value();
+        builder.emit_list_to_tuple(0, list_reg).value();
+        builder.emit_return(0).value();
+    }
+    CodeObject *code = builder.finalize().value();
+
+    auto append = find_instruction(*code, Bytecode::ListAppend);
+    ASSERT_EQ(2u, append.sources().size());
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot, append.sources()[0].kind);
+    EXPECT_EQ(BytecodeValueLocationKind::Accumulator, append.sources()[1].kind);
+    EXPECT_TRUE(append.destinations().empty());
+    auto convert = find_instruction(*code, Bytecode::ListToTuple);
+    ASSERT_EQ(1u, convert.sources().size());
+    ASSERT_EQ(1u, convert.destinations().size());
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
+              convert.destinations()[0].kind);
+    EXPECT_EQ(convert.sources()[0].frame_offset,
+              convert.destinations()[0].frame_offset);
+    EXPECT_EQ(append.sources()[0].frame_offset,
+              convert.sources()[0].frame_offset);
+    EXPECT_EQ(Value::from_smi(42),
+              context.thread()->run_clovervm_code_object(code));
+}

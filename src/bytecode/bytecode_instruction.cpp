@@ -224,6 +224,16 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::ListAppend:
+                effects.source_register(0);
+                effects.source_accumulator();
+                break;
+
+            case Bytecode::ListToTuple:
+                effects.source_register(0);
+                effects.destination_register(0);
+                break;
+
             case Bytecode::ClearLocal:
                 effects.destination_register(0);
                 break;

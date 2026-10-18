@@ -854,6 +854,8 @@ namespace cl
             Sqrt,
             TernaryPow,
             CanonicalizeHash,
+            ListAppend,
+            ListToTuple,
         };
 
         Expected<TrustedCloverCall>
@@ -916,6 +918,18 @@ namespace cl
             {
                 return Expected<TrustedCloverCall>::ok(
                     TrustedCloverCall::CanonicalizeHash);
+            }
+            if(name_value ==
+               interned_string(L"__clover_list_append__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::ListAppend);
+            }
+            if(name_value ==
+               interned_string(L"__clover_list_to_tuple__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::ListToTuple);
             }
             return Expected<TrustedCloverCall>::raise_exception(
                 L"SyntaxError", L"unknown trusted __clover_* helper");
@@ -1160,6 +1174,48 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        codegen_trusted_clover_list_append(uint32_t source_offset,
+                                           AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_list_append__"));
+            if(args.size() != 2)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_list_append__ expects exactly 2 arguments");
+            }
+            TemporaryReg builder(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), builder));
+            CL_TRY(codegen_node(call_argument_value(args[1])));
+            CL_TRY(code_obj->emit_list_append(source_offset, builder));
+            CL_TRY(code_obj->emit_lda_none(source_offset));
+            return Expected<void>::ok();
+        }
+
+        Expected<void>
+        codegen_trusted_clover_list_to_tuple(uint32_t source_offset,
+                                             AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_list_to_tuple__"));
+            if(args.size() != 1)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_list_to_tuple__ expects exactly 1 argument");
+            }
+            // The opcode overwrites its register, not the Python source local.
+            TemporaryReg builder(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), builder));
+            CL_TRY(code_obj->emit_list_to_tuple(source_offset, builder));
+            CL_TRY(code_obj->emit_ldar(source_offset, builder));
+            return Expected<void>::ok();
+        }
+
         Expected<bool> try_codegen_trusted_clover_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1168,6 +1224,14 @@ namespace cl
 
             switch(CL_TRY(trusted_clover_call_kind(node_idx)))
             {
+                case TrustedCloverCall::ListAppend:
+                    CL_TRY(codegen_trusted_clover_list_append(source_offset,
+                                                              args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::ListToTuple:
+                    CL_TRY(codegen_trusted_clover_list_to_tuple(source_offset,
+                                                                args));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::None:
                     return Expected<bool>::ok(false);
                 case TrustedCloverCall::CallSpecial:

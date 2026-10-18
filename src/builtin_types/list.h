@@ -49,6 +49,7 @@ namespace cl
             items.push_back(value);
         }
         [[nodiscard]] TValue<List> copy() const;
+        [[nodiscard]] TValue<Tuple> to_tuple(ThreadState *thread) const;
         void extend_from_list(const List *other);
         void extend_from_tuple(const Tuple *other);
         void reverse();

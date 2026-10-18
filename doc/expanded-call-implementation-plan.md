@@ -33,25 +33,31 @@ builders/decoders/disassembly, `src/compiler/codegen.*`,
 
 ### 1a: Native builder primitives
 
-- [ ] Inspect existing list append/storage growth and list-to-tuple helpers;
+- [x] Inspect existing list append/storage growth and list-to-tuple helpers;
   reuse unchecked storage operations where their invariants fit.
-- [ ] Add `ListAppend builder_reg`, taking the item from the accumulator.
-- [ ] Add `ListToTuple builder_reg`, reading the exact list from that register
+- [x] Add `ListAppend builder_reg`, taking the item from the accumulator.
+- [x] Add `ListToTuple builder_reg`, reading the exact list from that register
   and replacing it with the resulting exact tuple. It has no accumulator input
   or result and does not mutate the source list object.
-- [ ] Add trusted compiler intrinsics for helper Python code. Keep them
+- [x] Add trusted compiler intrinsics for helper Python code. Keep them
   compiler-recognized, without public builtin lookup.
-- [ ] Wire encoding, decoding, disassembly, register effects, and safe JIT
+- [x] Wire encoding, decoding, disassembly, register effects, and safe JIT
   fallback according to existing patterns. Update the hot-handler manifest as
   required by runtime instructions.
-- [ ] Test empty/nonempty builders, ordering, retained element references, and
+- [x] Test empty/nonempty builders, ordering, retained element references, and
   builder contents after conversion. Pin down intrinsic lowering with focused
   codegen tests.
-- [ ] Run required checks and leave changes uncommitted for review.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: six focused tests passed; `ninja -C build-debug all check` passed
+with 1,657 tests passed and one skipped. Release `check_opcode_frames` passed.
+The opcode handlers contain their bodies directly and are not on the hot-handler
+list. Changes are uncommitted.
 
 ### 1b: Exact-container conversion and managed helper entry
 
-- [ ] Confirm the helper outgoing-window allocation, alignment, saved return
+- [ ] Use `code_object->get_first_free_arg_encoded_reg()` for helper arguments
+  without an extra opcode operand. Confirm alignment, saved return
   PC, stack capacity, destination-register result installation, and exception
   path before coding. Conversion callers must not need a trailing `Star`.
 - [ ] Add `ToExactTuple value_reg`, reading and replacing that same register

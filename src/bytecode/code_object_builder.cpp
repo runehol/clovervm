@@ -589,6 +589,22 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_list_append(uint32_t source_offset,
+                                        uint32_t builder_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::ListAppend,
+                               builder_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_list_to_tuple(uint32_t source_offset,
+                                          uint32_t builder_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::ListToTuple,
+                               builder_reg);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_create_dict(uint32_t source_offset,
                                         uint32_t first_reg, uint8_t n_entries)
     {

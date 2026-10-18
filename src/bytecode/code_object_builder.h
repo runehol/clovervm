@@ -354,6 +354,10 @@ namespace cl
                                              uint8_t n_regs);
         Expected<uint32_t> emit_create_list(uint32_t source_offset,
                                             uint32_t first_reg, uint8_t n_regs);
+        Expected<uint32_t> emit_list_append(uint32_t source_offset,
+                                            uint32_t builder_reg);
+        Expected<uint32_t> emit_list_to_tuple(uint32_t source_offset,
+                                              uint32_t builder_reg);
         Expected<uint32_t> emit_create_dict(uint32_t source_offset,
                                             uint32_t first_reg,
                                             uint8_t n_entries);

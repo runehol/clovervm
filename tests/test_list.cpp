@@ -1,5 +1,7 @@
 #include "builtin_types/list.h"
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
+#include "compiler/codegen.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_object.h"
@@ -193,4 +195,85 @@ TEST(List, CheckedIndexingRaisesIndexError)
 
     EXPECT_TRUE(list->pop_item(3).is_exception_marker());
     expect_pending_exception(thread, L"IndexError", L"list index out of range");
+}
+
+TEST(List, ToTupleRetainsElementsAndPreservesSource)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<TValue<List>> source(thread->make_object_value<List>());
+    Owned<TValue<List>> element(thread->make_object_value<List>());
+    source.extract()->append(element.raw_value());
+    source.extract()->append(Value::from_smi(42));
+    int32_t refs_before = element.extract()->refcount;
+    Owned<TValue<Tuple>> tuple(source.extract()->to_tuple(thread));
+    EXPECT_EQ(refs_before + 1, element.extract()->refcount);
+    ASSERT_EQ(2u, tuple.extract()->size());
+    EXPECT_EQ(element.raw_value(), tuple.extract()->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(42), tuple.extract()->item_unchecked(1));
+    EXPECT_EQ(2u, source.extract()->size());
+    source.extract()->clear();
+    EXPECT_EQ(element.raw_value(), tuple.extract()->item_unchecked(0));
+    EXPECT_EQ(refs_before, element.extract()->refcount);
+    Owned<TValue<Tuple>> empty(source.extract()->to_tuple(thread));
+    EXPECT_TRUE(empty.extract()->empty());
+    EXPECT_EQ(context.vm().tuple_class(),
+              empty.extract()->get_shape()->get_class());
+}
+
+TEST(List, TrustedBuilderPrimitivesPreserveAliasesAndEvaluationOrder)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    auto name = context.vm().get_or_create_interned_string_value(
+        L"<list-builder-test>");
+    Owned<TValue<ModuleObject>> module(
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())));
+    auto compiled =
+        thread->compile_in_module(LR"(
+events = []
+builder = []
+alias = builder
+item = []
+def get_builder():
+    events.append(1)
+    return builder
+def get_item():
+    events.append(2)
+    return item
+assert __clover_list_append__(get_builder(), get_item()) is None
+assert events == [1, 2]
+assert builder is alias
+assert builder[0] is item
+result = __clover_list_to_tuple__(builder)
+assert result.__class__ is tuple
+assert builder.__class__ is list
+assert builder is alias
+assert result[0] is item
+__clover_list_append__(builder, 42)
+assert len(builder) == 2
+assert len(result) == 1
+empty = []
+assert __clover_list_to_tuple__(empty) == ()
+assert empty.__class__ is list
+for i in range(100):
+    __clover_list_append__(empty, i)
+converted = __clover_list_to_tuple__(empty)
+assert len(converted) == 100
+assert converted[99] == 99
+assert len(empty) == 100
+)",
+                                  StartRule::File, module.extract(),
+                                  LanguageMode::TrustedCloverExtensions);
+    ASSERT_FALSE(compiled.has_exception());
+    Value result = thread->run_clovervm_code_object(compiled.value());
+    if(result.is_exception_marker())
+    {
+        FAIL() << string_as_wchar_t(
+            test::native_exception_message(thread->pending_exception_object()));
+    }
+    ASSERT_FALSE(result.is_exception_marker());
 }

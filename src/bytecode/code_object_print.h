@@ -342,6 +342,8 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::ClearLocal:
             case cl::Bytecode::Star:
             case cl::Bytecode::DelLocal:
+            case cl::Bytecode::ListAppend:
+            case cl::Bytecode::ListToTuple:
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 break;

@@ -163,7 +163,9 @@ ListToTuple builder  -> replace builder register with an exact tuple
 
 `ListAppend` and `ListToTuple` require an exact list builder created by generated
 precode. They access native list storage directly, without Python method lookup
-or callbacks. Append retains the stored item; tuple construction retains the
+or callbacks. `ListAppend` leaves the accumulator unchanged; its trusted
+Python intrinsic returns `None` through separate codegen. Append retains the
+stored item; tuple construction retains the
 copied element references. `ListToTuple` reads the exact list from its register
 and writes the resulting exact tuple back to that same register, replacing the
 register's list reference. It does not mutate the source list object. Codegen
@@ -233,7 +235,8 @@ intermediate builder later; it is not required by this slice.
 
 The opcode's exact-tuple guard advances directly on a hit. Otherwise it
 tail-dispatches to a slow handler, which places the source in a one-argument
-outgoing window below the caller's live registers and enters the helper through
+outgoing window at `code_object->get_first_free_arg_encoded_reg()`, beyond
+the caller's live temporaries, and enters the helper through
 existing managed frame-entry machinery. The saved return PC points immediately
 after `ToExactTuple`. Managed fallback completion installs the helper's tuple
 result in the original operand register before resuming the caller. The
@@ -545,8 +548,10 @@ cache. The additional plan cache remains a design option within general mode.
 
 ### Runtime implementation direction
 
-Codegen reserves an ordinary outgoing call window for managed helper fallback
-calls. Slow opcode handlers enter VM-owned helper Functions through existing
+Managed helper fallback calls use the ordinary outgoing window at
+`code_object->get_first_free_arg_encoded_reg()`, as operator calls do. No
+additional argument-window operand is encoded in the helper opcodes. Slow opcode
+handlers enter VM-owned helper Functions through existing
 managed frame-entry machinery, saving the return PC immediately after the
 operation. `ToExactTuple` and `ToExactList` fallback completion must install the
 returned helper value into the opcode's operand register before resuming;
