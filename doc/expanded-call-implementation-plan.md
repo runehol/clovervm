@@ -102,8 +102,8 @@ subsequently committed as `49a50623`.
 - [x] Run required checks and leave changes uncommitted for review.
 
 Verification: eight focused tests passed. Full debug checks passed with 1,672
-tests passed and one skipped. Release `check_opcode_frames` passed. Stage 1c
-changes remain uncommitted for user review.
+tests passed and one skipped. Release `check_opcode_frames` passed. Stage 1c was
+subsequently committed as `5bf61fab`.
 
 ## Stage 2: Keyword construction
 
