@@ -199,19 +199,31 @@ direct `source.keys()` call. Stage 2b changes remain uncommitted for user review
 
 ### 3a: Binding-plan representation and uncached binder
 
-- [ ] Readiness review: agree the concrete temporary-plan representation,
-  managed binder signature/result, owning layer, rooted references, and handoff
-  to native plan application. This is the remaining substantial internal sketch.
+- [x] Agree the native, IC-compatible plan representation and C++ binder
+  direction, recorded in the accepted design. No Python binder or managed
+  tuple plan is needed.
+- [ ] Implement `ExpandedCallBindingPlan` in the runtime call-adaptation layer:
+  `keyword_destinations` and `default_slots` are vectors of logical parameter
+  indices; `UnmatchedKeyword = UINT32_MAX` marks collector entries;
+  `kwargs_action` is `None`, `ReuseTransport`, or `BuildLeftovers`.
+  The plan owns no Python references. Keep the Function and input containers
+  rooted outside it, and return the plan through a fallible native builder.
 - [ ] Resolve functions and eligible constructor thunks through existing call
   machinery; keep callable/signature caching independent of binding-plan caching.
 - [ ] Validate all keyword keys before matching, accepting string subclasses.
 - [ ] Match incoming keywords in insertion order against keyword-bindable
   parameters in declaration order. Use native exact-string comparisons and
-  managed rich equality/truth conversion for subclass keys, without key hashing.
+  the existing C++-to-managed `ThreadState::test_equal` bridge for subclass-key
+  rich equality/truth conversion, without key hashing. Accept interpreter
+  re-entry for this uncommon case; no binder-specific comparison IC is required.
 - [ ] Track positional and keyword fills; report keyword errors before excess
   positional arguments, then resolve defaults and missing required arguments.
 - [ ] Build a temporary plan without changing the live IC. Failed plans are
   neither applied nor installed. Defer keyword binding-plan caching to stage 4.
+  Application must accept the same const native plan whether it is temporary
+  or later held in an IC. Formal names stay in `FunctionKeywordRemap`; incoming
+  keys stay in transport. Cache guards, positional count, and owned ordered
+  exact-string names belong outside the plan in a future cache wrapper.
 - [ ] Record `ReuseTransport` when no keyword matched named parameters, or
   `BuildLeftovers` when some matched and the callee has a kwargs collector.
 - [ ] Test binding order, comparison failures, positional-only names, defaults,
@@ -260,7 +272,10 @@ direct `source.keys()` call. Stage 2b changes remain uncommitted for user review
 
 - [ ] Measure uncached expanded calls before deciding to implement this stage.
 - [ ] If justified, install only successfully validated exact-string plans and
-  use the same application path for temporary and cached plans.
+  embed the existing `ExpandedCallBindingPlan` in the cache wrapper. Use the
+  same application path for temporary and cached plans.
+- [ ] Keep callable/signature guards, positional count, and owned ordered
+  exact-string keyword names in the wrapper, outside the reference-free plan.
 - [ ] Guard callable validity, counts, exact-string keys, and ordered key
   contents. Read current defaults rather than caching default values.
 - [ ] Bypass on subclass keys without evicting a valid exact-string plan;

@@ -7,7 +7,7 @@
 | Implementation | Explicit calls and callee adaptation implemented; caller expansion remains a design sketch |
 | Scope | Python argument binding and adaptation above the managed frame convention |
 | Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
-| Validated against | `a909d10` (2026-06-25); expanded-call operand contract agreed 2026-10-17 |
+| Validated against | `a909d10` (2026-06-25); expanded-call container helpers checked against `69269fe1` and native binding-plan representation agreed 2026-10-23 |
 | Supersedes | N/A |
 
 This note records the implemented function-call adaptation model for Python
@@ -549,14 +549,49 @@ aborts construction and propagates the exception; an erroneous plan is never
 applied or installed in the cache. Only a fully validated plan reaches the
 application path.
 
-The plan records ordered keyword names, parameter or collector destinations,
-positional count, adaptation/default placement, and the collector action
-(`ReuseTransport` or `BuildLeftovers`) when the callee has `**kwargs`.
-It is not built directly
-into the live IC. Installing a successfully validated plan in the binding-plan
-cache is optional and separate from applying it. Cached and temporary plans use
-the same application path. Callable/signature resolution and adapter-mode
-caching remain independent of keyword binding-plan eligibility.
+The temporary plan is a native C++ value containing only indices and flags:
+
+```cpp
+enum class KwargsAction {
+    None,
+    ReuseTransport,
+    BuildLeftovers,
+};
+
+struct ExpandedCallBindingPlan {
+    static constexpr uint32_t UnmatchedKeyword = UINT32_MAX;
+
+    std::vector<uint32_t> keyword_destinations;
+    std::vector<uint32_t> default_slots;
+    KwargsAction kwargs_action = KwargsAction::None;
+};
+```
+
+`keyword_destinations` has one entry per incoming keyword in insertion order.
+Each entry is a logical parameter index, or `UnmatchedKeyword` for an entry that
+goes to the keyword collector. `default_slots` identifies unfilled parameters
+whose current default values application must read from the Function. Neither
+vector contains encoded registers or Python values. `kwargs_action` is `None`
+without a keyword collector, `ReuseTransport` if no keyword matched a named
+parameter, or `BuildLeftovers` otherwise. Positional copying and varargs packing
+use the input tuple length and resolved signature supplied to application.
+
+The caller keeps the Function and input containers rooted across binding and
+application. Formal names remain in the target CodeObject's
+`FunctionKeywordRemap`; incoming keys remain in the transport dict. The temporary
+plan owns no Python references and is built locally, not directly into a live
+IC. An exception discards it without applying or installing it.
+
+The same `ExpandedCallBindingPlan` type must work as a temporary and as a member
+of a future cache wrapper. That wrapper, outside the plan, holds callable and
+signature validity guards, positional count, and owned ordered exact-string
+keyword names. Installing a successfully validated plan is optional and
+separate from applying it. Application takes a const plan reference plus the
+resolved Function and input containers, independent of whether the plan came
+from local storage or a cache. Callable/signature resolution and adapter-mode
+caching remain independent of keyword binding-plan eligibility. Stage 3a
+implements the native plan and uncached builder; cache representation and
+installation remain stage 4 work.
 
 Only calls whose incoming keyword keys are all exact builtin strings are
 eligible to construct or hit a cached binding plan. Calls containing a
@@ -621,12 +656,17 @@ unwinding rather than a separate continuation-state mechanism. On call failure,
 partially built transport containers are discarded through normal lifetime
 handling; builder operations do not roll back already appended items.
 
-The uncached binder's callback-capable path runs in managed code so subclass-key
-rich equality and truth conversion use normal managed calls. Exact-string plan
-construction can use native comparisons. Do not introduce recursive C++
-interpreter entry to run binding callbacks. The managed binder's temporary plan
-representation and handoff to plan application need a concrete sketch before
-stage 3, rather than blocking the container-building stages.
+The uncached binder runs in C++ in the runtime call-adaptation layer. Exact-string
+keys use native string comparisons. Only string-subclass keys cross the existing
+C++-to-managed call bridge for rich equality and truth conversion; use the
+existing `ThreadState::test_equal` path rather than implementing those protocols
+again. This deliberately permits interpreter re-entry for the uncommon subclass
+case. No binder-specific comparison IC is required, and subclass calls always
+rebuild the plan. The existing equality helper may use its own IC internally.
+There is no VM-owned Python binder, managed tuple plan, or managed continuation
+for native plan construction. Keep Python references rooted across callbacks,
+retain no raw dict-entry pointers across them, and propagate pending exceptions
+through the native builder's fallible return type.
 
 `CallExpanded` keeps the callable and adjacent tuple/dict input pair outside the
 outgoing parameter window. After plan validation, application fills that window,
@@ -673,7 +713,7 @@ unsupported syntax explicit until its complete execution path is available.
    keyword-run evaluation, key-list normalization and live iteration, both dict
    storage shapes, and deferred string-key validation. Use helper/opcode tests
    until expanded-call syntax is enabled end to end.
-3. **Expanded call entry.** Sketch the managed binder's plan representation,
+3. **Expanded call entry.** Implement the agreed native binding-plan representation,
    then implement uncached planning, collectors, parameter-window application,
    and end-to-end parser/codegen support. Test late lone-star conversion,
    keyword order, error precedence, defaults, collectors, subclass comparisons,
