@@ -596,6 +596,57 @@ namespace cl
                                builder_reg);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_build_call_keywords(
+        uint32_t source_offset, uint32_t callable_reg, uint32_t dict_reg)
+    {
+        return emit_opcode_reg_reg(source_offset, Bytecode::BuildCallKeywords,
+                                   callable_reg, dict_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_merge_call_keywords(
+        uint32_t source_offset, uint32_t callable_reg, uint32_t dict_reg)
+    {
+        return emit_opcode_reg_reg(source_offset, Bytecode::MergeCallKeywords,
+                                   callable_reg, dict_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_add_call_keyword(
+        uint32_t source_offset, uint32_t callable_reg, uint32_t dict_reg,
+        uint8_t name_const, uint32_t value_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::AddCallKeyword));
+        emplace_back(source_offset, encode_reg(callable_reg));
+        emplace_back(source_offset, encode_reg(dict_reg));
+        emplace_back(source_offset, name_const);
+        emplace_back(source_offset, encode_reg(value_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+    Expected<uint32_t> CodeObjectBuilder::emit_dict_next_entry(
+        uint32_t source_offset, uint32_t source_reg, uint32_t index_reg,
+        uint32_t entry_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DictNextEntry));
+        emplace_back(source_offset, encode_reg(source_reg));
+        emplace_back(source_offset, encode_reg(index_reg));
+        emplace_back(source_offset, encode_reg(entry_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_dict_try_string_keyed_insert_if_absent(
+        uint32_t source_offset, uint32_t dict_reg, uint32_t key_reg,
+        uint32_t value_reg, uint32_t result_reg)
+    {
+        uint32_t result = emplace_back(
+            source_offset, uint8_t(Bytecode::DictTryStringKeyedInsertIfAbsent));
+        emplace_back(source_offset, encode_reg(dict_reg));
+        emplace_back(source_offset, encode_reg(key_reg));
+        emplace_back(source_offset, encode_reg(value_reg));
+        emplace_back(source_offset, encode_reg(result_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint32_t>
     CodeObjectBuilder::emit_list_extend(uint32_t source_offset,
                                         uint32_t builder_reg)

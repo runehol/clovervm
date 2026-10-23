@@ -4598,6 +4598,169 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value
+    op_dict_try_string_keyed_insert_if_absent(PARAMS)
+    {
+        START(5);
+        int8_t dict_reg = pc[1], key_reg = pc[2], value_reg = pc[3],
+               result_reg = pc[4];
+        assert(can_convert_to<Dict>(fp[dict_reg]));
+        Dict *dict = fp[dict_reg].get_ptr<Dict>();
+        fp[result_reg] = Value::None();
+        accumulator = Value::False();
+        if(dict->get_shape() == thread->get_exact_dict_string_key_shape())
+        {
+            if(is_exact_string(thread, fp[key_reg]))
+            {
+                bool inserted = dict->string_keyed_insert_if_absent(
+                    TValue<String>::from_value_unchecked(fp[key_reg]),
+                    fp[value_reg]);
+                fp[result_reg] = inserted ? Value::True() : Value::False();
+                accumulator = Value::True();
+            }
+            else
+            {
+                TrustedDictBytecodeAccess::promote_string_keyed(thread, dict);
+            }
+        }
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_dict_next_entry(PARAMS)
+    {
+        START(4);
+        int8_t source_reg = pc[1], index_reg = pc[2], entry_reg = pc[3];
+        assert(can_convert_to<Dict>(fp[source_reg]));
+        assert(fp[index_reg].is_smi() && fp[index_reg].get_smi() >= 0);
+        size_t index = static_cast<size_t>(fp[index_reg].get_smi());
+        Value key = Value::None(), value = Value::None();
+        TValue<SMI> hash = TValue<SMI>::from_smi(0);
+        bool found = TrustedDictBytecodeAccess::next_entry(
+            fp[source_reg].get_ptr<Dict>(), index, key, value, hash);
+        fp[index_reg] = Value::from_smi(static_cast<int64_t>(index));
+        fp[entry_reg] = key;
+        fp[entry_reg - 1] = value;
+        fp[entry_reg - 2] = hash.raw_value();
+        accumulator = found ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_build_call_keywords(PARAMS)
+    {
+        START(3);
+        Shape *shape = accumulator.is_ptr()
+                           ? accumulator.get_ptr<Object>()->get_shape()
+                           : nullptr;
+        if(shape != thread->get_exact_dict_string_key_shape() &&
+           shape != thread->get_exact_dict_general_shape())
+        {
+            accumulator = thread->set_pending_builtin_exception_string(
+                L"NotImplementedError",
+                L"generic keyword mappings are not implemented yet");
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+        fp[int8_t(pc[2])] = accumulator.get_ptr<Dict>()->copy().raw_value();
+        accumulator = Value::None();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_merge_call_keywords(PARAMS)
+    {
+        int8_t callable_reg = pc[1], dict_reg = pc[2];
+        assert(can_convert_to<Dict>(fp[dict_reg]));
+        Shape *source_shape = accumulator.is_ptr()
+                                  ? accumulator.get_ptr<Object>()->get_shape()
+                                  : nullptr;
+        if(source_shape != thread->get_exact_dict_string_key_shape() &&
+           source_shape != thread->get_exact_dict_general_shape())
+        {
+            accumulator = thread->set_pending_builtin_exception_string(
+                L"NotImplementedError",
+                L"generic keyword mappings are not implemented yet");
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+        Dict *destination = fp[dict_reg].get_ptr<Dict>();
+        if(source_shape == thread->get_exact_dict_string_key_shape() &&
+           destination->get_shape() ==
+               thread->get_exact_dict_string_key_shape())
+        {
+            Optional<TValue<String>> duplicate =
+                destination->merge_string_keyed_unique(
+                    accumulator.get_ptr<Dict>());
+            if(duplicate.has_value())
+            {
+                accumulator = raise_duplicate_call_keyword(
+                    thread, fp[callable_reg], duplicate.value());
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            accumulator = Value::None();
+            START(3);
+            COMPLETE();
+        }
+        int32_t args = code_object->get_first_free_arg_encoded_reg();
+        fp[args] = fp[callable_reg];
+        fp[args - 1] = fp[dict_reg];
+        fp[args - 2] = accumulator;
+        TValue<Function> function =
+            thread->get_machine()->call_keyword_merge_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, args, 3, 3,
+            FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_add_call_keyword(PARAMS)
+    {
+        int8_t callable_reg = pc[1], dict_reg = pc[2], value_reg = pc[4];
+        TValue<String> key = TValue<String>::from_value_assumed(
+            code_object->constant_table[pc[3]].value());
+        assert(is_exact_string(thread, key.raw_value()));
+        assert(can_convert_to<Dict>(fp[dict_reg]));
+        Dict *destination = fp[dict_reg].get_ptr<Dict>();
+        if(destination->get_shape() ==
+           thread->get_exact_dict_string_key_shape())
+        {
+            if(!destination->string_keyed_insert_if_absent(key, fp[value_reg]))
+            {
+                accumulator =
+                    raise_duplicate_call_keyword(thread, fp[callable_reg], key);
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            accumulator = Value::None();
+            START(5);
+            COMPLETE();
+        }
+        int32_t args = code_object->get_first_free_arg_encoded_reg();
+        fp[args] = fp[callable_reg];
+        fp[args - 1] = fp[dict_reg];
+        fp[args - 2] = key.raw_value();
+        fp[args - 3] = fp[value_reg];
+        TValue<Function> function =
+            thread->get_machine()->call_keyword_add_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, args, 4, 5,
+            FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_list_extend(PARAMS)
     {
         int8_t builder_reg = pc[1];
@@ -6515,6 +6678,12 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
         SET_TABLE_ENTRY(Bytecode::ListAppend, op_list_append);
+        SET_TABLE_ENTRY(Bytecode::DictTryStringKeyedInsertIfAbsent,
+                        op_dict_try_string_keyed_insert_if_absent);
+        SET_TABLE_ENTRY(Bytecode::DictNextEntry, op_dict_next_entry);
+        SET_TABLE_ENTRY(Bytecode::BuildCallKeywords, op_build_call_keywords);
+        SET_TABLE_ENTRY(Bytecode::MergeCallKeywords, op_merge_call_keywords);
+        SET_TABLE_ENTRY(Bytecode::AddCallKeyword, op_add_call_keyword);
         SET_TABLE_ENTRY(Bytecode::ListExtend, op_list_extend);
         SET_TABLE_ENTRY(Bytecode::ListToTuple, op_list_to_tuple);
         SET_TABLE_ENTRY(Bytecode::ToExactTuple, op_to_exact_tuple);

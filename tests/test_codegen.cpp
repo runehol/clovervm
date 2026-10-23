@@ -2131,3 +2131,45 @@ TEST(Codegen, user_list_extend_name_is_ordinary_call)
     EXPECT_EQ(std::string::npos, actual.find("ListExtend"));
     EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
+
+TEST(Codegen, trusted_call_keywords_lower_to_opcodes)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        LR"(def build(callable, source, later, value):
+    builder = __clover_build_call_keywords__(callable, source)
+    __clover_merge_call_keywords__(callable, builder, later)
+    __clover_add_call_keyword__(callable, builder, 'name', value)
+    return builder
+)");
+    EXPECT_NE(std::string::npos, actual.find("BuildCallKeywords"));
+    EXPECT_NE(std::string::npos, actual.find("MergeCallKeywords"));
+    EXPECT_NE(std::string::npos, actual.find("AddCallKeyword"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_call_keywords_validate_arguments_and_constant_names)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_build_call_keywords__(None)\n", L"SyntaxError",
+        L"__clover_build_call_keywords__ expects exactly 2 arguments");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_merge_call_keywords__(None, {}, source={})\n",
+        L"SyntaxError",
+        L"__clover_merge_call_keywords__ does not accept keyword arguments");
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_add_call_keyword__(None, {}, name, 1)\n", L"SyntaxError",
+        L"keyword name must be a string literal");
+}
+
+TEST(Codegen, user_call_keyword_intrinsic_names_are_ordinary_calls)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def build(source):\n"
+        L"    __clover_build_call_keywords__(None, source)\n"
+        L"    __clover_merge_call_keywords__(None, {}, source)\n"
+        L"    __clover_add_call_keyword__(None, {}, 'name', 1)\n");
+    EXPECT_EQ(std::string::npos, actual.find("BuildCallKeywords"));
+    EXPECT_EQ(std::string::npos, actual.find("MergeCallKeywords"));
+    EXPECT_EQ(std::string::npos, actual.find("AddCallKeyword"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
+}

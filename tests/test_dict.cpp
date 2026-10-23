@@ -1,8 +1,10 @@
 #include "builtin_types/dict.h"
 #include "builtin_types/list.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_print.h"
+#include "compiler/codegen.h"
 #include "object_model/function.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
@@ -2828,4 +2830,303 @@ TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
     EXPECT_EQ(1u, dict->size());
     EXPECT_TRUE(dict_contains(context.thread(), dict, alpha));
     EXPECT_EQ(Value::from_smi(7), get_dict_item(context.thread(), dict, alpha));
+}
+namespace
+{
+    static Value run_trusted_keyword_test(test::VmTestContext &context,
+                                          const wchar_t *source)
+    {
+        auto name = context.vm().get_or_create_interned_string_value(
+            L"<call-keyword-test>");
+        Owned<TValue<ModuleObject>> module(
+            TValue<ModuleObject>::from_oop(context.make_test_module_object(
+                name, context.vm().global_builtins_module().raw_value())));
+        auto compiled = context.thread()->compile_in_module(
+            source, StartRule::File, module.extract(),
+            LanguageMode::TrustedCloverExtensions);
+        if(compiled.has_exception())
+        {
+            return Value::exception_marker();
+        }
+        return context.thread()->run_clovervm_code_object(compiled.value());
+    }
+}  // namespace
+
+TEST(CallKeywordConstruction, NativePathsFreshnessOrderAndDuplicateErrors)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+item = []
+source = {'removed': 0, 'a': item, 'b': 2}
+del source['removed']
+builder = __clover_build_call_keywords__(target, source)
+assert builder is not source
+assert len(builder) == 2 and builder['b'] == 2
+assert builder['a'] is item
+alias = builder
+assert __clover_merge_call_keywords__(target, builder, {'c': 3}) is None
+assert __clover_add_call_keyword__(target, builder, 'd', item) is None
+assert builder is alias and builder['d'] is item
+assert len(source) == 2 and source['a'] is item and source['b'] == 2
+assert __clover_to_exact_tuple__(builder.keys()) == ('a', 'b', 'c', 'd')
+try:
+    __clover_merge_call_keywords__(target, builder, {'prefix': item, 'a': 99, 'suffix': 100})
+except TypeError as error:
+    assert "target() got multiple values for keyword argument 'a'" == str(error)
+else:
+    raise AssertionError
+assert builder['prefix'] is item and builder['a'] is item
+assert 'suffix' not in builder
+try:
+    __clover_add_call_keyword__(target, builder, 'b', 99)
+except TypeError:
+    pass
+else:
+    raise AssertionError
+assert builder['b'] == 2
+class Target: pass
+try:
+    __clover_add_call_keyword__(Target, builder, 'b', 99)
+except TypeError as error:
+    assert str(error) == "Target() got multiple values for keyword argument 'b'"
+else:
+    raise AssertionError
+assert __clover_merge_call_keywords__(target, builder, {}) is None
+assert len(__clover_build_call_keywords__(target, {})) == 0
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordConstruction, GeneralCopyMergePreserveKeysAndReuseStoredHashes)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+hash_calls = 0
+class Key(str):
+    def __hash__(self):
+        global hash_calls
+        hash_calls += 1
+        return str.__hash__(self)
+key = Key('custom')
+item = []
+source = {key: item, 42: 9}
+before = hash_calls
+copy = __clover_build_call_keywords__(target, source)
+assert copy is not source and hash_calls == before
+builder = {}
+assert __clover_merge_call_keywords__(target, builder, source) is None
+assert hash_calls == before
+keys = __clover_to_exact_tuple__(builder.keys())
+assert keys[0] is key and keys[1] == 42
+assert builder[key] is item
+assert copy[key] is item
+assert __clover_add_call_keyword__(target, builder, 'ordinary', 7) is None
+assert builder['ordinary'] == 7
+assert __clover_merge_call_keywords__(target, builder, {'later': item}) is None
+assert builder['later'] is item
+try:
+    __clover_add_call_keyword__(target, builder, 'custom', 99)
+except TypeError:
+    pass
+else:
+    raise AssertionError
+assert __clover_to_exact_tuple__(builder.keys())[0] is key and builder[key] is item
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordConstruction, NonStringDuplicateFormattingUsesManagedCalls)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+calls = []
+class Key:
+    def __hash__(self): return 7
+    def __str__(self):
+        calls.append('str')
+        nested = __clover_build_call_keywords__(target, {'nested': 1})
+        assert __clover_add_call_keyword__(target, nested, 'extra', 2) is None
+        return 'odd'
+key = Key()
+builder = {key: 1}
+try:
+    __clover_merge_call_keywords__(target, builder, {key: 2})
+except TypeError as error:
+    assert str(error) == "target() got multiple values for keyword argument 'odd'"
+else:
+    raise AssertionError
+assert calls == ['str'] and builder[key] == 1
+class Bad(Key):
+    def __str__(self): raise ValueError('format failed')
+bad = Bad()
+try:
+    __clover_merge_call_keywords__(target, {bad: 1}, {bad: 2})
+except ValueError as error:
+    assert str(error) == 'format failed'
+else:
+    raise AssertionError
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordConstruction, SourceMutationAndErrorPrecedence)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+source = {}
+mode = 0
+class Key(str):
+    armed = False
+    def __hash__(self): return 7
+    def __eq__(self, other):
+        if self.armed:
+            self.armed = False
+            if mode == 0 or mode == 4 or mode == 5:
+                source['new'] = 'new'
+            elif mode == 1:
+                del source['tail']
+            elif mode == 2:
+                source['tail'] = 'changed'
+            elif mode == 3:
+                del source['tail']
+                source['new'] = 'new'
+            if mode == 5: raise ValueError('comparison failed')
+        return mode == 4
+for mode in range(6):
+    left = Key('left')
+    right = Key('right')
+    builder = {left: 'base'}
+    source = {right: 'first', 'tail': 'old'}
+    left.armed = True
+    reached = False
+    if mode == 0 or mode == 1:
+        try:
+            __clover_merge_call_keywords__(target, builder, source)
+            reached = True
+        except RuntimeError as error:
+            assert str(error) == 'dict mutated during update'
+        else:
+            raise AssertionError
+        assert not reached
+        assert __clover_to_exact_tuple__(builder.keys())[1] is right
+    elif mode == 4:
+        try:
+            __clover_merge_call_keywords__(target, builder, source)
+        except TypeError as error:
+            assert str(error) == "target() got multiple values for keyword argument 'right'"
+        else:
+            raise AssertionError
+        assert len(builder) == 1
+    elif mode == 5:
+        try:
+            __clover_merge_call_keywords__(target, builder, source)
+        except ValueError as error:
+            assert str(error) == 'comparison failed'
+        else:
+            raise AssertionError
+        assert len(builder) == 1
+    else:
+        assert __clover_merge_call_keywords__(target, builder, source) is None
+        if mode == 2: assert builder['tail'] == 'changed'
+        if mode == 3:
+            assert 'tail' not in builder and builder['new'] == 'new'
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordConstruction,
+     DestinationMutationRestartsProbeAndPreservesCallerRegisters)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+builder = {}
+calls = []
+class Stored(str):
+    armed = False
+    def __hash__(self): return str.__hash__(self)
+    def __eq__(self, other):
+        if self.armed:
+            self.armed = False
+            builder.clear()
+            for i in range(40): builder[i] = i
+            nested = {}
+            assert __clover_merge_call_keywords__(target, nested, {'nested': 1}) is None
+            calls.append('compare')
+        return False
+key = Stored('name')
+builder[key] = 'old'
+key.armed = True
+keep = []
+def check(a, b, c):
+    assert a is keep and c is keep and b is None
+check(keep, __clover_add_call_keyword__(target, builder, 'name', keep), keep)
+assert calls == ['compare']
+assert builder['name'] is keep and len(builder) == 41
+for i in range(40): assert builder[i] == i
+assert __clover_add_call_keyword__(target, builder, 'later', 9) is None
+assert builder['later'] == 9
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordConstruction, EvaluationOrderAndGenericMappingPlaceholder)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+events = []
+builder = {}
+def callable_value():
+    events.append('callable')
+    return target
+def destination():
+    events.append('destination')
+    return builder
+def item():
+    events.append('item')
+    return []
+assert __clover_add_call_keyword__(callable_value(), destination(), 'name', item()) is None
+assert events == ['callable', 'destination', 'item']
+class Mapping:
+    def keys(self): raise AssertionError('must wait until 2b')
+class Subdict(dict): pass
+for source in (Mapping(), Subdict(), [], 1):
+    try:
+        __clover_build_call_keywords__(target, source)
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError
+    try:
+        __clover_merge_call_keywords__(target, builder, source)
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError
+assert __clover_to_exact_tuple__(builder.keys()) == ('name',)
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
 }

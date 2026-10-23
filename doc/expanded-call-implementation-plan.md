@@ -129,32 +129,46 @@ codegen intrinsic lowering, interpreter handlers, and VM helper ownership.
 
 Verification: five focused storage tests passed. Full debug checks passed with
 1,677 tests passed and one skipped. The changed dict source also compiled in
-release mode. Stage 2a.1 changes remain uncommitted for user review.
+release mode. Stage 2a.1 was subsequently committed as `ef48a5f6`.
 
 ### 2a.2: Keyword opcodes and managed general-storage operations
 
-- [ ] Add encoding, decoding, disassembly, register effects, trusted lowering,
+- [x] Add encoding, decoding, disassembly, register effects, trusted lowering,
   and interpreter handlers for `BuildCallKeywords callable_reg, dict_reg`,
   `MergeCallKeywords callable_reg, dict_reg`, and
   `AddCallKeyword callable_reg, dict_reg, name_const, value_reg`.
-- [ ] Use 2a.1 primitives for exact-dict copy and string-keyed merge/insertion.
-- [ ] Implement managed duplicate-aware general-storage insertion using the
-  existing generated dict-method/probe pattern. Preserve normal hash/equality
+- [x] Use 2a.1 primitives for exact-dict copy and string-keyed merge/insertion.
+- [x] Implement managed duplicate-aware general-storage insertion with its own
+  generated Function, sharing only the restartable probe-loop emitter with
+  existing dict methods. Preserve normal hash/equality
   callbacks and restart probes when callbacks invalidate their state; do not
   recursively enter the interpreter from a native opcode helper.
-- [ ] Implement exact-dict merge for general storage with rooted source
-  entries and source-mutation checks across callbacks. Preserve original keys
-  and order; promote destination storage as needed.
-- [ ] Add shared callable-context duplicate-error construction. Keep arbitrary
+- [x] Implement exact-dict merge for general storage with rooted source
+  key/value/stored-hash entries and indexed traversal across callbacks. Preserve
+  original keys and order; promote destination storage as needed. Record the
+  initial source entry count, propagate callback/duplicate errors first, then
+  check the count after each successful insertion and raise
+  `RuntimeError("dict mutated during update")` on a mismatch. Accept value
+  replacement and same-size mutations; do not additionally reject source
+  generation changes. Keep destination probe-generation restart checks.
+- [x] Add shared callable-context duplicate-error construction. Keep arbitrary
   keys until call-entry validation, without binding them to parameters here.
-- [ ] Keep destinations rooted in their explicit registers across native and
-  managed paths; no trailing `Star` is required. Agree accumulator effects and
-  the temporary boundary for generic mappings in this checkpoint's readiness
-  review; generic mapping protocol support belongs to 2b.
-- [ ] Test opcode effects and lowering, direct destination installation,
+- [x] Keep destinations rooted in their explicit registers across native and
+  managed paths; no trailing `Star` is required. All successful paths return
+  `None` in the accumulator. Generic mapping inputs, including dict subclasses,
+  temporarily raise `NotImplementedError`; their protocol support belongs to 2b.
+- [x] Test opcode effects and lowering, direct destination installation,
   subclass-key hash/equality callbacks, callback mutation, non-string transport
-  keys, and partial results on failure.
-- [ ] Run required checks and leave changes uncommitted for review.
+  keys, and partial results on failure. Cover source size changes, same-size
+  mutations, later value replacement, and callback/duplicate error precedence
+  over source-size errors.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: 129 focused keyword construction, bytecode-effect, codegen, and
+dict regression tests passed. Full debug checks passed with 1,688 tests passed
+and one skipped. Release `check_opcode_frames` passed. The known-hash insertion
+helper has its own generator, sharing only probe-loop emission with the existing
+dict method generator. Stage 2a.2 changes remain uncommitted for user review.
 
 ### 2b: Generic mapping helpers
 

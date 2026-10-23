@@ -230,6 +230,31 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::BuildCallKeywords:
+                effects.source_register(0);
+                effects.source_accumulator();
+                effects.destination_register(1);
+                effects.destination_accumulator();
+                break;
+            case Bytecode::MergeCallKeywords:
+                effects.source_register(0);
+                effects.source_register(1);
+                effects.source_accumulator();
+                effects.destination_accumulator();
+                break;
+            case Bytecode::AddCallKeyword:
+                effects.source_register(0);
+                effects.source_register(1);
+                effects.source_register(3);
+                effects.destination_accumulator();
+                break;
+            case Bytecode::DictNextEntry:
+                effects.source_register(0);
+                effects.source_register(1);
+                effects.destination_register(1);
+                effects.destination_register(2, 3);
+                effects.destination_accumulator();
+                break;
             case Bytecode::ListExtend:
                 effects.source_register(0);
                 effects.source_accumulator();
@@ -383,6 +408,7 @@ namespace cl
                 effects.source_register(0);
                 break;
 
+            case Bytecode::DictTryStringKeyedInsertIfAbsent:
             case Bytecode::DictTryStringKeyedSetDefault:
                 effects.source_register(0);
                 effects.source_register(1);

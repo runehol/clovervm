@@ -348,7 +348,9 @@ replacing values. Both operations accept either source/destination dict storage
 shape, preserving string-subclass keys and promoting the destination as needed.
 The destination is stable across operations; no `Star` is
 needed between building the dictionary and subsequent merges. The accumulator
-is the source operand, not the dictionary result interface.
+is the source operand, not the dictionary result interface. All three keyword
+construction opcodes write `None` to the accumulator on successful completion,
+including managed fallback returns.
 
 `AddCallKeyword` inserts one explicit `name=value` argument into the existing
 exact, call-owned dict in `dict_reg`. `value_reg` holds the evaluated value;
@@ -377,6 +379,35 @@ The callable register supplies context for duplicate-keyword and invalid-mapping
 errors during construction. Signature resolution is not needed for these errors.
 The exact-dict merge fast path reads native entries but must check for collisions
 with the destination before inserting them.
+
+Exact-dict merge reuses stored source hashes and records the initial source
+entry count. Fetch each key, value, and hash into rooted managed registers before
+any destination equality callbacks; retain no native entry pointers across
+callbacks. Propagate callback exceptions or duplicate-keyword errors first.
+After each successful insertion, compare the source's current entry count with
+the initial count and raise `RuntimeError("dict mutated during update")` if it
+differs. Traverse current native entries by index, without snapshotting them.
+Value replacements and mutations that restore the original entry count before
+the check are accepted; later traversal may observe their effects. Do not use
+source table-generation changes as an additional rejection condition. This
+matches CPython 3.14.5's exact-dict merge size check; destination probe generation
+checks remain necessary for safe equality callbacks.
+
+General-storage insertion uses a dedicated VM-owned generated Function,
+`insert_if_absent_known_hash(destination, key, value, hash)`, returning whether it
+inserted. It shares only the restartable probe-loop emission with the existing
+dict method generators; its setup and found/missing actions are explicit.
+`DictNextEntry source_reg, index_reg, entry_reg` skips deleted entries, advances
+the index, writes key/value/stored hash into three adjacent managed registers,
+and reports entry availability in the accumulator. Merge helpers keep this
+state in ordinary managed frames. Non-string duplicate-key formatting calls
+`__str__` through managed special-method dispatch before native exception
+construction; string keys are formatted from their stored text directly.
+
+During implementation checkpoint 2a.2, sources other than exact dicts raise
+`NotImplementedError`. Checkpoint 2b replaces that temporary boundary with the
+generic mapping protocol below. Expanded-call syntax remains disabled until
+the execution path is complete.
 
 Generic sources, including dict subclasses, use a managed helper receiving
 `(callable, destination, source)`. Build starts with a fresh empty destination;

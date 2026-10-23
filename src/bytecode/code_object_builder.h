@@ -356,6 +356,24 @@ namespace cl
                                             uint32_t first_reg, uint8_t n_regs);
         Expected<uint32_t> emit_list_append(uint32_t source_offset,
                                             uint32_t builder_reg);
+        Expected<uint32_t> emit_build_call_keywords(uint32_t source_offset,
+                                                    uint32_t callable_reg,
+                                                    uint32_t dict_reg);
+        Expected<uint32_t> emit_merge_call_keywords(uint32_t source_offset,
+                                                    uint32_t callable_reg,
+                                                    uint32_t dict_reg);
+        Expected<uint32_t> emit_add_call_keyword(uint32_t source_offset,
+                                                 uint32_t callable_reg,
+                                                 uint32_t dict_reg,
+                                                 uint8_t name_const,
+                                                 uint32_t value_reg);
+        Expected<uint32_t> emit_dict_next_entry(uint32_t source_offset,
+                                                uint32_t source_reg,
+                                                uint32_t index_reg,
+                                                uint32_t entry_reg);
+        Expected<uint32_t> emit_dict_try_string_keyed_insert_if_absent(
+            uint32_t source_offset, uint32_t dict_reg, uint32_t key_reg,
+            uint32_t value_reg, uint32_t result_reg);
         Expected<uint32_t> emit_list_extend(uint32_t source_offset,
                                             uint32_t builder_reg);
         Expected<uint32_t> emit_list_to_tuple(uint32_t source_offset,

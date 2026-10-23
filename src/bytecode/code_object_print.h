@@ -351,6 +351,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::BuildCallKeywords:
+            case cl::Bytecode::MergeCallKeywords:
             case cl::Bytecode::Mov:
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
@@ -623,6 +625,24 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CheckTernaryOperatorNotImplemented:
                 break;
 
+            case cl::Bytecode::AddCallKeyword:
+                fmt::format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
+                fmt::format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+            case cl::Bytecode::DictNextEntry:
+                fmt::format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", index=");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", entry=");
+                disassemble_reg(code_obj, out, pc++);
+                break;
             case cl::Bytecode::DictProbeStart:
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
@@ -649,6 +669,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::DictTryStringKeyedInsertIfAbsent:
             case cl::Bytecode::DictTryStringKeyedSetDefault:
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);

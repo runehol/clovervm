@@ -356,6 +356,22 @@ namespace cl
             Value value;
         };
 
+        static bool next_entry(const Dict *dict, size_t &index, Value &key,
+                               Value &value, TValue<SMI> &hash)
+        {
+            while(index < dict->entries.size())
+            {
+                Dict::Entry entry = dict->entries[index++];
+                if(entry.valid())
+                {
+                    key = entry.key;
+                    value = entry.value;
+                    hash = entry.hash;
+                    return true;
+                }
+            }
+            return false;
+        }
         static void promote_string_keyed(ThreadState *thread, Dict *dict)
         {
             assert(dict->get_shape() ==
@@ -477,6 +493,17 @@ namespace cl
     };
 
     class VirtualMachine;
+    [[nodiscard]] Expected<TValue<Function>>
+    make_dict_insert_if_absent_known_hash_function(VirtualMachine *vm);
+    [[nodiscard]] Expected<TValue<Function>>
+    make_call_keyword_error_function(VirtualMachine *vm);
+    [[nodiscard]] Expected<TValue<Function>>
+    make_call_keyword_merge_function(VirtualMachine *vm);
+    [[nodiscard]] Expected<TValue<Function>>
+    make_call_keyword_add_function(VirtualMachine *vm);
+    [[nodiscard]] Value raise_duplicate_call_keyword(ThreadState *thread,
+                                                     Value callable,
+                                                     TValue<String> key);
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm);
     void install_dict_class_methods(VirtualMachine *vm,
                                     ClassObject *type_error_class);

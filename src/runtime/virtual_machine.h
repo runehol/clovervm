@@ -128,6 +128,10 @@ namespace cl
         TValue<Function> test_equal_helper_function() const;
         TValue<Function> iterable_to_exact_tuple_function() const;
         TValue<Function> iterable_to_exact_list_function() const;
+        TValue<Function> dict_insert_if_absent_known_hash_function() const;
+        TValue<Function> call_keyword_error_function() const;
+        TValue<Function> call_keyword_merge_function() const;
+        TValue<Function> call_keyword_add_function() const;
         TValue<Function> list_extend_function() const;
         TValue<Function> membership_iter_fallback_function() const;
         TValue<Function> membership_sequence_fallback_function() const;
@@ -471,6 +475,11 @@ namespace cl
         Owned<Optional<TValue<Function>>> test_equal_helper_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_tuple_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_list_function_;
+        Owned<Optional<TValue<Function>>>
+            dict_insert_if_absent_known_hash_function_;
+        Owned<Optional<TValue<Function>>> call_keyword_error_function_;
+        Owned<Optional<TValue<Function>>> call_keyword_merge_function_;
+        Owned<Optional<TValue<Function>>> call_keyword_add_function_;
         Owned<Optional<TValue<Function>>> list_extend_function_;
         Owned<Optional<TValue<Function>>> membership_iter_fallback_function_;
         Owned<Optional<TValue<Function>>>

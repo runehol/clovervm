@@ -1,4 +1,6 @@
+#include "builtin_types/dict.h"
 #include "builtin_types/list.h"
+#include "builtin_types/str.h"
 #include "bytecode/bytecode.h"
 #include "bytecode/bytecode_decoder.h"
 #include "bytecode/bytecode_instruction.h"
@@ -753,4 +755,76 @@ TEST(BytecodeInstruction,
               instruction.destinations()[0].kind);
     EXPECT_FALSE(instruction.continuation_pc_offset().has_value());
     EXPECT_EQ(Value::None(), context.thread()->run_clovervm_code_object(code));
+}
+
+TEST(BytecodeInstruction, call_keyword_builders_and_traversal_effects)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<keyword-effects>");
+    Owned<TValue<Dict>> source(context.thread()->make_object_value<Dict>());
+    auto key = context.thread()->make_object_value<String>(L"source");
+    source.extract()->string_keyed_insert(key, Value::from_smi(7));
+    Owned<TValue<Dict>> empty(context.thread()->make_object_value<Dict>());
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    uint8_t source_idx = builder.allocate_constant(source.raw_value()).value();
+    uint8_t empty_idx = builder.allocate_constant(empty.raw_value()).value();
+    uint8_t new_key =
+        builder
+            .allocate_constant(
+                context.vm().get_or_create_interned_string_value(L"added"))
+            .value();
+    {
+        CodeObjectBuilder::TemporaryReg regs(builder, 7);
+        builder.emit_lda_none(0).value();
+        builder.emit_star(0, regs).value();
+        builder.emit_lda_constant(0, source_idx).value();
+        builder.emit_build_call_keywords(0, regs, regs + 1).value();
+        builder.emit_lda_smi(0, 0).value();
+        builder.emit_star(0, regs + 2).value();
+        builder.emit_dict_next_entry(0, regs + 1, regs + 2, regs + 3).value();
+        builder
+            .emit_dict_try_string_keyed_insert_if_absent(0, regs + 1, regs + 3,
+                                                         regs + 4, regs + 6)
+            .value();
+        builder.emit_lda_constant(0, empty_idx).value();
+        builder.emit_merge_call_keywords(0, regs, regs + 1).value();
+        builder.emit_add_call_keyword(0, regs, regs + 1, new_key, regs + 4)
+            .value();
+        builder.emit_return(0).value();
+    }
+    CodeObject *code = builder.finalize().value();
+    auto build = find_instruction(*code, Bytecode::BuildCallKeywords);
+    ASSERT_EQ(2u, build.sources().size());
+    ASSERT_EQ(2u, build.destinations().size());
+    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
+              build.destinations()[0].kind);
+    EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
+              build.destinations()[1].kind);
+    auto merge = find_instruction(*code, Bytecode::MergeCallKeywords);
+    ASSERT_EQ(3u, merge.sources().size());
+    ASSERT_EQ(1u, merge.destinations().size());
+    EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
+              merge.destinations()[0].kind);
+    auto add = find_instruction(*code, Bytecode::AddCallKeyword);
+    ASSERT_EQ(4u, add.operands().size());
+    EXPECT_EQ(BytecodeOperandKind::Constant, add.operands()[2].kind);
+    ASSERT_EQ(3u, add.sources().size());
+    ASSERT_EQ(1u, add.destinations().size());
+    EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
+              add.destinations()[0].kind);
+    auto next = find_instruction(*code, Bytecode::DictNextEntry);
+    ASSERT_EQ(2u, next.sources().size());
+    ASSERT_EQ(5u, next.destinations().size());
+    auto insert =
+        find_instruction(*code, Bytecode::DictTryStringKeyedInsertIfAbsent);
+    ASSERT_EQ(3u, insert.sources().size());
+    ASSERT_EQ(2u, insert.destinations().size());
+    EXPECT_EQ(Value::None(), context.thread()->run_clovervm_code_object(code));
+    EXPECT_EQ(1u, source.extract()->size());
 }

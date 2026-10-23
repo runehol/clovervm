@@ -856,6 +856,9 @@ namespace cl
             CanonicalizeHash,
             ListAppend,
             ListExtend,
+            BuildCallKeywords,
+            MergeCallKeywords,
+            AddCallKeyword,
             ListToTuple,
             ToExactTuple,
             ToExactList,
@@ -951,6 +954,24 @@ namespace cl
             {
                 return Expected<TrustedCloverCall>::ok(
                     TrustedCloverCall::ListExtend);
+            }
+            if(name_value ==
+               interned_string(L"__clover_build_call_keywords__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::BuildCallKeywords);
+            }
+            if(name_value ==
+               interned_string(L"__clover_merge_call_keywords__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::MergeCallKeywords);
+            }
+            if(name_value ==
+               interned_string(L"__clover_add_call_keyword__").raw_value())
+            {
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::AddCallKeyword);
             }
             return Expected<TrustedCloverCall>::raise_exception(
                 L"SyntaxError", L"unknown trusted __clover_* helper");
@@ -1217,6 +1238,81 @@ namespace cl
         }
 
         Expected<void>
+        codegen_trusted_build_call_keywords(uint32_t source_offset,
+                                            AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_build_call_keywords__"));
+            if(args.size() != 2)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError", L"__clover_build_call_keywords__ expects "
+                                    L"exactly 2 arguments");
+            }
+            TemporaryReg regs(*code_obj, 2);
+            uint32_t callable = regs, destination = regs + 1;
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), callable));
+            CL_TRY(codegen_node(call_argument_value(args[1])));
+            CL_TRY(code_obj->emit_build_call_keywords(source_offset, callable,
+                                                      destination));
+            CL_TRY(code_obj->emit_ldar(source_offset, destination));
+            return Expected<void>::ok();
+        }
+
+        Expected<void>
+        codegen_trusted_merge_call_keywords(uint32_t source_offset,
+                                            AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_merge_call_keywords__"));
+            if(args.size() != 3)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError", L"__clover_merge_call_keywords__ expects "
+                                    L"exactly 3 arguments");
+            }
+            TemporaryReg regs(*code_obj, 2);
+            uint32_t callable = regs, destination = regs + 1;
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), callable));
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[1]), destination));
+            CL_TRY(codegen_node(call_argument_value(args[2])));
+            CL_TRY(code_obj->emit_merge_call_keywords(source_offset, callable,
+                                                      destination));
+            return Expected<void>::ok();
+        }
+
+        Expected<void> codegen_trusted_add_call_keyword(uint32_t source_offset,
+                                                        AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_add_call_keyword__"));
+            if(args.size() != 4)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_add_call_keyword__ expects exactly 4 arguments");
+            }
+            Value name = CL_TRY(literal_string_constant(
+                call_argument_value(args[2]),
+                L"keyword name must be a string literal"));
+            uint8_t name_idx = CL_TRY(code_obj->allocate_constant(name));
+            TemporaryReg regs(*code_obj, 3);
+            uint32_t callable = regs, destination = regs + 1, value = regs + 2;
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), callable));
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[1]), destination));
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[3]), value));
+            CL_TRY(code_obj->emit_add_call_keyword(
+                source_offset, callable, destination, name_idx, value));
+            return Expected<void>::ok();
+        }
+
+        Expected<void>
         codegen_trusted_clover_list_extend(uint32_t source_offset,
                                            AstChildren args)
         {
@@ -1301,7 +1397,8 @@ namespace cl
             AstChildren args = av.children[children[1]];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            switch(CL_TRY(trusted_clover_call_kind(node_idx)))
+            TrustedCloverCall kind = CL_TRY(trusted_clover_call_kind(node_idx));
+            switch(kind)
             {
                 case TrustedCloverCall::ToExactTuple:
                     CL_TRY(codegen_trusted_clover_to_exact_tuple(source_offset,
@@ -1310,6 +1407,18 @@ namespace cl
                 case TrustedCloverCall::ToExactList:
                     CL_TRY(codegen_trusted_clover_to_exact_list(source_offset,
                                                                 args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::BuildCallKeywords:
+                    CL_TRY(codegen_trusted_build_call_keywords(source_offset,
+                                                               args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::MergeCallKeywords:
+                    CL_TRY(codegen_trusted_merge_call_keywords(source_offset,
+                                                               args));
+                    return Expected<bool>::ok(true);
+                case TrustedCloverCall::AddCallKeyword:
+                    CL_TRY(
+                        codegen_trusted_add_call_keyword(source_offset, args));
                     return Expected<bool>::ok(true);
                 case TrustedCloverCall::ListExtend:
                     CL_TRY(codegen_trusted_clover_list_extend(source_offset,

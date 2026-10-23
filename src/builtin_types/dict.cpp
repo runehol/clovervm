@@ -656,6 +656,79 @@ namespace cl
                 code_object, Optional<TValue<String>>::none(), defaults));
     }
 
+    // Emits a restartable probe. The caller owns the found/missing actions.
+    static Expected<void>
+    emit_dict_insert_probe(CodeObjectBuilder &code, uint32_t receiver_reg,
+                           uint32_t key_reg, uint32_t hash_reg,
+                           uint32_t scratch_reg, JumpTarget &insert_new,
+                           JumpTarget &hit)
+    {
+        uint32_t generation_reg = scratch_reg;
+        uint32_t hash_idx_reg = scratch_reg + 1;
+        uint32_t probe_result_reg = scratch_reg + 2;
+        uint32_t candidate_key_reg = scratch_reg + 3;
+        uint32_t equality_reg = scratch_reg + 4;
+        uint32_t first_tombstone_idx_reg = scratch_reg + 5;
+        JumpTarget restart_probe(&code), probe_loop(&code), tombstone(&code),
+            record_tombstone(&code), advance_probe(&code);
+        CL_TRY(restart_probe.resolve());
+        CL_TRY(code.emit_dict_resize_for_insert(0, receiver_reg));
+        CL_TRY(code.emit_lda_smi(0, -1));
+        CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
+        CL_TRY(code.emit_ldar(0, hash_reg));
+        CL_TRY(code.emit_dict_probe_start(0, receiver_reg, generation_reg,
+                                          hash_idx_reg));
+
+        CL_TRY(probe_loop.resolve());
+        CL_TRY(code.emit_ldar(0, hash_reg));
+        CL_TRY(code.emit_dict_probe_for_insert(0, receiver_reg, hash_idx_reg));
+        CL_TRY(code.emit_jump_if_equal_smi(
+            0, TrustedDictBytecodeAccess::InsertProbeEmpty, insert_new));
+        CL_TRY(code.emit_jump_if_equal_smi(
+            0, TrustedDictBytecodeAccess::InsertProbeTombstone, tombstone));
+        CL_TRY(code.emit_jump_if_equal_smi(
+            0, TrustedDictBytecodeAccess::InsertProbeHashMiss, advance_probe));
+
+        CL_TRY(code.emit_star(0, probe_result_reg));
+        CL_TRY(code.emit_dict_entry_key(0, receiver_reg));
+        CL_TRY(code.emit_star(0, candidate_key_reg));
+        CL_TRY(code.emit_ldar(0, key_reg));
+        CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, candidate_key_reg,
+                                      OperatorBytecodeFormat::Plain));
+        CL_TRY(code.emit_jump_if_true(0, hit));
+
+        CL_TRY(code.emit_ldar(0, key_reg));
+        CL_TRY(code.emit_operator_reg(
+            0, Bytecode::TestEqual, candidate_key_reg,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+        CL_TRY(code.emit_to_bool(0));
+        CL_TRY(code.emit_star(0, equality_reg));
+        CL_TRY(code.emit_dict_entry_still_matches(
+            0, receiver_reg, generation_reg, hash_idx_reg, probe_result_reg,
+            candidate_key_reg));
+        CL_TRY(code.emit_jump_if_false(0, restart_probe));
+        CL_TRY(code.emit_ldar(0, equality_reg));
+        CL_TRY(code.emit_jump_if_true(0, hit));
+        CL_TRY(code.emit_jump(0, advance_probe));
+
+        CL_TRY(tombstone.resolve());
+        CL_TRY(code.emit_ldar(0, first_tombstone_idx_reg));
+        CL_TRY(code.emit_jump_if_equal_smi(0, -1, record_tombstone));
+        CL_TRY(code.emit_jump(0, advance_probe));
+
+        CL_TRY(record_tombstone.resolve());
+        CL_TRY(code.emit_ldar(0, hash_idx_reg));
+        CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
+
+        CL_TRY(advance_probe.resolve());
+        CL_TRY(code.emit_ldar(0, hash_idx_reg));
+        CL_TRY(code.emit_dict_probe_advance(0, receiver_reg));
+        CL_TRY(code.emit_star(0, hash_idx_reg));
+        CL_TRY(code.emit_jump(0, probe_loop));
+
+        return Expected<void>::ok();
+    }
+
     static Expected<TValue<Function>> make_dict_insert_function(
         VirtualMachine *vm, DictInsertKind kind, ClassObject *type_error_class,
         TrustedHandlerResolver trusted_handler_resolver = nullptr)
@@ -703,22 +776,14 @@ namespace cl
                 kind == DictInsertKind::SetDefault ? 8 : 7;
             CodeObjectBuilder::TemporaryReg temporaries(code, temporary_count);
             uint32_t hash_reg = temporaries;
-            uint32_t generation_reg = temporaries + 1;
             uint32_t hash_idx_reg = temporaries + 2;
             uint32_t probe_result_reg = temporaries + 3;
-            uint32_t candidate_key_reg = temporaries + 4;
-            uint32_t equality_reg = temporaries + 5;
             uint32_t first_tombstone_idx_reg = temporaries + 6;
             uint32_t string_result_reg = kind == DictInsertKind::SetDefault
                                              ? temporaries + 7
                                              : temporaries;
 
             JumpTarget receiver_ok(&code);
-            JumpTarget restart_probe(&code);
-            JumpTarget probe_loop(&code);
-            JumpTarget tombstone(&code);
-            JumpTarget record_tombstone(&code);
-            JumpTarget advance_probe(&code);
             JumpTarget insert_new(&code);
             JumpTarget hit(&code);
 
@@ -755,62 +820,8 @@ namespace cl
                                       OperatorBytecodeFormat::Plain));
             CL_TRY(code.emit_star(0, hash_reg));
 
-            CL_TRY(restart_probe.resolve());
-            CL_TRY(code.emit_dict_resize_for_insert(0, 0));
-            CL_TRY(code.emit_lda_smi(0, -1));
-            CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
-            CL_TRY(code.emit_ldar(0, hash_reg));
-            CL_TRY(
-                code.emit_dict_probe_start(0, 0, generation_reg, hash_idx_reg));
-
-            CL_TRY(probe_loop.resolve());
-            CL_TRY(code.emit_ldar(0, hash_reg));
-            CL_TRY(code.emit_dict_probe_for_insert(0, 0, hash_idx_reg));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::InsertProbeEmpty, insert_new));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::InsertProbeTombstone, tombstone));
-            CL_TRY(code.emit_jump_if_equal_smi(
-                0, TrustedDictBytecodeAccess::InsertProbeHashMiss,
-                advance_probe));
-
-            CL_TRY(code.emit_star(0, probe_result_reg));
-            CL_TRY(code.emit_dict_entry_key(0, 0));
-            CL_TRY(code.emit_star(0, candidate_key_reg));
-            CL_TRY(code.emit_ldar(0, 1));
-            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs,
-                                          candidate_key_reg,
-                                          OperatorBytecodeFormat::Plain));
-            CL_TRY(code.emit_jump_if_true(0, hit));
-
-            CL_TRY(code.emit_ldar(0, 1));
-            CL_TRY(code.emit_operator_reg(
-                0, Bytecode::TestEqual, candidate_key_reg,
-                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
-            CL_TRY(code.emit_to_bool(0));
-            CL_TRY(code.emit_star(0, equality_reg));
-            CL_TRY(code.emit_dict_entry_still_matches(
-                0, 0, generation_reg, hash_idx_reg, probe_result_reg,
-                candidate_key_reg));
-            CL_TRY(code.emit_jump_if_false(0, restart_probe));
-            CL_TRY(code.emit_ldar(0, equality_reg));
-            CL_TRY(code.emit_jump_if_true(0, hit));
-            CL_TRY(code.emit_jump(0, advance_probe));
-
-            CL_TRY(tombstone.resolve());
-            CL_TRY(code.emit_ldar(0, first_tombstone_idx_reg));
-            CL_TRY(code.emit_jump_if_equal_smi(0, -1, record_tombstone));
-            CL_TRY(code.emit_jump(0, advance_probe));
-
-            CL_TRY(record_tombstone.resolve());
-            CL_TRY(code.emit_ldar(0, hash_idx_reg));
-            CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
-
-            CL_TRY(advance_probe.resolve());
-            CL_TRY(code.emit_ldar(0, hash_idx_reg));
-            CL_TRY(code.emit_dict_probe_advance(0, 0));
-            CL_TRY(code.emit_star(0, hash_idx_reg));
-            CL_TRY(code.emit_jump(0, probe_loop));
+            CL_TRY(emit_dict_insert_probe(code, 0, 1, hash_reg, temporaries + 1,
+                                          insert_new, hit));
 
             CL_TRY(insert_new.resolve());
             CL_TRY(code.emit_dict_insert_new(
@@ -1043,6 +1054,285 @@ namespace cl
         return Expected<TValue<Function>>::ok(
             vm->make_immortal_object_value<Function>(
                 code_object, Optional<TValue<String>>::none(), defaults));
+    }
+
+    Expected<TValue<Function>>
+    make_dict_insert_if_absent_known_hash_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(vm, nullptr, vm->global_builtins_module(), scope,
+                               vm->get_or_create_interned_string_value(
+                                   L"<dict.insert_if_absent_known_hash>"));
+        // destination, key, value, canonical hash
+        code.configure_positional_function(4);
+        {
+            CodeObjectBuilder::TemporaryReg scratch(code, 7);
+            uint32_t hash_idx = scratch + 1;
+            uint32_t first_tombstone = scratch + 5;
+            uint32_t string_result = scratch + 6;
+            JumpTarget general(&code), missing(&code), found(&code);
+            CL_TRY(code.emit_dict_try_string_keyed_insert_if_absent(
+                0, 0, 1, 2, string_result));
+            CL_TRY(code.emit_jump_if_false(0, general));
+            CL_TRY(code.emit_ldar(0, string_result));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(general.resolve());
+            CL_TRY(
+                emit_dict_insert_probe(code, 0, 1, 3, scratch, missing, found));
+            CL_TRY(missing.resolve());
+            CL_TRY(code.emit_dict_insert_new(0, 0, hash_idx, first_tombstone, 3,
+                                             1, 2));
+            CL_TRY(code.emit_lda_true(0));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(found.resolve());
+            CL_TRY(code.emit_lda_false(0));
+            CL_TRY(code.emit_return(0));
+        }
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
+    }
+
+    Value raise_duplicate_call_keyword(ThreadState *thread, Value callable,
+                                       TValue<String> key)
+    {
+        TValue<String> name = thread->class_of_value(callable)->get_name();
+        if(can_convert_to<Function>(callable))
+        {
+            name = callable.get_ptr<Function>()
+                       ->code_object.extract()
+                       ->name.value();
+        }
+        else if(can_convert_to<ClassObject>(callable))
+        {
+            name = callable.get_ptr<ClassObject>()->get_name();
+        }
+        std::wstring message(name.extract()->data,
+                             name.extract()->count.extract());
+        message += L"() got multiple values for keyword argument '";
+        message.append(key.extract()->data, key.extract()->count.extract());
+        message += L"'";
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", thread->make_object_value<String>(message));
+    }
+
+    static Value call_keyword_duplicate_error(ThreadState *thread,
+                                              Value callable, Value key_text)
+    {
+        if(!can_convert_to<String>(key_text))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__str__ returned non-string");
+        }
+        return raise_duplicate_call_keyword(
+            thread, callable, TValue<String>::from_value_unchecked(key_text));
+    }
+
+    static Value call_keyword_source_size(ThreadState *, Value, Value,
+                                          Value source)
+    {
+        assert(can_convert_to<Dict>(source));
+        return Value::from_smi(
+            static_cast<int64_t>(source.get_ptr<Dict>()->size()));
+    }
+
+    static Value call_keyword_source_mutated(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"RuntimeError", L"dict mutated during update");
+    }
+
+    static Value call_keyword_add_hash(ThreadState *thread, Value, Value,
+                                       Value key, Value)
+    {
+        assert(is_exact_string(thread, key));
+        return string_hash_normalized(TValue<String>::from_value_unchecked(key))
+            .raw_value();
+    }
+
+    Expected<TValue<Function>>
+    make_call_keyword_error_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(vm, nullptr, vm->global_builtins_module(), scope,
+                               vm->get_or_create_interned_string_value(
+                                   L"<duplicate call keyword>"));
+        code.configure_positional_function(2);
+        uint8_t str_class =
+            CL_TRY(code.allocate_constant(Value::from_oop(vm->str_class())));
+        NativeFunctionTarget target;
+        target.fixed2 = call_keyword_duplicate_error;
+        uint8_t error_target = CL_TRY(code.add_native_function_target(target));
+        uint8_t str_name = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"__str__")));
+        uint8_t type_error = CL_TRY(
+            code.allocate_constant(Value::from_oop(vm->builtin_class_by_name(
+                vm->get_or_create_interned_string_value(L"TypeError")))));
+        uint8_t missing_str = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"object has no __str__")));
+        JumpTarget format(&code);
+        CL_TRY(code.emit_ldar(0, 1));
+        CL_TRY(code.emit_is_instance_of_known_class(0, str_class));
+        CL_TRY(code.emit_jump_if_true(0, format));
+        {
+            CodeObjectBuilder::TemporaryReg args(code, 1,
+                                                 RegisterAlignment::CallFrame);
+            CL_TRY(code.emit_mov(0, args, 1));
+            CL_TRY(code.emit_call_special_method(0, args, str_name, 0,
+                                                 type_error, missing_str));
+            CL_TRY(code.emit_star(0, 1));
+        }
+        CL_TRY(format.resolve());
+        CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2,
+                                        error_target));
+        CL_TRY(code.emit_return_or_raise_exception(0));
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
+    }
+
+    Expected<TValue<Function>>
+    make_call_keyword_merge_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(vm, nullptr, vm->global_builtins_module(), scope,
+                               vm->get_or_create_interned_string_value(
+                                   L"<merge exact call keywords>"));
+        code.configure_positional_function(3);  // callable, destination, source
+        uint8_t insert = CL_TRY(code.allocate_constant(
+            vm->dict_insert_if_absent_known_hash_function().raw_value()));
+        uint8_t error = CL_TRY(code.allocate_constant(
+            vm->call_keyword_error_function().raw_value()));
+        NativeFunctionTarget size_target;
+        size_target.fixed3 = call_keyword_source_size;
+        uint8_t size_idx = CL_TRY(code.add_native_function_target(size_target));
+        NativeFunctionTarget mutated_target;
+        mutated_target.fixed0 = call_keyword_source_mutated;
+        uint8_t mutated_idx =
+            CL_TRY(code.add_native_function_target(mutated_target));
+        {
+            CodeObjectBuilder::TemporaryReg temps(code, 7);
+            uint32_t initial_size = temps;
+            uint32_t index = temps + 1;
+            uint32_t entry = temps + 2;
+            uint32_t insert_function = temps + 5;
+            uint32_t error_function = temps + 6;
+            CL_TRY(code.emit_lda_constant(0, insert));
+            CL_TRY(code.emit_star(0, insert_function));
+            CL_TRY(code.emit_lda_constant(0, error));
+            CL_TRY(code.emit_star(0, error_function));
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic3,
+                                            size_idx));
+            CL_TRY(code.emit_star(0, initial_size));
+            CL_TRY(code.emit_lda_smi(0, 0));
+            CL_TRY(code.emit_star(0, index));
+            JumpTarget loop(&code), done(&code), duplicate(&code),
+                mutated(&code);
+            CL_TRY(loop.resolve());
+            CL_TRY(code.emit_dict_next_entry(0, 2, index, entry));
+            CL_TRY(code.emit_jump_if_false(0, done));
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 4, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, args, 1));
+                CL_TRY(code.emit_mov(0, args + 1, entry));
+                CL_TRY(code.emit_mov(0, args + 2, entry + 1));
+                CL_TRY(code.emit_mov(0, args + 3, entry + 2));
+                CL_TRY(code.emit_call_positional(0, insert_function, args, 4));
+            }
+            CL_TRY(code.emit_jump_if_false(0, duplicate));
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic3,
+                                            size_idx));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, initial_size,
+                                          OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_jump_if_false(0, mutated));
+            CL_TRY(code.emit_jump(0, loop));
+            CL_TRY(duplicate.resolve());
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 2, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, args, 0));
+                CL_TRY(code.emit_mov(0, args + 1, entry));
+                CL_TRY(code.emit_call_positional(0, error_function, args, 2));
+            }
+            CL_TRY(code.emit_return(0));
+            CL_TRY(mutated.resolve());
+            CL_TRY(emit_native_error(code, mutated_idx));
+            CL_TRY(done.resolve());
+            CL_TRY(code.emit_lda_none(0));
+            CL_TRY(code.emit_return(0));
+        }
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
+    }
+
+    Expected<TValue<Function>>
+    make_call_keyword_add_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), scope,
+            vm->get_or_create_interned_string_value(L"<add call keyword>"));
+        code.configure_positional_function(
+            4);  // callable, destination, key, value
+        uint8_t insert = CL_TRY(code.allocate_constant(
+            vm->dict_insert_if_absent_known_hash_function().raw_value()));
+        uint8_t error = CL_TRY(code.allocate_constant(
+            vm->call_keyword_error_function().raw_value()));
+        NativeFunctionTarget hash_target;
+        hash_target.fixed4 = call_keyword_add_hash;
+        uint8_t hash_idx = CL_TRY(code.add_native_function_target(hash_target));
+        {
+            CodeObjectBuilder::TemporaryReg temps(code, 3);
+            uint32_t hash = temps;
+            uint32_t insert_function = temps + 1;
+            uint32_t error_function = temps + 2;
+            CL_TRY(code.emit_lda_constant(0, insert));
+            CL_TRY(code.emit_star(0, insert_function));
+            CL_TRY(code.emit_lda_constant(0, error));
+            CL_TRY(code.emit_star(0, error_function));
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic4,
+                                            hash_idx));
+            CL_TRY(code.emit_star(0, hash));
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 4, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, args, 1));
+                CL_TRY(code.emit_mov(0, args + 1, 2));
+                CL_TRY(code.emit_mov(0, args + 2, 3));
+                CL_TRY(code.emit_mov(0, args + 3, hash));
+                CL_TRY(code.emit_call_positional(0, insert_function, args, 4));
+            }
+            JumpTarget duplicate(&code);
+            CL_TRY(code.emit_jump_if_false(0, duplicate));
+            CL_TRY(code.emit_lda_none(0));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(duplicate.resolve());
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 2, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, args, 0));
+                CL_TRY(code.emit_mov(0, args + 1, 2));
+                CL_TRY(code.emit_call_positional(0, error_function, args, 2));
+            }
+            CL_TRY(code.emit_return(0));
+        }
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
     }
 
     void install_dict_class_methods(VirtualMachine *vm,

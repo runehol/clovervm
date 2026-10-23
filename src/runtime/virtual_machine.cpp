@@ -1131,6 +1131,22 @@ namespace cl
         install_list_class_methods(this);
         install_tuple_class_methods(this);
         install_dict_class_methods(this, type_error);
+        dict_insert_if_absent_known_hash_function_ =
+            Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                this, make_dict_insert_if_absent_known_hash_function(this),
+                "creating keyword helper"));
+        call_keyword_error_function_ =
+            Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                this, make_call_keyword_error_function(this),
+                "creating keyword helper"));
+        call_keyword_merge_function_ =
+            Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                this, make_call_keyword_merge_function(this),
+                "creating keyword helper"));
+        call_keyword_add_function_ =
+            Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                this, make_call_keyword_add_function(this),
+                "creating keyword helper"));
         install_slotdict_class_methods(this);
         install_slice_class_methods(this);
         install_float_class_methods(this);
@@ -1479,6 +1495,31 @@ namespace cl
     {
         assert(iterable_to_exact_list_function_.value().has_value());
         return iterable_to_exact_list_function_.value().value();
+    }
+
+    TValue<Function>
+    VirtualMachine::dict_insert_if_absent_known_hash_function() const
+    {
+        assert(dict_insert_if_absent_known_hash_function_.value().has_value());
+        return dict_insert_if_absent_known_hash_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::call_keyword_error_function() const
+    {
+        assert(call_keyword_error_function_.value().has_value());
+        return call_keyword_error_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::call_keyword_merge_function() const
+    {
+        assert(call_keyword_merge_function_.value().has_value());
+        return call_keyword_merge_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::call_keyword_add_function() const
+    {
+        assert(call_keyword_add_function_.value().has_value());
+        return call_keyword_add_function_.value().value();
     }
 
     TValue<Function> VirtualMachine::list_extend_function() const
