@@ -709,7 +709,7 @@ Module-scope `locals()` currently returns the same kind of fresh live `SlotDict`
 view as `globals()`.
 
 For code objects with a non-null local scope, `locals()` currently raises
-`UnimplementedError`. That is intentionally incomplete for functions and class
+`NotImplementedError`. That is intentionally incomplete for functions and class
 bodies. The next correct versions are:
 
 - function code: materialize a snapshot from scope metadata and frame storage

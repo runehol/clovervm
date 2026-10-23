@@ -10,7 +10,7 @@ from builtins import abs as _builtin_abs
 
 
 def _unsupported():
-    raise UnimplementedError
+    raise NotImplementedError
 
 
 def abs(a):

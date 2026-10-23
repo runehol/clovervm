@@ -43,7 +43,7 @@ namespace cl
         if(__builtin_add_overflow(current_smi, step_smi, &next_smi))
         {
             return active_thread()->set_pending_builtin_exception_string(
-                L"UnimplementedError", L"integer overflow");
+                L"NotImplementedError", L"integer overflow");
         }
         iterator->current = TValue<SMI>::from_smi(next_smi);
         return current;

@@ -7,7 +7,7 @@ import os
 def glob(pathname, *, root_dir=None, dir_fd=None, recursive=False, include_hidden=False):
     """Return a list of paths matching a pathname pattern."""
     if dir_fd is not None:
-        raise UnimplementedError
+        raise NotImplementedError
     if root_dir is None:
         return _glob(pathname, recursive, include_hidden)
     if os.path.isabs(pathname):
@@ -191,7 +191,7 @@ def _ishidden(path):
 def translate(pat, *, recursive=False, include_hidden=False, seps=None):
     """Translate a pathname with shell wildcards to a regular expression."""
     if seps is not None:
-        raise UnimplementedError
+        raise NotImplementedError
     result = ""
     part = ""
     idx = 0

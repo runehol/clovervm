@@ -156,7 +156,7 @@ assert contains(obj_names, "__dict__")
 no_arg_dir_is_unimplemented = False
 try:
     dir()
-except UnimplementedError:
+except NotImplementedError:
     no_arg_dir_is_unimplemented = True
 assert no_arg_dir_is_unimplemented
 

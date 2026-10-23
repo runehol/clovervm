@@ -6039,7 +6039,7 @@ namespace cl
                     {
                         accumulator =
                             thread->set_pending_builtin_exception_string(
-                                L"UnimplementedError",
+                                L"NotImplementedError",
                                 L"locals() is only implemented for module "
                                 L"scope");
                         MUSTTAIL return propagate_pending_exception(ARGS);

@@ -5507,13 +5507,56 @@ TEST(Interpreter, locals_builtin_is_unimplemented_in_function_scope)
     expect_python_error(L"def f():\n"
                         L"    return locals()\n"
                         L"f()\n",
-                        L"UnimplementedError",
+                        L"NotImplementedError",
                         L"locals() is only implemented for module scope");
+}
+
+TEST(Interpreter, not_implemented_error_inherits_runtime_error)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = context.run_file(LR"(
+assert NotImplementedError.__bases__ == (RuntimeError,)
+assert issubclass(NotImplementedError, RuntimeError)
+assert issubclass(NotImplementedError, Exception)
+assert not hasattr(__builtins__, 'UnimplementedError')
+error = NotImplementedError('not supported', 42)
+assert error.args == ('not supported', 42)
+assert error.__class__ is NotImplementedError
+try:
+    raise error
+except RuntimeError as caught:
+    assert caught is error
+else:
+    raise AssertionError
+class CustomError(NotImplementedError):
+    pass
+try:
+    raise CustomError('custom')
+except NotImplementedError as caught:
+    assert caught.args == ('custom',)
+else:
+    raise AssertionError
+def unsupported():
+    return locals()
+try:
+    unsupported()
+except RuntimeError as caught:
+    assert caught.__class__ is NotImplementedError
+    assert caught.args == ('locals() is only implemented for module scope',)
+else:
+    raise AssertionError
+True
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+    EXPECT_EQ(Value::True(), result);
 }
 
 TEST(Interpreter, dir_without_arguments_propagates_locals_error)
 {
-    expect_python_error(L"dir()\n", L"UnimplementedError",
+    expect_python_error(L"dir()\n", L"NotImplementedError",
                         L"locals() is only implemented for module scope");
 }
 
