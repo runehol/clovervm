@@ -404,8 +404,7 @@ state in ordinary managed frames. Non-string duplicate-key formatting calls
 `__str__` through managed special-method dispatch before native exception
 construction; string keys are formatted from their stored text directly.
 
-During implementation checkpoint 2a.2, sources other than exact dicts raise
-`NotImplementedError`. Checkpoint 2b replaces that temporary boundary with the
+Checkpoint 2b replaces the initial exact-dict-only implementation with the
 generic mapping protocol below. Expanded-call syntax remains disabled until
 the execution path is complete.
 
@@ -416,6 +415,15 @@ the result to an exact list: reuse an exact list unchanged; materialize every
 other iterable, including list subclasses, into a fresh exact list. Materialization
 finishes before any `source[key]` lookup or insertion from this source. If it
 raises, no values from this source have been fetched or inserted.
+
+Call `source.keys()` directly and translate `AttributeError` around that call
+into a callable-context `TypeError` saying the source must be a mapping. This
+includes `AttributeError` from the `keys()` body and avoids requiring first-class
+bound methods or a separate method-lookup opcode. Materialization happens
+outside this exception boundary. Exceptions from materialization, hashing,
+equality, and `source[key]` propagate unchanged, including `AttributeError` and
+`KeyError`. This deliberately differs from CPython's broader exception
+translation around the entire merge.
 
 The merge uses an ordinary list iterator over that live list, checks each key
 for a duplicate before fetching `source[key]`, and inserts the value. Do not
@@ -440,7 +448,12 @@ The destination must remain rooted in its register while callbacks run. Managed
 fallback entry/return must preserve the direct destination-register contract;
 it must not rely on a caller-emitted `Star` after the operation. A build fallback
 can establish the empty destination before entering the shared merge helper.
-Detailed continuation and failure-cleanup mechanics remain to be specified.
+Build and Merge enter the same VM-owned Python mapping helper through ordinary
+managed frame entry with three arguments at the first-free argument anchor.
+Build installs its fresh empty destination before entry. Normal helper return
+produces `None`; failure unwinds without executing the following instruction,
+with any already inserted entries retained. No special continuation or result
+store is needed.
 
 For a first keyword mapping followed by another mapping, precode is:
 

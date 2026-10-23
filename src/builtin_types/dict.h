@@ -501,6 +501,9 @@ namespace cl
     make_call_keyword_merge_function(VirtualMachine *vm);
     [[nodiscard]] Expected<TValue<Function>>
     make_call_keyword_add_function(VirtualMachine *vm);
+    [[nodiscard]] Value raise_call_keyword_mapping_error(ThreadState *thread,
+                                                         Value callable,
+                                                         Value source);
     [[nodiscard]] Value raise_duplicate_call_keyword(ThreadState *thread,
                                                      Value callable,
                                                      TValue<String> key);

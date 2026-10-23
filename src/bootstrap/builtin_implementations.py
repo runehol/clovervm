@@ -456,6 +456,19 @@ def _clover_iterable_to_exact_list(source):
     return builder
 
 
+def _clover_merge_call_keyword_mapping(callable, destination, source):
+    try:
+        keys = source.keys()
+    except AttributeError:
+        _clover_raise_call_mapping_error(callable, source)
+    keys = __clover_to_exact_list__(keys)
+    for key in keys:
+        if key in destination:
+            _clover_raise_duplicate_keyword(callable, key)
+        destination[key] = source[key]
+    return None
+
+
 def _clover_list_extend(builder, source):
     for item in source:
         __clover_list_append__(builder, item)

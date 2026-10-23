@@ -3089,7 +3089,7 @@ assert builder['later'] == 9
                context.thread()->pending_exception_object()));
 }
 
-TEST(CallKeywordConstruction, EvaluationOrderAndGenericMappingPlaceholder)
+TEST(CallKeywordConstruction, EvaluationOrderAndMissingMappingErrors)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
@@ -3109,22 +3109,388 @@ def item():
 assert __clover_add_call_keyword__(callable_value(), destination(), 'name', item()) is None
 assert events == ['callable', 'destination', 'item']
 class Mapping:
-    def keys(self): raise AssertionError('must wait until 2b')
+    def keys(self): return []
 class Subdict(dict): pass
-for source in (Mapping(), Subdict(), [], 1):
+assert len(__clover_build_call_keywords__(target, Mapping())) == 0
+assert len(__clover_build_call_keywords__(target, Subdict())) == 0
+assert __clover_merge_call_keywords__(target, builder, Mapping()) is None
+for source in ([], [('a', 1)], 1):
     try:
         __clover_build_call_keywords__(target, source)
-    except NotImplementedError:
-        pass
+    except TypeError as error:
+        assert "argument after ** must be a mapping" in str(error)
     else:
         raise AssertionError
     try:
         __clover_merge_call_keywords__(target, builder, source)
-    except NotImplementedError:
-        pass
+    except TypeError as error:
+        assert "argument after ** must be a mapping" in str(error)
     else:
         raise AssertionError
 assert __clover_to_exact_tuple__(builder.keys()) == ('name',)
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping, MaterializesIteratorsBeforeFetchingValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+events = []
+class Keys:
+    def __init__(self): self.position = 0
+    def __iter__(self):
+        events.append('iter')
+        return self
+    def __next__(self):
+        i = self.position
+        self.position += 1
+        events.append(i)
+        if i == 2: raise StopIteration
+        return ('a', 'b')[i]
+class Mapping:
+    def keys(self):
+        events.append('keys')
+        return Keys()
+    def __getitem__(self, key):
+        events.append(key)
+        return key
+source = Mapping()
+builder = __clover_build_call_keywords__(target, source)
+assert events == ['keys', 'iter', 0, 1, 2, 'a', 'b']
+assert builder['a'] == 'a' and builder['b'] == 'b'
+assert len(builder) == 2
+second = __clover_build_call_keywords__(target, source)
+assert second is not builder
+class Empty:
+    def keys(self): return []
+assert __clover_merge_call_keywords__(target, builder, Empty()) is None
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping, ExactKeyListsStayLiveDuringLookup)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+class Mapping:
+    def __init__(self, keys, mode):
+        self.key_list = keys
+        self.mode = mode
+        self.seen = []
+    def keys(self): return self.key_list
+    def __getitem__(self, key):
+        self.seen.append(key)
+        if len(self.seen) == 1:
+            if self.mode == 0:
+                self.key_list[1] = 'changed'
+                self.key_list.append('new')
+            elif self.mode == 1:
+                self.key_list.clear()
+            elif self.mode == 2:
+                del self.key_list[0]
+            elif self.mode == 3:
+                self.key_list.insert(0, 'earlier')
+        return key
+source = Mapping(['a', 'b'], 0)
+builder = __clover_build_call_keywords__(target, source)
+assert source.seen == ['a', 'changed', 'new']
+assert __clover_to_exact_tuple__(builder.keys()) == ('a', 'changed', 'new')
+source = Mapping(['a', 'b'], 1)
+builder = __clover_build_call_keywords__(target, source)
+assert source.seen == ['a'] and len(builder) == 1
+source = Mapping(['a', 'b', 'c'], 2)
+builder = __clover_build_call_keywords__(target, source)
+assert source.seen == ['a', 'c']
+assert __clover_to_exact_tuple__(builder.keys()) == ('a', 'c')
+source = Mapping(['a', 'b'], 3)
+builder = {}
+try:
+    __clover_merge_call_keywords__(target, builder, source)
+except TypeError:
+    pass
+else:
+    raise AssertionError
+assert source.seen == ['a'] and len(builder) == 1
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping, ListAndDictSubclassesUseTheirOverrides)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+events = []
+class KeyList(list):
+    def __iter__(self):
+        events.append('override iter')
+        return iter(('a', 'b'))
+keys = KeyList()
+keys.append('wrong')
+class Mapping:
+    def keys(self): return keys
+    def __getitem__(self, key):
+        events.append(key)
+        keys.clear()
+        return key
+builder = __clover_build_call_keywords__(target, Mapping())
+assert events == ['override iter', 'a', 'b']
+assert __clover_to_exact_tuple__(builder.keys()) == ('a', 'b')
+class Subdict(dict):
+    def keys(self):
+        events.append('override keys')
+        return ['exposed']
+    def __getitem__(self, key):
+        events.append(key)
+        return 42
+source = Subdict()
+source['hidden'] = 9
+builder = __clover_build_call_keywords__(target, source)
+assert len(builder) == 1 and builder['exposed'] == 42
+assert 'hidden' not in builder
+assert __clover_merge_call_keywords__(target, builder, Mapping()) is None
+assert events == ['override iter', 'a', 'b', 'override keys', 'exposed', 'override iter', 'a', 'b']
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping, DuplicateCheckPrecedesValueLookupAndRetainsPrefix)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+class Mapping:
+    def __init__(self, keys):
+        self.key_list = keys
+        self.seen = []
+    def keys(self): return self.key_list
+    def __getitem__(self, key):
+        self.seen.append(key)
+        return self.seen
+source = Mapping(['prefix', 'a', 'suffix'])
+builder = {'a': 7}
+try:
+    __clover_merge_call_keywords__(target, builder, source)
+except TypeError as error:
+    assert str(error) == "target() got multiple values for keyword argument 'a'"
+else:
+    raise AssertionError
+assert source.seen == ['prefix']
+assert builder['prefix'] is source.seen and builder['a'] == 7
+assert 'suffix' not in builder
+source = Mapping(['repeat', 'repeat'])
+builder = {}
+try:
+    __clover_merge_call_keywords__(target, builder, source)
+except TypeError:
+    pass
+else:
+    raise AssertionError
+assert source.seen == ['repeat'] and len(builder) == 1
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping,
+     KeysCallAttributeErrorsAreTranslatedButOtherFailuresPropagate)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+class Missing: pass
+class KeysAttributeError:
+    def keys(self): raise AttributeError('keys body')
+for source in (Missing(), KeysAttributeError(), [('a', 1)]):
+    try:
+        __clover_build_call_keywords__(target, source)
+    except TypeError as error:
+        assert 'target() argument after ** must be a mapping, not ' in str(error)
+    else:
+        raise AssertionError
+expected = ValueError('keys failed')
+class KeysFailure:
+    def keys(self): raise expected
+try:
+    __clover_build_call_keywords__(target, KeysFailure())
+except ValueError as error:
+    assert error is expected
+else:
+    raise AssertionError
+class Noncallable: keys = 42
+try:
+    __clover_build_call_keywords__(target, Noncallable())
+except TypeError as error:
+    assert 'argument after **' not in str(error)
+else:
+    raise AssertionError
+class Noniterable:
+    def keys(self): return 42
+try:
+    __clover_build_call_keywords__(target, Noniterable())
+except TypeError as error:
+    assert 'argument after **' not in str(error)
+else:
+    raise AssertionError
+class BadKeys:
+    def __iter__(self): raise expected
+class Materialization:
+    def keys(self): return BadKeys()
+    def __getitem__(self, key): raise AssertionError('lookup must not run')
+for expected in (AttributeError('materialize'), KeyError('materialize')):
+    builder = {'keep': 1}
+    try:
+        __clover_merge_call_keywords__(target, builder, Materialization())
+    except Exception as error:
+        assert error is expected
+    else:
+        raise AssertionError
+    assert len(builder) == 1
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping, ItemAndHashEqualityExceptionsRetainTheirIdentity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+class ItemFailure:
+    def keys(self): return ['prefix', 'bad']
+    def __getitem__(self, key):
+        if key == 'bad': raise expected
+        return 7
+class HashKey:
+    def __hash__(self): raise expected
+class HashFailure:
+    def keys(self): return [HashKey()]
+    def __getitem__(self, key): raise AssertionError('hash must fail first')
+class Stored(str):
+    def __hash__(self): return str.__hash__(self)
+    def __eq__(self, other): raise expected
+class EqualityFailure:
+    def keys(self): return ['collision']
+    def __getitem__(self, key): raise AssertionError('equality must fail first')
+for expected in (AttributeError('callback'), KeyError('callback')):
+    builder = {}
+    try:
+        __clover_merge_call_keywords__(target, builder, ItemFailure())
+    except Exception as error:
+        assert error is expected
+    else:
+        raise AssertionError
+    assert builder['prefix'] == 7 and len(builder) == 1
+    try:
+        __clover_merge_call_keywords__(target, builder, HashFailure())
+    except Exception as error:
+        assert error is expected
+    else:
+        raise AssertionError
+    key = Stored('collision')
+    builder = {key: 1}
+    try:
+        __clover_merge_call_keywords__(target, builder, EqualityFailure())
+    except Exception as error:
+        assert error is expected
+    else:
+        raise AssertionError
+    assert len(builder) == 1
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping,
+     NonStringKeysAndNestedCallsPreserveRootsAndCallerRegisters)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+class Key(str):
+    def __hash__(self): return str.__hash__(self)
+key = Key('custom')
+item = []
+class Mapping:
+    def keys(self):
+        nested = __clover_build_call_keywords__(target, {'nested': item})
+        assert nested['nested'] is item
+        return [key, 42]
+    def __getitem__(self, requested):
+        nested = {}
+        assert __clover_merge_call_keywords__(target, nested, Empty()) is None
+        assert __clover_add_call_keyword__(target, nested, 'inner', item) is None
+        assert nested['inner'] is item
+        return item
+class Empty:
+    def keys(self): return []
+source = Mapping()
+builder = __clover_build_call_keywords__(target, source)
+assert builder[key] is item and builder[42] is item
+assert __clover_to_exact_tuple__(builder.keys())[0] is key
+keep = []
+def check(a, b, c):
+    assert a is keep and c is keep and b is None
+other = {}
+check(keep, __clover_merge_call_keywords__(target, other, source), keep)
+assert other[key] is item and other[42] is item
+assert __clover_add_call_keyword__(target, other, 'later', item) is None
+assert other['later'] is item
+)");
+    ASSERT_FALSE(result.is_exception_marker())
+        << string_as_wchar_t(test::native_exception_message(
+               context.thread()->pending_exception_object()));
+}
+
+TEST(CallKeywordMapping, FailedKeyMaterializationDoesNotFetchOrInsertValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = run_trusted_keyword_test(context, LR"(
+def target(): pass
+seen = []
+class Keys:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        self.position += 1
+        if self.position == 1: return 'first'
+        raise expected
+class Mapping:
+    def keys(self): return Keys()
+    def __getitem__(self, key):
+        seen.append(key)
+        raise AssertionError('materialization must finish first')
+for expected in (AttributeError('next failed'), KeyError('next failed')):
+    builder = {'keep': 7}
+    try:
+        __clover_merge_call_keywords__(target, builder, Mapping())
+    except Exception as error:
+        assert error is expected
+    else:
+        raise AssertionError
+    assert seen == [] and len(builder) == 1 and builder['keep'] == 7
 )");
     ASSERT_FALSE(result.is_exception_marker())
         << string_as_wchar_t(test::native_exception_message(

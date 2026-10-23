@@ -4647,20 +4647,39 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_build_call_keywords(PARAMS)
     {
-        START(3);
         Shape *shape = accumulator.is_ptr()
                            ? accumulator.get_ptr<Object>()->get_shape()
                            : nullptr;
-        if(shape != thread->get_exact_dict_string_key_shape() &&
-           shape != thread->get_exact_dict_general_shape())
+        int8_t callable_reg = pc[1], dict_reg = pc[2];
+        if(shape == thread->get_exact_dict_string_key_shape() ||
+           shape == thread->get_exact_dict_general_shape())
         {
-            accumulator = thread->set_pending_builtin_exception_string(
-                L"NotImplementedError",
-                L"generic keyword mappings are not implemented yet");
-            MUSTTAIL return propagate_pending_exception(ARGS);
+            fp[dict_reg] = accumulator.get_ptr<Dict>()->copy().raw_value();
+            accumulator = Value::None();
+            START(3);
+            COMPLETE();
         }
-        fp[int8_t(pc[2])] = accumulator.get_ptr<Dict>()->copy().raw_value();
-        accumulator = Value::None();
+        // Install the fresh destination before callbacks; normal helper returns
+        // produce None in the accumulator without a result-store continuation.
+        fp[dict_reg] = thread->make_object_value<Dict>().raw_value();
+        int32_t args = code_object->get_first_free_arg_encoded_reg();
+        fp[args] = fp[callable_reg];
+        fp[args - 1] = fp[dict_reg];
+        fp[args - 2] = accumulator;
+        TValue<Function> function =
+            thread->get_machine()->call_keyword_mapping_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, args, 3, 3,
+            FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
         COMPLETE();
     }
 
@@ -4671,14 +4690,6 @@ namespace cl
         Shape *source_shape = accumulator.is_ptr()
                                   ? accumulator.get_ptr<Object>()->get_shape()
                                   : nullptr;
-        if(source_shape != thread->get_exact_dict_string_key_shape() &&
-           source_shape != thread->get_exact_dict_general_shape())
-        {
-            accumulator = thread->set_pending_builtin_exception_string(
-                L"NotImplementedError",
-                L"generic keyword mappings are not implemented yet");
-            MUSTTAIL return propagate_pending_exception(ARGS);
-        }
         Dict *destination = fp[dict_reg].get_ptr<Dict>();
         if(source_shape == thread->get_exact_dict_string_key_shape() &&
            destination->get_shape() ==
@@ -4702,7 +4713,10 @@ namespace cl
         fp[args - 1] = fp[dict_reg];
         fp[args - 2] = accumulator;
         TValue<Function> function =
-            thread->get_machine()->call_keyword_merge_function();
+            source_shape == thread->get_exact_dict_string_key_shape() ||
+                    source_shape == thread->get_exact_dict_general_shape()
+                ? thread->get_machine()->call_keyword_merge_function()
+                : thread->get_machine()->call_keyword_mapping_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
             thread, fp, pc, dispatch, code_object, function, args, 3, 3,
             FunctionCallAdaptation::FixedArity);

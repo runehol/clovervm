@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stage 1 is complete; stage 2 is in progress.
+`3a84a6a2`. Stages 1 and 2 are complete; later stages have not started.
 
 ## Working rules
 
@@ -168,22 +168,32 @@ Verification: 129 focused keyword construction, bytecode-effect, codegen, and
 dict regression tests passed. Full debug checks passed with 1,688 tests passed
 and one skipped. Release `check_opcode_frames` passed. The known-hash insertion
 helper has its own generator, sharing only probe-loop emission with the existing
-dict method generator. Stage 2a.2 changes remain uncommitted for user review.
+dict method generator. Stage 2a.2 was subsequently committed as `7c05c73d`.
 
 ### 2b: Generic mapping helpers
 
-- [ ] Add managed fallback receiving `(callable, destination, source)`.
-- [ ] Call `source.keys()`, normalize with `ToExactList`, and finish
+- [x] Add managed fallback receiving `(callable, destination, source)`.
+- [x] Call `source.keys()`, normalize with `ToExactList`, and finish
   materialization before fetching any values from this source.
-- [ ] Traverse with an ordinary list iterator. Check each duplicate before
+- [x] Traverse with an ordinary list iterator. Check each duplicate before
   fetching `source[key]`, then insert the value without string-key validation.
-- [ ] Reuse exact key lists and preserve live mutation behavior: replacement,
+- [x] Reuse exact key lists and preserve live mutation behavior: replacement,
   growth, shrinkage, skipped shifted entries, and repeated-key errors.
-- [ ] Propagate missing mapping protocol, keys/materialization failures, lookup
+- [x] Propagate missing mapping protocol, keys/materialization failures, lookup
   failures, and hash/equality failures with the agreed callable context.
-- [ ] Test exact-list reuse, subclass/generator materialization, pairs-only
+  Translate `AttributeError` around the direct `source.keys()` call, including
+  its body, to a contextual mapping `TypeError`. Materialization and all later
+  callbacks stay outside that boundary; preserve their exceptions, including
+  `AttributeError` and `KeyError`. No method-lookup opcode is needed.
+- [x] Test exact-list reuse, subclass/iterator materialization, pairs-only
   rejection, duplicate-before-value-lookup, and nested callback rooting.
-- [ ] Run required checks and leave changes uncommitted for review.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: full debug checks passed with 1,696 tests passed and one skipped,
+including all 14 exact-dict/generic keyword construction tests. Release
+`check_opcode_frames` passed. Generic mapping support uses an ordinary Python
+helper and existing bytecodes, with `AttributeError` translation limited to the
+direct `source.keys()` call. Stage 2b changes remain uncommitted for user review.
 
 ## Stage 3: Expanded call entry and end-to-end support
 

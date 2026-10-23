@@ -1096,8 +1096,8 @@ namespace cl
                 Optional<TValue<Tuple>>::none()));
     }
 
-    Value raise_duplicate_call_keyword(ThreadState *thread, Value callable,
-                                       TValue<String> key)
+    static std::wstring call_keyword_callable_name(ThreadState *thread,
+                                                   Value callable)
     {
         TValue<String> name = thread->class_of_value(callable)->get_name();
         if(can_convert_to<Function>(callable))
@@ -1110,8 +1110,26 @@ namespace cl
         {
             name = callable.get_ptr<ClassObject>()->get_name();
         }
-        std::wstring message(name.extract()->data,
-                             name.extract()->count.extract());
+        return std::wstring(name.extract()->data,
+                            name.extract()->count.extract());
+    }
+
+    Value raise_call_keyword_mapping_error(ThreadState *thread, Value callable,
+                                           Value source)
+    {
+        std::wstring message = call_keyword_callable_name(thread, callable);
+        message += L"() argument after ** must be a mapping, not ";
+        TValue<String> source_type = thread->class_of_value(source)->get_name();
+        message.append(source_type.extract()->data,
+                       source_type.extract()->count.extract());
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", thread->make_object_value<String>(message));
+    }
+
+    Value raise_duplicate_call_keyword(ThreadState *thread, Value callable,
+                                       TValue<String> key)
+    {
+        std::wstring message = call_keyword_callable_name(thread, callable);
         message += L"() got multiple values for keyword argument '";
         message.append(key.extract()->data, key.extract()->count.extract());
         message += L"'";

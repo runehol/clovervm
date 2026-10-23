@@ -131,6 +131,7 @@ namespace cl
         TValue<Function> dict_insert_if_absent_known_hash_function() const;
         TValue<Function> call_keyword_error_function() const;
         TValue<Function> call_keyword_merge_function() const;
+        TValue<Function> call_keyword_mapping_function() const;
         TValue<Function> call_keyword_add_function() const;
         TValue<Function> list_extend_function() const;
         TValue<Function> membership_iter_fallback_function() const;
@@ -479,6 +480,7 @@ namespace cl
             dict_insert_if_absent_known_hash_function_;
         Owned<Optional<TValue<Function>>> call_keyword_error_function_;
         Owned<Optional<TValue<Function>>> call_keyword_merge_function_;
+        Owned<Optional<TValue<Function>>> call_keyword_mapping_function_;
         Owned<Optional<TValue<Function>>> call_keyword_add_function_;
         Owned<Optional<TValue<Function>>> list_extend_function_;
         Owned<Optional<TValue<Function>>> membership_iter_fallback_function_;

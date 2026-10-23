@@ -1346,13 +1346,37 @@ namespace cl
             get_or_create_interned_string_value(L"_clover_dict_allocate"),
             dict_class()->get_own_property(interned_string(L"__new__")));
 
+        install_implementation_binding(
+            get_or_create_interned_string_value(
+                L"_clover_raise_duplicate_keyword"),
+            call_keyword_error_function().raw_value());
+        install_implementation_binding(
+            get_or_create_interned_string_value(
+                L"_clover_raise_call_mapping_error"),
+            unwrap_bootstrap_expected(
+                this,
+                make_intrinsic_function(this, raise_call_keyword_mapping_error),
+                "creating mapping error helper")
+                .raw_value());
+
         // Seed dependencies explicitly: empty __builtins__ disables public
         // fallback.
-        const wchar_t *seed_names[] = {
-            L"list",       L"tuple",         L"dict",           L"int",
-            L"str",        L"isinstance",    L"TypeError",      L"ValueError",
-            L"IndexError", L"StopIteration", L"NotImplemented", L"True",
-            L"False",      L"None",          L"Ellipsis"};
+        const wchar_t *seed_names[] = {L"list",
+                                       L"tuple",
+                                       L"dict",
+                                       L"int",
+                                       L"str",
+                                       L"isinstance",
+                                       L"TypeError",
+                                       L"ValueError",
+                                       L"IndexError",
+                                       L"StopIteration",
+                                       L"NotImplemented",
+                                       L"True",
+                                       L"False",
+                                       L"None",
+                                       L"Ellipsis",
+                                       L"AttributeError"};
         for(const wchar_t *name: seed_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);
@@ -1400,6 +1424,17 @@ namespace cl
         }
         iterable_to_exact_list_function_ = Optional<TValue<Function>>::some(
             TValue<Function>::from_value_assumed(to_exact_list));
+
+        Value keyword_mapping = implementation_module->get_own_property(
+            get_or_create_interned_string_value(
+                L"_clover_merge_call_keyword_mapping"));
+        if(!can_convert_to<Function>(keyword_mapping))
+        {
+            fatal("trusted builtin_implementations.py did not define keyword "
+                  "mapping helper");
+        }
+        call_keyword_mapping_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(keyword_mapping));
 
         Value list_extend = implementation_module->get_own_property(
             get_or_create_interned_string_value(L"_clover_list_extend"));
@@ -1508,6 +1543,12 @@ namespace cl
     {
         assert(call_keyword_error_function_.value().has_value());
         return call_keyword_error_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::call_keyword_mapping_function() const
+    {
+        assert(call_keyword_mapping_function_.value().has_value());
+        return call_keyword_mapping_function_.value().value();
     }
 
     TValue<Function> VirtualMachine::call_keyword_merge_function() const
