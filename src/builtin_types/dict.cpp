@@ -2025,6 +2025,43 @@ namespace cl
         }
     }
 
+    bool Dict::string_keyed_insert_if_absent(TValue<String> key, Value value)
+    {
+        assert(is_exact_dict_string_key_shape(active_thread(), this));
+        value.assert_not_vm_sentinel();
+
+        TValue<SMI> hash = string_keyed_hash(key);
+        int32_t *entry = find_entry_with_provided_hash(key, hash);
+        if(*entry >= 0)
+        {
+            return false;
+        }
+        if(needs_resize_for_insert())
+        {
+            grow();
+            entry = find_entry_with_provided_hash(key, hash);
+        }
+        write_new_at_slot(static_cast<size_t>(entry - hash_table.data()), hash,
+                          key.raw_value(), value);
+        return true;
+    }
+
+    Optional<TValue<String>> Dict::merge_string_keyed_unique(const Dict *source)
+    {
+        assert(is_exact_dict_string_key_shape(active_thread(), this));
+        assert(is_exact_dict_string_key_shape(active_thread(), source));
+        for(EntryView entry: *source)
+        {
+            TValue<String> key =
+                TValue<String>::from_value_unchecked(entry.key);
+            if(!string_keyed_insert_if_absent(key, entry.value))
+            {
+                return Optional<TValue<String>>::some(key);
+            }
+        }
+        return Optional<TValue<String>>::none();
+    }
+
     bool Dict::string_keyed_contains(TValue<String> key) const
     {
         return *find_entry(key) >= 0;

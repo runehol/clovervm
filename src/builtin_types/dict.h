@@ -149,6 +149,12 @@ namespace cl
         // operations must use the semantic APIs above.
         [[nodiscard]] Value string_keyed_lookup(TValue<String> key) const;
         void string_keyed_insert(TValue<String> key, Value value);
+        // Report duplicates without replacing their key or value. Merge keeps
+        // the inserted prefix and returns the conflicting source key.
+        [[nodiscard]] bool string_keyed_insert_if_absent(TValue<String> key,
+                                                         Value value);
+        [[nodiscard]] Optional<TValue<String>>
+        merge_string_keyed_unique(const Dict *source);
         [[nodiscard]] Value string_keyed_delete(TValue<String> key);
         bool string_keyed_contains(TValue<String> key) const;
 

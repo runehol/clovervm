@@ -2451,6 +2451,195 @@ TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
     expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
+TEST(DictKeywordStorage, CopyPreservesStringEntriesAndOwnsReferences)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<TValue<Dict>> source(thread->make_object_value<Dict>());
+    Owned<TValue<String>> removed(
+        thread->make_object_value<String>(L"removed"));
+    Owned<TValue<String>> first(thread->make_object_value<String>(L"first"));
+    Owned<TValue<String>> second(thread->make_object_value<String>(L"second"));
+    Owned<TValue<List>> item(thread->make_object_value<List>());
+    source.extract()->string_keyed_insert(removed.value(), Value::None());
+    source.extract()->string_keyed_insert(first.value(), item.raw_value());
+    source.extract()->string_keyed_insert(second.value(), Value::from_smi(2));
+    ASSERT_EQ(Value::None(),
+              source.extract()->string_keyed_delete(removed.value()));
+
+    Owned<TValue<Dict>> copy(source.extract()->copy());
+    EXPECT_NE(source.extract(), copy.extract());
+    EXPECT_EQ(thread->get_exact_dict_string_key_shape(),
+              copy.extract()->get_shape());
+    source.extract()->clear();
+    ASSERT_EQ(2u, copy.extract()->size());
+    auto it = copy.extract()->begin();
+    EXPECT_EQ(first.raw_value(), (*it).key);
+    EXPECT_EQ(item.raw_value(), (*it).value);
+    ++it;
+    EXPECT_EQ(second.raw_value(), (*it).key);
+    EXPECT_EQ(Value::from_smi(2), (*it).value);
+    EXPECT_EQ(item.raw_value(),
+              copy.extract()->string_keyed_lookup(first.value()));
+    EXPECT_TRUE(source.extract()->empty());
+}
+
+TEST(DictKeywordStorage, CopyGeneralStorageDoesNotCallKeyProtocols)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<Value> result(context.run_file(LR"(
+armed = False
+class Key:
+    def __hash__(self):
+        if armed: raise AssertionError('hash called during copy')
+        return 7
+    def __eq__(self, other):
+        if armed: raise AssertionError('equality called during copy')
+        return self is other
+class S(str):
+    def __hash__(self):
+        if armed: raise AssertionError('subclass hash called during copy')
+        return 7
+    def __eq__(self, other):
+        if armed: raise AssertionError('subclass equality called during copy')
+        return self is other
+d = {Key(): [], Key(): [], S('name'): [], 42: []}
+armed = True
+d
+)"));
+    ASSERT_FALSE(result.value().is_exception_marker());
+    Owned<TValue<Dict>> source(
+        TValue<Dict>::from_value_assumed(result.value()));
+    ASSERT_EQ(thread->get_exact_dict_general_shape(),
+              source.extract()->get_shape());
+    std::vector<Dict::EntryView> original;
+    for(Dict::EntryView entry: *source.extract())
+    {
+        original.push_back(entry);
+    }
+    Owned<TValue<Dict>> copy(source.extract()->copy());
+    EXPECT_NE(source.extract(), copy.extract());
+    EXPECT_EQ(thread->get_exact_dict_general_shape(),
+              copy.extract()->get_shape());
+    ASSERT_EQ(original.size(), copy.extract()->size());
+    source.extract()->clear();
+    size_t index = 0;
+    for(Dict::EntryView entry: *copy.extract())
+    {
+        EXPECT_EQ(original[index].key, entry.key);
+        EXPECT_EQ(original[index].value, entry.value);
+        ++index;
+    }
+    EXPECT_EQ(PendingExceptionKind::None, thread->pending_exception_kind());
+}
+
+TEST(DictKeywordStorage, UniqueInsertionPreservesDuplicateAndReusesTombstone)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+    Owned<TValue<String>> first(thread->make_object_value<String>(L"same"));
+    Owned<TValue<String>> equal(thread->make_object_value<String>(L"same"));
+    Owned<TValue<List>> value(thread->make_object_value<List>());
+    ASSERT_NE(first.raw_value(), equal.raw_value());
+    ASSERT_TRUE(dict.extract()->string_keyed_insert_if_absent(
+        first.value(), value.raw_value()));
+    EXPECT_FALSE(dict.extract()->string_keyed_insert_if_absent(equal.value(),
+                                                               Value::None()));
+    ASSERT_EQ(1u, dict.extract()->size());
+    EXPECT_EQ(first.raw_value(), (*dict.extract()->begin()).key);
+    EXPECT_EQ(value.raw_value(), (*dict.extract()->begin()).value);
+    ASSERT_EQ(Value::None(),
+              dict.extract()->string_keyed_delete(first.value()));
+    EXPECT_TRUE(dict.extract()->string_keyed_insert_if_absent(
+        equal.value(), Value::from_smi(9)));
+    EXPECT_EQ(equal.raw_value(), (*dict.extract()->begin()).key);
+    EXPECT_EQ(Value::from_smi(9), (*dict.extract()->begin()).value);
+}
+
+TEST(DictKeywordStorage, UniqueMergeStopsAtFirstConflictAndHandlesSelfMerge)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<TValue<Dict>> destination(thread->make_object_value<Dict>());
+    Owned<TValue<Dict>> source(thread->make_object_value<Dict>());
+    Owned<TValue<String>> existing(
+        thread->make_object_value<String>(L"conflict"));
+    Owned<TValue<String>> equal(thread->make_object_value<String>(L"conflict"));
+    Owned<TValue<String>> prefix(thread->make_object_value<String>(L"prefix"));
+    Owned<TValue<String>> suffix(thread->make_object_value<String>(L"suffix"));
+    destination.extract()->string_keyed_insert(existing.value(),
+                                               Value::from_smi(1));
+    source.extract()->string_keyed_insert(prefix.value(), Value::from_smi(2));
+    source.extract()->string_keyed_insert(equal.value(), Value::from_smi(3));
+    source.extract()->string_keyed_insert(suffix.value(), Value::from_smi(4));
+    auto conflict =
+        destination.extract()->merge_string_keyed_unique(source.extract());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(equal.raw_value(), conflict.value().raw_value());
+    ASSERT_EQ(2u, destination.extract()->size());
+    auto it = destination.extract()->begin();
+    EXPECT_EQ(existing.raw_value(), (*it).key);
+    EXPECT_EQ(Value::from_smi(1), (*it).value);
+    ++it;
+    EXPECT_EQ(prefix.raw_value(), (*it).key);
+    EXPECT_EQ(Value::from_smi(2), (*it).value);
+    EXPECT_FALSE(destination.extract()->string_keyed_contains(suffix.value()));
+    EXPECT_EQ(3u, source.extract()->size());
+    conflict =
+        destination.extract()->merge_string_keyed_unique(destination.extract());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(existing.raw_value(), conflict.value().raw_value());
+    EXPECT_EQ(2u, destination.extract()->size());
+    source.extract()->clear();
+    EXPECT_FALSE(source.extract()
+                     ->merge_string_keyed_unique(source.extract())
+                     .has_value());
+    EXPECT_FALSE(destination.extract()
+                     ->merge_string_keyed_unique(source.extract())
+                     .has_value());
+}
+
+TEST(DictKeywordStorage, UniqueMergeGrowsAndRetainsReferencesInOrder)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<TValue<Dict>> destination(thread->make_object_value<Dict>());
+    Owned<TValue<Dict>> source(thread->make_object_value<Dict>());
+    Owned<TValue<List>> item(thread->make_object_value<List>());
+    for(int64_t i = 0; i < 80; ++i)
+    {
+        Owned<TValue<String>> key(thread->make_object_value<String>(
+            (L"key" + std::to_wstring(i)).c_str()));
+        ASSERT_TRUE(source.extract()->string_keyed_insert_if_absent(
+            key.value(), item.raw_value()));
+    }
+    ASSERT_FALSE(destination.extract()
+                     ->merge_string_keyed_unique(source.extract())
+                     .has_value());
+    ASSERT_EQ(80u, destination.extract()->size());
+    source.extract()->clear();
+    int64_t index = 0;
+    for(Dict::EntryView entry: *destination.extract())
+    {
+        EXPECT_EQ(L"key" + std::to_wstring(index),
+                  std::wstring(entry.key.get_ptr<String>()->data));
+        EXPECT_EQ(item.raw_value(), entry.value);
+        Owned<TValue<String>> equal_key(thread->make_object_value<String>(
+            (L"key" + std::to_wstring(index)).c_str()));
+        EXPECT_EQ(item.raw_value(), destination.extract()->string_keyed_lookup(
+                                        equal_key.value()));
+        ++index;
+    }
+    EXPECT_EQ(80, index);
+}
+
 TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
 {
     test::VmTestContext context;

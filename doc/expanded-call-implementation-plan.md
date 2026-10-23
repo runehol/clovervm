@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stage 1 is complete; later stages have not started.
+`3a84a6a2`. Stage 1 is complete; stage 2 is in progress.
 
 ## Working rules
 
@@ -110,22 +110,50 @@ subsequently committed as `5bf61fab`.
 Primary surfaces: dict runtime helpers, trusted Python helpers, bytecode,
 codegen intrinsic lowering, interpreter handlers, and VM helper ownership.
 
-### 2a: Exact-dict construction and explicit insertion
+### 2a.1: Native copy and string-keyed storage primitives
 
-- [ ] Add the agreed operands and register effects:
-  `BuildCallKeywords callable_reg, dict_reg`,
+- [x] Verify and reuse `Dict::copy()` for fresh exact-dict copies of both
+  storage shapes, preserving order, original key objects, values, and stored
+  hashes without invoking Python callbacks.
+- [x] Add unchecked string-keyed insertion that reports an existing equal key
+  without replacing its value. Require exact string-keyed storage and an exact
+  string key; leave callable-specific exception construction to the caller.
+- [x] Add string-keyed merge using that uniqueness rule. Report the first
+  conflicting key and retain the successfully inserted prefix. Require exact
+  string-keyed source and destination storage; invoke no Python callbacks.
+- [x] Test fresh copies of both shapes, key/value identity, insertion order,
+  duplicate preservation, self-merge, and storage growth.
+- [x] Keep opcode wiring in 2a.2 so general-storage behavior is settled before
+  installing the handlers. Expanded-call syntax remains disabled.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: five focused storage tests passed. Full debug checks passed with
+1,677 tests passed and one skipped. The changed dict source also compiled in
+release mode. Stage 2a.1 changes remain uncommitted for user review.
+
+### 2a.2: Keyword opcodes and managed general-storage operations
+
+- [ ] Add encoding, decoding, disassembly, register effects, trusted lowering,
+  and interpreter handlers for `BuildCallKeywords callable_reg, dict_reg`,
   `MergeCallKeywords callable_reg, dict_reg`, and
   `AddCallKeyword callable_reg, dict_reg, name_const, value_reg`.
-- [ ] Implement fresh exact-dict copy for Build and duplicate-rejecting Merge
-  for exact-dict sources. Preserve insertion order and original key objects.
-- [ ] Support both dict storage shapes and promotion through existing dict
-  semantic APIs; keep arbitrary keys until call-entry validation.
-- [ ] Implement Add using an exact string constant and a value register,
-  rejecting duplicates rather than overwriting values.
-- [ ] Keep destinations rooted in their explicit registers; no trailing `Star`
-  is required to install a Build/Merge result.
-- [ ] Test freshness, first-copy versus merge duplicates, existing subclass-key
-  hash/equality behavior, non-string transport keys, and failures during merge.
+- [ ] Use 2a.1 primitives for exact-dict copy and string-keyed merge/insertion.
+- [ ] Implement managed duplicate-aware general-storage insertion using the
+  existing generated dict-method/probe pattern. Preserve normal hash/equality
+  callbacks and restart probes when callbacks invalidate their state; do not
+  recursively enter the interpreter from a native opcode helper.
+- [ ] Implement exact-dict merge for general storage with rooted source
+  entries and source-mutation checks across callbacks. Preserve original keys
+  and order; promote destination storage as needed.
+- [ ] Add shared callable-context duplicate-error construction. Keep arbitrary
+  keys until call-entry validation, without binding them to parameters here.
+- [ ] Keep destinations rooted in their explicit registers across native and
+  managed paths; no trailing `Star` is required. Agree accumulator effects and
+  the temporary boundary for generic mappings in this checkpoint's readiness
+  review; generic mapping protocol support belongs to 2b.
+- [ ] Test opcode effects and lowering, direct destination installation,
+  subclass-key hash/equality callbacks, callback mutation, non-string transport
+  keys, and partial results on failure.
 - [ ] Run required checks and leave changes uncommitted for review.
 
 ### 2b: Generic mapping helpers
