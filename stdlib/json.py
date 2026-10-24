@@ -49,33 +49,12 @@ _ESCAPE = {
 }
 
 
-def _diagnostic_end(doc, name, pos):
-    end = pos
-    builtin_search = getattr(doc.__class__, name, None) is getattr(str, name)
-    if builtin_search:
-        try:
-            getattr(doc, "__dict__", {})[name]
-        except KeyError:
-            pass
-        else:
-            builtin_search = False
-    if builtin_search:
-        # Builtin VM searches require small integer bounds. Saturate only the
-        # builtin path; overrides receive the original position, even a bigint.
-        size = len(str.__str__(doc))
-        if end > size:
-            end = size
-        elif end < -size:
-            end = -size
-    return end
-
-
 class JSONDecodeError(ValueError):
     """Invalid JSON, with character offset and one-based line and column."""
 
     def __init__(self, msg, doc, pos):
-        line = doc.count("\n", 0, _diagnostic_end(doc, "count", pos)) + 1
-        col = pos - doc.rfind("\n", 0, _diagnostic_end(doc, "rfind", pos))
+        line = doc.count("\n", 0, pos) + 1
+        col = pos - doc.rfind("\n", 0, pos)
         ValueError.__init__(
             self, msg + ": line " + str(line) + " column " + str(col)
             + " (char " + str(pos) + ")"
