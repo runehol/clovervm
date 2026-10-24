@@ -2,6 +2,7 @@
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
+#include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
@@ -451,42 +452,12 @@ namespace cl
         return Value::None();
     }
 
-    static size_t normalize_string_bound(int64_t value, int64_t length)
-    {
-        if(value < 0)
-        {
-            value += length;
-        }
-        if(value < 0)
-        {
-            return 0;
-        }
-        return static_cast<size_t>(value);
-    }
-
-    // Preserve starts beyond the end and reversed ranges as no-match ranges.
-    // The end is bounded by the string length; start may exceed end.
     [[nodiscard]] static Value
     normalize_string_range(Value self, Value start_value, Value end_value,
                            size_t &start, size_t &end)
     {
-        int64_t length = self.get_ptr<String>()->count.extract();
-        int64_t py_start = 0;
-        int64_t py_end = length;
-        if(!start_value.is_none())
-        {
-            CL_PROPAGATE_EXCEPTION(require_smi_index(
-                start_value, L"slice indices must be integers", py_start));
-        }
-        if(!end_value.is_none())
-        {
-            CL_PROPAGATE_EXCEPTION(require_smi_index(
-                end_value, L"slice indices must be integers", py_end));
-        }
-        start = normalize_string_bound(py_start, length);
-        end = std::min(normalize_string_bound(py_end, length),
-                       static_cast<size_t>(length));
-        return Value::None();
+        return normalize_search_range(self.get_ptr<String>()->count.extract(),
+                                      start_value, end_value, start, end);
     }
 
     static Value native_str_getitem(ThreadState *thread, Value self,

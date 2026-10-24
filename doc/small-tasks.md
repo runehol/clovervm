@@ -12,15 +12,6 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
-### Consolidate string/bytes search-bound normalization
-
-`normalize_string_bound` and `normalize_bytes_bound`, plus their range wrappers,
-duplicate the recently corrected search-range policy. Reuse a common native
-normalization helper while keeping receiver extraction and error wording in the
-owning type implementations. Preserve out-of-range starts and reversed ranges
-as no-match cases; do not replace this with slice clamping. Agree the concrete
-helper boundary before coding.
-
 ### Add `operator.call`
 
 `operator.call` is absent from `stdlib/operator.py`. Expanded argument forwarding
