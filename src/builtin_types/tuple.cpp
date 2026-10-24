@@ -12,8 +12,10 @@
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include "util/fixed_wide_string.h"
 #include <cassert>
 #include <iterator>
+#include <utility>
 
 namespace cl
 {
@@ -76,6 +78,110 @@ namespace cl
             ->concat(right.get_ptr<Tuple>())
             .raw_value();
     }
+
+    template <Bytecode Operation>
+    static bool tuple_order_sizes(size_t left, size_t right)
+    {
+        if constexpr(Operation == Bytecode::TestLess)
+            return left < right;
+        if constexpr(Operation == Bytecode::TestLessEqual)
+            return left <= right;
+        if constexpr(Operation == Bytecode::TestGreater)
+            return left > right;
+        if constexpr(Operation == Bytecode::TestGreaterEqual)
+            return left >= right;
+    }
+
+    template <Bytecode Operation>
+    static Value tuple_order(ThreadState *thread, TValue<Tuple> left,
+                             TValue<Tuple> right)
+    {
+        // Keep containers and elements alive across arbitrary Python callbacks.
+        Owned<TValue<Tuple>> left_owner(left);
+        Owned<TValue<Tuple>> right_owner(right);
+        size_t index = 0;
+        for(; index < left.extract()->size() && index < right.extract()->size();
+            ++index)
+        {
+            Owned<Value> left_item(left.extract()->item_unchecked(index));
+            Owned<Value> right_item(right.extract()->item_unchecked(index));
+            if(left_item.value() == right_item.value())
+                continue;
+            if(!CL_TRY(
+                   thread->test_equal(left_item.value(), right_item.value())))
+                break;
+        }
+        if(index >= left.extract()->size() || index >= right.extract()->size())
+        {
+            return tuple_order_sizes<Operation>(left.extract()->size(),
+                                                right.extract()->size())
+                       ? Value::True()
+                       : Value::False();
+        }
+        // Tuple payloads are immutable; retain the unequal elements while the
+        // requested ordering operation runs arbitrary Python code.
+        Owned<Value> left_item(left.extract()->item_unchecked(index));
+        Owned<Value> right_item(right.extract()->item_unchecked(index));
+        return thread->call_clovervm_function(
+            thread->get_machine()->ordering_helper_function(Operation),
+            left_item.value(), right_item.value());
+    }
+
+    template <Bytecode Operation, FixedWideString ReceiverError>
+    static Value native_tuple_order(ThreadState *thread, Value self,
+                                    Value other)
+    {
+        if(!can_convert_to<Tuple>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", ReceiverError.c_str());
+        }
+        if(!can_convert_to<Tuple>(other))
+            return Value::NotImplemented();
+        return tuple_order<Operation>(thread,
+                                      TValue<Tuple>::from_value_assumed(self),
+                                      TValue<Tuple>::from_value_assumed(other));
+    }
+
+    template <Bytecode Operation, bool Reflected>
+    static Value trusted_tuple_order(ThreadState *thread, Value left,
+                                     Value right)
+    {
+        if constexpr(Reflected)
+            std::swap(left, right);
+        return tuple_order<Operation>(thread,
+                                      TValue<Tuple>::from_value_assumed(left),
+                                      TValue<Tuple>::from_value_assumed(right));
+    }
+
+    template <Bytecode Operation, bool Reflected>
+    using TupleOrderHandler = TrustedHandlerDefinition<
+        trusted_tuple_order<Operation, Reflected>,
+        TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Safepoint |
+            TrustedHandlerEffects::Raise | TrustedHandlerEffects::CallPython>;
+
+    template <Bytecode Operation>
+    class TupleOrderResolver final
+        : public TrustedHandlerResolverBase<TupleOrderHandler<Operation, false>,
+                                            TupleOrderHandler<Operation, true>>
+    {
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm, ShapeKey left,
+                                         ShapeKey right,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity arity)
+        {
+            if(arity != TrustedHandlerArity::Binary ||
+               vm->shape_for_key(left)->get_class() != vm->tuple_class() ||
+               vm->shape_for_key(right)->get_class() != vm->tuple_class())
+            {
+                return TrustedResolution::no_trusted_handler_call_untrusted();
+            }
+            if(order == TrustedHandlerOperandOrder::Reflected)
+                return TupleOrderHandler<Operation, true>::resolution();
+            return TupleOrderHandler<Operation, false>::resolution();
+        }
+    };
 
     static Value require_smi_index(Value value, const wchar_t *message,
                                    int64_t &out)
@@ -212,6 +318,34 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_tuple_repr,
                                      L"Return repr(self)."),
+            with_trusted_handler_resolver<
+                TupleOrderResolver<Bytecode::TestLess>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__lt__", native_tuple_order<
+                                   Bytecode::TestLess,
+                                   L"tuple.__lt__ expects a tuple receiver">)),
+            with_trusted_handler_resolver<
+                TupleOrderResolver<Bytecode::TestLessEqual>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__le__", native_tuple_order<
+                                   Bytecode::TestLessEqual,
+                                   L"tuple.__le__ expects a tuple receiver">)),
+            with_trusted_handler_resolver<
+                TupleOrderResolver<Bytecode::TestGreater>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__gt__", native_tuple_order<
+                                   Bytecode::TestGreater,
+                                   L"tuple.__gt__ expects a tuple receiver">)),
+            with_trusted_handler_resolver<
+                TupleOrderResolver<Bytecode::TestGreaterEqual>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__ge__", native_tuple_order<
+                                   Bytecode::TestGreaterEqual,
+                                   L"tuple.__ge__ expects a tuple receiver">)),
             builtin_intrinsic_method(L"__len__", native_tuple_len,
                                      L"Return len(self)."),
             with_trusted_handler_resolver(

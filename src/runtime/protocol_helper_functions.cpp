@@ -62,4 +62,25 @@ namespace cl
         return code.finalize_immortal_function(vm);
     }
 
+    Expected<TValue<Function>> make_ordering_helper_function(VirtualMachine *vm,
+                                                             Bytecode operation)
+    {
+        assert(operation == Bytecode::TestLess ||
+               operation == Bytecode::TestLessEqual ||
+               operation == Bytecode::TestGreater ||
+               operation == Bytecode::TestGreaterEqual);
+        Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), local_scope,
+            vm->get_or_create_interned_string_value(L"<ordering_helper>"));
+        code.configure_positional_function(2);
+        CL_TRY(code.emit_ldar(0, 1));
+        CL_TRY(code.emit_operator_reg(
+            0, operation, 0,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+        // Preserve arbitrary rich-comparison results without truth conversion.
+        CL_TRY(code.emit_return(0));
+        return code.finalize_immortal_function(vm);
+    }
+
 }  // namespace cl

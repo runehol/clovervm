@@ -2104,6 +2104,8 @@ namespace cl
             case OperatorWalkStatus::CallTrustedHandler:
                 {
                     install_operator_cache_if_cacheable(cache, descriptor);
+                    set_clover_frame_frontier_for_native_call(thread, fp,
+                                                              code_object);
                     accumulator = descriptor.cache_entry.trusted_handler.binary(
                         thread, operand0, operand1);
                     assert(!accumulator.is_not_implemented_singleton());
@@ -2345,6 +2347,8 @@ namespace cl
         {
             if(!cache.trusted_handler.is_null())
             {
+                set_clover_frame_frontier_for_native_call(thread, fp,
+                                                          code_object);
                 accumulator =
                     cache.trusted_handler.binary(thread, operand0, operand1);
                 assert(!accumulator.is_not_implemented_singleton());
