@@ -12,6 +12,7 @@
 
 namespace cl
 {
+    class Function;
     class ModuleObject;
     class Tuple;
     struct NormalizedNonstridedSlice;
@@ -30,12 +31,18 @@ namespace cl
         size_t size() const { return items.size(); }
         bool empty() const { return items.empty(); }
         void reserve(size_t capacity) { items.reserve(capacity); }
-        void clear() { items.clear(); }
+        void clear()
+        {
+            if(!empty())
+                sort_mutated_ = true;
+            items.clear();
+        }
 
         Value item_unchecked(size_t idx) const { return items[idx]; }
         void set_item_unchecked(size_t idx, Value value)
         {
             value.assert_not_vm_sentinel();
+            sort_mutated_ = true;
             items.set(idx, value);
         }
         void insert_item_unchecked(size_t idx, Value value);
@@ -46,6 +53,7 @@ namespace cl
         void append(Value value)
         {
             value.assert_not_vm_sentinel();
+            sort_mutated_ = true;
             items.push_back(value);
         }
         [[nodiscard]] TValue<List> copy() const;
@@ -53,6 +61,10 @@ namespace cl
         void extend_from_list(const List *other);
         void extend_from_tuple(const Tuple *other);
         void reverse();
+        // The trusted Python helper owns the generic algorithm; List owns the
+        // detached backing, mutation state, and unconditional restoration.
+        [[nodiscard]] Value sort(ThreadState *thread, Value key,
+                                 TValue<Function> sort_items, bool reverse);
         [[nodiscard]] TValue<List> concat(const List *other) const;
 
         [[nodiscard]] Value get_item(int64_t py_idx) const;
@@ -73,6 +85,9 @@ namespace cl
         size_t normalize_insertion_index(int64_t py_idx) const;
 
         ValueArray<Value> items;
+        // Successful writes set this even if their net size change is zero.
+        // Each sort saves/restores the enclosing invocation's mutation state.
+        bool sort_mutated_ = false;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(

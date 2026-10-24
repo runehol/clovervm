@@ -436,6 +436,17 @@ namespace cl
         return Value::None();
     }
 
+    static Value native_list_sort(ThreadState *thread, Value self, Value key,
+                                  Value sort_items, Value reverse)
+    {
+        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"sort"));
+        assert(can_convert_to<Function>(sort_items));
+        assert(reverse.is_bool());
+        return self.get_ptr<List>()->sort(
+            thread, key, TValue<Function>::from_value_assumed(sort_items),
+            reverse == Value::True());
+    }
+
     static Value native_list_add(ThreadState *thread, Value left, Value right)
     {
         if(!can_convert_to<List>(left) || !can_convert_to<List>(right))
@@ -551,11 +562,25 @@ namespace cl
     {
         ClassObject *cls = vm->list_class();
         const wchar_t *method_names[] = {L"__init__", L"__eq__", L"__ne__",
-                                         L"count",    L"index",  L"remove"};
+                                         L"count",    L"index",  L"remove",
+                                         L"sort"};
         const wchar_t *helper_names[] = {
             L"_clover_list_init",  L"_clover_list_eq",
             L"_clover_list_ne",    L"_clover_list_count",
-            L"_clover_list_index", L"_clover_list_remove"};
+            L"_clover_list_index", L"_clover_list_remove",
+            L"_clover_list_sort"};
+        bool installed = unwrap_bootstrap_expected(
+            vm,
+            implementation_module->set_own_property(
+                vm->get_or_create_interned_string_value(
+                    L"_clover_list_sort_impl"),
+                unwrap_bootstrap_expected(
+                    vm, make_intrinsic_function(vm, native_list_sort),
+                    "installing list sort implementation")
+                    .raw_value()),
+            "installing list sort binding");
+        assert(installed);
+        (void)installed;
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
         for(size_t idx = 0; idx < std::size(method_names); ++idx)
@@ -630,6 +655,35 @@ namespace cl
         }
     }
 
+    Value List::sort(ThreadState *thread, Value key,
+                     TValue<Function> sort_items, bool reverse)
+    {
+        Owned<TValue<List>> self(TValue<List>::from_oop(this));
+        Owned<Value> key_owner(key);
+        Owned<TValue<Function>> sort_items_owner(sort_items);
+        Owned<TValue<List>> original(thread->make_object_value<List>());
+        items.swap(original.extract()->items);
+        bool enclosing_mutated = sort_mutated_;
+        sort_mutated_ = false;
+
+        // Enter Python once for the whole generic algorithm. Its frame roots
+        // keys and permutation temporaries; List retains the detached backing.
+        Value result = thread->call_clovervm_function(
+            sort_items, original.raw_value(), key,
+            reverse ? Value::True() : Value::False());
+        bool mutated = sort_mutated_;
+        // Callback-created contents are discarded, with their backing left in
+        // the temporary owned list for ordinary deferred reclamation.
+        items.swap(original.extract()->items);
+        sort_mutated_ = enclosing_mutated || mutated;
+        if(result.is_exception_marker())
+            return result;
+        if(mutated)
+            return thread->set_pending_builtin_exception_string(
+                L"ValueError", L"list modified during sort");
+        return Value::None();
+    }
+
     TValue<List> List::concat(const List *other) const
     {
         TValue<List> result = make_object_value<List>(size() + other->size());
@@ -651,6 +705,7 @@ namespace cl
     {
         assert(idx <= size());
         value.assert_not_vm_sentinel();
+        sort_mutated_ = true;
 
         size_t old_size = size();
         items.resize(old_size + 1, Value::None());
@@ -664,6 +719,7 @@ namespace cl
     Value List::pop_item_unchecked(size_t idx)
     {
         assert(idx < size());
+        sort_mutated_ = true;
 
         Value removed = items[idx];
         size_t old_size = size();

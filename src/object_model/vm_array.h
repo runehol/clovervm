@@ -393,6 +393,21 @@ namespace cl
         ValueArray(ValueArray &&) = delete;
         ValueArray &operator=(ValueArray &&) = delete;
 
+        // Transfer storage between heap-owned arrays without copying elements.
+        // The temporary owner keeps the old backing alive during reassignment.
+        void swap(ValueArray &other)
+        {
+            OwnedHeapPtr<Backing> saved_backing(backing.get());
+            auto saved_size = size_value.value();
+            auto saved_capacity = capacity_value.value();
+            backing = other.backing;
+            size_value = other.size_value;
+            capacity_value = other.capacity_value;
+            other.backing = saved_backing.get();
+            other.size_value = saved_size;
+            other.capacity_value = saved_capacity;
+        }
+
         size_t size() const { return static_cast<size_t>(len().extract()); }
 
         TValue<SMI> len() const { return size_value.value(); }
