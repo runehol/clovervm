@@ -1,5 +1,6 @@
 #include "builtin_types/int.h"
 
+#include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
 #include "builtin_types/num_parse.h"
@@ -160,6 +161,18 @@ namespace cl
         return result.value();
     }
 
+    [[nodiscard]] NOINLINE static Value
+    int_conversion_type_error(ThreadState *thread, Value obj)
+    {
+        TValue<String> name = thread->class_of_value(obj)->get_name();
+        std::wstring message = L"int() argument must be a string, a bytes-like "
+                               L"object or a real number, not '";
+        message.append(string_view(name));
+        message += L"'";
+        return thread->set_pending_builtin_exception_string(L"TypeError",
+                                                            message.c_str());
+    }
+
     [[nodiscard]] static Value convert_to_exact_int(ThreadState *thread,
                                                     Value obj)
     {
@@ -186,10 +199,16 @@ namespace cl
             return parse_int_string(thread,
                                     TValue<String>::from_value_assumed(obj));
         }
+        if(can_convert_to<Bytes>(obj))
+        {
+            auto bytes = bytes_view(TValue<Bytes>::from_value_assumed(obj));
+            return CL_TRY(parse_int_string_view(
+                thread,
+                std::string_view(reinterpret_cast<const char *>(bytes.data()),
+                                 bytes.size())));
+        }
 
-        return thread->set_pending_builtin_exception_string(
-            L"TypeError",
-            L"int conversion is only implemented for int, bool and str");
+        return int_conversion_type_error(thread, obj);
     }
 
     [[nodiscard]] NOINLINE static Value

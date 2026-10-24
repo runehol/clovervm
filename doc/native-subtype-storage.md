@@ -188,12 +188,12 @@ reused for exact targets; subclass targets receive fresh native storage. A custo
 str conversion may return a string subclass, which exact-target construction
 preserves.
 
-Integer string conversion and integer literals share `parse_int_string_view`
-in `builtin_types/num_parse`. Private helpers are templated on character type,
-with wide and ASCII byte-view overloads for decimal and explicit-base parsing.
-Byte-view parsing prepares future constructor support; `int` does not yet
-accept bytes. The handwritten digit loop first handles ordinary SMI text
-without allocation.
+Integer string/bytes conversion and integer literals share
+`parse_int_string_view` in `builtin_types/num_parse`. Private helpers are
+templated on character type, with wide and ASCII byte-view overloads for
+decimal and explicit-base parsing.
+Byte input uses ASCII numeric text directly without decoding or widening.
+The handwritten digit loop first handles ordinary SMI text without allocation.
 On a miss, a private fast_float helper parses the original character storage
 into int64. Successful conversion uses `bigint_from_int64`, preserving SMI
 results where possible; valid decimal overflow uses the native BigInt builder

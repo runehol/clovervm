@@ -1031,8 +1031,11 @@ TEST(Interpreter, int_constructor_rejects_unsupported_value)
                         L"    pass\n"
                         L"int(C())\n",
                         L"TypeError",
-                        L"int conversion is only implemented for int, bool and "
-                        L"str");
+                        L"int() argument must be a string, a bytes-like object "
+                        L"or a real number, not 'C'");
+    expect_python_error(L"int(None)\n", L"TypeError",
+                        L"int() argument must be a string, a bytes-like object "
+                        L"or a real number, not 'NoneType'");
 }
 
 TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
@@ -6172,7 +6175,8 @@ TEST(Interpreter, int_new_reports_class_errors_like_cpython)
                         L"invalid literal for int()");
     expect_python_error(
         L"class I(int): pass\nI(1.5)\n", L"TypeError",
-        L"int conversion is only implemented for int, bool and str");
+        L"int() argument must be a string, a bytes-like object or a real "
+        L"number, not 'float'");
 }
 
 TEST(Interpreter, int_subclass_new_invalidation_and_combined_boundary)
