@@ -154,6 +154,11 @@ namespace benchmark_cpp
     int64_t function_default_parameter_run(int64_t n);
     int64_t function_default_parameter_items(int64_t n);
 
+    int64_t expanded_call_three_run(int64_t n);
+    int64_t expanded_call_ten_run(int64_t n);
+    int64_t expanded_call_mixed_run(int64_t n);
+    int64_t expanded_call_items(int64_t n);
+
     int64_t function_keyword_run(int64_t n);
     int64_t function_keyword_items(int64_t n);
 

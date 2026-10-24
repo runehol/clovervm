@@ -164,6 +164,45 @@ namespace
             {"benchmark/function_default_parameter.py",
              {benchmark_cpp::function_default_parameter_run,
               benchmark_cpp::function_default_parameter_items}},
+            {"benchmark/expanded_call_tuple_direct.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_tuple.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_keywords_3_direct.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_keywords_3.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_keywords_10_direct.py",
+             {benchmark_cpp::expanded_call_ten_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_keywords_10.py",
+             {benchmark_cpp::expanded_call_ten_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_combined.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_mixed.py",
+             {benchmark_cpp::expanded_call_mixed_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_collect_both.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_collect_all.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_collect_rest.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_method_function.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
+            {"benchmark/expanded_call_method.py",
+             {benchmark_cpp::expanded_call_three_run,
+              benchmark_cpp::expanded_call_items}},
             {"benchmark/function_keyword.py",
              {benchmark_cpp::function_keyword_run,
               benchmark_cpp::function_keyword_items}},
@@ -1051,6 +1090,136 @@ static void BM_FunctionDefaultParameter(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_FunctionDefaultParameter, CloverProgram)
     ->Name("BM_FunctionDefaultParameter")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallTupleDirect(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/expanded_call_tuple_direct.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallTupleDirect, CloverProgram)
+    ->Name("BM_ExpandedCallTupleDirect")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallTuple(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_tuple.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallTuple, CloverProgram)
+    ->Name("BM_ExpandedCallTuple")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallKeywords3Direct(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/expanded_call_keywords_3_direct.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallKeywords3Direct, CloverProgram)
+    ->Name("BM_ExpandedCallKeywords3Direct")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallKeywords3(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_keywords_3.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallKeywords3, CloverProgram)
+    ->Name("BM_ExpandedCallKeywords3")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallKeywords10Direct(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/expanded_call_keywords_10_direct.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallKeywords10Direct, CloverProgram)
+    ->Name("BM_ExpandedCallKeywords10Direct")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallKeywords10(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_keywords_10.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallKeywords10, CloverProgram)
+    ->Name("BM_ExpandedCallKeywords10")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallCombined(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_combined.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallCombined, CloverProgram)
+    ->Name("BM_ExpandedCallCombined")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallMixed(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_mixed.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallMixed, CloverProgram)
+    ->Name("BM_ExpandedCallMixed")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallCollectBoth(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/expanded_call_collect_both.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallCollectBoth, CloverProgram)
+    ->Name("BM_ExpandedCallCollectBoth")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallCollectAll(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_collect_all.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallCollectAll, CloverProgram)
+    ->Name("BM_ExpandedCallCollectAll")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallCollectRest(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/expanded_call_collect_rest.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallCollectRest, CloverProgram)
+    ->Name("BM_ExpandedCallCollectRest")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallMethodFunction(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/expanded_call_method_function.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallMethodFunction, CloverProgram)
+    ->Name("BM_ExpandedCallMethodFunction")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExpandedCallMethod(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/expanded_call_method.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExpandedCallMethod, CloverProgram)
+    ->Name("BM_ExpandedCallMethod")
     ->Arg(100000);
 
 template <typename Program>

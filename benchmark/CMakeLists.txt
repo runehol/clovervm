@@ -11,6 +11,7 @@ add_executable(bench_clovervm
     exception_bare_handler_raise.cpp
     exception_typed_handler_no_raise.cpp
     exception_typed_handler_raise.cpp
+    expanded_call.cpp
     for_loop.cpp
     for_loop_slow_path.cpp
     function_default_varargs.cpp
