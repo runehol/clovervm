@@ -1075,6 +1075,8 @@ namespace cl
             make_base_exception_class(this);
         ClassObject *base_exception = base_exception_definition.cls;
         register_builtin_class(base_exception_definition);
+        register_builtin_class(make_exception_subclass(
+            this, L"KeyboardInterrupt", base_exception));
         BuiltinClassDefinition exception_definition =
             make_exception_class(this, base_exception);
         ClassObject *exception = exception_definition.cls;
