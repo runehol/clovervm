@@ -55,6 +55,9 @@ namespace
             {"benchmark/float_constructor_int.py",
              {benchmark_cpp::float_constructor_int_run,
               benchmark_cpp::float_constructor_int_items}},
+            {"benchmark/float_constructor_string.py",
+             {benchmark_cpp::float_constructor_string_run,
+              benchmark_cpp::float_constructor_string_items}},
             {"benchmark/int_constructor_int.py",
              {benchmark_cpp::int_constructor_int_run,
               benchmark_cpp::int_constructor_int_items}},
@@ -980,6 +983,16 @@ static void BM_FloatConstructorInt(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_FloatConstructorInt, CloverProgram)
     ->Name("BM_FloatConstructorInt")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FloatConstructorString(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/float_constructor_string.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FloatConstructorString, CloverProgram)
+    ->Name("BM_FloatConstructorString")
     ->Arg(100000);
 
 template <typename Program>

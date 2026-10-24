@@ -1,5 +1,7 @@
 #include "cpp_benchmarks.h"
 
+#include <cstdlib>
+
 namespace benchmark_cpp
 {
     int64_t float_constructor_float_run(int64_t n)
@@ -31,4 +33,18 @@ namespace benchmark_cpp
         return acc;
     }
     int64_t float_constructor_int_items(int64_t n) { return n; }
+    int64_t float_constructor_string_run(int64_t n)
+    {
+        const char *value = "12345.5";
+        int64_t acc = 0;
+        for(int64_t i = 0; i < n; ++i)
+        {
+            double converted = std::strtod(value, nullptr);
+            preserve_benchmark_loop_value(converted);
+            if(converted == 12345.5)
+                ++acc;
+        }
+        return acc;
+    }
+    int64_t float_constructor_string_items(int64_t n) { return n; }
 }  // namespace benchmark_cpp
