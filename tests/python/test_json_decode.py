@@ -9,38 +9,20 @@
 import json
 
 
-def equal(actual, expected):
-    # Dict value equality is not implemented by the VM yet. Inspect the decoded
-    # tree directly, without using the encoder as the decoding oracle.
-    if isinstance(expected, dict):
-        assert isinstance(actual, dict)
-        assert len(actual) == len(expected)
-        for key in expected.keys():
-            equal(actual[key], expected[key])
-    elif isinstance(expected, list):
-        assert isinstance(actual, list)
-        assert len(actual) == len(expected)
-        idx = 0
-        while idx < len(expected):
-            equal(actual[idx], expected[idx])
-            idx += 1
-    else:
-        assert actual == expected
-
 assert json.loads("null") is None
 assert json.loads("true") is True
 assert json.loads("false") is False
 assert json.loads("[]") == []
-equal(json.loads("{}"), {})
+assert json.loads("{}") == {}
 assert json.loads('""') == ""
 assert json.loads(" \t\r\n[1, -2, 0, -0, 1.5, 1E+2, 0.25e-1]\r\n") == [
     1, -2, 0, 0, 1.5, 100.0, 0.025
 ]
-equal(json.loads('{   "key"    :    "value"    ,  "k":"v"    }'), {
+assert json.loads('{   "key"    :    "value"    ,  "k":"v"    }') == {
     "key": "value", "k": "v"
-})
-equal(json.loads('[{"x":[true,null]},[]]'), [{"x": [True, None]}, []])
-equal(json.loads('{"x":1,"x":2,"y":3}'), {"x": 2, "y": 3})
+}
+assert json.loads('[{"x":[true,null]},[]]') == [{"x": [True, None]}, []]
+assert json.loads('{"x":1,"x":2,"y":3}') == {"x": 2, "y": 3}
 assert json.loads('"\\\"\\\\\\/\\b\\f\\n\\r\\t"') == '"\\/\b\f\n\r\t'
 assert json.loads('"\\u0000\\u001F"') == chr(0) + chr(31)
 assert json.loads('"\\u00e9\\u00E9"') == chr(233) + chr(233)
@@ -83,9 +65,9 @@ def object_result(value):
 
 result = json.loads('{"n":-0,"n":123,"a":[1.50e+02,{}]}',
                     object_hook=object_result, parse_int=integer, parse_float=floating)
-equal(result, [{"n": "i:123", "a": ["f:1.50e+02", [{}]]}])
-equal(events, ["int:-0", "int:123", "float:1.50e+02", {},
-               {"n": "i:123", "a": ["f:1.50e+02", [{}]]}])
+assert result == [{"n": "i:123", "a": ["f:1.50e+02", [{}]]}]
+assert events == ["int:-0", "int:123", "float:1.50e+02", {},
+                  {"n": "i:123", "a": ["f:1.50e+02", [{}]]}]
 assert json.loads("1", parse_int=float) == 1.0
 assert json.loads("1.1", parse_float=integer) == "i:1.1"
 assert json.loads(s="42") == 42
