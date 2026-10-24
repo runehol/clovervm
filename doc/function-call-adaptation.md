@@ -733,6 +733,11 @@ unsupported syntax explicit until its complete execution path is available.
    keyword order, error precedence, defaults, collectors, subclass comparisons,
    callable resolution, and exception unwinding. Cache callable resolution and
    adapter mode independently; keyword binding-plan caching is not required.
+   Parser/precode checkpoint 3c initially enables straight Function and eligible
+   constructor calls. Checkpoint 3d then adds expanded method calls with a
+   separate method-call opcode, reusing existing lookup and receiver-binding
+   machinery. Its readiness review settles operand encoding, lookup timing,
+   and implicit receiver handling; these do not belong in the native binder.
 4. **Optional binding-plan cache.** After the uncached path is correct, measure
    whether exact-string plan reuse is worthwhile. If implemented, test guarded
    hits, changing names/counts, callable invalidation, current defaults, and
@@ -949,17 +954,22 @@ not allocate another one.
 
 ## Runtime Scope
 
-The implemented keyword-call runtime supports:
+The ordinary call runtime supports:
 
 - ordinary `Function` objects;
-- eligible `ClassObject` calls that resolve to constructor thunks.
+- eligible `ClassObject` calls that resolve to constructor thunks;
+- attribute method calls through the existing positional and keyword
+  method-call opcodes.
+
+`CallExpanded` currently supports Functions and eligible constructor thunks.
+Checkpoint 3c enables their source syntax, keeping expanded attribute/method
+calls explicitly unsupported until checkpoint 3d adds a separate method-call
+opcode and receiver binding.
 
 It does not attempt to support:
 
-- keyword method-call lowering for `obj.method(name=value)`;
 - arbitrary object `__call__`;
-- descriptor execution beyond current non-keyword method-call support;
-- caller `*args` or `**kwargs` expansion.
+- descriptor execution beyond existing method-call support.
 
 Unsupported callable shapes should remain explicit instead of being partially
 simulated inside the keyword binder.

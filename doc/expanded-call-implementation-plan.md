@@ -271,7 +271,29 @@ fallback test passed. `ninja -C build-debug all check` passed with 1,729 tests
 passed and one skipped. Release `check_opcode_frames` passed. Expanded syntax
 remains disabled until 3c; changes are uncommitted for review.
 
-### 3c: Parser and call precode
+### 3c: Parser and precode for straight expanded calls
+
+Scope: ordinary Function calls and eligible constructor calls. Expanded
+attribute/method-call forms are a separate milestone in 3d.
+
+Agreed implementation sketch:
+
+- Keep the existing argument sequence. Add `CALL_ARGUMENT_STARRED(value)`;
+  represent `**mapping` as `CALL_ARGUMENT_KEYWORD(value, name=None)`, following
+  CPython's starred expression and optional keyword-name model.
+- Accept repeated expansions, but reject ordinary positional arguments after
+  keywords, iterable unpacking after mapping unpacking, and repeated explicit
+  keyword names.
+- Add `codegen_expanded_function_call`, selected only for calls containing an
+  expansion. Reject expanded attribute-call targets in codegen until 3d.
+- Evaluate the callable, then positional/starred expressions, then keywords,
+  even when a starred argument appears textually after a keyword. Scope
+  analysis must follow the same evaluation order. Consecutive explicit keyword
+  runs are determined within the keyword sequence, excluding starred arguments.
+- Reuse existing container opcodes and the lone-star late-conversion rule;
+  emit `CallExpanded` with adjacent containers and a separate outgoing anchor.
+  Ordinary call lowering stays unchanged. Other argument-parser users, such
+  as class bases and trusted intrinsics, retain explicit restrictions.
 
 - [ ] Consult CPython's `Parser/Python.asdl`; extend existing call-argument AST
   nodes for starred and double-starred arguments without mixing in binding.
@@ -284,13 +306,34 @@ remains disabled until 3c; changes are uncommitted for review.
 - [ ] Reserve adjacent transport registers and a separate outgoing-window
   anchor. Always build a fresh keyword dict, including for tuple-only expansion.
 - [ ] Preserve ordinary call opcodes for calls without expansion and explicit
-  rejection of callable forms outside the existing supported scope.
+  rejection of expanded attribute/method-call forms until 3d. Keep other
+  unsupported callable forms explicit.
 - [ ] Enable expanded-call syntax only once its complete path works.
 - [ ] Add end-to-end tests covering mixed/repeated sources, late conversion,
   early duplicate errors, deferred non-string errors, collectors, subclass keys,
   defaults, and constructor calls. Add structural codegen tests for the agreed
   operand layout and evaluation staging.
 - [ ] Run required checks and leave changes uncommitted for review.
+
+### 3d: Expanded method calls
+
+Start after straight expanded calls work end to end in 3c. Preserve the existing
+distinction between function-call and method-call opcodes.
+
+- [ ] Readiness review: settle `CallMethodAttrExpanded` operands, method-lookup
+  timing, receiver binding, and lookup/call cache contracts using the existing
+  positional and keyword method-call paths.
+- [ ] Settle how implicit `self` participates in positional binding and plan
+  application without requiring a tuple copy just to prepend the receiver.
+- [ ] Reuse the expansion precode, native binding plan, and application path;
+  keep method lookup and receiver binding outside the binder.
+- [ ] Enable expanded attribute/method-call lowering through its separate
+  opcode while preserving ordinary method-call lowering.
+- [ ] Test bound receivers, targets without an implicit receiver, defaults,
+  collectors, lookup invalidation, evaluation order, nested calls, and exception
+  unwinding. Pin down opcode operands and register effects with structural tests.
+- [ ] Run full debug checks and release opcode-frame checks; leave changes
+  uncommitted for review.
 
 ## Stage 4: Optional exact-string binding-plan cache
 
