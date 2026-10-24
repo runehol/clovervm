@@ -1478,6 +1478,23 @@ def delete_equality():
         }
     }
 
+    TEST(AArch64Execution,
+         FunctoolsReduceCallsPublishedCallbackAcrossSafepoints)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(LR"(
+from functools import reduce
+def subtract(a, b): return a - b
+def run(): return reduce(subtract, [10, 2, 3])
+)");
+        ASSERT_TRUE(fixture.jit_compile(L"subtract"));
+        ASSERT_TRUE(fixture.jit_compile(L"run"));
+        fixture.thread()->get_machine()->set_fire_every_safepoint_for_testing(
+            true);
+        fixture.request_safepoint();
+        EXPECT_EQ(Value::from_smi(5), fixture.call(L"run"));
+    }
+
     TEST(AArch64Execution, RootsJitReturnValueAtInterpreterReentrySafepoint)
     {
         JitReturnSafepointObservation observation;
