@@ -165,7 +165,7 @@ rather than falling through to generic storage.
 | List | CreateListKnownClass creates empty storage; Python initializer clears and appends from its iterable |
 | Dict | New-only Python wrapper uses a private native allocator and shared update implementation |
 | Int | Native new-only conversion; subclass results always use heap BigInt storage |
-| Float | Native new-only numeric conversion from float/int/bool, including heap numeric subclasses |
+| Float | Native new-only numeric conversion from float/int/bool and string parsing, including heap subclasses |
 | Str | Native new-only conversion, honoring string subclass `__str__` overrides |
 | Bytes | Native new-only empty, integer count, bytes, native list, and native tuple inputs |
 
@@ -187,6 +187,18 @@ Exact-result reuse remains operation-specific. Exact str and bytes inputs can be
 reused for exact targets; subclass targets receive fresh native storage. A custom
 str conversion may return a string subclass, which exact-target construction
 preserves.
+
+Float string conversion and source literals share `try_parse_float` in
+`util/num_parse`. It first parses the existing wide-character storage directly
+with fast_float. Only failure enters normalization for surrounding numeric
+whitespace, underscores between decimal digits, and Unicode decimal digits.
+Trimming alone uses a view; character changes use a temporary buffer. Numeric
+Unicode tables are generated from Unicode 16.0 by
+`tools/generate_numeric_unicode_tables.py` (`--check` verifies the checked-in
+output). Complete consumption is required, NaN payload syntax is rejected, and
+range errors produce signed infinity or zero. Invalid constructor text raises
+ValueError. Generic `__float__`/`__index__` dispatch and bytes input remain
+deferred; string subclasses are parsed from their stored contents.
 
 The omitted bytes source defaults to an empty bytes object; explicit None is
 rejected for exact and subclass targets.

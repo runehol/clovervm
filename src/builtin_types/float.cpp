@@ -10,6 +10,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
+#include "util/num_parse.h"
 #include <cmath>
 #include <cstdint>
 #include <fmt/format.h>
@@ -107,9 +108,20 @@ namespace cl
         {
             return bigint_to_double(input.get_ptr<BigInt>()->view());
         }
+        if(can_convert_to<String>(input))
+        {
+            auto parsed = try_parse_float(
+                string_view(TValue<String>::from_value_assumed(input)));
+            if(!parsed)
+            {
+                return Expected<double>::raise_exception(
+                    L"ValueError", L"could not convert string to float");
+            }
+            return Expected<double>::ok(*parsed);
+        }
         return Expected<double>::raise_exception(
-            L"TypeError",
-            L"float conversion is only implemented for float, int and bool");
+            L"TypeError", L"float conversion is only implemented for float, "
+                          L"int, bool and str");
     }
 
     [[nodiscard]] NOINLINE static Value

@@ -6517,9 +6517,8 @@ TEST(Interpreter, float_new_class_errors_and_numeric_scope)
                         L"float.__new__(X): X is not a type object (int)");
     expect_python_error(L"float.__new__(None, 4)\n", L"TypeError",
                         L"float.__new__(X): X is not a type object (NoneType)");
-    expect_python_error(
-        L"class F(float): pass\nF('2.5')\n", L"TypeError",
-        L"float conversion is only implemented for float, int and bool");
+    expect_python_error(L"class F(float): pass\nF('invalid')\n", L"ValueError",
+                        L"could not convert string to float");
     expect_python_error(L"class F(float): pass\nF(2**10000)\n",
                         L"OverflowError", L"int too large to convert to float");
     test::VmTestContext context;

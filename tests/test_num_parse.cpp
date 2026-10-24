@@ -89,16 +89,47 @@ namespace cl
         }
     }
 
-    TEST(FloatParse, RequiresCompleteUnnormalizedInput)
+    TEST(FloatParse, RejectsInvalidPythonFloatText)
     {
-        for(std::wstring_view text:
-            {L"",          L"+",         L"-",
-             L".",         L"1e",        L"1e+",
-             L"1.2x",      L" 1.2",      L"1.2 ",
-             L"1_000",     L"1,000",     L"1 000",
-             L"0x1.8p+1",  L"nan()",     L"nan(payload)",
-             L"-NaN(foo)", L"+nan(123)", L"infinite",
-             L"\u0661.5",  L"\u00a01.5", L"\u22121.5"})
+        for(std::wstring_view text: {L"",
+                                     L"+",
+                                     L"-",
+                                     L".",
+                                     L"1e",
+                                     L"1e+",
+                                     L"1.2x",
+                                     L"1,000",
+                                     L"1 000",
+                                     L"0x1.8p+1",
+                                     L"nan()",
+                                     L"nan(payload)",
+                                     L"-NaN(foo)",
+                                     L"+nan(123)",
+                                     L"infinite",
+                                     L"\u22121.5",
+                                     L" \t\n",
+                                     L"_1",
+                                     L"1_",
+                                     L"1__0",
+                                     L"1_.0",
+                                     L"1._0",
+                                     L"1e_2",
+                                     L"1e+_2",
+                                     L"na_n",
+                                     L"in_f",
+                                     L"1_ 2",
+                                     L"1 _2",
+                                     L"1\u20032",
+                                     L"\x1c"
+                                     L"1.5",
+                                     L"1.5\x1f",
+                                     L"\u00b2.5",
+                                     L"1\u066b5",
+                                     L"\uff0b1.5",
+                                     L" \tnan(foo) ",
+                                     L"\u0661_",
+                                     L"_\u0661",
+                                     L"\u0661_\u2003\u0662"})
         {
             SCOPED_TRACE(std::wstring(text));
             EXPECT_FALSE(try_parse_float(text).has_value());
@@ -109,6 +140,58 @@ namespace cl
         EXPECT_FALSE(
             try_parse_float(std::wstring_view(L"1.5\0", 4)).has_value());
         EXPECT_FALSE(try_parse_float(L"1e9999junk").has_value());
+    }
+
+    TEST(FloatParse, NormalizesPythonNumericText)
+    {
+        struct Sample
+        {
+            std::wstring_view text;
+            double expected;
+        };
+        const Sample samples[] = {
+            {L"  +1_000.2_5e-1 \t\r\n", 100.025},
+            {L"1e1_0", 1e10},
+            {L"\u0661\u0662.\u0665", 12.5},
+            {L"1_\u0662", 12.0},
+            {L"\uff11.\uff12\uff15", 1.25},
+            {L"\U0001d7d9.5", 1.5},
+            {L"\U0001d7d9_\U0001d7da.5", 12.5},
+            {L"\U00011f51.5", 1.5},
+            {L"\u00a0-0\u2003", -0.0},
+            {L"\u0085+1.5\u3000", 1.5},
+            {L" -1e-9999 ", -0.0},
+        };
+        for(const Sample &sample: samples)
+        {
+            SCOPED_TRACE(std::wstring(sample.text));
+            auto value = try_parse_float(sample.text);
+            ASSERT_TRUE(value.has_value());
+            EXPECT_EQ(std::bit_cast<uint64_t>(sample.expected),
+                      std::bit_cast<uint64_t>(*value));
+        }
+        auto infinity = try_parse_float(L" \t+InFiNiTy\u2003");
+        ASSERT_TRUE(infinity.has_value());
+        EXPECT_TRUE(std::isinf(*infinity));
+        auto nan = try_parse_float(L"\u00a0-NaN ");
+        ASSERT_TRUE(nan.has_value());
+        EXPECT_TRUE(std::isnan(*nan));
+        EXPECT_TRUE(std::signbit(*nan));
+    }
+
+    TEST(FloatParse, RejectsInvalidUnicodeCodepoints)
+    {
+        for(uint32_t codepoint: {0xd800u, 0xdc00u})
+        {
+            std::wstring text(1, static_cast<wchar_t>(codepoint));
+            text += L"1.5";
+            EXPECT_FALSE(try_parse_float(text).has_value());
+        }
+        if constexpr(sizeof(wchar_t) == 4)
+        {
+            std::wstring text(1, static_cast<wchar_t>(0x110000));
+            EXPECT_FALSE(try_parse_float(text).has_value());
+        }
     }
 
     TEST(FloatParse, RespectsViewBoundsWithoutRequiringTerminator)

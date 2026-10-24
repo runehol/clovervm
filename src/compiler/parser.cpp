@@ -35,22 +35,6 @@ namespace cl
         {
             return *value;
         }
-        if(token.find(L'_') != std::wstring_view::npos)
-        {
-            std::wstring literal;
-            literal.reserve(token.size());
-            for(wchar_t c: token)
-            {
-                if(c != L'_')
-                {
-                    literal.push_back(c);
-                }
-            }
-            if(auto value = try_parse_float(literal))
-            {
-                return *value;
-            }
-        }
         fatal("tokenizer accepted invalid float literal");
     }
 

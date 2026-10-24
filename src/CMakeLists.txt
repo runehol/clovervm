@@ -73,6 +73,7 @@ add_library(libclovervm_objects OBJECT
     util/compiler.h
     util/num_parse.cpp
     util/num_parse.h
+    util/num_parse_unicode.inc
     util/result.h
     builtin_types/float.cpp
     builtin_types/float.h
