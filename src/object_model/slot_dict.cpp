@@ -1,5 +1,6 @@
 #include "object_model/slot_dict.h"
 
+#include "builtin_types/list.h"
 #include "builtin_types/str.h"
 #include "builtin_types/string_builder.h"
 #include "object_model/attr.h"
@@ -77,6 +78,23 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<SlotDict>()->size()));
     }
 
+    [[nodiscard]] static Value native_slotdict_keys(ThreadState *thread,
+                                                    Value self)
+    {
+        if(!can_convert_to<SlotDict>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"slotdict.keys expects a slotdict receiver");
+        }
+
+        Owned<TValue<List>> keys(make_object_value<List>());
+        for(SlotDict::EntryView entry: *self.get_ptr<SlotDict>())
+        {
+            keys.value().extract()->append(entry.key);
+        }
+        return keys.value().raw_value();
+    }
+
     static Value native_slotdict_getitem(ThreadState *thread, Value self,
                                          Value key)
     {
@@ -125,6 +143,8 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_slotdict_len,
                                      L"Return len(self)."),
+            builtin_intrinsic_method(L"keys", native_slotdict_keys,
+                                     L"Return a list snapshot of stored keys."),
             builtin_intrinsic_method(L"__getitem__", native_slotdict_getitem,
                                      L"Return self[key]."),
             builtin_intrinsic_method(L"__setitem__", native_slotdict_setitem,
