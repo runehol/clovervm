@@ -12,14 +12,6 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
-### Use ordinary inline flags in the explicit-keyword binder
-
-`build_and_populate_keyword_call_cache` in `src/runtime/interpreter.cpp` still
-uses `std::vector<bool>` for its local filled-parameter flags. Use the same
-`absl::InlinedVector<bool, 16>` scratch representation as the expanded binder.
-This does not change either cached-plan representation. It is a consistency and
-scratch-storage simplification, not a claimed hot-cache performance improvement.
-
 ### Consolidate string/bytes search-bound normalization
 
 `normalize_string_bound` and `normalize_bytes_bound`, plus their range wrappers,

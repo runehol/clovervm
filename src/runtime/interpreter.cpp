@@ -35,6 +35,7 @@
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <absl/container/inlined_vector.h>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -1274,7 +1275,7 @@ namespace cl
             TValue<Tuple>::from_value_assumed(keyword_names_value);
         assert(keyword_names.extract()->size() == n_kw_args);
 
-        std::vector<bool> filled(signature.n_parameters, false);
+        absl::InlinedVector<bool, 16> filled(signature.n_parameters, false);
         uint32_t n_filled_by_position =
             n_pos_args < signature.n_positional_parameters
                 ? n_pos_args
