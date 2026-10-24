@@ -293,6 +293,26 @@ namespace cl
             L"TypeError", L"int.__str__ expects an int receiver");
     }
 
+    [[nodiscard]] static Value native_int_int(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__int__ expects an int receiver");
+        }
+        return convert_to_exact_int(thread, self);
+    }
+
+    [[nodiscard]] static Value native_int_index(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__index__ expects an int receiver");
+        }
+        return convert_to_exact_int(thread, self);
+    }
+
     [[nodiscard]] static Value native_int_trunc(ThreadState *thread, Value self)
     {
         if(!is_intlike_value(self))
@@ -2050,6 +2070,10 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_int_str,
                                      L"Return repr(self)."),
+            builtin_intrinsic_method(L"__int__", native_int_int,
+                                     L"Return self as an exact int."),
+            builtin_intrinsic_method(L"__index__", native_int_index,
+                                     L"Return self as an exact int."),
             builtin_intrinsic_method(L"__trunc__", native_int_trunc,
                                      L"Return self as an exact int."),
             builtin_intrinsic_method(L"__floor__", native_int_floor,

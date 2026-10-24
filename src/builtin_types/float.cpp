@@ -187,6 +187,23 @@ namespace cl
         return box_float(thread, value);
     }
 
+    [[nodiscard]] static Value native_float_float(ThreadState *thread,
+                                                  Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__float__ expects a float receiver");
+        }
+        Float *number = self.get_ptr<Float>();
+        if(number->get_shape()->get_class() ==
+           thread->get_machine()->float_class())
+        {
+            return self;
+        }
+        return box_float(thread, number->value());
+    }
+
     [[nodiscard]] static Value native_float_int(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Float>(self))
@@ -1033,6 +1050,8 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_float_repr,
                                      L"Return repr(self)."),
+            builtin_intrinsic_method(L"__float__", native_float_float,
+                                     L"Return self as an exact float."),
             builtin_intrinsic_method(L"__int__", native_float_int,
                                      L"Truncate self toward zero."),
             builtin_intrinsic_method(L"__trunc__", native_float_trunc,
