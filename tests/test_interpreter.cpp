@@ -9079,6 +9079,67 @@ assert (left < right).marker == 7
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
+TEST(Interpreter,
+     bool_construction_roots_temporaries_across_reclamation_and_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    // Original regression, with the Python assertions checked on
+    // CPython 3.14.5.
+    CodeObject *code = context.compile_file(LR"(
+class Length:
+    def __init__(self, marker):
+        self.marker = marker
+    def __len__(self):
+        garbage = []
+        for i in range(30):
+            garbage.append([i])
+        assert self.marker == 7
+        return 0
+class Truth:
+    def __init__(self, marker):
+        self.marker = marker
+    def __bool__(self):
+        # Replace the shared bool.__new__ truth cache's result kind while the
+        # outer invocation's Bool continuation is suspended.
+        assert bool(Length(7)) is False
+        garbage = []
+        for i in range(30):
+            garbage.append([i])
+        assert self.marker == 8
+        return True
+for repeat in range(4):
+    assert bool(Truth(8)) is True
+    assert bool.__new__(bool, Truth(8)) is True
+    assert bool(Length(7)) is False
+class PlainTruth:
+    def __bool__(self):
+        return False
+class ReentrantLength:
+    def __len__(self):
+        assert bool(PlainTruth()) is False
+        # The outer integer is valid as a length, but not as a __bool__ result.
+        return 2
+assert bool(ReentrantLength()) is True
+class Raising:
+    def __bool__(self):
+        assert bool(Truth(8)) is True
+        raise ValueError("callback failed")
+try:
+    bool(Raising())
+except ValueError as error:
+    assert str(error) == "callback failed"
+else:
+    assert False
+assert bool(Truth(8)) is True
+)");
+    ASSERT_NE(nullptr, code);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, class_body_dunder_class_shadowing_is_explicitly_unsupported)
 {
     const wchar_t *bases[] = {L"", L"(object)", L"(int)"};

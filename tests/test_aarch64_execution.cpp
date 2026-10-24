@@ -1623,6 +1623,63 @@ def delete_equality():
                   fixture.call(L"is_distinct", Value::None(), Value::True()));
     }
 
+    TEST(AArch64Execution, BoolConstructionUsesManagedTruthAndInvalidation)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(LR"(
+class Truth:
+    def __bool__(self): return True
+value = Truth()
+new_bool = bool.__new__
+def convert(): return bool(value)
+def direct(): return bool.__new__(bool, value)
+def empty(): return bool()
+def replace_truth():
+    def truth(self): return False
+    Truth.__bool__ = truth
+def replace_with_length():
+    del Truth.__bool__
+    def length(self): return 1
+    Truth.__len__ = length
+def check_errors():
+    try:
+        bool.__new__(int, value)
+    except TypeError:
+        pass
+    else:
+        return False
+    def bad_length(self): return -1
+    Truth.__len__ = bad_length
+    try:
+        bool(value)
+    except ValueError:
+        return True
+    return False
+)");
+        ASSERT_FALSE(fixture.thread()->has_pending_exception());
+        for(int i = 0; i < 4; ++i)
+        {
+            ASSERT_EQ(Value::True(), fixture.call(L"convert"));
+            ASSERT_EQ(Value::True(), fixture.call(L"direct"));
+        }
+        ASSERT_TRUE(fixture.jit_compile(L"new_bool"));
+        ASSERT_TRUE(fixture.jit_compile(L"convert"));
+        ASSERT_TRUE(fixture.jit_compile(L"direct"));
+        ASSERT_TRUE(fixture.jit_compile(L"empty"));
+        EXPECT_TRUE(fixture.is_jit_compiled(L"new_bool"));
+        EXPECT_EQ(Value::False(), fixture.call(L"empty"));
+        EXPECT_EQ(Value::True(), fixture.call(L"convert"));
+        EXPECT_EQ(Value::True(), fixture.call(L"direct"));
+        ASSERT_EQ(Value::None(), fixture.call(L"replace_truth"));
+        EXPECT_EQ(Value::False(), fixture.call(L"convert"));
+        EXPECT_EQ(Value::False(), fixture.call(L"direct"));
+        ASSERT_EQ(Value::None(), fixture.call(L"replace_with_length"));
+        EXPECT_EQ(Value::True(), fixture.call(L"convert"));
+        EXPECT_EQ(Value::True(), fixture.call(L"direct"));
+        EXPECT_EQ(Value::True(), fixture.call(L"check_errors"));
+        EXPECT_FALSE(fixture.thread()->has_pending_exception());
+    }
+
     TEST(AArch64Execution, InheritedObjectNeUsesManagedEqualityAndTruth)
     {
         PythonJitExecutionFixture fixture;
