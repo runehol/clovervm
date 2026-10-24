@@ -138,10 +138,9 @@ edge cases, platform behavior, or APIs are still missing.
 - Construction accepts `None`, builtin dictionaries, UserDict instances,
   keys/getitem protocol objects, and supported iterables of supported two-item
   iterables. Updates accept the same sources except `None`. Keywords follow
-  positional input. UserDict sources and dict subclasses with a supported
-  class-level `__iter__` use iteration ahead of `keys()`; builtin dictionaries
-  and dict subclasses without `__iter__` use the keys fallback while native
-  dict iteration remains unavailable. Positional-only names such as `self`,
+  positional input. UserDict and dict sources use class-level iteration ahead
+  of `keys()`, including inherited builtin dict iteration; other mappings use
+  the keys/getitem protocol. Positional-only names such as `self`,
   `dict`, `other`, and `kwds` remain ordinary data keys. Malformed pairs retain
   error types and prior writes; exact diagnostic text is not CPython-compatible. String
   pair elements and string iteration remain blocked by missing `str.__iter__`.
@@ -176,7 +175,12 @@ edge cases, platform behavior, or APIs are still missing.
   including nested dict payloads. General recursion-limit enforcement is absent:
   deeply nested or cyclic comparisons are outside the supported slice and may
   exhaust the VM stack rather than reliably raising `RecursionError`.
-- The module uses `iter(data.keys())` because `iter(dict)` is unavailable.
+- `UserDict.__iter__` delegates to `iter(data)`, honoring the backing object's
+  `__iter__` rather than its `keys()` override. Updates from dict/UserDict use
+  iteration; other mappings retain the `keys()` protocol. Builtin dict iteration
+  reuses the existing live key iterator. Its permanent exhaustion, release of
+  the source on exhaustion, same-size key-change detection, and length hints
+  remain deferred iterator-contract gaps.
   Deletion delegates directly to dict; lookup, deletion, and missing-pop errors
   now retain the original key in `KeyError.args` through generated and native paths.
 - Compatibility tests are split across small interpreter source files to stay

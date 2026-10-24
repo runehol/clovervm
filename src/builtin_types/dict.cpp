@@ -203,6 +203,13 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<Dict>()->size()));
     }
 
+    [[nodiscard]] static Value native_dict_iter(ThreadState *thread, Value self)
+    {
+        TValue<Dict> dict = CL_TRY(TValue<Dict>::from_value_or_raise(
+            self, L"TypeError", L"dict.__iter__ expects a dict receiver"));
+        return make_object_value<DictKeyIterator>(dict).raw_value();
+    }
+
     static Value require_dict_receiver(Value self, const wchar_t *method_name)
     {
         if(!has_native_layout<Dict>(self))
@@ -1587,6 +1594,8 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_dict_len,
                                      L"Return len(self)."),
+            builtin_intrinsic_method(L"__iter__", native_dict_iter,
+                                     L"Return an iterator over the keys."),
             builtin_intrinsic_method(L"clear", native_dict_clear),
             builtin_intrinsic_method(L"copy", native_dict_copy),
             builtin_intrinsic_method(L"keys", native_dict_keys),
