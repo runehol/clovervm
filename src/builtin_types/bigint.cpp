@@ -493,7 +493,7 @@ namespace cl
             magnitude_to_double_digit_unchecked(view));
     }
 
-    static size_t bigint_abs_bit_length(ConstBigIntView view)
+    size_t bigint_abs_bit_length(ConstBigIntView view)
     {
         assert(is_normalized_bigint_view(view));
         if(view.n_digits == 0)
@@ -503,6 +503,17 @@ namespace cl
         digit_t top_digit = view.digits[view.n_digits - 1];
         return (view.n_digits - 1) * kDigitBits + kDigitBits -
                countl_zero(top_digit);
+    }
+
+    size_t bigint_abs_bit_count(ConstBigIntView view)
+    {
+        assert(is_normalized_bigint_view(view));
+        size_t count = 0;
+        for(size_t i = 0; i < view.n_digits; ++i)
+        {
+            count += std::popcount(view.digits[i]);
+        }
+        return count;
     }
 
     static bool bigint_abs_bit(ConstBigIntView view, size_t bit_index)

@@ -304,6 +304,46 @@ namespace cl
         return Value::True();
     }
 
+    [[nodiscard]] static Value native_int_bit_length(ThreadState *thread,
+                                                     Value self)
+    {
+        if(is_smi_or_bool_value(self))
+        {
+            int64_t value = smi_or_bool_as_int(self);
+            uint64_t magnitude =
+                value < 0 ? uint64_t{0} - static_cast<uint64_t>(value)
+                          : static_cast<uint64_t>(value);
+            return Value::from_smi(std::bit_width(magnitude));
+        }
+        if(can_convert_to<BigInt>(self))
+        {
+            return CL_TRY(int_value_from_uint64(
+                thread, bigint_abs_bit_length(self.get_ptr<BigInt>()->view())));
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"int.bit_length expects an int receiver");
+    }
+
+    [[nodiscard]] static Value native_int_bit_count(ThreadState *thread,
+                                                    Value self)
+    {
+        if(is_smi_or_bool_value(self))
+        {
+            int64_t value = smi_or_bool_as_int(self);
+            uint64_t magnitude =
+                value < 0 ? uint64_t{0} - static_cast<uint64_t>(value)
+                          : static_cast<uint64_t>(value);
+            return Value::from_smi(std::popcount(magnitude));
+        }
+        if(can_convert_to<BigInt>(self))
+        {
+            return CL_TRY(int_value_from_uint64(
+                thread, bigint_abs_bit_count(self.get_ptr<BigInt>()->view())));
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"int.bit_count expects an int receiver");
+    }
+
     static Value intlike_hash_value(Value self)
     {
         Expected<TValue<SMI>> hash = canonicalize_hash_result(self);
@@ -1971,6 +2011,11 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"is_integer", native_int_is_integer,
                                      L"Return True for integers."),
+            builtin_intrinsic_method(L"bit_length", native_int_bit_length,
+                                     L"Return the bit length of abs(self)."),
+            builtin_intrinsic_method(
+                L"bit_count", native_int_bit_count,
+                L"Return the number of set bits in abs(self)."),
             with_trusted_handler_resolver<IntBoolResolver>(
                 vm, builtin_intrinsic_method(L"__bool__", native_int_bool,
                                              L"Return self != 0.")),

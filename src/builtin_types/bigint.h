@@ -138,6 +138,8 @@ namespace cl
     bool is_normalized_bigint_view(ConstBigIntView view);
     ConstBigIntView normalize_bigint_view(ConstBigIntView view);
     bool bigint_is_odd(ConstBigIntView view);
+    size_t bigint_abs_bit_length(ConstBigIntView view);
+    size_t bigint_abs_bit_count(ConstBigIntView view);
     [[nodiscard]] Expected<TValue<SMI>> bigint_to_smi(ConstBigIntView view);
     TValue<SMI> bigint_hash(ConstBigIntView view);
     [[nodiscard]] Expected<Value> finalize_bigint(ThreadState *thread,
