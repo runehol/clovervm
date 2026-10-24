@@ -127,6 +127,11 @@ namespace cl
                     }
                 }
                 collect_code_object_bindings(analysis, body_idx);
+                if(mode != CodegenMode::Module)
+                {
+                    analysis.result.expression_assigned_locals.resize(
+                        code_obj->get_local_scope_ptr()->size(), false);
+                }
                 FlowState state = initial_flow_state(analysis.result);
                 analyze_flow_node(analysis, body_idx, state);
                 return Expected<ScopeAnalysis>::ok(std::move(analysis.result));
@@ -779,7 +784,23 @@ namespace cl
                             if(av.kinds[lhs_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_binding(analysis, av.constants[lhs_idx]);
+                                BindingInfo *binding = ensure_binding(
+                                    analysis, av.constants[lhs_idx]);
+                                if(kind.node_kind ==
+                                       AstNodeKind::EXPRESSION_ASSIGN &&
+                                   binding != nullptr &&
+                                   binding->scope == BindingScope::Local)
+                                {
+                                    auto &assigned =
+                                        analysis.result
+                                            .expression_assigned_locals;
+                                    uint32_t slot_idx = binding->local_slot_idx;
+                                    if(assigned.size() <= slot_idx)
+                                    {
+                                        assigned.resize(slot_idx + 1, false);
+                                    }
+                                    assigned[slot_idx] = true;
+                                }
                             }
                             break;
                         }

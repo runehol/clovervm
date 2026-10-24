@@ -550,14 +550,24 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             ValueLocation location =
                 CL_TRY(codegen_node_into_value_location(node_idx));
-            if(location.is_register())
+            if(location.is_register() &&
+               !analysis.expression_assigned_locals[location.register_index])
             {
                 return Expected<ScopedRegister>::ok(
                     {location.register_index, std::nullopt});
             }
 
             std::optional<TemporaryReg> temp{std::in_place, *code_obj};
-            CL_TRY(code_obj->emit_star(source_offset, RegisterIndex(*temp)));
+            if(location.is_register())
+            {
+                CL_TRY(code_obj->emit_mov(source_offset, RegisterIndex(*temp),
+                                          location.register_index));
+            }
+            else
+            {
+                CL_TRY(
+                    code_obj->emit_star(source_offset, RegisterIndex(*temp)));
+            }
             return Expected<ScopedRegister>::ok(
                 {RegisterIndex(*temp), std::move(temp)});
         }

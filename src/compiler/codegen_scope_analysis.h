@@ -53,6 +53,9 @@ namespace cl
     {
         CodegenMode mode = CodegenMode::Module;
         std::vector<BindingInfo> bindings;
+        // Indexed by local slot, including parameter slots. These locals must
+        // be copied when an evaluated operand is retained in a register.
+        std::vector<bool> expression_assigned_locals;
         std::vector<std::optional<NameAccessAnalysis>> loads;
         std::vector<std::optional<NameAccessAnalysis>> stores;
         std::vector<std::optional<NameAccessAnalysis>> deletes;

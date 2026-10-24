@@ -2260,3 +2260,113 @@ TEST(Codegen,
     }
     EXPECT_TRUE(found);
 }
+
+TEST(Codegen, expression_assigned_operand_is_copied_before_later_evaluation)
+{
+    // Build the existing assignment-expression AST directly: parsing nested
+    // assignment expressions is a separate implementation step.
+    for(bool reassign_operand: {false, true})
+    {
+        SCOPED_TRACE(reassign_operand);
+        test::ParsedFile parsed(L"def f(x, y):\n"
+                                L"    return x + 2\n"
+                                L"f(10, 0)\n");
+        AstVector &ast = parsed.ast;
+        int32_t binary_idx = -1;
+        for(size_t idx = 0; idx < ast.size(); ++idx)
+        {
+            if(ast.kinds[idx] ==
+               AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::ADD))
+            {
+                binary_idx = int32_t(idx);
+                break;
+            }
+        }
+        ASSERT_GE(binary_idx, 0);
+        int32_t rhs_idx = ast.children[binary_idx][1];
+        int32_t target_idx =
+            ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0,
+                             parsed.vm.get_or_create_interned_string_value(
+                                 reassign_operand ? L"x" : L"y"));
+        int32_t assign_idx = ast.emplace_back(AstNodeKind::EXPRESSION_ASSIGN, 0,
+                                              target_idx, rhs_idx);
+        ast.children[binary_idx][1] = assign_idx;
+
+        auto code = codegen_module(
+            ast, parsed.vm.get_or_create_interned_string_value(L"<test>"));
+        ASSERT_FALSE(code.has_exception());
+        std::string bytecode = fmt::to_string(*code.value());
+        if(reassign_operand)
+        {
+            size_t copy = bytecode.find("Mov r0, p0");
+            size_t write = bytecode.find("Star p0");
+            ASSERT_NE(std::string::npos, copy);
+            ASSERT_NE(std::string::npos, write);
+            EXPECT_LT(copy, write);
+            EXPECT_NE(std::string::npos, bytecode.find("Add r0,"));
+        }
+        else
+        {
+            EXPECT_EQ(std::string::npos, bytecode.find("Mov "));
+            EXPECT_NE(std::string::npos, bytecode.find("Add p0,"));
+        }
+        EXPECT_EQ(Value::from_smi(12),
+                  parsed.vm.get_default_thread()->run_clovervm_code_object(
+                      code.value()));
+    }
+}
+
+TEST(Codegen, expression_assigned_local_is_copied_throughout_its_code_object)
+{
+    std::string bytecode = bytecode_str_from_file(L"def f(x, y):\n"
+                                                  L"    return x + y\n"
+                                                  L"    if x := 2:\n"
+                                                  L"        pass\n");
+    EXPECT_NE(std::string::npos, bytecode.find("Mov r0, p0"));
+    EXPECT_NE(std::string::npos, bytecode.find("Add r0,"));
+}
+
+TEST(Codegen,
+     nested_body_expression_assignment_does_not_disable_outer_borrowing)
+{
+    std::string bytecode = bytecode_str_from_file(L"def f(x, y):\n"
+                                                  L"    def nested():\n"
+                                                  L"        if x := 2:\n"
+                                                  L"            pass\n"
+                                                  L"    return x + y\n");
+    EXPECT_NE(std::string::npos, bytecode.find("Add p0,"));
+    EXPECT_EQ(std::string::npos, bytecode.find("Mov "));
+}
+
+TEST(Codegen, expression_assigned_nonparameter_local_uses_its_slot_mark)
+{
+    std::string bytecode = bytecode_str_from_file(L"def f(y):\n"
+                                                  L"    x = 10\n"
+                                                  L"    return x + y\n"
+                                                  L"    if x := 2:\n"
+                                                  L"        pass\n");
+    EXPECT_NE(std::string::npos, bytecode.find("Mov r1, r0"));
+    EXPECT_NE(std::string::npos, bytecode.find("Add r1,"));
+}
+
+TEST(Codegen, expression_assigned_global_does_not_disable_local_borrowing)
+{
+    std::string bytecode = bytecode_str_from_file(L"def f(x, y):\n"
+                                                  L"    global value\n"
+                                                  L"    if value := 2:\n"
+                                                  L"        pass\n"
+                                                  L"    return x + y\n");
+    EXPECT_EQ(std::string::npos, bytecode.find("Mov "));
+    EXPECT_NE(std::string::npos, bytecode.find("Add p0,"));
+}
+
+TEST(Codegen, expression_assigned_local_still_uses_direct_register_copy)
+{
+    std::string bytecode = bytecode_str_from_file(L"def f(x):\n"
+                                                  L"    if x := 2:\n"
+                                                  L"        pass\n"
+                                                  L"    y = x\n"
+                                                  L"    return y\n");
+    EXPECT_NE(std::string::npos, bytecode.find("Mov r0, p0"));
+    EXPECT_EQ(std::string::npos, bytecode.find("Ldar p0"));
+}
