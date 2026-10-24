@@ -2,6 +2,7 @@
 #include "builtin_types/float.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
+#include "bytecode/bytecode_decoder.h"
 #include "bytecode/code_object.h"
 #include "bytecode/code_object_builder.h"
 #include "bytecode/code_object_print.h"
@@ -2207,18 +2208,9 @@ TEST(Codegen, mixed_expansion_finishes_positional_builder_before_keywords)
     EXPECT_LT(keyword, call);
 }
 
-TEST(Codegen, expanded_attribute_calls_and_class_bases_are_explicitly_rejected)
+TEST(Codegen, expanded_class_bases_are_explicitly_rejected)
 {
     test::VmTestContext context;
-    ThreadState::ActivationScope activation(context.thread());
-    test::expect_compile_python_error(
-        context, L"obj.method(*args)", L"SyntaxError",
-        L"expanded attribute calls are not implemented yet");
-    context.thread()->clear_pending_exception();
-    test::expect_compile_python_error(
-        context, L"obj.method(**kwargs)", L"SyntaxError",
-        L"expanded attribute calls are not implemented yet");
-    context.thread()->clear_pending_exception();
     test::expect_compile_python_error(
         context, L"class C(*bases):\n    pass\n", L"SyntaxError",
         L"class keyword arguments are not implemented yet");
@@ -2417,4 +2409,44 @@ TEST(Codegen, nested_walrus_counts_as_assignment_before_global_declaration)
             context, source, L"SyntaxError",
             L"name is assigned to before global declaration");
     }
+}
+
+TEST(Codegen, expanded_methods_use_fused_lookup_with_adjacent_transport)
+{
+    test::VmTestContext context;
+    CodeObject *code = context.compile_file(L"obj.method(*source, **keys)");
+    bool found = false;
+    BytecodeDecoder decoder(*code);
+    for(const auto &block: decoder.blocks())
+    {
+        for(const auto &instruction: block.instructions())
+        {
+            EXPECT_NE(Bytecode::CallExpanded, instruction.semantic_opcode());
+            if(instruction.semantic_opcode() !=
+               Bytecode::CallMethodAttrExpanded)
+                continue;
+            found = true;
+            ASSERT_EQ(6u, instruction.operands().size());
+            EXPECT_EQ(7u,
+                      instruction.next_pc_offset() - instruction.pc_offset());
+            EXPECT_EQ(BytecodeOperandKind::AttributeReadCache,
+                      instruction.operands()[2].kind);
+            EXPECT_EQ(BytecodeOperandKind::ExpandedCallCache,
+                      instruction.operands()[3].kind);
+            uint32_t containers = instruction.operands()[4].value;
+            uint32_t outgoing = instruction.operands()[5].value;
+            EXPECT_LT(instruction.operands()[0].value, outgoing);
+            EXPECT_LT(containers + 1, outgoing);
+            ASSERT_EQ(3u, instruction.sources().size());
+            EXPECT_EQ(code->encode_reg(containers),
+                      instruction.sources()[1].frame_offset);
+            EXPECT_EQ(code->encode_reg(containers + 1),
+                      instruction.sources()[2].frame_offset);
+            EXPECT_NE(nullptr, instruction.attribute_read_cache());
+            EXPECT_NE(nullptr, instruction.expanded_call_cache());
+        }
+    }
+    EXPECT_TRUE(found);
+    EXPECT_NE(std::string::npos,
+              fmt::format("{}", *code).find("CallMethodAttrExpanded"));
 }

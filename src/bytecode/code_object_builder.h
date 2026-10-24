@@ -406,6 +406,9 @@ namespace cl
         emit_call_method_attr_positional(uint32_t source_offset,
                                          uint32_t first_arg_reg,
                                          uint8_t name_idx, uint8_t argc);
+        Expected<uint32_t> emit_call_method_attr_expanded(
+            uint32_t source_offset, uint32_t receiver_reg, uint8_t name_idx,
+            uint32_t containers_reg, uint32_t first_arg_reg);
         Expected<uint32_t> emit_call_method_attr_keyword(
             uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
             uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,

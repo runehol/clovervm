@@ -1498,16 +1498,13 @@ namespace cl
             AstChildren children = av.children[node_idx];
             AstChildren args = av.children[children[1]];
             uint32_t source_offset = av.source_offsets[node_idx];
-            if(av.kinds[children[0]].node_kind ==
-               AstNodeKind::EXPRESSION_ATTRIBUTE)
-            {
-                return Expected<void>::raise_exception(
-                    L"SyntaxError",
-                    L"expanded attribute calls are not implemented yet");
-            }
-
+            bool method_call = av.kinds[children[0]].node_kind ==
+                               AstNodeKind::EXPRESSION_ATTRIBUTE;
             TemporaryReg callable(*code_obj);
-            CL_TRY(codegen_node_into_specific_register(children[0], callable));
+            int32_t receiver_node =
+                method_call ? av.children[children[0]][0] : children[0];
+            CL_TRY(
+                codegen_node_into_specific_register(receiver_node, callable));
             TemporaryReg containers(*code_obj, 2);
             uint32_t positional = containers;
             uint32_t keywords = containers + 1;
@@ -1638,8 +1635,18 @@ namespace cl
                 CL_TRY(code_obj->emit_star(source_offset, positional));
             }
             TemporaryReg outgoing(*code_obj, 1, RegisterAlignment::CallFrame);
-            CL_TRY(code_obj->emit_call_expanded(source_offset, callable,
-                                                containers, outgoing));
+            if(method_call)
+            {
+                uint8_t name = CL_TRY(code_obj->allocate_constant(
+                    av.constants[children[0]].value()));
+                CL_TRY(code_obj->emit_call_method_attr_expanded(
+                    source_offset, callable, name, containers, outgoing));
+            }
+            else
+            {
+                CL_TRY(code_obj->emit_call_expanded(source_offset, callable,
+                                                    containers, outgoing));
+            }
             return Expected<void>::ok();
         }
 

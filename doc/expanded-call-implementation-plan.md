@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stages 1, 2, 3a, 3b, and 3c are complete; later checkpoints have not started.
+`3a84a6a2`. Stages 1 through 3 (including 3d) are complete; stage 4 has not started.
 
 ## Working rules
 
@@ -332,20 +332,42 @@ CPython. Full debug checks passed with 1,763 tests passed and one skipped.
 Start after straight expanded calls work end to end in 3c. Preserve the existing
 distinction between function-call and method-call opcodes.
 
-- [ ] Readiness review: settle `CallMethodAttrExpanded` operands, method-lookup
+Agreed sketch: add one fused `CallMethodAttrExpanded` opcode, reusing the
+existing method lookup/binding helpers and expanded callable cache. Keep the
+accepted late-lookup behavior, matching ordinary method calls; fixing lookup
+timing is separate work across all argument forms. Do not add `LoadMethod`.
+Represent positional input as a borrowed tuple plus an optional implicit-self
+prefix (`not_present` means no prefix). The binder still takes only a Function
+and positional count; application reads the prefixed view without allocating a
+tuple just to prepend self. Reuse expansion precode for both call forms.
+
+Encoding: `CallMethodAttrExpanded receiver_reg, name_const, lookup_cache,
+call_cache, containers_reg, first_arg_reg` (seven bytes). The containers remain
+an adjacent exact tuple/fresh exact dict pair, outside the outgoing window.
+`ExpandedCallPositionalArguments` supplies indexed access to the tuple with its
+optional prefix. Application reuses the tuple when it is exactly the varargs
+suffix; a collector that includes self gets a newly packed tuple. The call
+cache still stores only callable resolution and adapter mode, not keyword plans.
+
+- [x] Readiness review: settle `CallMethodAttrExpanded` operands, method-lookup
   timing, receiver binding, and lookup/call cache contracts using the existing
   positional and keyword method-call paths.
-- [ ] Settle how implicit `self` participates in positional binding and plan
+- [x] Settle how implicit `self` participates in positional binding and plan
   application without requiring a tuple copy just to prepend the receiver.
-- [ ] Reuse the expansion precode, native binding plan, and application path;
+- [x] Reuse the expansion precode, native binding plan, and application path;
   keep method lookup and receiver binding outside the binder.
-- [ ] Enable expanded attribute/method-call lowering through its separate
+- [x] Enable expanded attribute/method-call lowering through its separate
   opcode while preserving ordinary method-call lowering.
-- [ ] Test bound receivers, targets without an implicit receiver, defaults,
+- [x] Test bound receivers, targets without an implicit receiver, defaults,
   collectors, lookup invalidation, evaluation order, nested calls, and exception
   unwinding. Pin down opcode operands and register effects with structural tests.
-- [ ] Run full debug checks and release opcode-frame checks; leave changes
+- [x] Run full debug checks and release opcode-frame checks; leave changes
   uncommitted for review.
+
+Verification: all 60 focused expanded-call, codegen, and JIT-fallback checks
+passed. `ninja -C build-debug all check` passed with 1,775 tests passed and one
+skipped. Release `check_opcode_frames` passed. Changes remain uncommitted for
+review; the shared late method-lookup mismatch is intentionally unchanged.
 
 ## Stage 4: Optional exact-string binding-plan cache
 

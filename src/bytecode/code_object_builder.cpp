@@ -758,6 +758,26 @@ namespace cl
             name_idx, read_cache_idx, call_cache_idx, argc);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_expanded(
+        uint32_t source_offset, uint32_t receiver_reg, uint8_t name_idx,
+        uint32_t containers_reg, uint32_t first_arg_reg)
+    {
+        assert_call_args_are_topmost(first_arg_reg, 1);
+        assert(receiver_reg < first_arg_reg);
+        assert(containers_reg + 1 < first_arg_reg);
+        uint8_t read_cache = CL_TRY(allocate_attribute_read_cache());
+        uint8_t call_cache = CL_TRY(allocate_expanded_call_cache());
+        uint32_t result = emplace_back(
+            source_offset, uint8_t(Bytecode::CallMethodAttrExpanded));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, name_idx);
+        emplace_back(source_offset, read_cache);
+        emplace_back(source_offset, call_cache);
+        emplace_back(source_offset, encode_reg(containers_reg));
+        emplace_back(source_offset, encode_reg(first_arg_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_keyword(
         uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
         uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,

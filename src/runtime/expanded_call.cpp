@@ -136,35 +136,34 @@ namespace cl
 
     Expected<void> apply_expanded_call_binding_plan(
         ThreadState *thread, TValue<Function> function,
-        TValue<Tuple> positional, TValue<Dict> keywords,
+        ExpandedCallPositionalArguments positional, TValue<Dict> keywords,
         const ExpandedCallBindingPlan &plan, Value *destination_fp)
     {
         const FunctionSignature signature =
             function.extract()->call_signature.function;
-        const size_t positional_fills =
-            std::min(positional.extract()->size(),
-                     size_t(signature.n_positional_parameters));
+        const size_t positional_fills = std::min(
+            positional.size(), size_t(signature.n_positional_parameters));
         Owned<Optional<TValue<Tuple>>> varargs;
         if(signature.has_varargs())
         {
-            if(positional_fills == 0)
+            if(positional_fills == (positional.has_prefix() ? 1u : 0u))
             {
-                varargs = Optional<TValue<Tuple>>::some(positional);
+                varargs = Optional<TValue<Tuple>>::some(positional.tuple);
             }
             else
             {
                 varargs = Optional<TValue<Tuple>>::some(
-                    thread->make_object_value<Tuple>(
-                        positional.extract()->size() - positional_fills));
-                for(size_t idx = positional_fills;
-                    idx < positional.extract()->size(); ++idx)
+                    thread->make_object_value<Tuple>(positional.size() -
+                                                     positional_fills));
+                for(size_t idx = positional_fills; idx < positional.size();
+                    ++idx)
                 {
                     varargs.value()
                         .value()
                         .extract()
                         ->initialize_item_unchecked(
                             idx - positional_fills,
-                            positional.extract()->item_unchecked(idx));
+                            positional.item_unchecked(idx));
                 }
             }
         }
@@ -209,7 +208,7 @@ namespace cl
         for(uint32_t idx = 0; idx < positional_fills; ++idx)
         {
             destination_fp[code->encode_reg(idx)] =
-                positional.extract()->item_unchecked(idx);
+                positional.item_unchecked(idx);
         }
         size_t keyword_idx = 0;
         for(Dict::EntryView entry: *keywords.extract())

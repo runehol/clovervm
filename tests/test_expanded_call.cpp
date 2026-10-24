@@ -1052,3 +1052,199 @@ assert result[0] == (2,) and result[1]['k'] == 2
 True
 )");
 }
+
+TEST_F(ExpandedCallSyntax, MethodsBindReceiverPositionalsKeywordsAndDefaults)
+{
+    run(LR"(
+class C:
+    def m(self, a, b=2, *args, c=3, **kw):
+        assert self is obj
+        return a, b, args, c, kw
+obj = C()
+result = obj.m(1, *[2, 4], c=5, **{'extra': 6})
+assert result[0] == 1 and result[1] == 2 and result[2] == (4,)
+assert result[3] == 5 and result[4]['extra'] == 6
+assert obj.m(*[1])[1] == 2
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, MethodsReuseTheTupleSuffixAfterSelf)
+{
+    run(LR"(
+class C:
+    def m(self, *args, **kw): return args, kw
+obj = C()
+values = (1, 2)
+source = {'x': 3}
+result = obj.m(*values, **source)
+assert result[0] is values
+assert result[1] is not source and result[1]['x'] == 3
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax,
+       MethodPureCollectorsIncludeSelfAndHandleUnboundTargets)
+{
+    run(LR"(
+def collect(*args, **kw): return args, kw
+class Bound: m = collect
+class Unbound: pass
+bound = Bound()
+unbound = Unbound()
+unbound.m = collect
+values = (1, 2)
+def call(obj): return obj.m(*values)
+result = call(bound)
+assert result[0][0] is bound and result[0][1:] == values
+assert call(unbound)[0] is values
+assert call(bound)[0][0] is bound
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, InstanceAndModuleAttributesDoNotAcquireSelf)
+{
+    run(LR"(
+def plain(a, *, b=7): return a + b
+class C: pass
+obj = C()
+obj.m = plain
+assert obj.m(*[3], **{'b': 4}) == 7
+import math
+assert math.sqrt(*(9,)) == 3
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, InheritedMethodCacheObservesReplacementAndDeletion)
+{
+    run(LR"(
+class Base:
+    def m(self, a): return a + 1
+class C(Base): pass
+obj = C()
+def call(): return obj.m(*(3,))
+assert call() == 4
+def replacement(self, a): return a + 10
+C.m = replacement
+assert call() == 13
+del C.m
+assert call() == 4
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, MethodSelfConflictsAndPositionalOnlyNames)
+{
+    run(LR"(
+class C:
+    def m(self, **rest): return rest
+obj = C()
+try:
+    obj.m(*(), self=1)
+except TypeError:
+    pass
+else:
+    assert False
+class P:
+    def m(self, /, **rest): return rest
+assert P().m(*(), self=2)['self'] == 2
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, ExpandedMethodsPreserveAcceptedLateLookupTiming)
+{
+    run(LR"(
+events = []
+class C:
+    def m(self): return 'old'
+obj = C()
+def replacement(self): return 'new'
+def arguments():
+    events.append('arguments')
+    C.m = replacement
+    return ()
+# Accepted mismatch: lookup follows expansion, as for ordinary method calls.
+assert obj.m(*arguments()) == 'new'
+try:
+    obj.missing(*arguments())
+except AttributeError:
+    pass
+else:
+    assert False
+assert events == ['arguments', 'arguments']
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax,
+       MethodBindingCallbacksRetainTheSelectedFunctionAndReceiver)
+{
+    run(LR"(
+class C:
+    def __init__(self): self.offset = 10
+    def m(self, a): return a + self.offset
+class Helper:
+    def m(self, a): return a + 1
+helper = Helper()
+obj = C()
+def replacement(self, a): return a + 100
+class S(str):
+    def __hash__(self): return 123
+    def __eq__(self, other):
+        assert helper.m(*(8,)) == 9
+        C.m = replacement
+        return str.__eq__(self, other)
+assert obj.m(**{S('a'): 3}) == 13
+assert obj.m(*(3,)) == 103
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, MethodExceptionsUnwindWithoutEnteringTheCalleeEarly)
+{
+    run(LR"(
+entered = False
+error = ValueError('comparison failed')
+class C:
+    def m(self, a):
+        global entered
+        entered = True
+        raise KeyError('callee failed')
+class S(str):
+    def __hash__(self): return 123
+    def __eq__(self, other): raise error
+obj = C()
+try:
+    obj.m(**{S('a'): 3})
+except ValueError as caught:
+    assert caught is error
+else:
+    assert False
+assert not entered
+try:
+    obj.m(*(3,))
+except KeyError:
+    pass
+else:
+    assert False
+assert entered
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, BuiltinMethodsAndNoneReceiverSupportExpansion)
+{
+    run(LR"(
+values = []
+values.append(*[3])
+values.extend(*[[4, 5]])
+assert values == [3, 4, 5]
+assert {'a': 7}.get(*['a']) == 7
+assert None.__repr__(*()) == 'None'
+True
+)");
+}

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Explicit and straight expanded Function/constructor calls implemented; expanded method calls pending |
+| Implementation | Explicit and expanded Function, constructor, and attribute method calls implemented |
 | Scope | Python argument binding and adaptation above the managed frame convention |
 | Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
 | Validated against | `a909d10` (2026-06-25); expanded-call container helpers checked against `69269fe1` and native binding-plan representation agreed 2026-10-23 |
@@ -41,12 +41,12 @@ paths:
 - parser/codegen represent explicit caller positional and keyword arguments;
 - parser and codegen support positional-only parameters before `/`;
 - caller `*args` and `**kwargs` expansion use `CallExpanded` for straight
-  Function and eligible constructor calls. Expanded attribute calls parse but
-  remain explicitly rejected by codegen until checkpoint 3d.
+  Function and eligible constructor calls, and `CallMethodAttrExpanded` for
+  attribute calls. Both use the native binder and plan application.
 
 The keyword-call path deliberately does not introduce the full Python callable
 protocol. Descriptor dispatch beyond existing method-call support, arbitrary
-object `__call__`, and expanded method-call lowering remain separate work.
+object `__call__`, and method-lookup timing remain separate work.
 
 ## Python Signature Shape
 
@@ -695,6 +695,17 @@ Follow existing register, constant-index, and cache-index operand encoding
 conventions. Settle concrete operand widths alongside each bytecode declaration
 and codegen implementation, without introducing a separate encoding scheme.
 
+Expanded method calls supply an `ExpandedCallPositionalArguments` view: an exact
+tuple and an implicit receiver prefix, with `not_present` denoting no prefix.
+This preserves `None` as a valid receiver. The binder receives the total
+positional count and remains unaware of method lookup. Application reads the
+view without making a prepended transport tuple. It can reuse the original
+tuple as the varargs suffix when only self was consumed; collecting self itself
+requires packing a new tuple. Pure-collector handoff of the original tuple is
+used only without a prefix. The resolved Function and prefix remain rooted
+across binding and collector callbacks, even if those callbacks replace method
+slots or the live call-site cache.
+
 ### JIT boundary
 
 Tuples and dicts are ordinary values; indexed accesses operate on native
@@ -964,9 +975,11 @@ The ordinary call runtime supports:
   method-call opcodes.
 
 `CallExpanded` currently supports Functions and eligible constructor thunks.
-Checkpoint 3c enables their source syntax. Expanded attribute/method calls parse
-but codegen rejects them explicitly until checkpoint 3d adds a separate
-method-call opcode and receiver binding.
+Checkpoint 3c enables their source syntax; checkpoint 3d adds the fused
+`CallMethodAttrExpanded` opcode for attribute calls. It reuses existing method
+lookup and binding helpers after argument expansion. This late lookup is an
+accepted mismatch shared with ordinary method calls; correcting it across all
+argument forms is separate work. No early `LoadMethod` opcode is introduced.
 
 It does not attempt to support:
 

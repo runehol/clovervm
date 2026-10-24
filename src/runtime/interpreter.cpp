@@ -1731,8 +1731,8 @@ namespace cl
     static Expected<void> enter_function_frame_from_expanded_args(
         ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
         CodeObject *&code_object, ExpandedCallInlineCache &cache,
-        Value callable, TValue<Tuple> positional, TValue<Dict> keywords,
-        int32_t first_arg_reg, uint32_t instr_len,
+        Value callable, ExpandedCallPositionalArguments positional,
+        TValue<Dict> keywords, int32_t first_arg_reg, uint32_t instr_len,
         DispatchTableEntry &jit_entry)
     {
         if(cache.guard_value != callable || cache.function == nullptr ||
@@ -1759,18 +1759,19 @@ namespace cl
         CodeObject *target_code = function.extract()->code_object.extract();
         Value *new_fp =
             new_frame_pointer_from_first_arg(fp, target_code, first_arg_reg);
-        if(mode == ExpandedCallMode::PureCollector)
+        Owned<Value> live_prefix(positional.prefix);
+        if(mode == ExpandedCallMode::PureCollector && !positional.has_prefix())
         {
             CL_TRY(validate_expanded_call_keywords(keywords));
-            new_fp[target_code->encode_reg(0)] = positional.raw_value();
+            new_fp[target_code->encode_reg(0)] = positional.tuple.raw_value();
             new_fp[target_code->encode_reg(1)] = keywords.raw_value();
         }
         else
         {
             ExpandedCallBindingPlan plan =
                 CL_TRY(build_expanded_call_binding_plan(
-                    thread, function.value(),
-                    uint32_t(positional.extract()->size()), keywords));
+                    thread, function.value(), uint32_t(positional.size()),
+                    keywords));
             CL_TRY(apply_expanded_call_binding_plan(
                 thread, function.value(), positional, keywords, plan, new_fp));
         }
@@ -5224,8 +5225,9 @@ namespace cl
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         DispatchTableEntry jit_entry = nullptr;
         INTERP_TRY(enter_function_frame_from_expanded_args(
-            thread, fp, pc, dispatch, code_object, cache, callable, positional,
-            keywords, first_arg_reg, call_instr_len, jit_entry));
+            thread, fp, pc, dispatch, code_object, cache, callable,
+            ExpandedCallPositionalArguments{positional}, keywords,
+            first_arg_reg, call_instr_len, jit_entry));
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
@@ -5308,6 +5310,74 @@ namespace cl
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
         }
 
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_call_method_attr_expanded(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 7;
+        Value receiver = fp[int8_t(pc[1])];
+        TValue<String> name = TValue<String>::from_value_assumed(
+            code_object->constant_table[pc[2]].value());
+        AttributeReadInlineCache &lookup =
+            code_object->inline_caches.attribute_read_caches[pc[3]];
+        Value callable;
+        Value self;
+        MethodCallTargetStatus status;
+        if(lookup.matches(receiver))
+        {
+            status = prepare_method_call_target_from_plan(receiver, lookup.plan,
+                                                          callable, self);
+        }
+        else
+        {
+            AttributeReadDescriptor descriptor =
+                resolve_attr_read_descriptor(receiver, name);
+            status = prepare_method_call_target_from_descriptor(
+                receiver, descriptor, callable, self);
+            if(status == MethodCallTargetStatus::Ready &&
+               descriptor.is_cacheable())
+            {
+                lookup.populate(receiver, descriptor);
+            }
+        }
+        if(unlikely(status == MethodCallTargetStatus::Missing))
+        {
+            MUSTTAIL return method_lookup_error(ARGS);
+        }
+        if(unlikely(status ==
+                    MethodCallTargetStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
+        }
+        int32_t containers_reg = int8_t(pc[5]);
+        TValue<Tuple> positional =
+            TValue<Tuple>::from_value_assumed(fp[containers_reg]);
+        TValue<Dict> keywords =
+            TValue<Dict>::from_value_assumed(fp[containers_reg - 1]);
+        assert(positional.extract()->get_shape() ==
+               thread->get_exact_tuple_shape());
+        assert(keywords.extract()->get_shape() ==
+                   thread->get_exact_dict_string_key_shape() ||
+               keywords.extract()->get_shape() ==
+                   thread->get_exact_dict_general_shape());
+        ExpandedCallInlineCache &cache =
+            code_object->inline_caches.expanded_call_caches[pc[4]];
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
+        DispatchTableEntry jit_entry = nullptr;
+        INTERP_TRY(enter_function_frame_from_expanded_args(
+            thread, fp, pc, dispatch, code_object, cache, callable,
+            ExpandedCallPositionalArguments{positional, self}, keywords,
+            int8_t(pc[6]), call_instr_len, jit_entry));
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
         START(0);
         COMPLETE();
     }
@@ -6694,6 +6764,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DelItem, op_del_item);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttrPositional,
                         op_call_method_attr_positional);
+        SET_TABLE_ENTRY(Bytecode::CallMethodAttrExpanded,
+                        op_call_method_attr_expanded);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttrKeyword,
                         op_call_method_attr_keyword);
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod0, op_call_special_method0);

@@ -59,6 +59,7 @@ CL_BYTECODE(CallMethodAttrPositional,
             RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
             Sequential, None)
 CL_BYTECODE(CallMethodAttrKeyword, MethodKeywordCall, Sequential, None)
+CL_BYTECODE(CallMethodAttrExpanded, MethodExpandedCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod0, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Sequential, None)
