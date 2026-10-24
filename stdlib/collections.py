@@ -218,9 +218,7 @@ class UserDict:
         return key in self.data
 
     def __iter__(self):
-        # iter(dict) is unavailable in the VM; its keys view supplies the same
-        # live dictionary iterator without introducing native module policy.
-        return iter(self.data.keys())
+        return iter(self.data)
 
     def __repr__(self):
         return repr(self.data)
@@ -251,11 +249,7 @@ class UserDict:
         return _ItemsView(self)
 
     def update(self, other=(), /, **kwds):
-        # Dict subclasses can override __iter__ even though builtin dict
-        # iteration is not yet available in the VM. Keep its keys fallback.
-        if isinstance(other, UserDict) or (
-            isinstance(other, dict) and hasattr(other.__class__, "__iter__")
-        ):
+        if isinstance(other, (UserDict, dict)):
             for key in other:
                 self[key] = other[key]
         elif hasattr(other, "keys"):

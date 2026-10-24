@@ -76,11 +76,36 @@ for source in [DictIterationOverride(a=1, b=2),
     assert s.update(source) is None
     assert s == {'a': 0, 'b': 2}
 
-# Ordinary dicts retain the keys fallback while dict.__iter__ is unavailable.
+# Ordinary dicts use inherited builtin key iteration.
 assert UserDict({'a': 1, 'b': 2}) == {'a': 1, 'b': 2}
 s = UserDict(a=0)
 assert s.update({'a': 1, 'b': 2}) is None
 assert s == {'a': 1, 'b': 2}
+
+
+class DictKeysOverride(dict):
+    def keys(self):
+        return ['a']
+
+
+# Inherited dict iteration bypasses keys(), including through UserDict.data.
+source = DictKeysOverride(a=1, b=2)
+assert UserDict(source) == {'a': 1, 'b': 2}
+s = UserDict()
+s.data = source
+assert list(s) == ['a', 'b']
+s.update(source)
+assert s.data == {'a': 1, 'b': 2}
+s.data = DictIterationOverride(a=1, b=2)
+assert list(s) == ['b']
+
+
+class DictNotIterable(dict):
+    __iter__ = None
+
+
+# An explicit iteration override must not silently fall back to keys().
+raises(TypeError, UserDict, DictNotIterable(a=1))
 
 
 class KeysMapping:
