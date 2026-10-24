@@ -15,6 +15,7 @@
 #include "runtime/virtual_machine.h"
 #include <bit>
 #include <cmath>
+#include <cstddef>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -79,6 +80,12 @@ namespace cl
         {
             return Expected<int64_t>::raise_exception(
                 L"ValueError", L"__len__() should return >= 0");
+        }
+        if(length > std::numeric_limits<ptrdiff_t>::max())
+        {
+            return Expected<int64_t>::raise_exception(
+                L"OverflowError",
+                L"cannot fit length into an index-sized integer");
         }
         return Expected<int64_t>::ok(length);
     }
