@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cassert>
 #include <compare>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,38 @@ namespace cl
         return Expected<std::vector<uint8_t>>::ok(std::move(result));
     }
 
+    [[nodiscard]] static Expected<TValue<SMI>> bytes_count_to_smi(Value source)
+    {
+        assert(is_intlike_value(source));
+        // Convert before checking the sign: an out-of-int64 negative count
+        // raises OverflowError rather than ValueError.
+        SmiViewStorage storage;
+        int64_t count = CL_TRY(
+            bigint_to_int64(intlike_value_bigint_view(source, &storage)));
+        if(count < 0)
+        {
+            return Expected<TValue<SMI>>::raise_exception(L"ValueError",
+                                                          L"negative count");
+        }
+        if(count > value_smi_max)
+        {
+            return Expected<TValue<SMI>>::raise_exception(
+                L"OverflowError", L"bytes count exceeds storage limit");
+        }
+        return Expected<TValue<SMI>>::ok(TValue<SMI>::from_smi(count));
+    }
+
+    static TValue<Bytes> allocate_zero_filled_bytes(ThreadState *thread,
+                                                    TValue<ClassObject> cls,
+                                                    TValue<SMI> count)
+    {
+        TValue<Bytes> result =
+            thread->make_internal_value<Bytes>(cls.extract(), count);
+        std::memset(result.extract()->data, 0,
+                    static_cast<size_t>(count.extract()));
+        return result;
+    }
+
     [[nodiscard]] NOINLINE static Value
     bytes_new_subclass_slow(ThreadState *thread, Value cls_value, Value source)
     {
@@ -134,6 +167,11 @@ namespace cl
                 ->make_internal_value<Bytes>(cls.extract(),
                                              std::span<const uint8_t>{})
                 .raw_value();
+        }
+        if(is_intlike_value(source))
+        {
+            TValue<SMI> count = CL_TRY(bytes_count_to_smi(source));
+            return allocate_zero_filled_bytes(thread, cls, count).raw_value();
         }
         if(can_convert_to<Bytes>(source))
         {
@@ -175,6 +213,15 @@ namespace cl
         if(source.is_none())
         {
             return thread->make_object_value<Bytes>(std::span<const uint8_t>{})
+                .raw_value();
+        }
+        if(is_intlike_value(source))
+        {
+            TValue<SMI> count = CL_TRY(bytes_count_to_smi(source));
+            return allocate_zero_filled_bytes(
+                       thread,
+                       TValue<ClassObject>::from_value_assumed(cls_value),
+                       count)
                 .raw_value();
         }
         if(can_convert_to<Bytes>(source))

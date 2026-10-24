@@ -6264,7 +6264,7 @@ for cls in (bytes, B):
         try: cls(source)
         except TypeError as e: assert str(e) == "bytes item must be an integer"
         else: raise AssertionError
-    for source in (4, "text", range(3)):
+    for source in (1.5, "text", range(3)):
         try: cls(source)
         except TypeError as e: assert str(e) == "cannot convert object to bytes"
         else: raise AssertionError

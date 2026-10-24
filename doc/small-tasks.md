@@ -38,9 +38,9 @@ than being an immediately ready constructor change.
   encoding/errors forms of `bytes(text, encoding, errors)` and
   `str(data, encoding, errors)`. Choose the first codecs and error policies in a
   separate readiness sketch.
-- **Integer/bytes conversion:** implement `bytes(count)` zero filling, then
-  `int.to_bytes` and `int.from_bytes` as separate slices. Cover byte order,
-  signedness, length/range errors, and the applicable integer protocols.
+- **Integer/bytes conversion:** implement `int.to_bytes` and `int.from_bytes`
+  as separate slices. Cover byte order, signedness, length/range errors, and the
+  applicable integer protocols.
 - **Bytes conversion protocols:** add `__bytes__`, generic iterable input,
   element `__index__`, and buffer inputs when their dispatch/storage contracts
   are ready. Bytes subclasses can override `__bytes__`; the current native

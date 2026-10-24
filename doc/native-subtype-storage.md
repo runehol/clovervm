@@ -167,7 +167,7 @@ rather than falling through to generic storage.
 | Int | Native new-only conversion; subclass results always use heap BigInt storage |
 | Float | Native new-only numeric conversion from float/int/bool, including heap numeric subclasses |
 | Str | Native new-only conversion, honoring string subclass `__str__` overrides |
-| Bytes | Native new-only empty, bytes, native list, and native tuple inputs |
+| Bytes | Native new-only empty, integer count, bytes, native list, and native tuple inputs |
 
 Tuple construction is deferred. The storage contract and native tuple allocation
 exist, but tuple has no constructor yet.
@@ -186,7 +186,15 @@ module through their CodeObjects.
 Exact-result reuse remains operation-specific. Exact str and bytes inputs can be
 reused for exact targets; subclass targets receive fresh native storage. A custom
 str conversion may return a string subclass, which exact-target construction
-preserves. Bytes conversion protocols and additional input forms are deferred.
+preserves.
+
+Bytes count construction accepts builtin ints, bools, and int subclasses and
+zeroes the final allocation directly. Counts are converted to signed 64-bit
+before checking negativity, so out-of-range integers raise OverflowError and
+representable negative counts raise ValueError. Positive counts above the SMI
+length-storage limit raise OverflowError. Allocation failure retains the heap's
+existing fatal behavior; recoverable MemoryError remains separate work.
+Bytes conversion protocols and additional input forms are deferred.
 
 Constructor caches retain MRO-and-contents validity guards. Adding, replacing, or
 deleting new/init methods, including inherited ones, invalidates subsequent lookup
