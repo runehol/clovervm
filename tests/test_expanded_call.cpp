@@ -5,7 +5,6 @@
 #include "bytecode/bytecode_decoder.h"
 #include "bytecode/code_object_builder.h"
 #include "bytecode/code_object_print.h"
-#include "compiler/codegen_scope_analysis.h"
 #include "import_system/module_global.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -1023,54 +1022,33 @@ True
 )");
 }
 
-TEST(ExpandedCallScope, AnalysisFollowsPositionalBeforeKeywordEvaluation)
+TEST_F(ExpandedCallSyntax, StarredReadPrecedesKeywordWalrusAssignment)
 {
-    // Exercise the AST directly to pin down scope-analysis order for reads
-    // before and after stores in interleaved arguments.
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation(context.thread());
-    CompilationUnit unit(L"");
-    auto name = context.vm().get_or_create_interned_string_value(L"x");
-    for(bool assign_in_star: {false, true})
-    {
-        AstVector ast(&unit);
-        int32_t read = ast.emplace_back(
-            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0, name);
-        int32_t write = ast.emplace_back(
-            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0, name);
-        int32_t literal = ast.emplace_back(
-            AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER),
-            0, Value::from_smi(1));
-        int32_t assign = ast.emplace_back(
-            AstKind(AstNodeKind::EXPRESSION_ASSIGN, AstOperatorKind::NOP), 0,
-            write, literal);
-        int32_t keyword = ast.emplace_back(
-            AstNodeKind::CALL_ARGUMENT_KEYWORD, 0,
-            AstChildren{assign_in_star ? read : assign},
-            context.vm().get_or_create_interned_string_value(L"k"));
-        int32_t tuple =
-            ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, 0,
-                             AstChildren{assign_in_star ? assign : read});
-        int32_t star = ast.emplace_back(AstNodeKind::CALL_ARGUMENT_STARRED, 0,
-                                        AstChildren{tuple});
-        int32_t arguments = ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, 0,
-                                             AstChildren{keyword, star});
-        int32_t callee = ast.emplace_back(
-            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0,
-            context.vm().get_or_create_interned_string_value(L"f"));
-        int32_t call = ast.emplace_back(AstNodeKind::EXPRESSION_CALL, 0,
-                                        AstChildren{callee, arguments});
-        Scope *scope = context.vm().make_immortal_internal_raw<Scope>(nullptr);
-        CodeObjectBuilder code(&context.vm(), &unit,
-                               context.vm().global_builtins_module(), scope,
-                               context.vm().get_or_create_interned_string_value(
-                                   L"<expanded-scope>"));
-        code.configure_positional_function(0);
-        auto analysis =
-            analyze_code_object_scope(ast, &code, call, CodegenMode::Function);
-        ASSERT_FALSE(analysis.has_exception());
-        ASSERT_TRUE(analysis.value().loads[read].has_value());
-        EXPECT_EQ(assign_in_star ? Presence::Present : Presence::Missing,
-                  analysis.value().loads[read]->presence);
-    }
+    run(LR"(
+def f(*args, **kw): raise AssertionError('callee must not run')
+def unbound():
+    return f(k=(x := 1), *(x,))
+try:
+    unbound()
+except NameError as error:
+    # Clover currently reports unbound locals as NameError.
+    assert 'x' in error.args[0]
+else:
+    assert False
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, StarredWalrusAssignmentPrecedesKeywordRead)
+{
+    run(LR"(
+def f(*args, **kw): return args, kw
+def assigned():
+    result = f(k=x, *((x := 2),))
+    assert x == 2
+    return result
+result = assigned()
+assert result[0] == (2,) and result[1]['k'] == 2
+True
+)");
 }

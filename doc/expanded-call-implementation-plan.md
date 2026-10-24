@@ -320,9 +320,12 @@ Agreed implementation sketch:
 Verification: all 20 new parser, codegen, syntax, and scope-analysis tests
 passed. `ninja -C build-debug all check` passed with 1,749 tests passed and one
 skipped. Attribute-call rejection is in codegen; the parser accepts these forms
-for 3d. Scope-order regression coverage uses the existing assignment AST because
-walrus expressions inside call arguments remain outside current parser support.
+for 3d. Scope-order regression coverage now uses end-to-end Python tests with walrus
+expressions inside call arguments, replacing the manually constructed AST test.
 No interpreter handlers changed. Changes remain uncommitted for review.
+
+Walrus test follow-up: both Python regression scripts passed in Clover and
+CPython. Full debug checks passed with 1,763 tests passed and one skipped.
 
 ### 3d: Expanded method calls
 
