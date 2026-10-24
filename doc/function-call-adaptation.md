@@ -656,10 +656,12 @@ unwinding rather than a separate continuation-state mechanism. On call failure,
 partially built transport containers are discarded through normal lifetime
 handling; builder operations do not roll back already appended items.
 
-The uncached binder runs in C++ in the runtime call-adaptation layer. Exact-string
-keys use native string comparisons. Only string-subclass keys cross the existing
-C++-to-managed call bridge for rich equality and truth conversion; use the
-existing `ThreadState::test_equal` path rather than implementing those protocols
+The uncached binder runs in C++ in the runtime call-adaptation layer and takes an
+already-resolved Function, positional count, and exact keyword transport dict.
+Callable resolution remains in the existing call machinery outside the binder.
+Exact-string keys use native string comparisons. Only string-subclass keys cross
+the existing C++-to-managed call bridge for rich equality and truth conversion;
+use the existing `ThreadState::test_equal` path rather than implementing those protocols
 again. This deliberately permits interpreter re-entry for the uncommon subclass
 case. No binder-specific comparison IC is required, and subclass calls always
 rebuild the plan. The existing equality helper may use its own IC internally.

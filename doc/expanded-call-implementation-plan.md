@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stages 1 and 2 are complete; later stages have not started.
+`3a84a6a2`. Stages 1, 2, and 3a are complete; later checkpoints have not started.
 
 ## Working rules
 
@@ -199,39 +199,52 @@ direct `source.keys()` call. Stage 2b changes remain uncommitted for user review
 
 ### 3a: Binding-plan representation and uncached binder
 
+Implementation: `src/runtime/expanded_call.{h,cpp}`; focused tests in
+`tests/test_expanded_call.cpp`. `build_expanded_call_binding_plan` takes an
+already-resolved, rooted Function, positional count, and rooted exact transport
+dict and returns `Expected<ExpandedCallBindingPlan>`. Callable resolution stays
+in the existing call machinery; the binder does not duplicate it.
+
 - [x] Agree the native, IC-compatible plan representation and C++ binder
   direction, recorded in the accepted design. No Python binder or managed
   tuple plan is needed.
-- [ ] Implement `ExpandedCallBindingPlan` in the runtime call-adaptation layer:
+- [x] Implement `ExpandedCallBindingPlan` in the runtime call-adaptation layer:
   `keyword_destinations` and `default_slots` are vectors of logical parameter
   indices; `UnmatchedKeyword = UINT32_MAX` marks collector entries;
   `kwargs_action` is `None`, `ReuseTransport`, or `BuildLeftovers`.
   The plan owns no Python references. Keep the Function and input containers
   rooted outside it, and return the plan through a fallible native builder.
-- [ ] Resolve functions and eligible constructor thunks through existing call
-  machinery; keep callable/signature caching independent of binding-plan caching.
-- [ ] Validate all keyword keys before matching, accepting string subclasses.
-- [ ] Match incoming keywords in insertion order against keyword-bindable
+- [x] Validate all keyword keys before matching, accepting string subclasses.
+- [x] Match incoming keywords in insertion order against keyword-bindable
   parameters in declaration order. Use native exact-string comparisons and
   the existing C++-to-managed `ThreadState::test_equal` bridge for subclass-key
   rich equality/truth conversion, without key hashing. Accept interpreter
   re-entry for this uncommon case; no binder-specific comparison IC is required.
-- [ ] Track positional and keyword fills; report keyword errors before excess
+- [x] Track positional and keyword fills; report keyword errors before excess
   positional arguments, then resolve defaults and missing required arguments.
-- [ ] Build a temporary plan without changing the live IC. Failed plans are
+- [x] Build a temporary plan without changing the live IC. Failed plans are
   neither applied nor installed. Defer keyword binding-plan caching to stage 4.
   Application must accept the same const native plan whether it is temporary
   or later held in an IC. Formal names stay in `FunctionKeywordRemap`; incoming
   keys stay in transport. Cache guards, positional count, and owned ordered
   exact-string names belong outside the plan in a future cache wrapper.
-- [ ] Record `ReuseTransport` when no keyword matched named parameters, or
+- [x] Record `ReuseTransport` when no keyword matched named parameters, or
   `BuildLeftovers` when some matched and the callee has a kwargs collector.
-- [ ] Test binding order, comparison failures, positional-only names, defaults,
+- [x] Test binding order, comparison failures, positional-only names, defaults,
   repeated formal fills, and error precedence against the accepted design.
-- [ ] Run required checks and leave changes uncommitted for review.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: all 17 native binder tests passed in the full debug suite.
+`ninja -C build-debug all check` passed with 1,713 tests passed and one
+skipped. No interpreter opcodes or frame-entry code changed. Changes remain
+uncommitted for review.
 
 ### 3b: Plan application and CallExpanded
 
+- [ ] Resolve functions and eligible constructor thunks through existing call
+  machinery before invoking the binder; do not duplicate resolution in the
+  binder. Keep callable/signature caching independent of binding-plan caching,
+  and defer positional arity errors until after keyword matching.
 - [ ] Add `CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx`.
   Require adjacent exact tuple/fresh exact dict inputs, both always present.
 - [ ] Keep input containers and callable outside the outgoing parameter window.
