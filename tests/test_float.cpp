@@ -8,6 +8,7 @@
 #include "test_helpers.h"
 #include <cmath>
 #include <limits>
+#include <string>
 #include <string_view>
 
 #include <gtest/gtest.h>
@@ -138,6 +139,172 @@ namespace cl
                                           ShapeKey::from_value(number.value()),
                                           ShapeKey::from_value(subclass), order,
                                           TrustedHandlerArity::Binary)
+                                     .has_trusted_handler());
+                }
+            }
+            EXPECT_FALSE(resolver(&context.vm(),
+                                  ShapeKey::from_value(number.value()),
+                                  ShapeKey::from_value(Value::True()),
+                                  TrustedHandlerOperandOrder::Normal,
+                                  TrustedHandlerArity::Unary)
+                             .has_trusted_handler());
+        }
+    }
+
+    TEST(FloatRuntime, OrderingTrustedHandlersPreserveIntegerPrecision)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        struct Sample
+        {
+            double number;
+            const wchar_t *integer;
+            int comparison;
+        };
+        const Sample samples[] = {
+            {0x1p53, L"9007199254740993", -1},
+            {0x1p60, L"2**60", 0},
+            {-0x1p60, L"-(2**60) - 1", 1},
+            {0x1p60, L"2**60 + 1", -1},
+            {0x1.fffffffffffffp1023, L"(2**53 - 1) * 2**971", 0},
+            {0.0, L"False", 0},
+            {-0.0, L"0", 0},
+            {1.0, L"True", 0},
+            {1.5, L"1", 1},
+            {-1.5, L"-1", -1},
+            {0x1p-1074, L"0", 1},
+            {std::numeric_limits<double>::infinity(), L"2**2000", 1},
+            {-std::numeric_limits<double>::infinity(), L"-(2**2000)", -1},
+            {std::numeric_limits<double>::quiet_NaN(), L"0", 2},
+        };
+        struct Method
+        {
+            const wchar_t *name;
+            const wchar_t *forward;
+            const wchar_t *reverse;
+            TrustedHandlerSemantics semantics;
+            TrustedHandlerSemantics reflected_semantics;
+        };
+        const Method methods[] = {
+            {L"__lt__", L"<", L">", TrustedHandlerSemantics::Less,
+             TrustedHandlerSemantics::Greater},
+            {L"__le__", L"<=", L">=", TrustedHandlerSemantics::LessEqual,
+             TrustedHandlerSemantics::GreaterEqual},
+            {L"__gt__", L">", L"<", TrustedHandlerSemantics::Greater,
+             TrustedHandlerSemantics::Less},
+            {L"__ge__", L">=", L"<=", TrustedHandlerSemantics::GreaterEqual,
+             TrustedHandlerSemantics::LessEqual},
+        };
+        for(const Method &method: methods)
+        {
+            auto resolver = context.vm()
+                                .float_class()
+                                ->get_own_property(interned_string(method.name))
+                                .get_ptr<Function>()
+                                ->code_object.extract()
+                                ->trusted_handler_resolver;
+            ASSERT_NE(nullptr, resolver);
+            for(const Sample &sample: samples)
+            {
+                SCOPED_TRACE(sample.integer);
+                Owned<Value> integer(context.run_file(sample.integer));
+                Owned<Value> number(box_float(context.thread(), sample.number));
+                ASSERT_FALSE(integer.value().is_exception_marker());
+                bool result = false;
+                if(sample.comparison != 2)
+                {
+                    switch(method.semantics)
+                    {
+                        case TrustedHandlerSemantics::Less:
+                            result = sample.comparison < 0;
+                            break;
+                        case TrustedHandlerSemantics::LessEqual:
+                            result = sample.comparison <= 0;
+                            break;
+                        case TrustedHandlerSemantics::Greater:
+                            result = sample.comparison > 0;
+                            break;
+                        case TrustedHandlerSemantics::GreaterEqual:
+                            result = sample.comparison >= 0;
+                            break;
+                        default:
+                            FAIL();
+                    }
+                }
+                Value expected = result ? Value::True() : Value::False();
+                for(auto order: {TrustedHandlerOperandOrder::Normal,
+                                 TrustedHandlerOperandOrder::Reflected})
+                {
+                    bool reflected =
+                        order == TrustedHandlerOperandOrder::Reflected;
+                    Value left = reflected ? integer.value() : number.value();
+                    Value right = reflected ? number.value() : integer.value();
+                    auto resolution =
+                        resolver(&context.vm(), ShapeKey::from_value(left),
+                                 ShapeKey::from_value(right), order,
+                                 TrustedHandlerArity::Binary);
+                    ASSERT_TRUE(resolution.has_trusted_handler());
+                    auto metadata = context.vm().trusted_handler_metadata(
+                        erase_trusted_handler_target(resolution.binary));
+                    ASSERT_TRUE(metadata.has_value());
+                    EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+                    EXPECT_EQ(reflected ? method.reflected_semantics
+                                        : method.semantics,
+                              metadata->semantics);
+                    for(int replay = 0; replay < 3; ++replay)
+                        EXPECT_EQ(expected, resolution.binary(context.thread(),
+                                                              left, right));
+                    std::wstring source =
+                        L"def compare(left, right):\n    return left ";
+                    source += reflected ? method.reverse : method.forward;
+                    source += L" right\ncompare\n";
+                    Owned<TValue<Function>> function(
+                        TValue<Function>::from_value_assumed(
+                            context.run_file(source.c_str())));
+                    for(int replay = 0; replay < 3; ++replay)
+                        EXPECT_EQ(expected,
+                                  context.thread()->call_clovervm_function(
+                                      function.value(), left, right));
+                    const auto &caches = function.extract()
+                                             ->code_object.extract()
+                                             ->inline_caches.operator_caches;
+                    ASSERT_EQ(1u, caches.size());
+                    EXPECT_TRUE(
+                        caches[0].matches_reflectable_binary(left, right));
+                    EXPECT_NE(nullptr,
+                              caches[0].operand_lookup_validity_cells[0]);
+                    EXPECT_NE(nullptr,
+                              caches[0].operand_lookup_validity_cells[1]);
+                    // Int methods keep their existing NotImplemented
+                    // continuation.
+                    EXPECT_EQ(reflected, caches[0].trusted_handler.is_null());
+                    if(!reflected)
+                        EXPECT_EQ(
+                            erase_trusted_handler_target(resolution.binary),
+                            caches[0].trusted_handler.target(
+                                TrustedHandlerArity::Binary));
+                }
+            }
+            Owned<Value> integer_subclass(
+                context.run_file(L"class I(int): pass\nI(2**60)\n"));
+            Owned<Value> float_subclass(
+                context.run_file(L"class F(float): pass\nF(2**60)\n"));
+            Owned<Value> number(box_float(context.thread(), 0x1p60));
+            for(Value subclass: {integer_subclass.value(),
+                                 float_subclass.value(), Value::None()})
+            {
+                for(auto order: {TrustedHandlerOperandOrder::Normal,
+                                 TrustedHandlerOperandOrder::Reflected})
+                {
+                    EXPECT_FALSE(resolver(&context.vm(),
+                                          ShapeKey::from_value(number.value()),
+                                          ShapeKey::from_value(subclass), order,
+                                          TrustedHandlerArity::Binary)
+                                     .has_trusted_handler());
+                    EXPECT_FALSE(resolver(&context.vm(),
+                                          ShapeKey::from_value(subclass),
+                                          ShapeKey::from_value(number.value()),
+                                          order, TrustedHandlerArity::Binary)
                                      .has_trusted_handler());
                 }
             }
