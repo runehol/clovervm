@@ -251,7 +251,11 @@ class UserDict:
         return _ItemsView(self)
 
     def update(self, other=(), /, **kwds):
-        if isinstance(other, UserDict):
+        # Dict subclasses can override __iter__ even though builtin dict
+        # iteration is not yet available in the VM. Keep its keys fallback.
+        if isinstance(other, UserDict) or (
+            isinstance(other, dict) and hasattr(other.__class__, "__iter__")
+        ):
             for key in other:
                 self[key] = other[key]
         elif hasattr(other, "keys"):

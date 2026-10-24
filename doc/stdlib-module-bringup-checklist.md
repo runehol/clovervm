@@ -134,9 +134,12 @@ edge cases, platform behavior, or APIs are still missing.
 - Construction accepts `None`, builtin dictionaries, UserDict instances,
   keys/getitem protocol objects, and supported iterables of supported two-item
   iterables. Updates accept the same sources except `None`. Keywords follow
-  positional input, with positional-only names such as `self`, `dict`, `other`,
-  and `kwds` remaining ordinary data keys. Malformed pairs retain error types
-  and prior writes; exact diagnostic text is not CPython-compatible. String
+  positional input. UserDict sources and dict subclasses with a supported
+  class-level `__iter__` use iteration ahead of `keys()`; builtin dictionaries
+  and dict subclasses without `__iter__` use the keys fallback while native
+  dict iteration remains unavailable. Positional-only names such as `self`,
+  `dict`, `other`, and `kwds` remain ordinary data keys. Malformed pairs retain
+  error types and prior writes; exact diagnostic text is not CPython-compatible. String
   pair elements and string iteration remain blocked by missing `str.__iter__`.
 - Direct method calls and class-level `__missing__` dispatch work. Stored bound
   methods remain unusable as general callables. Callable-instance protocol and

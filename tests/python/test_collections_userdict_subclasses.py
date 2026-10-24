@@ -51,6 +51,55 @@ class IterationOverride(UserDict):
 # Registered UserDict mappings use __iter__, ahead of the keys protocol.
 assert UserDict(IterationOverride(a=1, b=2)) == {'b': 2}
 
+s = UserDict(a=0)
+s.update(IterationOverride(a=1, b=2))
+assert s == {'a': 0, 'b': 2}
+
+
+class DictIterationOverride(dict):
+    def __iter__(self):
+        return iter(['b'])
+
+    def keys(self):
+        return ['a']
+
+
+class InheritedDictIterationOverride(DictIterationOverride):
+    pass
+
+
+# Dict mappings also use supported class-level iteration ahead of keys().
+for source in [DictIterationOverride(a=1, b=2),
+               InheritedDictIterationOverride(a=1, b=2)]:
+    assert UserDict(source) == {'b': 2}
+    s = UserDict(a=0)
+    assert s.update(source) is None
+    assert s == {'a': 0, 'b': 2}
+
+# Ordinary dicts retain the keys fallback while dict.__iter__ is unavailable.
+assert UserDict({'a': 1, 'b': 2}) == {'a': 1, 'b': 2}
+s = UserDict(a=0)
+assert s.update({'a': 1, 'b': 2}) is None
+assert s == {'a': 1, 'b': 2}
+
+
+class KeysMapping:
+    def __iter__(self):
+        return iter(['b'])
+
+    def keys(self):
+        return ['a']
+
+    def __getitem__(self, key):
+        return 7
+
+
+# Unregistered mappings still select keys(), even if they are iterable.
+assert UserDict(KeysMapping()) == {'a': 7}
+s = UserDict(b=0)
+s.update(KeysMapping())
+assert s == {'b': 0, 'a': 7}
+
 
 class ItemsOverride(UserDict):
     def items(self):
