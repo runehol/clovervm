@@ -11,7 +11,7 @@ static clover_handle json_is_exact_dict(clover_context *ctx,
     {
         return clover_propagate_error(ctx);
     }
-    return clover_int_from_int64(ctx, exact ? 1 : 0);
+    return clover_bool_from_bool(ctx, exact);
 }
 
 static clover_handle json_dict_next(clover_context *ctx, clover_handle dict,
@@ -50,7 +50,7 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__json(
     (void)ctx;
     if(clover_module_add_function_1(
            builder, "is_exact_dict", json_is_exact_dict,
-           "Return 1 for an exact dict, else 0.") != CLOVER_STATUS_OK)
+           "Return True for an exact dict, else False.") != CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }

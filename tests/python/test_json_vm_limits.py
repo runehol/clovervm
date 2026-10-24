@@ -80,9 +80,9 @@ if hasattr(json, "_MAX_DEPTH"):
     class DictSubclass(dict):
         pass
 
-    assert _json.is_exact_dict({}) == 1
-    assert _json.is_exact_dict(DictSubclass()) == 0
-    assert _json.is_exact_dict([]) == 0
+    assert _json.is_exact_dict({}) is True
+    assert _json.is_exact_dict(DictSubclass()) is False
+    assert _json.is_exact_dict([]) is False
     assert _json.dict_next({}, 0) is None
     mapping = {None: "none", "later": [1]}
     entry = _json.dict_next(mapping, 0)
