@@ -526,7 +526,8 @@ TEST(ClassStorageSelection,
     EXPECT_EQ(0u, list.extract()->get_shape()->get_inline_slot_capacity());
     list.extract()->append(Value::from_smi(7));
     auto attr = context.vm().get_or_create_interned_string_value(L"extra");
-    ASSERT_TRUE(list.extract()->set_own_property(attr, Value::from_smi(42)));
+    ASSERT_TRUE(
+        list.extract()->set_own_property(attr, Value::from_smi(42)).value());
     EXPECT_EQ(StorageKind::Overflow,
               list.extract()->get_shape()->resolve_present_property(attr).kind);
     EXPECT_EQ(Value::from_smi(42), list.extract()->get_own_property(attr));
@@ -560,8 +561,9 @@ TEST(ClassStorageSelection, NativeExceptionFactoriesInitializeInheritedFields)
     EXPECT_EQ(Value::from_smi(19),
               exception.extract()->get_own_property(value_name));
     auto args_name = context.vm().get_or_create_interned_string_value(L"args");
-    EXPECT_FALSE(
-        exception.extract()->set_own_property(args_name, Value::from_smi(0)));
+    EXPECT_FALSE(exception.extract()
+                     ->set_own_property(args_name, Value::from_smi(0))
+                     .value());
 }
 
 TEST(Shape, InstanceRootShapeCarriesPresentedClass)
@@ -912,10 +914,12 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
     ASSERT_TRUE(location.is_found());
     instance->write_storage_location(location, Value::from_smi(7));
 
-    EXPECT_FALSE(instance->set_own_property(a_name, Value::from_smi(9)));
+    EXPECT_FALSE(
+        instance->set_own_property(a_name, Value::from_smi(9)).value());
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
     EXPECT_FALSE(
-        store_attr(Value::from_oop(instance), a_name, Value::from_smi(9)));
+        store_attr(Value::from_oop(instance), a_name, Value::from_smi(9))
+            .value());
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
 
     EXPECT_FALSE(instance->delete_own_property(a_name));
@@ -1050,7 +1054,8 @@ TEST(Shape, InstanceShapeDescribesDunderClassWithoutStorageSlot)
               instance->get_own_property(dunder_class_name));
 
     EXPECT_TRUE(
-        instance->set_own_property(dunder_class_name, Value::from_oop(cls)));
+        instance->set_own_property(dunder_class_name, Value::from_oop(cls))
+            .value());
     EXPECT_EQ(Value::not_present(),
               instance->get_own_property(dunder_class_name));
 }
@@ -1068,7 +1073,7 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    instance->set_own_property(a_name, Value::from_smi(7));
+    instance->set_own_property(a_name, Value::from_smi(7)).value();
 
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
     EXPECT_EQ(3u, instance->get_shape()->property_count());
@@ -1098,12 +1103,12 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
         cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    instance->set_own_property(a_name, Value::from_smi(1));
-    instance->set_own_property(b_name, Value::from_smi(2));
-    instance->set_own_property(c_name, Value::from_smi(3));
-    instance->set_own_property(d_name, Value::from_smi(4));
-    instance->set_own_property(e_name, Value::from_smi(5));
-    instance->set_own_property(f_name, Value::from_smi(6));
+    instance->set_own_property(a_name, Value::from_smi(1)).value();
+    instance->set_own_property(b_name, Value::from_smi(2)).value();
+    instance->set_own_property(c_name, Value::from_smi(3)).value();
+    instance->set_own_property(d_name, Value::from_smi(4)).value();
+    instance->set_own_property(e_name, Value::from_smi(5)).value();
+    instance->set_own_property(f_name, Value::from_smi(6)).value();
 
     EXPECT_EQ(Value::from_smi(1), instance->get_own_property(a_name));
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
@@ -1125,14 +1130,14 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
         cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    instance->set_own_property(a_name, Value::from_smi(10));
-    instance->set_own_property(b_name, Value::from_smi(11));
+    instance->set_own_property(a_name, Value::from_smi(10)).value();
+    instance->set_own_property(b_name, Value::from_smi(11)).value();
 
     EXPECT_TRUE(instance->delete_own_property(a_name));
     EXPECT_EQ(Value::not_present(), instance->get_own_property(a_name));
     EXPECT_EQ(Value::from_smi(11), instance->get_own_property(b_name));
 
-    instance->set_own_property(a_name, Value::from_smi(12));
+    instance->set_own_property(a_name, Value::from_smi(12)).value();
     EXPECT_EQ(Value::from_smi(12), instance->get_own_property(a_name));
     EXPECT_EQ(3, instance->get_shape()->get_next_slot_index());
 }
@@ -1201,8 +1206,9 @@ TEST(Shape, ZeroInlineNativeLayoutUsesCommonOverflowStorage)
             L"attr" + std::to_wstring(idx)));
     }
     String *child = context.thread()->make_object_raw<String>(L"attribute");
-    ASSERT_TRUE(
-        list.extract()->set_own_property(names[0], Value::from_oop(child)));
+    ASSERT_TRUE(list.extract()
+                    ->set_own_property(names[0], Value::from_oop(child))
+                    .value());
     ASSERT_EQ(1, child->refcount);
     auto read = resolve_attr_read_descriptor(list.raw_value(), names[0]);
     auto write = resolve_attr_write_descriptor(list.raw_value(), names[0]);
@@ -1213,8 +1219,9 @@ TEST(Shape, ZeroInlineNativeLayoutUsesCommonOverflowStorage)
         list.extract()->get_shape()->resolve_present_property(names[0]).kind);
     for(int idx = 1; idx < 12; ++idx)
     {
-        ASSERT_TRUE(
-            list.extract()->set_own_property(names[idx], Value::from_smi(idx)));
+        ASSERT_TRUE(list.extract()
+                        ->set_own_property(names[idx], Value::from_smi(idx))
+                        .value());
     }
     EXPECT_EQ(Value::from_oop(child),
               load_attr_from_plan(list.raw_value(), read.plan));
@@ -1222,14 +1229,16 @@ TEST(Shape, ZeroInlineNativeLayoutUsesCommonOverflowStorage)
     // reclaimed.
     context.vm().run_heap_reclamation();
     EXPECT_EQ(1, child->refcount);
-    ASSERT_TRUE(store_attr_from_plan(list.raw_value(), write.plan,
-                                     Value::from_smi(42)));
+    ASSERT_TRUE(
+        store_attr_from_plan(list.raw_value(), write.plan, Value::from_smi(42))
+            .value());
     EXPECT_EQ(0, child->refcount);
     EXPECT_EQ(Value::from_smi(42),
               load_attr_from_plan(list.raw_value(), read.plan));
     ASSERT_TRUE(list.extract()->delete_own_property(names[0]));
     EXPECT_EQ(Value::not_present(), list.extract()->get_own_property(names[0]));
-    ASSERT_TRUE(list.extract()->set_own_property(names[0], Value::from_smi(7)));
+    ASSERT_TRUE(
+        list.extract()->set_own_property(names[0], Value::from_smi(7)).value());
     EXPECT_EQ(Value::from_smi(7), list.extract()->get_own_property(names[0]));
     EXPECT_EQ(Value::from_smi(99), list.extract()->item_unchecked(0));
     EXPECT_EQ(0u, list.extract()->get_shape()->get_inline_slot_capacity());
@@ -1251,10 +1260,10 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     Instance *first = context.thread()->make_internal_raw<Instance>(cls);
     Instance *second = context.thread()->make_internal_raw<Instance>(cls);
 
-    first->set_own_property(a_name, Value::from_smi(1));
-    first->set_own_property(b_name, Value::from_smi(2));
-    second->set_own_property(a_name, Value::from_smi(10));
-    second->set_own_property(b_name, Value::from_smi(20));
+    first->set_own_property(a_name, Value::from_smi(1)).value();
+    first->set_own_property(b_name, Value::from_smi(2)).value();
+    second->set_own_property(a_name, Value::from_smi(10)).value();
+    second->set_own_property(b_name, Value::from_smi(20)).value();
 
     EXPECT_EQ(first->get_shape(), second->get_shape());
     EXPECT_EQ(Value::from_smi(1), first->get_own_property(a_name));
@@ -1277,8 +1286,8 @@ TEST(ClassObject, ClassPropertiesPreserveInsertionOrderAndCompactOnDelete)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
-    cls->set_own_property(a_name, Value::from_smi(1));
-    cls->set_own_property(b_name, Value::from_smi(2));
+    cls->set_own_property(a_name, Value::from_smi(1)).value();
+    cls->set_own_property(b_name, Value::from_smi(2)).value();
 
     ASSERT_EQ(2u, class_property_count(cls));
     EXPECT_STREQ(L"a", class_property_name(cls, 0).extract()->data);
@@ -1289,7 +1298,7 @@ TEST(ClassObject, ClassPropertiesPreserveInsertionOrderAndCompactOnDelete)
     ASSERT_EQ(1u, class_property_count(cls));
     EXPECT_STREQ(L"b", class_property_name(cls, 0).extract()->data);
 
-    cls->set_own_property(a_name, Value::from_smi(3));
+    cls->set_own_property(a_name, Value::from_smi(3)).value();
 
     ASSERT_EQ(2u, class_property_count(cls));
     EXPECT_STREQ(L"b", class_property_name(cls, 0).extract()->data);
@@ -1319,7 +1328,7 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
 
     for(uint32_t idx = 0; idx < property_count; ++idx)
     {
-        cls->set_own_property(names[idx], Value::from_smi(idx + 1));
+        cls->set_own_property(names[idx], Value::from_smi(idx + 1)).value();
     }
 
     Shape *shape = cls->get_shape();
@@ -1492,8 +1501,21 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     for(uint32_t idx = 0; idx < std::size(readonly_names); ++idx)
     {
         Shape *before_shape = cls->get_shape();
-        EXPECT_FALSE(
-            cls->set_own_property(readonly_names[idx], other_name.raw_value()));
+        Expected<bool> stored =
+            cls->set_own_property(readonly_names[idx], other_name.raw_value());
+        if(idx == 0)
+        {
+            // __class__ reaches the fallible actual-type mutation path.
+            EXPECT_TRUE(stored.has_exception());
+            EXPECT_TRUE(context.thread()->has_pending_exception());
+            context.thread()->clear_pending_exception();
+        }
+        else
+        {
+            ASSERT_TRUE(stored.has_value());
+            EXPECT_FALSE(stored.value());
+            EXPECT_FALSE(context.thread()->has_pending_exception());
+        }
         EXPECT_FALSE(cls->delete_own_property(readonly_names[idx]));
         EXPECT_EQ(before_shape, cls->get_shape());
         EXPECT_EQ(readonly_values[idx],
@@ -1521,7 +1543,8 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
               latent_lookup.info.physical_idx);
     EXPECT_EQ(Value::not_present(), cls->get_own_property(dunder_init_name));
 
-    ASSERT_TRUE(cls->set_own_property(dunder_init_name, Value::from_smi(42)));
+    ASSERT_TRUE(
+        cls->set_own_property(dunder_init_name, Value::from_smi(42)).value());
     DescriptorLookup present_lookup =
         cls->get_shape()->lookup_descriptor_including_latent(dunder_init_name);
     ASSERT_TRUE(present_lookup.is_present());
@@ -1595,11 +1618,14 @@ TEST(ClassObject, BuiltinClassFreezesAfterMethodInstallation)
     EXPECT_TRUE(before_shape->has_flag(ShapeFlag::IsImmutable));
     EXPECT_FALSE(before_shape->allows_attribute_updates());
     EXPECT_FALSE(before_shape->allows_attribute_add_delete());
-    EXPECT_FALSE(cls->set_own_property(method_name, Value::from_smi(99)));
+    EXPECT_FALSE(
+        cls->set_own_property(method_name, Value::from_smi(99)).value());
     EXPECT_FALSE(cls->delete_own_property(other_method_name));
-    EXPECT_FALSE(cls->set_own_property(
-        context.vm().get_or_create_interned_string_value(L"new_method"),
-        Value::from_smi(47)));
+    EXPECT_FALSE(
+        cls->set_own_property(
+               context.vm().get_or_create_interned_string_value(L"new_method"),
+               Value::from_smi(47))
+            .value());
     EXPECT_EQ(before_shape, cls->get_shape());
     EXPECT_EQ(Value::from_smi(11), cls->get_own_property(method_name));
     EXPECT_EQ(Value::from_smi(23), cls->get_own_property(other_method_name));
@@ -1620,7 +1646,8 @@ TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
-    EXPECT_FALSE(cls->set_existing_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_FALSE(
+        cls->set_existing_own_property(attr_name, Value::from_smi(1)).value());
     EXPECT_TRUE(
         cls->define_own_property(attr_name, Value::from_smi(1),
                                  descriptor_flag(DescriptorFlag::StableSlot)));
@@ -1628,10 +1655,12 @@ TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
     EXPECT_FALSE(
         cls->define_own_property(attr_name, Value::from_smi(2),
                                  descriptor_flag(DescriptorFlag::StableSlot)));
-    EXPECT_TRUE(cls->set_existing_own_property(attr_name, Value::from_smi(3)));
+    EXPECT_TRUE(
+        cls->set_existing_own_property(attr_name, Value::from_smi(3)).value());
     EXPECT_EQ(Value::from_smi(3), cls->get_own_property(attr_name));
     EXPECT_FALSE(
-        cls->set_existing_own_property(missing_name, Value::from_smi(4)));
+        cls->set_existing_own_property(missing_name, Value::from_smi(4))
+            .value());
     EXPECT_EQ(Value::not_present(), cls->get_own_property(missing_name));
 }
 
@@ -1721,13 +1750,13 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
 
-    base->set_own_property(attr_name, Value::from_smi(7));
+    base->set_own_property(attr_name, Value::from_smi(7)).value();
 
     EXPECT_EQ(Value::from_smi(7), base->get_own_property(attr_name));
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
     EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(child), attr_name));
 
-    child->set_own_property(attr_name, Value::from_smi(8));
+    child->set_own_property(attr_name, Value::from_smi(8)).value();
     EXPECT_EQ(Value::from_smi(8), child->get_own_property(attr_name));
     EXPECT_EQ(Value::from_smi(8), load_attr(Value::from_oop(child), attr_name));
 
@@ -1750,7 +1779,7 @@ TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
 
     Shape *root_shape = cls->get_shape();
     EXPECT_TRUE(root_shape->has_flag(ShapeFlag::IsClassObject));
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)).value());
     Shape *shape_with_attr = cls->get_shape();
     EXPECT_NE(root_shape, shape_with_attr);
     EXPECT_TRUE(shape_with_attr->has_flag(ShapeFlag::IsClassObject));
@@ -1759,7 +1788,7 @@ TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
     StorageLocation location =
         shape_with_attr->resolve_present_property(attr_name);
     ASSERT_TRUE(location.is_found());
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(2)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(2)).value());
     EXPECT_EQ(shape_with_attr, cls->get_shape());
     EXPECT_EQ(Value::from_smi(2), cls->read_storage_location(location));
 
@@ -1899,7 +1928,7 @@ TEST(ClassObject,
     ASSERT_TRUE(child_cell->is_valid());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(child_cell->is_valid());
     EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
@@ -1934,7 +1963,7 @@ TEST(ClassObject,
     ASSERT_NE(nullptr, cell);
     ASSERT_TRUE(cell->is_valid());
 
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(cell->is_valid());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
@@ -1944,7 +1973,7 @@ TEST(ClassObject,
     ASSERT_NE(nullptr, updated_cell);
     ASSERT_TRUE(updated_cell->is_valid());
 
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(2)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(2)).value());
 
     EXPECT_FALSE(updated_cell->is_valid());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
@@ -1973,7 +2002,7 @@ TEST(ClassObject,
     ASSERT_TRUE(first_cell->is_valid());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(child->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(child->set_own_property(attr_name, Value::from_smi(1)).value());
     EXPECT_FALSE(first_cell->is_valid());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
@@ -1984,7 +2013,7 @@ TEST(ClassObject,
     EXPECT_TRUE(second_cell->is_valid());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(2)));
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(2)).value());
     EXPECT_FALSE(second_cell->is_valid());
     EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
@@ -2026,7 +2055,7 @@ TEST(ClassObject,
         cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(cell->is_valid());
     EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
@@ -2071,7 +2100,7 @@ TEST(ClassObject, ClassLookupWalksMaterializedMro)
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
 
-    base->set_own_property(method_name, Value::from_smi(7));
+    base->set_own_property(method_name, Value::from_smi(7)).value();
 
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(child), method_name));
@@ -2094,7 +2123,7 @@ TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
         child_name, 2, base, NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
-    base->set_own_property(attr_name, Value::from_smi(7));
+    base->set_own_property(attr_name, Value::from_smi(7)).value();
     Shape *shape_with_attr = child->get_shape()->derive_transition(
         attr_name, ShapeTransitionVerb::Add, flags);
     child->set_shape(shape_with_attr);

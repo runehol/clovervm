@@ -69,7 +69,7 @@ namespace cl
     static void set_module_attr(ModuleObject *module, const wchar_t *name,
                                 Value value)
     {
-        bool stored = module->set_own_property(interned_string(name), value);
+        bool stored = module->add_own_property(interned_string(name), value);
         assert(stored);
         (void)stored;
     }

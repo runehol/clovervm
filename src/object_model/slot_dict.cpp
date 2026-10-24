@@ -207,14 +207,10 @@ namespace cl
             object->lookup_own_attribute_write_descriptor(name);
         if(descriptor.is_found())
         {
-            if(store_attr_from_plan(Value::from_oop(object), descriptor.plan,
-                                    value))
+            if(CL_TRY(store_attr_from_plan(Value::from_oop(object),
+                                           descriptor.plan, value)))
             {
                 return Value::None();
-            }
-            if(active_thread()->has_pending_exception())
-            {
-                return Value::exception_marker();
             }
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError",

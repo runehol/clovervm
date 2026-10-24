@@ -78,7 +78,7 @@ namespace cl
                              const wchar_t *name, Value value)
         {
             bool stored =
-                module->set_own_property(interned_string(thread, name), value);
+                module->add_own_property(interned_string(thread, name), value);
             assert(stored);
             (void)stored;
         }
@@ -581,7 +581,8 @@ namespace cl
                 return child.value();
             }
 
-            bool stored = package->set_own_property(name, child.value());
+            bool stored =
+                CL_TRY(package->set_own_property(name, child.value()));
             assert(stored);
             (void)stored;
             return child.value();
@@ -654,10 +655,10 @@ namespace cl
                 return child.value();
             }
 
-            bool stored =
+            bool stored = CL_TRY(
                 current.value().get_ptr<ModuleObject>()->set_own_property(
                     interned_string(thread, components[component_idx]),
-                    child.value());
+                    child.value()));
             assert(stored);
             (void)stored;
             current = child.value();
@@ -770,8 +771,8 @@ namespace cl
                 {
                     return imported.value();
                 }
-                if(!target.extract()->set_own_property(name.value(),
-                                                       imported.value()))
+                if(!CL_TRY(target.extract()->set_own_property(
+                       name.value(), imported.value())))
                 {
                     return thread->set_pending_builtin_exception_string(
                         L"TypeError",
@@ -800,7 +801,7 @@ namespace cl
             {
                 continue;
             }
-            if(!target.extract()->set_own_property(name.value(), value))
+            if(!CL_TRY(target.extract()->set_own_property(name.value(), value)))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError",

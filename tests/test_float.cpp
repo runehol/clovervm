@@ -79,11 +79,14 @@ namespace cl
         for(const Sample &sample: samples)
         {
             SCOPED_TRACE(sample.value);
-            ASSERT_TRUE(code->get_defining_module().extract()->set_own_property(
-                interned_string(L"value"),
-                context.thread()
-                    ->make_object_value<Float>(sample.value)
-                    .raw_value()));
+            ASSERT_TRUE(code->get_defining_module()
+                            .extract()
+                            ->set_own_property(
+                                interned_string(L"value"),
+                                context.thread()
+                                    ->make_object_value<Float>(sample.value)
+                                    .raw_value())
+                            .value());
             for(int repetition = 0; repetition < 2; ++repetition)
             {
                 EXPECT_EQ(Value::from_smi(sample.expected),
@@ -140,12 +143,16 @@ True
 )");
         for(const wchar_t *name: {L"first", L"second"})
         {
-            ASSERT_TRUE(code->get_defining_module().extract()->set_own_property(
-                interned_string(name),
-                context.thread()
-                    ->make_object_value<Float>(
-                        std::numeric_limits<double>::quiet_NaN())
-                    .raw_value()));
+            ASSERT_TRUE(
+                code->get_defining_module()
+                    .extract()
+                    ->set_own_property(
+                        interned_string(name),
+                        context.thread()
+                            ->make_object_value<Float>(
+                                std::numeric_limits<double>::quiet_NaN())
+                            .raw_value())
+                    .value());
         }
         EXPECT_EQ(Value::True(),
                   context.thread()->run_clovervm_code_object(code));
@@ -220,8 +227,11 @@ True
             Owned<Value> value(
                 context.thread()->make_object_value<Float>(number).raw_value());
             Value expected = number != 0.0 ? Value::True() : Value::False();
-            ASSERT_TRUE(code->get_defining_module().extract()->set_own_property(
-                interned_string(L"value"), value.value()));
+            ASSERT_TRUE(
+                code->get_defining_module()
+                    .extract()
+                    ->set_own_property(interned_string(L"value"), value.value())
+                    .value());
             EXPECT_EQ(expected,
                       context.thread()->run_clovervm_code_object(code));
             auto resolution = resolver(

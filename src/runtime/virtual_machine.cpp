@@ -108,8 +108,11 @@ namespace cl
     static void install_module_value(VirtualMachine *vm, ModuleObject *module,
                                      const wchar_t *name, Value value)
     {
-        bool installed = module->set_own_property(
-            vm->get_or_create_interned_string_value(name), value);
+        bool installed = unwrap_bootstrap_expected(
+            active_vm(),
+            module->set_own_property(
+                vm->get_or_create_interned_string_value(name), value),
+            "installing module binding");
         assert(installed);
         (void)installed;
     }
@@ -1245,14 +1248,18 @@ namespace cl
                 builtins_name.raw_value(), Value::from_oop(builtins_loader),
                 builtin_origin.raw_value(), Value::None(), Value::False(),
                 empty_package.raw_value());
-        bool installed_builtins_loader =
+        bool installed_builtins_loader = unwrap_bootstrap_expected(
+            active_vm(),
             builtins_module.extract()->set_own_property(
                 get_or_create_interned_string_value(L"__loader__"),
-                Value::from_oop(builtins_loader));
-        bool installed_builtins_spec =
+                Value::from_oop(builtins_loader)),
+            "installing module binding");
+        bool installed_builtins_spec = unwrap_bootstrap_expected(
+            active_vm(),
             builtins_module.extract()->set_own_property(
                 get_or_create_interned_string_value(L"__spec__"),
-                Value::from_oop(builtins_spec));
+                Value::from_oop(builtins_spec)),
+            "installing module binding");
         assert(installed_builtins_loader);
         assert(installed_builtins_spec);
         (void)installed_builtins_loader;
@@ -1286,10 +1293,15 @@ namespace cl
         TValue<String> modules_name =
             get_or_create_interned_string_value(L"modules");
         TValue<String> path_name = get_or_create_interned_string_value(L"path");
-        bool installed_modules = sys_module_->set_own_property(
-            modules_name, Value::from_oop(imported_modules_));
-        bool installed_path =
-            sys_module_->set_own_property(path_name, Value::from_oop(path));
+        bool installed_modules = unwrap_bootstrap_expected(
+            active_vm(),
+            sys_module_->set_own_property(modules_name,
+                                          Value::from_oop(imported_modules_)),
+            "installing module binding");
+        bool installed_path = unwrap_bootstrap_expected(
+            active_vm(),
+            sys_module_->set_own_property(path_name, Value::from_oop(path)),
+            "installing module binding");
         assert(installed_modules);
         assert(installed_path);
         (void)installed_modules;
@@ -1328,14 +1340,18 @@ namespace cl
         ModuleObject *implementation_module = builtin_implementation_module_;
         auto install_implementation_binding = [&](TValue<String> name,
                                                   Value value) {
-            bool installed =
-                implementation_module->set_own_property(name, value);
+            bool installed = unwrap_bootstrap_expected(
+                active_vm(),
+                implementation_module->set_own_property(name, value),
+                "installing module binding");
             assert(installed);
             (void)installed;
         };
 
         auto install_builtin_binding = [&](TValue<String> name, Value value) {
-            bool installed = builtins_module->set_own_property(name, value);
+            bool installed = unwrap_bootstrap_expected(
+                active_vm(), builtins_module->set_own_property(name, value),
+                "installing module binding");
             assert(installed);
             (void)installed;
         };

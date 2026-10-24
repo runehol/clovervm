@@ -872,7 +872,7 @@ namespace cl
         for(Value replacement: {Value::None(), Value::from_smi(7),
                                 Value::from_oop(context.vm().int_class())})
         {
-            ASSERT_TRUE(builtins->set_own_property(name, replacement));
+            ASSERT_TRUE(builtins->set_own_property(name, replacement).value());
             EXPECT_EQ(canonical,
                       context.thread()->class_for_builtin_name(L"TypeError"));
             EXPECT_TRUE(context.thread()

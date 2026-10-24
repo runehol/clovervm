@@ -76,7 +76,8 @@ TEST(ModuleGlobal, ReadModuleSlotHitIsCacheable)
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.make_test_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(42)).value());
 
     ModuleGlobalReadDescriptor descriptor =
         resolve_module_global_read_descriptor(module, global_name);
@@ -107,7 +108,8 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
         module_name, context.vm().global_builtins_module().raw_value());
     ModuleObject *builtins = context.make_test_module_object(
         builtins_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(7)));
+    ASSERT_TRUE(
+        builtins->set_own_property(global_name, Value::from_smi(7)).value());
     module->set_builtins_binding(Value::from_oop(builtins));
 
     ModuleGlobalReadDescriptor descriptor =
@@ -197,7 +199,8 @@ TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.make_test_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(1)).value());
 
     ModuleGlobalWriteDescriptor descriptor =
         resolve_module_global_write_descriptor(module, global_name);
@@ -257,7 +260,8 @@ TEST(ModuleGlobal, DeleteExistingModuleSlotIsUncacheable)
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.make_test_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(1)).value());
 
     ModuleGlobalDeleteDescriptor descriptor =
         resolve_module_global_delete_descriptor(module, global_name);
@@ -332,7 +336,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.make_test_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(42)).value());
 
     CodeObject *code = make_module_global_test_code(
         context, module, L"<module-global-load-test>",
@@ -366,7 +371,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
         module_name, context.vm().global_builtins_module().raw_value());
     ModuleObject *builtins = context.make_test_module_object(
         builtins_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(7)));
+    ASSERT_TRUE(
+        builtins->set_own_property(global_name, Value::from_smi(7)).value());
     module->set_builtins_binding(Value::from_oop(builtins));
 
     CodeObject *code = make_module_global_test_code(
@@ -452,7 +458,8 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
     EXPECT_TRUE(cache.matches());
     EXPECT_EQ(module, cache.store_existing.storage_owner);
 
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(5)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(5)).value());
     EXPECT_EQ(Value::from_smi(11),
               context.thread()->run_clovervm_code_object(code));
     EXPECT_EQ(Value::from_smi(11), module->get_own_property(global_name));
@@ -473,8 +480,10 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
         module_name, context.vm().global_builtins_module().raw_value());
     ModuleObject *builtins = context.make_test_module_object(
         builtins_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(2)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(1)).value());
+    ASSERT_TRUE(
+        builtins->set_own_property(global_name, Value::from_smi(2)).value());
     module->set_builtins_binding(Value::from_oop(builtins));
 
     CodeObject *code = make_module_global_test_code(
@@ -536,7 +545,8 @@ TEST(ModuleGlobalBytecode, CachedLoadReadsReboundModuleValue)
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.make_test_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(1)).value());
 
     CodeObject *code = make_module_global_test_code(
         context, module, L"<module-global-cached-rebind-test>",
@@ -572,8 +582,10 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
         module_name, context.vm().global_builtins_module().raw_value());
     ModuleObject *builtins = context.make_test_module_object(
         builtins_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(2)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(1)).value());
+    ASSERT_TRUE(
+        builtins->set_own_property(global_name, Value::from_smi(2)).value());
     module->set_builtins_binding(Value::from_oop(builtins));
 
     CodeObject *code = make_module_global_test_code(
@@ -614,7 +626,8 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
         module_name, context.vm().global_builtins_module().raw_value());
     ModuleObject *builtins = context.make_test_module_object(
         builtins_name, context.vm().global_builtins_module().raw_value());
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(1)));
+    ASSERT_TRUE(
+        builtins->set_own_property(global_name, Value::from_smi(1)).value());
     module->set_builtins_binding(Value::from_oop(builtins));
 
     CodeObject *code = make_module_global_test_code(
@@ -657,9 +670,11 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
         second_builtins_name,
         context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(
-        first_builtins->set_own_property(global_name, Value::from_smi(1)));
+        first_builtins->set_own_property(global_name, Value::from_smi(1))
+            .value());
     ASSERT_TRUE(
-        second_builtins->set_own_property(global_name, Value::from_smi(2)));
+        second_builtins->set_own_property(global_name, Value::from_smi(2))
+            .value());
     module->set_builtins_binding(Value::from_oop(first_builtins));
 
     CodeObject *code = make_module_global_test_code(

@@ -3791,7 +3791,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
         cls_name, 2, test_context.vm().object_class(),
         NativeLayoutId::Instance);
     Instance *first = test_context.thread()->make_internal_raw<Instance>(cls);
-    ASSERT_TRUE(first->set_own_property(value_name, Value::from_smi(7)));
+    ASSERT_TRUE(
+        first->set_own_property(value_name, Value::from_smi(7)).value());
 
     CodeObject *call_code = test_context.compile_file(L"clear(obj)\n"
                                                       L"42\n");
@@ -3815,7 +3816,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     EXPECT_TRUE(cache.lookup_validity_cell->is_valid());
 
     Instance *second = test_context.thread()->make_internal_raw<Instance>(cls);
-    ASSERT_TRUE(second->set_own_property(value_name, Value::from_smi(8)));
+    ASSERT_TRUE(
+        second->set_own_property(value_name, Value::from_smi(8)).value());
     store_global_to_module_for_test(test_context, call_code, L"obj",
                                     Value::from_oop(second));
     EXPECT_EQ(Value::from_smi(42),
@@ -3879,7 +3881,7 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
         leaf_name, 4, mid, NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
-    ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
+    ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)).value());
 
     CodeObject *read_code = test_context.compile_file(L"obj.value\n");
     store_global_to_module_for_test(test_context, read_code, L"obj",
@@ -3888,23 +3890,23 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     EXPECT_EQ(Value::from_smi(1),
               test_context.thread()->run_clovervm_code_object(read_code));
 
-    EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(2)));
+    EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(2)).value());
     EXPECT_EQ(Value::from_smi(2),
               test_context.thread()->run_clovervm_code_object(read_code));
 
-    EXPECT_TRUE(mid->set_own_property(value_name, Value::from_smi(3)));
+    EXPECT_TRUE(mid->set_own_property(value_name, Value::from_smi(3)).value());
     EXPECT_EQ(Value::from_smi(3),
               test_context.thread()->run_clovervm_code_object(read_code));
 
-    EXPECT_TRUE(leaf->set_own_property(value_name, Value::from_smi(4)));
+    EXPECT_TRUE(leaf->set_own_property(value_name, Value::from_smi(4)).value());
     EXPECT_EQ(Value::from_smi(4),
               test_context.thread()->run_clovervm_code_object(read_code));
 
-    EXPECT_TRUE(obj->set_own_property(value_name, Value::from_smi(5)));
+    EXPECT_TRUE(obj->set_own_property(value_name, Value::from_smi(5)).value());
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(read_code));
 
-    EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(6)));
+    EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(6)).value());
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(read_code));
 
@@ -3960,7 +3962,7 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
                                           L"def own_method():\n"
                                           L"    return 5\n");
 
-    ASSERT_TRUE(base->set_own_property(method_name, base_method_1));
+    ASSERT_TRUE(base->set_own_property(method_name, base_method_1).value());
 
     CodeObject *call_code = test_context.compile_file(L"obj.method()\n");
     store_global_to_module_for_test(test_context, call_code, L"obj",
@@ -3969,23 +3971,23 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
     EXPECT_EQ(Value::from_smi(1),
               test_context.thread()->run_clovervm_code_object(call_code));
 
-    EXPECT_TRUE(base->set_own_property(method_name, base_method_2));
+    EXPECT_TRUE(base->set_own_property(method_name, base_method_2).value());
     EXPECT_EQ(Value::from_smi(2),
               test_context.thread()->run_clovervm_code_object(call_code));
 
-    EXPECT_TRUE(mid->set_own_property(method_name, mid_method));
+    EXPECT_TRUE(mid->set_own_property(method_name, mid_method).value());
     EXPECT_EQ(Value::from_smi(3),
               test_context.thread()->run_clovervm_code_object(call_code));
 
-    EXPECT_TRUE(leaf->set_own_property(method_name, leaf_method));
+    EXPECT_TRUE(leaf->set_own_property(method_name, leaf_method).value());
     EXPECT_EQ(Value::from_smi(4),
               test_context.thread()->run_clovervm_code_object(call_code));
 
-    EXPECT_TRUE(obj->set_own_property(method_name, own_method));
+    EXPECT_TRUE(obj->set_own_property(method_name, own_method).value());
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(call_code));
 
-    EXPECT_TRUE(base->set_own_property(method_name, base_method_1));
+    EXPECT_TRUE(base->set_own_property(method_name, base_method_1).value());
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(call_code));
 
@@ -4025,7 +4027,7 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
         leaf_name, 4, mid, NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
-    ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
+    ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)).value());
 
     CodeObject *read_code = test_context.compile_file(L"obj.value\n");
     store_global_to_module_for_test(test_context, read_code, L"obj",
@@ -4631,7 +4633,7 @@ TEST(Interpreter, call_clovervm_method_binds_class_function_receiver)
     Value method = make_test_function(test_context, L"method",
                                       L"def method(self, value):\n"
                                       L"    return value + 5\n");
-    ASSERT_TRUE(cls->set_own_property(method_name, method));
+    ASSERT_TRUE(cls->set_own_property(method_name, method).value());
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
 
     Value actual = test_context.thread()->call_clovervm_method(
@@ -4658,7 +4660,7 @@ TEST(Interpreter, call_clovervm_method_calls_unbound_own_function)
     Value method = make_test_function(test_context, L"method",
                                       L"def method():\n"
                                       L"    return 42\n");
-    ASSERT_TRUE(instance->set_own_property(method_name, method));
+    ASSERT_TRUE(instance->set_own_property(method_name, method).value());
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
 
     Value actual = test_context.thread()->call_clovervm_method(
@@ -4685,7 +4687,7 @@ TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
     Value method = make_test_function(test_context, L"method",
                                       L"def method(self, value=32):\n"
                                       L"    return value + 10\n");
-    ASSERT_TRUE(cls->set_own_property(method_name, method));
+    ASSERT_TRUE(cls->set_own_property(method_name, method).value());
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
 
     Value actual = test_context.thread()->call_clovervm_method(
@@ -4715,8 +4717,9 @@ TEST(Interpreter, value_repr_uses_special_method_lookup)
     Value instance_repr = make_test_function(test_context, L"instance_repr",
                                              L"def instance_repr():\n"
                                              L"    return 'instance repr'\n");
-    ASSERT_TRUE(cls->set_own_property(dunder_repr_name, class_repr));
-    ASSERT_TRUE(instance->set_own_property(dunder_repr_name, instance_repr));
+    ASSERT_TRUE(cls->set_own_property(dunder_repr_name, class_repr).value());
+    ASSERT_TRUE(
+        instance->set_own_property(dunder_repr_name, instance_repr).value());
 
     Value actual = value_to_repr_string(Value::from_oop(instance));
 
@@ -4936,7 +4939,7 @@ TEST(Interpreter, call_clovervm_method_reports_non_callable_method)
         NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
-    ASSERT_TRUE(cls->set_own_property(method_name, Value::from_smi(7)));
+    ASSERT_TRUE(cls->set_own_property(method_name, Value::from_smi(7)).value());
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
 
     Value actual = test_context.thread()->call_clovervm_method(
@@ -6958,7 +6961,8 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     EXPECT_EQ(add_docstring.value().raw_value(),
               load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(
-        str_class->set_own_property(dunder_str_name, Value::from_smi(99)));
+        str_class->set_own_property(dunder_str_name, Value::from_smi(99))
+            .value());
 }
 
 TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
@@ -7716,8 +7720,9 @@ TEST(Interpreter,
     expect_thread_python_error(context.thread(), L"NameError",
                                L"name 'list' is not defined");
     context.thread()->clear_pending_exception();
-    ASSERT_TRUE(implementation->set_own_property(interned_string(L"list"),
-                                                 original_list));
+    ASSERT_TRUE(implementation
+                    ->set_own_property(interned_string(L"list"), original_list)
+                    .value());
     EXPECT_EQ(original_list, context.thread()->run_clovervm_code_object(code));
 }
 
@@ -8013,8 +8018,10 @@ TEST(Interpreter,
     for(size_t idx = 0; idx < std::size(names); ++idx)
     {
         classes[idx] = context.thread()->class_for_builtin_name(names[idx]);
-        ASSERT_TRUE(builtins->set_own_property(interned_string(names[idx]),
-                                               Value::None()));
+        ASSERT_TRUE(
+            builtins
+                ->set_own_property(interned_string(names[idx]), Value::None())
+                .value());
     }
     // Compile after rebinding: with-statement lowering embeds a canonical
     // TypeError, and runtime assertion/global/native errors must do the same.
@@ -8070,8 +8077,10 @@ True
     {
         TValue<String> alias = context.vm().get_or_create_interned_string_value(
             std::wstring(L"Original") + names[idx]);
-        ASSERT_TRUE(code->get_defining_module().extract()->set_own_property(
-            alias, Value::from_oop(classes[idx])));
+        ASSERT_TRUE(code->get_defining_module()
+                        .extract()
+                        ->set_own_property(alias, Value::from_oop(classes[idx]))
+                        .value());
     }
     EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
 }
@@ -9062,4 +9071,52 @@ assert (left < right).marker == 7
     context.vm().request_safepoint();
     ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, class_body_dunder_class_shadowing_is_explicitly_unsupported)
+{
+    const wchar_t *bases[] = {L"", L"(object)", L"(int)"};
+    const wchar_t *values[] = {L"object", L"Other", L"42"};
+    for(const wchar_t *base: bases)
+    {
+        for(const wchar_t *value: values)
+        {
+            std::wstring source = L"class Other:\n    pass\nclass X";
+            source += base;
+            source += L":\n    __class__ = ";
+            source += value;
+            source += L"\n";
+            expect_python_error(
+                source.c_str(), L"TypeError",
+                L"__class__ shadowing in class bodies is not supported");
+        }
+    }
+}
+
+TEST(Interpreter,
+     class_body_dunder_class_rejection_is_catchable_and_preserves_binding)
+{
+    test::FileRunner runner(LR"(
+X = 17
+for i in range(3):
+    try:
+        class X(int):
+            __class__ = object
+        assert False
+    except TypeError as error:
+        assert str(error) == "__class__ shadowing in class bodies is not supported"
+    assert X == 17
+class Valid:
+    pass
+obj = Valid()
+assert obj.__class__ is Valid
+assert Valid.__class__ is type
+try:
+    obj.__class__ = 42
+    assert False
+except TypeError as error:
+    assert str(error) == "__class__ assignment requires a class object"
+assert obj.__class__ is Valid
+)");
+    EXPECT_FALSE(runner.return_value.is_exception_marker());
 }

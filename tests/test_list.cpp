@@ -374,12 +374,16 @@ class T(tuple):
     Owned<TValue<Tuple>> tuple(
         thread->make_internal_value<Tuple>(cls(L"T"), 1));
     tuple.extract()->initialize_item_unchecked(0, Value::from_smi(2));
-    ASSERT_TRUE(module.extract()->set_own_property(
-        context.vm().get_or_create_interned_string_value(L"xs"),
-        list.raw_value()));
-    ASSERT_TRUE(module.extract()->set_own_property(
-        context.vm().get_or_create_interned_string_value(L"ys"),
-        tuple.raw_value()));
+    ASSERT_TRUE(module.extract()
+                    ->set_own_property(
+                        context.vm().get_or_create_interned_string_value(L"xs"),
+                        list.raw_value())
+                    .value());
+    ASSERT_TRUE(module.extract()
+                    ->set_own_property(
+                        context.vm().get_or_create_interned_string_value(L"ys"),
+                        tuple.raw_value())
+                    .value());
     auto compiled =
         thread->compile_in_module(LR"(
 a = __clover_to_exact_list__(xs)

@@ -683,10 +683,10 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     ASSERT_EQ(0u, instance->native_layout_aux_count_value());
-    ASSERT_TRUE(instance->set_own_property(a_name, Value::from_smi(1)));
+    ASSERT_TRUE(instance->set_own_property(a_name, Value::from_smi(1)).value());
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
-    ASSERT_TRUE(instance->set_own_property(b_name, Value::from_smi(2)));
-    ASSERT_TRUE(instance->set_own_property(c_name, Value::from_smi(3)));
+    ASSERT_TRUE(instance->set_own_property(b_name, Value::from_smi(2)).value());
+    ASSERT_TRUE(instance->set_own_property(c_name, Value::from_smi(3)).value());
 
     EXPECT_EQ(Value::from_smi(1), instance->get_own_property(a_name));
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
@@ -707,7 +707,8 @@ TEST(NativeLayoutDescriptor,
         cls_name, 0, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    ASSERT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+    ASSERT_TRUE(
+        instance->set_own_property(attr_name, Value::from_smi(1)).value());
 
     EXPECT_EQ(Value::from_smi(1), instance->get_own_property(attr_name));
     EXPECT_EQ(0u, instance->native_layout_aux_count_value());

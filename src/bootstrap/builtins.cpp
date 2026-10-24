@@ -144,13 +144,10 @@ namespace cl
                                  Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        if(store_attr(obj, TValue<String>::from_value_assumed(name), value))
+        if(CL_TRY(store_attr(obj, TValue<String>::from_value_assumed(name),
+                             value)))
         {
             return Value::None();
-        }
-        if(active_thread()->has_pending_exception())
-        {
-            return Value::exception_marker();
         }
         return active_thread()->set_pending_builtin_exception_string(
             L"AttributeError", L"cannot set attribute");
@@ -330,8 +327,11 @@ namespace cl
                                                  const wchar_t *name,
                                                  Value value)
     {
-        bool installed = module->set_own_property(
-            vm->get_or_create_interned_string_value(name), value);
+        bool installed = unwrap_bootstrap_expected(
+            active_vm(),
+            module->set_own_property(
+                vm->get_or_create_interned_string_value(name), value),
+            "installing module binding");
         assert(installed);
         (void)installed;
     }
