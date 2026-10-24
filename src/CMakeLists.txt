@@ -239,6 +239,8 @@ add_library(libclovervm_objects OBJECT
     compiler/tokenizer.h
     builtin_types/tuple.cpp
     builtin_types/tuple.h
+    builtin_types/string_iterator.cpp
+    builtin_types/string_iterator.h
     builtin_types/tuple_iterator.cpp
     builtin_types/tuple_iterator.h
     builtin_types/unicode.cpp

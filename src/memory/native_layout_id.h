@@ -21,6 +21,7 @@ namespace cl
         Function,
         RangeIterator,
         TupleIterator,
+        StringIterator,
         ListIterator,
         DictKeysView,
         DictValuesView,

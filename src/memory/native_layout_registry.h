@@ -15,6 +15,7 @@
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/str.h"
+#include "builtin_types/string_iterator.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "bytecode/code_object.h"
@@ -36,6 +37,7 @@
     V(List);                                                                   \
     V(Tuple);                                                                  \
     V(RangeIterator);                                                          \
+    V(StringIterator);                                                         \
     V(TupleIterator);                                                          \
     V(ListIterator);                                                           \
     V(DictKeysView);                                                           \

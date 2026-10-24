@@ -5,6 +5,7 @@
 #include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
+#include "builtin_types/string_iterator.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/unicode.h"
 #include "object_model/class_object.h"
@@ -458,6 +459,15 @@ namespace cl
     {
         return normalize_search_range(self.get_ptr<String>()->count.extract(),
                                       start_value, end_value, start, end);
+    }
+
+    [[nodiscard]] static Value native_str_iter(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__iter__"));
+        return thread
+            ->make_object_value<StringIterator>(
+                TValue<String>::from_value_assumed(self))
+            .raw_value();
     }
 
     static Value native_str_getitem(ThreadState *thread, Value self,
@@ -1771,6 +1781,8 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_str_repr,
                                      L"Return repr(self)."),
+            builtin_intrinsic_method(L"__iter__", native_str_iter,
+                                     L"Implement iter(self)."),
             builtin_intrinsic_method(L"__len__", native_str_len,
                                      L"Return len(self)."),
             with_trusted_handler_resolver(

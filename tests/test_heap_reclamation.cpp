@@ -2,9 +2,11 @@
 
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
+#include "builtin_types/string_iterator.h"
 #include "builtin_types/tuple.h"
 #include "memory/global_heap.h"
 #include "memory/heap_reclamation.h"
+#include "memory/native_layout_descriptor.h"
 #include "object_model/overflow_slots.h"
 #include "object_model/refcount.h"
 #include "object_model/shape.h"
@@ -234,6 +236,39 @@ namespace cl
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(owner));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
+    }
+
+    TEST(HeapReclamation, StringIteratorRetainsSourceAndReclaimsItWithOwner)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        uint64_t baseline = heap.count_valid_objects_slow();
+        TValue<String> source = thread->make_object_value<String>(L"source");
+        String *source_ptr = source.extract();
+        StringIterator *iterator =
+            thread->make_object_raw<StringIterator>(source);
+        ASSERT_EQ(1, source_ptr->refcount);
+        EXPECT_EQ(sizeof(StringIterator), object_size_in_bytes(iterator));
+
+        // Only the iterator is rooted; the source must survive reclamation.
+        Value *slot = thread->clover_frame_sentinel() - 1;
+        *slot = Value::from_oop(iterator);
+        thread->publish_safepoint_scan_record(slot, Value::not_present());
+        thread->add_to_zero_count_table_if_needed(iterator);
+        context.vm().run_heap_reclamation();
+        EXPECT_EQ(baseline + 2, heap.count_valid_objects_slow());
+        EXPECT_EQ(1, source_ptr->refcount);
+        EXPECT_EQ(std::wstring_view(L"source"), string_view(iterator->string));
+
+        // Dropping the iterator reclaims both objects via its Member edge.
+        *slot = Value::not_present();
+        context.vm().run_heap_reclamation();
+        EXPECT_EQ(baseline, heap.count_valid_objects_slow());
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(iterator));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(source_ptr));
     }
 
     TEST(HeapReclamation, NativeObjectOverflowStorageReleasesChild)
