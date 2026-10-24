@@ -7,7 +7,7 @@
 | Implementation | Implemented |
 | Scope | Dictionary representation, probing, Python dispatch, namespaces, and C API behavior |
 | Owning layers | Runtime dictionary type, object protocols, namespaces, interpreter, and C API |
-| Validated against | `8cf6c1c` (2026-07-10) |
+| Validated against | Working-tree changes, with CPython 3.14.5 behavioral probes |
 | Supersedes | N/A |
 
 Most dictionaries in Python programs are string-keyed. Module namespaces,
@@ -125,6 +125,35 @@ Regular methods do not currently have the same trusted-handler mechanism.
 `setdefault` and `pop` therefore contain explicit string-keyed probes before
 their general paths. Other direct or uncached calls into generated methods may
 conservatively promote before continuing through general bytecode.
+
+## Equality And Missing-Key Errors
+
+`__eq__` is a generated managed function. It validates builtin dict receivers
+and returns `NotImplemented` for non-dict operands. Payload comparison uses raw
+entry counts and stored key/value/hash entries, including for dict subclasses;
+it does not call overridable `items`, `__len__`, or `__getitem__` methods.
+
+Traversal uses `DictNextEntry` and a numeric left-entry index, re-reading storage
+after callbacks. The right lookup reuses the stored canonical hash and the
+existing generation-checked probe/restart protocol. Key identity precedes key
+equality; the stored right key is the left comparison operand. Value identity
+precedes left-value/right-value equality and truth conversion. Key/value
+comparisons execute in managed bytecode, with current entries rooted in frame
+registers across callbacks. Neither side is snapshotted or made fail-fast on
+mutation. `__ne__` calls the fixed dict equality code and inverts its boolean
+result, preserving `NotImplemented` and builtin payload behavior when a subclass
+overrides `__eq__`.
+
+General recursion-limit enforcement remains unsupported. Identical recursive
+values can succeed through identity checks, but distinct cyclic or deeply nested
+structures can exhaust the VM stack instead of reliably raising `RecursionError`.
+
+Lookup, deletion, and missing `pop` paths construct `KeyError(key)` with the
+original key object, using the same payload contract in generated methods and
+native semantic APIs. This avoids a second lookup just to recover the missing
+key. Callback-raised exceptions propagate unchanged. Empty `popitem` errors do
+not use the missing-key helper. Exception chaining/cause metadata is a separate
+VM limitation; these changes do not add it.
 
 ## Trusted Dict Opcodes
 

@@ -13,6 +13,7 @@
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
 #include "object_model/shape.h"
+#include "runtime/exception_object.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -468,9 +469,16 @@ namespace cl
             L"TypeError", L"dict.pop expects a dict receiver");
     }
 
-    static Value dict_getitem_key_error(ThreadState *thread)
+    [[nodiscard]] static Value dict_missing_key_error(ThreadState *thread,
+                                                      Value key)
     {
-        return thread->set_pending_builtin_exception_none(L"KeyError");
+        Owned<Value> live_key(key);
+        return thread->set_pending_exception_object(
+            make_exception_object_with_arg(
+                thread,
+                TValue<ClassObject>::from_oop(
+                    thread->class_for_builtin_name(L"KeyError")),
+                live_key.value()));
     }
 
     static Expected<void> emit_native_error(CodeObjectBuilder &code,
@@ -480,6 +488,216 @@ namespace cl
             code.emit_call_intrinsic(0, Bytecode::CallIntrinsic0, target_idx));
         CL_TRY(code.emit_return_or_raise_exception(0));
         return Expected<void>::ok();
+    }
+
+    static Value dict_method_missing_key_error(ThreadState *thread, Value,
+                                               Value key)
+    {
+        return dict_missing_key_error(thread, key);
+    }
+
+    static Expected<void> emit_missing_key_error(CodeObjectBuilder &code,
+                                                 uint8_t target_idx)
+    {
+        CL_TRY(
+            code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2, target_idx));
+        CL_TRY(code.emit_return_or_raise_exception(0));
+        return Expected<void>::ok();
+    }
+
+    static Value dict_equal_receiver_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.__eq__ expects a dict receiver");
+    }
+
+    static Value dict_not_equal_receiver_error(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.__ne__ expects a dict receiver");
+    }
+
+    static Value dict_sizes_match(ThreadState *, Value self, Value other)
+    {
+        assert(can_convert_to<Dict>(self) && can_convert_to<Dict>(other));
+        return self.get_ptr<Dict>()->size() == other.get_ptr<Dict>()->size()
+                   ? Value::True()
+                   : Value::False();
+    }
+
+    static Expected<TValue<Function>>
+    make_dict_equal_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), scope,
+            vm->get_or_create_interned_string_value(L"<dict.__eq__>"));
+        code.configure_positional_function(2);
+        code.function_signature().n_pos_or_kw_parameters = 0;
+        uint8_t dict_class =
+            CL_TRY(code.allocate_constant(Value::from_oop(vm->dict_class())));
+        uint8_t not_implemented =
+            CL_TRY(code.allocate_constant(Value::NotImplemented()));
+        NativeFunctionTarget receiver_error;
+        receiver_error.fixed0 = dict_equal_receiver_error;
+        uint8_t receiver_error_idx =
+            CL_TRY(code.add_native_function_target(receiver_error));
+        NativeFunctionTarget size_target;
+        size_target.fixed2 = dict_sizes_match;
+        uint8_t size_idx = CL_TRY(code.add_native_function_target(size_target));
+        {
+            CodeObjectBuilder::TemporaryReg temps(code, 10);
+            uint32_t index = temps;
+            uint32_t entry = temps + 1;  // key, value, stored hash
+            uint32_t value = entry + 1;
+            uint32_t hash = entry + 2;
+            uint32_t generation = temps + 4;
+            uint32_t hash_idx = temps + 5;
+            uint32_t probe_result = temps + 6;
+            uint32_t candidate_key = temps + 7;
+            uint32_t equal = temps + 8;
+            uint32_t right_value = temps + 9;
+            JumpTarget receiver_ok(&code), unsupported(&code), loop(&code),
+                restart(&code), probe(&code), advance(&code), hit(&code),
+                false_result(&code), true_result(&code);
+            CL_TRY(code.emit_ldar(0, 0));
+            CL_TRY(code.emit_is_instance_of_known_class(0, dict_class));
+            CL_TRY(code.emit_jump_if_true(0, receiver_ok));
+            CL_TRY(emit_native_error(code, receiver_error_idx));
+            CL_TRY(receiver_ok.resolve());
+            CL_TRY(code.emit_ldar(0, 1));
+            CL_TRY(code.emit_is_instance_of_known_class(0, dict_class));
+            CL_TRY(code.emit_jump_if_false(0, unsupported));
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2,
+                                            size_idx));
+            CL_TRY(code.emit_jump_if_false(0, false_result));
+            CL_TRY(code.emit_lda_smi(0, 0));
+            CL_TRY(code.emit_star(0, index));
+            CL_TRY(loop.resolve());
+            // Each step re-reads storage after callbacks. Frame slots keep the
+            // current key and both values alive through key/value comparisons.
+            CL_TRY(code.emit_dict_next_entry(0, 0, index, entry));
+            CL_TRY(code.emit_jump_if_false(0, true_result));
+            CL_TRY(restart.resolve());
+            CL_TRY(code.emit_ldar(0, hash));
+            CL_TRY(code.emit_dict_probe_start(0, 1, generation, hash_idx));
+            CL_TRY(probe.resolve());
+            CL_TRY(code.emit_ldar(0, hash));
+            CL_TRY(code.emit_dict_probe_for_lookup(0, 1, hash_idx));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ProbeMiss, false_result));
+            CL_TRY(code.emit_jump_if_equal_smi(
+                0, TrustedDictBytecodeAccess::ProbeContinue, advance));
+            CL_TRY(code.emit_star(0, probe_result));
+            CL_TRY(code.emit_dict_entry_key(0, 1));
+            CL_TRY(code.emit_star(0, candidate_key));
+            CL_TRY(code.emit_ldar(0, entry));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, candidate_key,
+                                          OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_jump_if_true(0, hit));
+            CL_TRY(code.emit_ldar(0, entry));
+            CL_TRY(code.emit_operator_reg(
+                0, Bytecode::TestEqual, candidate_key,
+                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+            CL_TRY(code.emit_to_bool(0));
+            CL_TRY(code.emit_star(0, equal));
+            CL_TRY(code.emit_dict_entry_still_matches(
+                0, 1, generation, hash_idx, probe_result, candidate_key));
+            CL_TRY(code.emit_jump_if_false(0, restart));
+            CL_TRY(code.emit_ldar(0, equal));
+            CL_TRY(code.emit_jump_if_true(0, hit));
+            CL_TRY(advance.resolve());
+            CL_TRY(code.emit_ldar(0, hash_idx));
+            CL_TRY(code.emit_dict_probe_advance(0, 1));
+            CL_TRY(code.emit_star(0, hash_idx));
+            CL_TRY(code.emit_jump(0, probe));
+            CL_TRY(hit.resolve());
+            CL_TRY(code.emit_ldar(0, probe_result));
+            CL_TRY(code.emit_dict_entry_value(0, 1));
+            CL_TRY(code.emit_star(0, right_value));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, value,
+                                          OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_jump_if_true(0, loop));
+            CL_TRY(code.emit_ldar(0, right_value));
+            CL_TRY(code.emit_operator_reg(
+                0, Bytecode::TestEqual, value,
+                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+            CL_TRY(code.emit_to_bool(0));
+            CL_TRY(code.emit_jump_if_false(0, false_result));
+            CL_TRY(code.emit_jump(0, loop));
+            CL_TRY(true_result.resolve());
+            CL_TRY(code.emit_lda_true(0));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(false_result.resolve());
+            CL_TRY(code.emit_lda_false(0));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(unsupported.resolve());
+            CL_TRY(code.emit_lda_constant(0, not_implemented));
+            CL_TRY(code.emit_return(0));
+        }
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
+    }
+
+    static Expected<TValue<Function>>
+    make_dict_not_equal_function(VirtualMachine *vm, TValue<Function> equal)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), scope,
+            vm->get_or_create_interned_string_value(L"<dict.__ne__>"));
+        code.configure_positional_function(2);
+        code.function_signature().n_pos_or_kw_parameters = 0;
+        uint8_t dict_class =
+            CL_TRY(code.allocate_constant(Value::from_oop(vm->dict_class())));
+        uint8_t equal_code = CL_TRY(
+            code.allocate_constant(equal.extract()->code_object.raw_value()));
+        uint8_t not_implemented =
+            CL_TRY(code.allocate_constant(Value::NotImplemented()));
+        NativeFunctionTarget receiver_error;
+        receiver_error.fixed0 = dict_not_equal_receiver_error;
+        uint8_t receiver_error_idx =
+            CL_TRY(code.add_native_function_target(receiver_error));
+        JumpTarget receiver_ok(&code);
+        CL_TRY(code.emit_ldar(0, 0));
+        CL_TRY(code.emit_is_instance_of_known_class(0, dict_class));
+        CL_TRY(code.emit_jump_if_true(0, receiver_ok));
+        CL_TRY(emit_native_error(code, receiver_error_idx));
+        CL_TRY(receiver_ok.resolve());
+        {
+            CodeObjectBuilder::TemporaryReg args(code, 2,
+                                                 RegisterAlignment::CallFrame);
+            CL_TRY(code.emit_mov(0, args, 0));
+            CL_TRY(code.emit_mov(0, args + 1, 1));
+            CL_TRY(code.emit_call_code_object(0, equal_code, args, 2));
+        }
+        // The equality result is a bool or NotImplemented. Check the singleton
+        // with a separate temporary, then invert only the bool result.
+        {
+            CodeObjectBuilder::TemporaryReg result(code);
+            CL_TRY(code.emit_star(0, result));
+            CL_TRY(code.emit_lda_constant(0, not_implemented));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, result,
+                                          OperatorBytecodeFormat::Plain));
+            JumpTarget invert(&code);
+            CL_TRY(code.emit_jump_if_false(0, invert));
+            CL_TRY(code.emit_ldar(0, result));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(invert.resolve());
+            CL_TRY(code.emit_ldar(0, result));
+            CL_TRY(code.emit_to_bool_not(0));
+            CL_TRY(code.emit_return(0));
+        }
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none()));
     }
 
     static Expected<TValue<Function>> make_dict_read_function(
@@ -532,7 +750,7 @@ namespace cl
         uint8_t receiver_error_target_idx =
             CL_TRY(code.add_native_function_target(receiver_error_target));
         NativeFunctionTarget key_error_target;
-        key_error_target.fixed0 = dict_getitem_key_error;
+        key_error_target.fixed2 = dict_method_missing_key_error;
         uint8_t key_error_target_idx =
             CL_TRY(code.add_native_function_target(key_error_target));
 
@@ -637,7 +855,7 @@ namespace cl
             }
             else
             {
-                CL_TRY(emit_native_error(code, key_error_target_idx));
+                CL_TRY(emit_missing_key_error(code, key_error_target_idx));
             }
         }
 
@@ -903,7 +1121,7 @@ namespace cl
         uint8_t receiver_error_target_idx =
             CL_TRY(code.add_native_function_target(receiver_error_target));
         NativeFunctionTarget key_error_target;
-        key_error_target.fixed0 = dict_getitem_key_error;
+        key_error_target.fixed2 = dict_method_missing_key_error;
         uint8_t key_error_target_idx =
             CL_TRY(code.add_native_function_target(key_error_target));
 
@@ -1038,7 +1256,7 @@ namespace cl
                 CL_TRY(code.emit_return(0));
                 CL_TRY(key_error.resolve());
             }
-            CL_TRY(emit_native_error(code, key_error_target_idx));
+            CL_TRY(emit_missing_key_error(code, key_error_target_idx));
         }
 
         TValue<CodeObject> code_object =
@@ -1422,6 +1640,20 @@ namespace cl
                 assert(stored);
                 (void)stored;
             };
+        TValue<Function> equal = unwrap_bootstrap_expected(
+            vm, make_dict_equal_function(vm), "creating dict equality");
+        TValue<Function> not_equal = unwrap_bootstrap_expected(
+            vm, make_dict_not_equal_function(vm, equal),
+            "creating dict inequality");
+        bool equal_stored = cls->define_own_property(
+            vm->get_or_create_interned_string_value(L"__eq__"),
+            equal.raw_value(), method_flags);
+        bool not_equal_stored = cls->define_own_property(
+            vm->get_or_create_interned_string_value(L"__ne__"),
+            not_equal.raw_value(), method_flags);
+        assert(equal_stored && not_equal_stored);
+        (void)equal_stored;
+        (void)not_equal_stored;
         install_generated(L"__getitem__", DictReadKind::GetItem,
                           resolve_trusted_dict_getitem_handler);
         install_generated_insert(L"__setitem__", DictInsertKind::SetItem,
@@ -1665,10 +1897,13 @@ namespace cl
 
     Expected<Value> Dict::get_item(ThreadState *thread, Value key)
     {
-        ItemResult result = CL_TRY(get_item_if_present(thread, key));
+        Owned<Value> live_key(key);
+        ItemResult result =
+            CL_TRY(get_item_if_present(thread, live_key.value()));
         if(!result.found)
         {
-            return Expected<Value>::raise_exception(L"KeyError", L"");
+            return Expected<Value>::from_value_unchecked(
+                dict_missing_key_error(thread, live_key.value()));
         }
         return Expected<Value>::ok(result.value);
     }
@@ -1740,10 +1975,13 @@ namespace cl
 
     Expected<Value> Dict::pop(ThreadState *thread, Value key)
     {
-        ItemResult result = CL_TRY(pop_item_if_present(thread, key));
+        Owned<Value> live_key(key);
+        ItemResult result =
+            CL_TRY(pop_item_if_present(thread, live_key.value()));
         if(!result.found)
         {
-            return Expected<Value>::raise_exception(L"KeyError", L"");
+            return Expected<Value>::from_value_unchecked(
+                dict_missing_key_error(thread, live_key.value()));
         }
         return Expected<Value>::ok(result.value);
     }
@@ -1808,11 +2046,13 @@ namespace cl
     Expected<Value> Dict::get_item_for_str(ThreadState *thread,
                                            TValue<String> key)
     {
+        Owned<TValue<String>> live_key(key);
         ItemResult result =
-            CL_TRY(get_item_if_present(thread, key.raw_value()));
+            CL_TRY(get_item_if_present(thread, live_key.raw_value()));
         if(!result.found)
         {
-            return Expected<Value>::raise_exception(L"KeyError", L"");
+            return Expected<Value>::from_value_unchecked(
+                dict_missing_key_error(thread, live_key.raw_value()));
         }
         return Expected<Value>::ok(result.value);
     }
@@ -1861,11 +2101,13 @@ namespace cl
 
     Expected<Value> Dict::pop_for_str(ThreadState *thread, TValue<String> key)
     {
+        Owned<TValue<String>> live_key(key);
         ItemResult result =
-            CL_TRY(pop_item_if_present(thread, key.raw_value()));
+            CL_TRY(pop_item_if_present(thread, live_key.raw_value()));
         if(!result.found)
         {
-            return Expected<Value>::raise_exception(L"KeyError", L"");
+            return Expected<Value>::from_value_unchecked(
+                dict_missing_key_error(thread, live_key.raw_value()));
         }
         return Expected<Value>::ok(result.value);
     }
@@ -2140,7 +2382,8 @@ namespace cl
             find_entry_slot_for_general_lookup(thread, live_key.value(), hash));
         if(entry_slot < 0)
         {
-            return Expected<void>::raise_exception(L"KeyError", L"");
+            (void)dict_missing_key_error(thread, live_key.value());
+            return Expected<void>::propagate_exception();
         }
 
         int32_t idx = hash_table[static_cast<size_t>(entry_slot)];
@@ -2277,7 +2520,7 @@ namespace cl
                 return e.value;
             }
         }
-        return active_thread()->set_pending_builtin_exception_none(L"KeyError");
+        return dict_missing_key_error(active_thread(), key.raw_value());
     }
 
     Value Dict::string_keyed_delete(TValue<String> key)
@@ -2292,7 +2535,7 @@ namespace cl
             --n_valid_entries;
             return Value::None();
         }
-        return active_thread()->set_pending_builtin_exception_none(L"KeyError");
+        return dict_missing_key_error(active_thread(), key.raw_value());
     }
 
     void Dict::string_keyed_insert(TValue<String> key, Value value)

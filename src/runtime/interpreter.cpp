@@ -2071,8 +2071,8 @@ namespace cl
     static ALWAYSINLINE void
     normalize_membership_cache_entry(OperatorInlineCache &entry)
     {
-        entry.operand_shape_keys[1] =
-            ShapeKey::from_value(Value::not_present());
+        // Trusted handlers may specialize on the needle shape even though
+        // method lookup and its validity belong only to the container.
         entry.operand_lookup_validity_cells[1] = nullptr;
         entry.reflected_untrusted_call = false;
     }
@@ -2541,7 +2541,7 @@ namespace cl
     {
         OperatorInlineCache &cache =
             code_object->inline_caches.operator_caches[cache_idx];
-        if(likely(cache.matches_unary(container)))
+        if(likely(cache.matches_binary(container, needle)))
         {
             if(!cache.trusted_handler.is_null())
             {

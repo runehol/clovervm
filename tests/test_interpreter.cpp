@@ -2290,7 +2290,8 @@ TEST(Interpreter, membership_fallback_does_not_index_when_iter_exists)
                         L"ValueError", L"");
 }
 
-TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
+TEST(Interpreter,
+     membership_cache_tracks_needle_shape_and_container_lookup_validity)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2321,6 +2322,11 @@ TEST(Interpreter, membership_cache_hit_ignores_needle_shape)
     ASSERT_NE(nullptr, cache.function);
     ASSERT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
     EXPECT_EQ(nullptr, cache.operand_lookup_validity_cells[1]);
+    EXPECT_EQ(
+        ShapeKey::from_value(test_context.vm()
+                                 .get_or_create_interned_string_value(L"needle")
+                                 .raw_value()),
+        cache.operand_shape_keys[1]);
 }
 
 TEST(Interpreter, membership_converts_string_contains_results)
@@ -3646,7 +3652,7 @@ TEST(Interpreter, subscript_load_missing_dict_key_raises_key_error)
 {
     expect_python_error(L"xs = {\"alpha\": 1}\n"
                         L"xs[\"beta\"]\n",
-                        L"KeyError", L"");
+                        L"KeyError", L"beta");
 }
 
 TEST(Interpreter, subscript_load_missing_dict_key_unwinds_nested_frames)
@@ -3655,7 +3661,7 @@ TEST(Interpreter, subscript_load_missing_dict_key_unwinds_nested_frames)
                         L"    xs = {\"alpha\": 1}\n"
                         L"    return xs[\"beta\"]\n"
                         L"fail()\n",
-                        L"KeyError", L"");
+                        L"KeyError", L"beta");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
@@ -3682,7 +3688,7 @@ TEST(Interpreter, subscript_delete_missing_dict_key_raises_key_error)
 {
     expect_python_error(L"xs = {\"alpha\": 1}\n"
                         L"del xs[\"beta\"]\n",
-                        L"KeyError", L"");
+                        L"KeyError", L"beta");
 }
 
 TEST(Interpreter, subscript_delete_missing_dict_key_unwinds_nested_frames)
@@ -3691,7 +3697,7 @@ TEST(Interpreter, subscript_delete_missing_dict_key_unwinds_nested_frames)
                         L"    xs = {\"alpha\": 1}\n"
                         L"    del xs[\"beta\"]\n"
                         L"fail()\n",
-                        L"KeyError", L"");
+                        L"KeyError", L"beta");
 }
 
 TEST(Interpreter, attribute_load_and_store_syntax)
