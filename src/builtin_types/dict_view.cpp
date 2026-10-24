@@ -96,93 +96,107 @@ namespace cl
         return self;
     }
 
-    static Value check_expected_size(Dict *dict,
-                                     Member<TValue<SMI>> &expected_size)
+    // Size errors retain the source and remain sticky. Exhaustion and keys
+    // errors detach it, so neither can be revived by later dictionary changes.
+    template <typename Iterator>
+    [[nodiscard]] static Expected<Dict::EntryView>
+    next_entry(ThreadState *thread, TValue<Iterator> iterator)
     {
-        if(static_cast<int64_t>(dict->size()) != expected_size.extract())
+        Iterator *state = iterator.extract();
+        if(!state->dict.value())
         {
-            expected_size = TValue<SMI>::from_smi(-1);
-            return active_thread()->set_pending_builtin_exception_string(
+            (void)thread->set_pending_stop_iteration_no_value();
+            return Expected<Dict::EntryView>::propagate_exception();
+        }
+        Dict *dict = state->dict.value().value().extract();
+        if(static_cast<int64_t>(dict->size()) != state->expected_size.extract())
+        {
+            state->expected_size = TValue<SMI>::from_smi(-1);
+            return Expected<Dict::EntryView>::raise_exception(
                 L"RuntimeError", L"dictionary changed size during iteration");
         }
-        return Value::None();
-    }
-
-    static bool next_entry(Dict *dict, Member<TValue<SMI>> &index,
-                           Dict::EntryView &entry)
-    {
-        int64_t index_smi = index.extract();
-        assert(index_smi >= 0);
-        size_t scan_idx = static_cast<size_t>(index_smi);
-        while(scan_idx < dict->entry_storage_size())
+        size_t index = static_cast<size_t>(state->index.extract());
+        Dict::EntryView entry;
+        while(index < dict->entry_storage_size())
         {
-            if(dict->entry_at(scan_idx, entry))
+            if(dict->entry_at(index, entry))
             {
-                index =
-                    TValue<SMI>::from_smi(static_cast<int64_t>(scan_idx + 1));
-                return true;
+                if(state->remaining.extract() == 0)
+                {
+                    state->dict = Optional<TValue<Dict>>::none();
+                    return Expected<Dict::EntryView>::raise_exception(
+                        L"RuntimeError",
+                        L"dictionary keys changed during iteration");
+                }
+                state->index =
+                    TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
+                state->remaining =
+                    TValue<SMI>::from_smi(state->remaining.extract() - 1);
+                return Expected<Dict::EntryView>::ok(entry);
             }
-            ++scan_idx;
+            ++index;
         }
-        index = TValue<SMI>::from_smi(static_cast<int64_t>(scan_idx));
-        return false;
+        state->dict = Optional<TValue<Dict>>::none();
+        (void)thread->set_pending_stop_iteration_no_value();
+        return Expected<Dict::EntryView>::propagate_exception();
     }
 
-    static Value native_dict_key_iterator_next(ThreadState *thread, Value self)
+    template <typename Iterator>
+    [[nodiscard]] static Value
+    native_dict_iterator_length_hint(ThreadState *thread, Value self)
+    {
+        TValue<Iterator> iterator =
+            CL_TRY(TValue<Iterator>::from_value_or_raise(
+                self, L"TypeError",
+                L"dictionary iterator.__length_hint__ expects a matching "
+                L"iterator receiver"));
+        Iterator *state = iterator.extract();
+        if(!state->dict.value() ||
+           static_cast<int64_t>(
+               state->dict.value().value().extract()->size()) !=
+               state->expected_size.extract())
+        {
+            return Value::from_smi(0);
+        }
+        return state->remaining.raw_value();
+    }
+
+    [[nodiscard]] static Value
+    native_dict_key_iterator_next(ThreadState *thread, Value self)
     {
         TValue<DictKeyIterator> iterator =
             CL_TRY(TValue<DictKeyIterator>::from_value_or_raise(
                 self, L"TypeError",
                 L"dict_keyiterator.__next__ expects a dict_keyiterator "
                 L"receiver"));
-        Dict *dict = iterator.extract()->dict.extract();
-        CL_PROPAGATE_EXCEPTION(
-            check_expected_size(dict, iterator.extract()->expected_size));
-        Dict::EntryView entry;
-        if(!next_entry(dict, iterator.extract()->index, entry))
-        {
-            return active_thread()->set_pending_stop_iteration_no_value();
-        }
-        return entry.key;
+        return CL_TRY(next_entry(thread, iterator)).key;
     }
 
-    static Value native_dict_value_iterator_next(ThreadState *thread,
-                                                 Value self)
+    [[nodiscard]] static Value
+    native_dict_value_iterator_next(ThreadState *thread, Value self)
     {
         TValue<DictValueIterator> iterator =
             CL_TRY(TValue<DictValueIterator>::from_value_or_raise(
                 self, L"TypeError",
                 L"dict_valueiterator.__next__ expects a dict_valueiterator "
                 L"receiver"));
-        Dict *dict = iterator.extract()->dict.extract();
-        CL_PROPAGATE_EXCEPTION(
-            check_expected_size(dict, iterator.extract()->expected_size));
-        Dict::EntryView entry;
-        if(!next_entry(dict, iterator.extract()->index, entry))
-        {
-            return active_thread()->set_pending_stop_iteration_no_value();
-        }
-        return entry.value;
+        return CL_TRY(next_entry(thread, iterator)).value;
     }
 
-    static Value native_dict_item_iterator_next(ThreadState *thread, Value self)
+    [[nodiscard]] static Value
+    native_dict_item_iterator_next(ThreadState *thread, Value self)
     {
         TValue<DictItemIterator> iterator =
             CL_TRY(TValue<DictItemIterator>::from_value_or_raise(
                 self, L"TypeError",
                 L"dict_itemiterator.__next__ expects a dict_itemiterator "
                 L"receiver"));
-        Dict *dict = iterator.extract()->dict.extract();
-        CL_PROPAGATE_EXCEPTION(
-            check_expected_size(dict, iterator.extract()->expected_size));
-        Dict::EntryView entry;
-        if(!next_entry(dict, iterator.extract()->index, entry))
-        {
-            return active_thread()->set_pending_stop_iteration_no_value();
-        }
+        Dict::EntryView entry = CL_TRY(next_entry(thread, iterator));
+        Owned<Value> key(entry.key);
+        Owned<Value> value(entry.value);
         TValue<Tuple> item = make_object_value<Tuple>(2);
-        item.extract()->initialize_item_unchecked(0, entry.key);
-        item.extract()->initialize_item_unchecked(1, entry.value);
+        item.extract()->initialize_item_unchecked(0, key.value());
+        item.extract()->initialize_item_unchecked(1, value.value());
         return item.raw_value();
     }
 
@@ -270,6 +284,13 @@ namespace cl
                  vm, make_intrinsic_function(vm, native_dict_key_iterator_next),
                  "creating intrinsic function")
                  .raw_value()},
+            {vm->get_or_create_interned_string_value(L"__length_hint__"),
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(
+                     vm, native_dict_iterator_length_hint<DictKeyIterator>),
+                 "creating intrinsic function")
+                 .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictKeyIterator>(
             vm->get_or_create_interned_string_value(L"dict_keyiterator"), 0,
@@ -296,6 +317,13 @@ namespace cl
                  make_intrinsic_function(vm, native_dict_value_iterator_next),
                  "creating intrinsic function")
                  .raw_value()},
+            {vm->get_or_create_interned_string_value(L"__length_hint__"),
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(
+                     vm, native_dict_iterator_length_hint<DictValueIterator>),
+                 "creating intrinsic function")
+                 .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictValueIterator>(
             vm->get_or_create_interned_string_value(L"dict_valueiterator"), 0,
@@ -320,6 +348,13 @@ namespace cl
              unwrap_bootstrap_expected(
                  vm,
                  make_intrinsic_function(vm, native_dict_item_iterator_next),
+                 "creating intrinsic function")
+                 .raw_value()},
+            {vm->get_or_create_interned_string_value(L"__length_hint__"),
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(
+                     vm, native_dict_iterator_length_hint<DictItemIterator>),
                  "creating intrinsic function")
                  .raw_value()},
         };
