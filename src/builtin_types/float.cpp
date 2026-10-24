@@ -198,6 +198,20 @@ namespace cl
             int_value_from_double(thread, self.get_ptr<Float>()->value()));
     }
 
+    [[nodiscard]] static Value native_float_is_integer(ThreadState *thread,
+                                                       Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.is_integer expects a float receiver");
+        }
+        double value = self.get_ptr<Float>()->value();
+        return std::isfinite(value) && std::trunc(value) == value
+                   ? Value::True()
+                   : Value::False();
+    }
+
     static Value float_equal(ThreadState *thread, double left, double right)
     {
         (void)thread;
@@ -968,6 +982,9 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__int__", native_float_int,
                                      L"Truncate self toward zero."),
+            builtin_intrinsic_method(
+                L"is_integer", native_float_is_integer,
+                L"Return whether self is a finite integer."),
             with_trusted_handler_resolver<FloatEqResolver>(
                 vm,
                 builtin_intrinsic_method(L"__eq__", FloatEqOperation::native,
