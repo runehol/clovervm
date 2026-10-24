@@ -8,11 +8,148 @@
 #include "test_helpers.h"
 #include <cmath>
 #include <limits>
+#include <string_view>
 
 #include <gtest/gtest.h>
 
 namespace cl
 {
+    TEST(FloatRuntime, EqualityTrustedHandlersPreserveIntegerPrecision)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        const struct Sample
+        {
+            double number;
+            const wchar_t *integer;
+            bool equal;
+        } samples[] = {
+            {0x1p53, L"9007199254740993", false},
+            {0x1p60, L"2**60", true},
+            {-0x1p60, L"-(2**60)", true},
+            {0x1p60, L"2**60 + 1", false},
+            {0x1p100, L"2**100", true},
+            {0x1.fffffffffffffp1023, L"(2**53 - 1) * 2**971", true},
+            {0.0, L"False", true},
+            {-0.0, L"0", true},
+            {1.0, L"True", true},
+            {0x1p-1074, L"0", false},
+            {std::numeric_limits<double>::infinity(), L"2**2000", false},
+            {std::numeric_limits<double>::quiet_NaN(), L"0", false},
+        };
+        for(const wchar_t *method_name: {L"__eq__", L"__ne__"})
+        {
+            bool not_equal = std::wstring_view(method_name) == L"__ne__";
+            Value method = context.vm().float_class()->get_own_property(
+                interned_string(method_name));
+            auto resolver = method.get_ptr<Function>()
+                                ->code_object.extract()
+                                ->trusted_handler_resolver;
+            ASSERT_NE(nullptr, resolver);
+            Owned<TValue<Function>> comparison_function(
+                TValue<Function>::from_value_assumed(context.run_file(
+                    not_equal ? L"def compare(left, right):\n"
+                                L"    return left != right\ncompare\n"
+                              : L"def compare(left, right):\n"
+                                L"    return left == right\ncompare\n")));
+            CodeObject *comparison =
+                comparison_function.extract()->code_object.extract();
+            for(const Sample &sample: samples)
+            {
+                SCOPED_TRACE(sample.integer);
+                Owned<Value> integer(context.run_file(sample.integer));
+                ASSERT_FALSE(integer.value().is_exception_marker());
+                Owned<Value> number(box_float(context.thread(), sample.number));
+                for(auto order: {TrustedHandlerOperandOrder::Normal,
+                                 TrustedHandlerOperandOrder::Reflected})
+                {
+                    Value left = order == TrustedHandlerOperandOrder::Normal
+                                     ? number.value()
+                                     : integer.value();
+                    Value right = order == TrustedHandlerOperandOrder::Normal
+                                      ? integer.value()
+                                      : number.value();
+                    auto resolution =
+                        resolver(&context.vm(), ShapeKey::from_value(left),
+                                 ShapeKey::from_value(right), order,
+                                 TrustedHandlerArity::Binary);
+                    ASSERT_TRUE(resolution.has_trusted_handler());
+                    Value expected = sample.equal != not_equal ? Value::True()
+                                                               : Value::False();
+                    for(int replay = 0; replay < 3; ++replay)
+                    {
+                        EXPECT_EQ(expected, resolution.binary(context.thread(),
+                                                              left, right));
+                    }
+                    for(int replay = 0; replay < 3; ++replay)
+                    {
+                        EXPECT_EQ(
+                            expected,
+                            context.thread()->call_clovervm_function(
+                                comparison_function.value(), left, right));
+                    }
+                    ASSERT_EQ(1u,
+                              comparison->inline_caches.operator_caches.size());
+                    const auto &cache =
+                        comparison->inline_caches.operator_caches[0];
+                    EXPECT_TRUE(cache.matches_reflectable_binary(left, right));
+                    EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+                    EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+                    if(order == TrustedHandlerOperandOrder::Normal)
+                    {
+                        ASSERT_FALSE(cache.trusted_handler.is_null());
+                        EXPECT_EQ(
+                            erase_trusted_handler_target(resolution.binary),
+                            cache.trusted_handler.target(
+                                TrustedHandlerArity::Binary));
+                    }
+                    else
+                    {
+                        // Int comparisons have no trusted resolver. Their
+                        // cached call returns NotImplemented before the float
+                        // handler runs through the existing continuation.
+                        Value int_method =
+                            context.vm().int_class()->get_own_property(
+                                interned_string(method_name));
+                        EXPECT_TRUE(cache.trusted_handler.is_null());
+                        EXPECT_EQ(int_method.get_ptr<Function>(),
+                                  cache.function);
+                    }
+                    auto metadata = context.vm().trusted_handler_metadata(
+                        erase_trusted_handler_target(resolution.binary));
+                    ASSERT_TRUE(metadata.has_value());
+                    EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+                    EXPECT_EQ(not_equal ? TrustedHandlerSemantics::NotEqual
+                                        : TrustedHandlerSemantics::Equal,
+                              metadata->semantics);
+                }
+            }
+            Owned<Value> int_subclass(
+                context.run_file(L"class I(int): pass\nI(2**60)\n"));
+            Owned<Value> float_subclass(
+                context.run_file(L"class F(float): pass\nF(2**60)\n"));
+            Owned<Value> number(box_float(context.thread(), 0x1p60));
+            for(Value subclass: {int_subclass.value(), float_subclass.value()})
+            {
+                for(auto order: {TrustedHandlerOperandOrder::Normal,
+                                 TrustedHandlerOperandOrder::Reflected})
+                {
+                    EXPECT_FALSE(resolver(&context.vm(),
+                                          ShapeKey::from_value(number.value()),
+                                          ShapeKey::from_value(subclass), order,
+                                          TrustedHandlerArity::Binary)
+                                     .has_trusted_handler());
+                }
+            }
+            EXPECT_FALSE(resolver(&context.vm(),
+                                  ShapeKey::from_value(number.value()),
+                                  ShapeKey::from_value(Value::True()),
+                                  TrustedHandlerOperandOrder::Normal,
+                                  TrustedHandlerArity::Unary)
+                             .has_trusted_handler());
+        }
+    }
+
     TEST(FloatRuntime, BoxFloatCreatesFreshExactFloat)
     {
         test::VmTestContext context;

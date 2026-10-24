@@ -12,10 +12,12 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <fmt/format.h>
 #include <iterator>
+#include <limits>
 #include <string>
 
 namespace cl
@@ -282,16 +284,63 @@ namespace cl
                    : Value::False();
     }
 
-    static Value float_equal(ThreadState *thread, double left, double right)
+    // Both payloads are validated by the caller. No conversion of the integer
+    // to double is allowed: that can discard the bits that decide equality.
+    static bool float_equals_intlike(double number, Value integer)
     {
-        (void)thread;
-        return left == right ? Value::True() : Value::False();
-    }
+        assert(is_intlike_value(integer));
+        if(!std::isfinite(number) || std::trunc(number) != number)
+        {
+            return false;
+        }
+        SmiViewStorage integer_storage;
+        ConstBigIntView integer_view =
+            intlike_value_bigint_view(integer, &integer_storage);
+        signum_t sign = number == 0.0 ? 0 : (number < 0.0 ? -1 : 1);
+        if(sign != integer_view.signum)
+        {
+            return false;
+        }
+        if(sign == 0)
+        {
+            return true;
+        }
 
-    static Value float_not_equal(ThreadState *thread, double left, double right)
-    {
-        (void)thread;
-        return left != right ? Value::True() : Value::False();
+        static_assert(std::numeric_limits<double>::radix == 2);
+        static_assert(std::numeric_limits<double>::digits == 53);
+        static_assert(std::numeric_limits<double>::max_exponent == 1024);
+        int exponent;
+        double fraction = std::frexp(std::fabs(number), &exponent);
+        if(bigint_abs_bit_length(integer_view) != size_t(exponent))
+        {
+            return false;
+        }
+        if(exponent <= 53)
+        {
+            SmiViewStorage number_storage;
+            return compare_bigint_abs(
+                       integer_view,
+                       smi_bigint_view(static_cast<int64_t>(std::fabs(number)),
+                                       &number_storage)) == 0;
+        }
+
+        // An integral binary64 needs at most 1024 bits. Expand its 53-bit
+        // significand into stack-backed base-2**32 digits, including the zero
+        // low digits implied by the exponent. Borrowed views cannot escape.
+        std::array<digit_t, 1024 / kDigitBits> digits{};
+        uint64_t significand = static_cast<uint64_t>(std::ldexp(fraction, 53));
+        unsigned shift = unsigned(exponent - 53);
+        size_t index = shift / kDigitBits;
+        unsigned offset = shift % kDigitBits;
+        digits[index++] = static_cast<digit_t>(significand << offset);
+        significand >>= kDigitBits - offset;
+        while(significand != 0)
+        {
+            digits[index++] = static_cast<digit_t>(significand);
+            significand >>= kDigitBits;
+        }
+        return compare_bigint_abs(
+                   integer_view, ConstBigIntView{index, 1, digits.data()}) == 0;
     }
 
     static Value float_add(ThreadState *thread, double left, double right)
@@ -602,7 +651,8 @@ namespace cl
                key == ShapeKey::from_value(Value::False());
     }
 
-    template <typename NormalHandlers, typename ReflectedHandlers>
+    template <typename NormalHandlers, typename ReflectedHandlers,
+              bool AcceptHeapInt = false>
     class FloatBinaryResolver final
         : public TrustedHandlerResolverBase<
               typename NormalHandlers::FloatFloat,
@@ -623,19 +673,24 @@ namespace cl
 
             ShapeKey float_key = ShapeKey::from_shape(
                 vm->float_class()->get_instance_root_shape());
+            auto is_intlike_key = [vm](ShapeKey key) {
+                return is_smi_or_bool_shape_key(key) ||
+                       (AcceptHeapInt &&
+                        key == ShapeKey::from_shape(
+                                   vm->int_class()->get_instance_root_shape()));
+            };
             if(operand0_key == float_key)
             {
                 if(operand1_key == float_key)
                 {
                     return FloatFloat::resolution();
                 }
-                if(is_smi_or_bool_shape_key(operand1_key))
+                if(is_intlike_key(operand1_key))
                 {
                     return FloatIntlike::resolution();
                 }
             }
-            if(is_smi_or_bool_shape_key(operand0_key) &&
-               operand1_key == float_key)
+            if(is_intlike_key(operand0_key) && operand1_key == float_key)
             {
                 return IntlikeFloat::resolution();
             }
@@ -663,23 +718,93 @@ namespace cl
         }
     };
 
+    template <bool NotEqual, FloatBinaryAdaptation Adaptation>
+    static Value trusted_float_equality(ThreadState *thread, Value left,
+                                        Value right)
+    {
+        (void)thread;
+        bool equal;
+        if constexpr(Adaptation == FloatBinaryAdaptation::FloatFloat)
+        {
+            equal = left.get_ptr<Float>()->value() ==
+                    right.get_ptr<Float>()->value();
+        }
+        else if constexpr(Adaptation == FloatBinaryAdaptation::FloatIntlike)
+        {
+            equal = float_equals_intlike(left.get_ptr<Float>()->value(), right);
+        }
+        else
+        {
+            equal = float_equals_intlike(right.get_ptr<Float>()->value(), left);
+        }
+        return equal != NotEqual ? Value::True() : Value::False();
+    }
+
+    template <bool NotEqual, FixedWideString ReceiverError>
+    struct FloatEqualityOperation
+    {
+        [[nodiscard]] static Value native(ThreadState *thread, Value self,
+                                          Value other)
+        {
+            if(!can_convert_to<Float>(self))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", ReceiverError.c_str());
+            }
+            double number = self.get_ptr<Float>()->value();
+            bool equal;
+            if(can_convert_to<Float>(other))
+            {
+                equal = number == other.get_ptr<Float>()->value();
+            }
+            else if(is_intlike_value(other))
+            {
+                // Use the actual payload for int subclasses too. Unlike
+                // CPython 3.14.5's large-int path, this never re-enters their
+                // comparison methods based on the numeric magnitude.
+                equal = float_equals_intlike(number, other);
+            }
+            else
+            {
+                return Value::NotImplemented();
+            }
+            return equal != NotEqual ? Value::True() : Value::False();
+        }
+
+        template <TrustedHandlerEffects Effects,
+                  TrustedHandlerSemantics Semantics>
+        struct Handlers
+        {
+            using FloatFloat = TrustedHandlerDefinition<
+                trusted_float_equality<NotEqual,
+                                       FloatBinaryAdaptation::FloatFloat>,
+                Effects, Semantics>;
+            using FloatIntlike = TrustedHandlerDefinition<
+                trusted_float_equality<NotEqual,
+                                       FloatBinaryAdaptation::FloatIntlike>,
+                Effects, Semantics>;
+            using IntlikeFloat = TrustedHandlerDefinition<
+                trusted_float_equality<NotEqual,
+                                       FloatBinaryAdaptation::IntlikeFloat>,
+                Effects, Semantics>;
+        };
+    };
+
     using FloatEqOperation =
-        FloatBinaryOperation<float_equal,
-                             L"float.__eq__ expects a float receiver">;
+        FloatEqualityOperation<false, L"float.__eq__ expects a float receiver">;
     using FloatEqHandlers =
         FloatEqOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::Equal>;
     using FloatEqResolver =
-        FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers>;
+        FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers, true>;
 
     using FloatNeOperation =
-        FloatBinaryOperation<float_not_equal,
-                             L"float.__ne__ expects a float receiver">;
+        FloatEqualityOperation<true, L"float.__ne__ expects a float receiver">;
     using FloatNeHandlers =
         FloatNeOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::NotEqual>;
     using FloatNeResolver =
-        FloatBinaryResolver<FloatNeHandlers, FloatNeHandlers>;
+        FloatBinaryResolver<FloatNeHandlers, FloatNeHandlers, true>;
 
     using FloatAddOperation =
         FloatBinaryOperation<float_add,
