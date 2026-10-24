@@ -198,6 +198,42 @@ namespace cl
             int_value_from_double(thread, self.get_ptr<Float>()->value()));
     }
 
+    [[nodiscard]] static Value native_float_trunc(ThreadState *thread,
+                                                  Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__trunc__ expects a float receiver");
+        }
+        return CL_TRY(
+            int_value_from_double(thread, self.get_ptr<Float>()->value()));
+    }
+
+    [[nodiscard]] static Value native_float_floor(ThreadState *thread,
+                                                  Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__floor__ expects a float receiver");
+        }
+        return CL_TRY(int_value_from_double(
+            thread, std::floor(self.get_ptr<Float>()->value())));
+    }
+
+    [[nodiscard]] static Value native_float_ceil(ThreadState *thread,
+                                                 Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__ceil__ expects a float receiver");
+        }
+        return CL_TRY(int_value_from_double(
+            thread, std::ceil(self.get_ptr<Float>()->value())));
+    }
+
     [[nodiscard]] static Value native_float_is_integer(ThreadState *thread,
                                                        Value self)
     {
@@ -982,6 +1018,12 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__int__", native_float_int,
                                      L"Truncate self toward zero."),
+            builtin_intrinsic_method(L"__trunc__", native_float_trunc,
+                                     L"Truncate self toward zero."),
+            builtin_intrinsic_method(L"__floor__", native_float_floor,
+                                     L"Return the greatest integer <= self."),
+            builtin_intrinsic_method(L"__ceil__", native_float_ceil,
+                                     L"Return the least integer >= self."),
             builtin_intrinsic_method(
                 L"is_integer", native_float_is_integer,
                 L"Return whether self is a finite integer."),
