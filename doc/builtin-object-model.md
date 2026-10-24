@@ -282,9 +282,10 @@ without changing allocation.
 ## List Sorting
 
 `list.sort(self, /, *, key=None, reverse=False)` sorts the native List payload
-in place and returns None. The trusted bootstrap wrapper owns argument binding,
-reverse truth conversion, key calls, and comparison truth conversion through
-ordinary Python protocols. It preserves existing callable support; callable
+in place and returns None. The trusted bootstrap wrapper owns argument binding
+and reverse truth conversion. The generic sorting algorithm runs entirely in
+the trusted Python helper `_clover_list_sort_items`, using ordinary key calls,
+ordering, and truth conversion. It preserves existing callable support; callable
 instances and first-class bound-method keys retain their existing limitations.
 Normal operator dispatch supplies scalar and container comparisons, subclass
 reflection, and `NotImplemented` handling. Sorting does not add a separate
@@ -292,16 +293,22 @@ lexicographic comparator or general callable dispatcher.
 
 List owns temporary sort state. It swaps its ValueArray into a temporary
 `Owned<TValue<List>>`, leaving the receiver empty during key and comparison
-callbacks. Another owned List retains keys, evaluated once in original order.
-The ValueArray swap transfers size, capacity, and backing ownership without
-copying elements or exposing unrooted backing storage across callbacks.
+callbacks. C++ enters the Python helper once with that exact detached List, the
+key callable, and the normalized reverse flag. The helper's frame roots keys,
+evaluated once in original order, along with its permutation temporaries. The
+C++ sort boundary does not make separate calls for each key or comparison;
+ordinary operator implementations retain their existing dispatch. The ValueArray
+swap transfers size, capacity, and backing ownership without copying elements
+or exposing unrooted backing storage across callbacks.
 
-An exception-aware bottom-up merge sort orders indices while leaving the
+The Python helper performs a bottom-up merge sort on indices while leaving the
 detached items untouched. It makes O(n log n) comparisons and uses O(n) temporary
 space. All loops have bounds independent of comparison results, including
 inconsistent comparisons. Reverse sorting reverses indices before and after
 ascending sorting, preserving source order among equal keys. Only after all
-comparisons succeed are permutation cycles applied without Python callbacks.
+comparisons succeed does the helper apply permutation cycles through exact-List
+operations, which do not invoke user callbacks. Its saved item remains rooted
+across interpreter safepoints during those cycles.
 Key or comparison failures restore original order; this is a valid permutation,
 but need not match CPython's post-failure partial ordering. Comparison sequences,
 adaptive Timsort behavior, and ordering for inconsistent comparators are not

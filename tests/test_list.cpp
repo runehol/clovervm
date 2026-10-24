@@ -627,6 +627,13 @@ class Payload:
     def __init__(self, value):
         self.value = value
         self.text = 'payload-' + str(value)
+    def __lt__(self, other):
+        assert source == []
+        garbage = []
+        for i in range(20):
+            garbage.append([i])
+        garbage.clear()
+        return self.value < other.value
 class Key:
     def __init__(self, value):
         self.value = value
@@ -708,6 +715,16 @@ source.sort(key=key)
 assert source[0].value == 1
 assert source[1].value == 2
 assert source[2].value == 3
+
+# With no key array retaining values, Python locals must keep the saved item
+# alive across safepoints while permutation cycles overwrite detached slots.
+for reverse in (False, True):
+    source = [Payload(4), Payload(1), Payload(3), Payload(0), Payload(2)]
+    source.sort(reverse=reverse)
+    for i in range(5):
+        expected = 4 - i if reverse else i
+        assert source[i].value == expected
+        assert source[i].text == 'payload-' + str(expected)
 )");
     context.vm().set_fire_every_safepoint_for_testing(true);
     context.vm().request_safepoint();
@@ -748,6 +765,13 @@ assert values == [3, 1, 2]
 keys
 )"));
     ASSERT_TRUE(can_convert_to<List>(keys.value()));
+    // Execution has returned to C++. Exclude obsolete interpreter slots from
+    // the conservative scan before checking that temporary key arrays die.
+    context.thread()->publish_safepoint_scan_record(
+        context.thread()->clover_frame_sentinel(), Value::not_present());
+    // Stack-only temporaries are discovered by the bitmap scan. Drain their
+    // newly enqueued child backings in the following reclamation epoch.
+    context.vm().run_heap_reclamation();
     context.vm().run_heap_reclamation();
     List *observed = keys.value().get_ptr<List>();
     ASSERT_EQ(5u, observed->size());

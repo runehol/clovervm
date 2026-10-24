@@ -61,11 +61,10 @@ namespace cl
         void extend_from_list(const List *other);
         void extend_from_tuple(const Tuple *other);
         void reverse();
-        // Trusted adapters preserve the existing Python call, <, and truth
-        // protocols without introducing a separate native callable dispatcher.
+        // The trusted Python helper owns the generic algorithm; List owns the
+        // detached backing, mutation state, and unconditional restoration.
         [[nodiscard]] Value sort(ThreadState *thread, Value key,
-                                 TValue<Function> call_key,
-                                 TValue<Function> less, bool reverse);
+                                 TValue<Function> sort_items, bool reverse);
         [[nodiscard]] TValue<List> concat(const List *other) const;
 
         [[nodiscard]] Value get_item(int64_t py_idx) const;

@@ -286,14 +286,79 @@ def _clover_list_init(self, iterable=(), /):
         list.append(self, item)
 
 
-def _clover_list_sort_less(left, right):
-    # Normal ordering dispatch owns reflected/subclass behavior and the result
-    # is tested through the normal Python truth protocol.
-    return True if left < right else False
+def _clover_list_sort_items(items, key, reverse):
+    # This helper is entered once with an exact List holding detached storage.
+    # Keep key calls, comparisons, truth conversion, and merge loops in Python.
+    count = len(items)
+    sort_keys = items
+    if key is not None:
+        sort_keys = []
+        for item in items:
+            sort_keys.append(key(item))
+    if count < 2:
+        return None
 
+    order = []
+    index = 0
+    while index < count:
+        order.append(index)
+        index += 1
+    if reverse:
+        order.reverse()
+    scratch = order.copy()
+    width = 1
+    while width < count:
+        begin = 0
+        while begin < count:
+            middle = begin + width
+            if middle > count:
+                middle = count
+            end = begin + 2 * width
+            if end > count:
+                end = count
+            left = begin
+            right = middle
+            output = begin
+            while left < middle and right < end:
+                if sort_keys[order[right]] < sort_keys[order[left]]:
+                    scratch[output] = order[right]
+                    right += 1
+                else:
+                    scratch[output] = order[left]
+                    left += 1
+                output += 1
+            while left < middle:
+                scratch[output] = order[left]
+                output += 1
+                left += 1
+            while right < end:
+                scratch[output] = order[right]
+                output += 1
+                right += 1
+            begin = end
+        previous = order
+        order = scratch
+        scratch = previous
+        width *= 2
+    if reverse:
+        order.reverse()
 
-def _clover_list_sort_key(key, item):
-    return key(item)
+    # No Python callbacks run while applying the permutation to the exact List.
+    # The original order is untouched until every comparison has succeeded.
+    index = 0
+    while index < count:
+        if order[index] != index:
+            saved = items[index]
+            destination = index
+            while order[destination] != index:
+                source = order[destination]
+                items[destination] = items[source]
+                order[destination] = destination
+                destination = source
+            items[destination] = saved
+            order[destination] = destination
+        index += 1
+    return None
 
 
 def _clover_list_sort(self, /, *, key=None, reverse=False):
@@ -301,9 +366,7 @@ def _clover_list_sort(self, /, *, key=None, reverse=False):
     if not isinstance(self, list):
         raise TypeError("list.sort expects a list receiver")
     reverse = True if reverse else False
-    return _clover_list_sort_impl(
-        self, key, _clover_list_sort_key, _clover_list_sort_less, reverse
-    )
+    return _clover_list_sort_impl(self, key, _clover_list_sort_items, reverse)
 
 
 def _clover_list_eq(self, other, /):
