@@ -23,7 +23,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [~] | `builtins` | Names every module assumes exist; exceptions, core types, builtin functions. | Trusted bootstrap defines `abs` through cached `__abs__` dispatch, with trusted int/bigint/float handlers and inherited bool behavior. It also covers core object-introspection helpers: `isinstance`, `issubclass`, `getattr`, `hasattr`, `setattr`, `delattr`, `vars`, `callable`, and a limited `dir`. `print` now accepts keyword-only `sep`, `end`, `file`, and `flush` parameters for stdout output, with `file` limited to `None` until stream support exists. `type` remains the VM's builtin class object rather than a fully compatible callable `type(obj)`/`type(name, bases, dict)`. `dir` enumerates stored own namespaces plus class MRO entries; full CPython behavior around custom `__dir__`, metaclass details, descriptors, signatures, streams, and many other builtin functions remains incomplete. |
 | [~] | `types` | Shared type names used by frameworks, decorators, inspection, import machinery. | Pure-Python `types.py` exposes reachable runtime aliases (`FunctionType`, `LambdaType`, builtin function/method aliases, `MethodType`, `ModuleType`, `CodeType`, `NoneType`), a minimal `SimpleNamespace`, and `get_original_bases`. `Function.__code__` supplies the live `CodeType`. `SimpleNamespace` repr is checked against CPython 3.14.5: insertion order, subclass names, empty-name omission, string-subclass keys without invoking their hooks, and direct/mutual/container-mediated namespace recursion with exception cleanup. Internal `slotdict.keys()` returns an ordered list snapshot. Repr guarding assumes the current single-threaded runtime, and `__dict__` remains a slotdict rather than a full dict. Constructor and equality improvements are deferred. Missing descriptor/frame/traceback/generator/coroutine/union/generic-alias types, `new_class`, `prepare_class`, `resolve_bases`, `coroutine`, and other APIs remain blocked by callable `type`, richer metadata, descriptors, and broader runtime object exposure. |
 | [~] | `operator` | Functional forms of operators used by collections, sorting helpers, libraries. | Pure-Python first slice covers supported arithmetic/bitwise/comparison/identity/truth helpers; `abs` delegates to builtin special-method dispatch, matrix multiplication, item get/set/delete, sequence concat, membership-backed `contains`, identity-before-equality `countOf`/`indexOf`, `length_hint`, CPython 3.14 supported-name `__all__`, and aliases such as `__add__`. Unsupported callable factory helpers (`attrgetter`, `itemgetter`, `methodcaller`) remain explicit stubs pending callable instances/closures. `call` forwards positional and keyword arguments through the normal call machinery, with a positional-only target and the `__call__` alias; first-class bound methods retain the existing VM limitation. `index` normalizes accepted builtin ints/bools to plain int. `length_hint` validates builtin int/bool/subclass defaults against signed 64-bit platform bounds before callbacks, prefers validated length results, and dispatches `__length_hint__` through the special-method caller with fallback and result validation. Heap integers above the SMI limit remain accepted within platform bounds. General `__index__` support and platform-bound selection for future non-64-bit targets remain deferred. |
-| [ ] | `collections` | `deque`, `defaultdict`, `Counter`, named tuples, ordered helpers. | Not started / not assessed. |
+| [~] | `collections` | `deque`, `defaultdict`, `Counter`, named tuples, ordered helpers. | Public Python `UserDict` slice, audited against CPython 3.14.5: construction, public `data`, item operations, membership/iteration/length, representation/equality, `get`, live `keys`/`values`/`items`, `update`, `setdefault`, `pop`, first-key `popitem`, `clear`, and exact-base shallow `copy`. Preserves supported subclass hooks and class-level/inherited `__missing__`. See UserDict boundaries below for deferred APIs, VM dependencies, and test limits. Other collections classes remain absent. |
 | [ ] | `collections.abc` | Abstract container protocols used by typing, pathlib, importlib, libraries. | Not started / not assessed. |
 | [ ] | `abc` | Abstract base classes and metaclass behavior. | Depends on metaclass and descriptor semantics. |
 | [ ] | `functools` | Decorators, wrappers, caching, partial application. | Not started / not assessed. |
@@ -119,6 +119,72 @@ edge cases, platform behavior, or APIs are still missing.
   future native-backed modules less ad hoc, especially modules that need to
   accept structured Python values or text from public wrappers.
 
+### UserDict boundaries and VM dependencies
+
+- `stdlib/collections.py` exports only `UserDict`. `Counter`, `defaultdict`,
+  `namedtuple`, `deque`, `OrderedDict`, `ChainMap`, `UserList`, and `UserString`
+  remain absent. `collections.abc` is not supplied by this module.
+- `UserDict.fromkeys` is absent until classmethod binding exists. Union operators,
+  `__copy__`, pickling, generic aliases, ABC inheritance/registration, and
+  hashability parity with arbitrary user classes are outside this slice.
+- `copy()` returns an independent shallow copy for exact `UserDict` instances.
+  Subclass calls explicitly raise `NotImplementedError`; preserving subclass
+  instance state and avoiding constructor/descriptor effects needs `copy` and
+  compatible `__new__`/instance-namespace allocation behavior.
+- Construction accepts `None`, builtin dictionaries, UserDict instances,
+  keys/getitem protocol objects, and supported iterables of supported two-item
+  iterables. Updates accept the same sources except `None`. Keywords follow
+  positional input, with positional-only names such as `self`, `dict`, `other`,
+  and `kwds` remaining ordinary data keys. Malformed pairs retain error types
+  and prior writes; exact diagnostic text is not CPython-compatible. String
+  pair elements and string iteration remain blocked by missing `str.__iter__`.
+- Direct method calls and class-level `__missing__` dispatch work. Stored bound
+  methods remain unusable as general callables. Callable-instance protocol and
+  descriptor-based missing handlers are not part of this slice.
+- View objects retain the UserDict rather than its current backing dict. They
+  support iteration, length, membership, and representation through subclass
+  hooks, including replacement of `data`. Set operators/comparisons, public ABC
+  view types/registration, generic aliases, and exact generator suspension
+  timing are deferred; Python iterator classes replace generators here.
+- Keys/values/items iterators each own terminal state: they close permanently
+  after exhaustion or an escaping exception, reject re-entry while active, and
+  release mapping/iterator references on close. Normal source exhaustion raises
+  plain `StopIteration` with empty `args` and `value is None`, discarding any
+  delegated iterator's return value. Keys iteration never looks up values;
+  values/items convert lookup-raised `StopIteration` to `RuntimeError`.
+  Exception chaining (`raise ... from`, `__cause__`, `__context__`) remains
+  a general VM gap: the wrapped error type/message is supported, but its original
+  StopIteration is not exposed as a cause. Eager key-iterator creation retains
+  the existing generator suspension-timing limitation.
+- A separate VM lowering gap was observed while implementing iterator cleanup:
+  exceptions from a `return` expression inside `try/except/finally` can bypass
+  that function's except handlers. The iterators evaluate delegation/lookup into
+  a local inside the protected body and return after cleanup. A general codegen
+  repair remains outside this slice.
+- Equality accepts UserDict and builtin dict operands, honoring `items()`
+  overrides and returning `NotImplemented` for other operand types. Supporting
+  arbitrary registered Mapping operands needs `collections.abc`/`abc`.
+  UserDict materializes `items()` into builtin dicts and delegates to structural
+  dict equality. Stored hashes avoid additional user hashing during comparison,
+  including nested dict payloads. General recursion-limit enforcement is absent:
+  deeply nested or cyclic comparisons are outside the supported slice and may
+  exhaust the VM stack rather than reliably raising `RecursionError`.
+- The module uses `iter(data.keys())` because `iter(dict)` is unavailable.
+  Deletion delegates directly to dict; lookup, deletion, and missing-pop errors
+  now retain the original key in `KeyError.args` through generated and native paths.
+- Compatibility tests are split across small interpreter source files to stay
+  within the 256-entry per-code-object global-read cache limit. They are also
+  runnable against CPython 3.14.5; the separate `*_limits.py` file checks only
+  CloverVM's intentional reduced surface. No upstream test text is copied;
+  module adaptations retain attribution to CPython's collections/mapping code.
+- The previously recorded frame assertion is resolved by preserving and checking
+  both membership operand shapes during cache replay. A warmed string-key dict
+  handler had been reused for other needle shapes, entering general hashing
+  through an invalid trusted path. This affected direct and expanded calls.
+  UserDict's expanded-call error tests are restored; `membership_cache_replay.py`
+  covers changed needle shapes, callback hashing/equality, nested calls, and
+  exception propagation. This no longer blocks the UserDict slice.
+
 ## Suggested First Slice
 
 These modules should have the highest payoff for running more real Python
@@ -130,7 +196,7 @@ source:
 | [~] | `builtins` | Continue adding common functions and exact exception/type behavior. |
 | [~] | `types` | Pure-Python first slice exists with `CodeType`; many descriptor/frame/generator aliases and dynamic class helpers remain. |
 | [~] | `operator` | Pure-Python first slice exists for direct VM-supported operators; callable factory helpers and protocol-heavy edge behavior remain. |
-| [ ] | `collections` | Start with pure-Python-compatible pieces, but core containers may need native support later. |
+| [~] | `collections` | Python UserDict slice exists; classmethod binding, copy/allocation machinery, mapping ABCs, view set operations, and other collections classes remain deferred. |
 | [ ] | `abc` | Needed before `collections.abc` and many framework patterns. |
 | [ ] | `functools` | `wraps`, `partial`, and cache helpers have high ecosystem payoff. |
 | [~] | `itertools` | Initial lazy `chain`, `repeat`, `islice`, and `starmap` slice exists; remaining APIs and protocol/metadata limitations are recorded above. |

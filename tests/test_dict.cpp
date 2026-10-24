@@ -78,6 +78,22 @@ namespace
             cl::test::native_exception_message(exception).extract()->data);
     }
 
+    static void expect_missing_key(ThreadState *thread, Value key)
+    {
+        ASSERT_EQ(PendingExceptionKind::Object,
+                  thread->pending_exception_kind());
+        TValue<Exception> exception = thread->pending_exception_object();
+        EXPECT_STREQ(L"KeyError", exception.extract()
+                                      ->get_shape()
+                                      ->get_class()
+                                      ->get_name()
+                                      .extract()
+                                      ->data);
+        Tuple *args = exception.extract()->args.extract();
+        ASSERT_EQ(1u, args->size());
+        EXPECT_EQ(key, args->item_unchecked(0));
+    }
+
     static Function *dict_method_function(test::VmTestContext &context,
                                           const wchar_t *name)
     {
@@ -501,7 +517,7 @@ TEST(Dict, SemanticApiLookupAndContainsPromoteNonStringMisses)
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     EXPECT_TRUE(dict->get_item(thread, Value::from_smi(1)).has_exception());
-    expect_pending_exception(thread, L"KeyError", L"");
+    expect_missing_key(thread, Value::from_smi(1));
     thread->clear_pending_exception();
 
     EXPECT_FALSE(dict->contains(thread, Value::from_smi(1)).value());
@@ -518,11 +534,11 @@ TEST(Dict, SemanticApiDeleteAndPopPromoteNonStringMisses)
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     EXPECT_TRUE(dict->del_item(thread, Value::from_smi(1)).has_exception());
-    expect_pending_exception(thread, L"KeyError", L"");
+    expect_missing_key(thread, Value::from_smi(1));
     thread->clear_pending_exception();
 
     EXPECT_TRUE(dict->pop(thread, Value::from_smi(1)).has_exception());
-    expect_pending_exception(thread, L"KeyError", L"");
+    expect_missing_key(thread, Value::from_smi(1));
     EXPECT_NE(string_key_shape, dict->get_shape());
     EXPECT_EQ(1u, dict->table_generation());
 }
@@ -715,7 +731,7 @@ TEST(Dict, PublicNonStringLookupMisses)
     Value result = context.run_file(L"d = {}\n"
                                     L"d[1]\n");
     EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
+    expect_missing_key(context.thread(), Value::from_smi(1));
 }
 
 TEST(Dict, PromotionDoesNotInvalidateExistingIterator)
@@ -826,7 +842,7 @@ TEST(Dict, PublicPopReturnsDefaultOnlyWhenProvided)
     Value result = context.run_file(L"d = {}\n"
                                     L"d.pop('missing')\n");
     EXPECT_TRUE(result.is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
+    expect_pending_exception(context.thread(), L"KeyError", L"missing");
 }
 
 TEST(Dict, PublicStringPopKeepsStringKeyShape)
@@ -2450,7 +2466,7 @@ TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
     EXPECT_EQ(Value::from_smi(1), get_dict_item(context.thread(), dict, keep));
     EXPECT_TRUE(
         get_dict_item(context.thread(), dict, erase).is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
+    expect_missing_key(context.thread(), erase);
 }
 
 TEST(DictKeywordStorage, CopyPreservesStringEntriesAndOwnsReferences)
@@ -2665,7 +2681,7 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
               get_dict_item(context.thread(), &copy, second));
     EXPECT_TRUE(
         get_dict_item(context.thread(), &copy, first).is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
+    expect_missing_key(context.thread(), first);
 }
 
 TEST(Dict, IteratorVisitsLiveEntriesInInsertionOrder)
@@ -2823,7 +2839,7 @@ TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
     EXPECT_FALSE(dict_contains(context.thread(), dict, alpha));
     EXPECT_TRUE(
         get_dict_item(context.thread(), dict, alpha).is_exception_marker());
-    expect_pending_exception(context.thread(), L"KeyError", L"");
+    expect_missing_key(context.thread(), alpha);
     context.thread()->clear_pending_exception();
 
     set_dict_item(context.thread(), dict, alpha, Value::from_smi(7));
