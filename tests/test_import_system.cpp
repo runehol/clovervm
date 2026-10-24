@@ -51,8 +51,11 @@ namespace
     {
         TValue<String> path_name =
             context.vm().get_or_create_interned_string_value(L"path");
-        bool stored = context.vm().sys_module().extract()->set_own_property(
-            path_name, Value::from_oop(path));
+        bool stored = context.vm()
+                          .sys_module()
+                          .extract()
+                          ->set_own_property(path_name, Value::from_oop(path))
+                          .value();
         ASSERT_TRUE(stored);
     }
 
@@ -344,8 +347,10 @@ TEST(ImportSystem, ImportModuleAbsoluteUsesCachedModuleWithoutReexecution)
     Value first = import_module_absolute(context.thread(), name);
     ASSERT_TRUE(can_convert_to<ModuleObject>(first));
     ModuleObject *module = first.get_ptr<ModuleObject>();
-    ASSERT_TRUE(module->set_own_property(module_name(context, L"marker"),
-                                         Value::from_smi(99)));
+    ASSERT_TRUE(module
+                    ->set_own_property(module_name(context, L"marker"),
+                                       Value::from_smi(99))
+                    .value());
 
     Value second = import_module_absolute(context.thread(), name);
     EXPECT_EQ(first, second);

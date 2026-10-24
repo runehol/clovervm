@@ -50,6 +50,17 @@ To close: add traceback objects and thread them through exception propagation.
 
 ## Class Construction
 
+### Class-body `__class__` shadowing is unsupported
+
+CPython permits a class-body binding such as `__class__ = object` as a
+namespace entry. CloverVM explicitly rejects a surviving `__class__` binding
+when building the class, with `TypeError: __class__ shadowing in class bodies is
+not supported`.
+
+Reason: the current shape-backed attribute model does not support independently
+shadowing its synthetic `__class__` descriptor. Ordinary instance `__class__`
+reassignment retains its existing behavior.
+
 ### Class calls only partially support custom `__new__`
 
 Python class construction calls `__new__` first, then conditionally calls

@@ -140,46 +140,42 @@ namespace cl
         __builtin_unreachable();
     }
 
-    static bool store_attr_change_class(Value receiver, Value value)
+    static Expected<bool> store_attr_change_class(Value receiver, Value value)
     {
         assert(receiver.is_ptr());
         Object *object = receiver.get_ptr<Object>();
         if(object->get_shape()->has_flag(ShapeFlag::IsImmutable))
         {
-            (void)active_thread()->set_pending_builtin_exception_string(
+            return Expected<bool>::raise_exception(
                 L"TypeError", L"__class__ assignment only supported for "
                               L"mutable types or ModuleType subclasses");
-            return false;
         }
         NativeLayoutId receiver_layout = object->native_layout_id();
         if(receiver_layout != NativeLayoutId::Instance &&
            receiver_layout != NativeLayoutId::ModuleObject)
         {
-            (void)active_thread()->set_pending_builtin_exception_string(
+            return Expected<bool>::raise_exception(
                 L"TypeError",
                 L"__class__ assignment only supported for mutable types or "
                 L"ModuleType subclasses");
-            return false;
         }
         if(!can_convert_to<ClassObject>(value))
         {
-            (void)active_thread()->set_pending_builtin_exception_string(
+            return Expected<bool>::raise_exception(
                 L"TypeError", L"__class__ assignment requires a class object");
-            return false;
         }
         TValue<ClassObject> new_class =
             TValue<ClassObject>::from_value_assumed(value);
         if(new_class.extract()->instance_native_layout_id() != receiver_layout)
         {
-            (void)active_thread()->set_pending_builtin_exception_string(
+            return Expected<bool>::raise_exception(
                 L"TypeError",
                 L"__class__ assignment only supported for mutable types or "
                 L"ModuleType subclasses");
-            return false;
         }
 
         object->set_shape(object->get_shape()->clone_with_class(new_class));
-        return true;
+        return Expected<bool>::ok(true);
     }
 
     static Value
@@ -764,8 +760,9 @@ namespace cl
             own_descriptor, lookup_class);
     }
 
-    bool store_attr_from_plan(Value receiver, const AttributeMutationPlan &plan,
-                              Value value)
+    Expected<bool> store_attr_from_plan(Value receiver,
+                                        const AttributeMutationPlan &plan,
+                                        Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -785,7 +782,7 @@ namespace cl
             storage_owner->write_storage_location(plan.storage_location(),
                                                   value);
             invalidate_lookup_cells_for_class_target(storage_owner);
-            return true;
+            return Expected<bool>::ok(true);
         }
 
         assert(plan.is_add_own_property());
@@ -795,7 +792,7 @@ namespace cl
         Object *object = receiver.get_ptr<Object>();
         object->set_shape(plan.next_shape);
         object->write_empty_storage_location(plan.storage_location(), value);
-        return true;
+        return Expected<bool>::ok(true);
     }
 
     bool delete_attr_from_plan(Value receiver,
@@ -889,7 +886,7 @@ namespace cl
         return count;
     }
 
-    bool store_attr(Value obj, TValue<String> name, Value value)
+    Expected<bool> store_attr(Value obj, TValue<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -901,9 +898,10 @@ namespace cl
         }
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
         {
-            return obj.get_ptr<Object>()->add_own_property(name, value);
+            return Expected<bool>::ok(
+                obj.get_ptr<Object>()->add_own_property(name, value));
         }
-        return false;
+        return Expected<bool>::ok(false);
     }
 
     bool delete_attr(Value obj, TValue<String> name)

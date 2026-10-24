@@ -222,7 +222,8 @@ TEST(ModuleObject, BuiltinsBindingOrdinaryMutationInvalidatesBindingCell)
         module->get_or_create_module_globals_validity_cell();
     ValidityCell *builtins_cell = module_builtins_lookup_cell(module);
 
-    EXPECT_TRUE(module->set_own_property(dunder_builtins, Value::from_smi(4)));
+    EXPECT_TRUE(
+        module->set_own_property(dunder_builtins, Value::from_smi(4)).value());
     EXPECT_TRUE(globals_cell->is_valid());
     EXPECT_FALSE(builtins_cell->is_valid());
     EXPECT_EQ(Value::from_smi(4), module->get_builtins_binding());
@@ -249,7 +250,8 @@ TEST(ModuleObject, OrdinaryGlobalsStartAfterConstructorMetadata)
     ModuleObject *module = context.make_test_module_object(
         name, context.vm().global_builtins_module().raw_value());
 
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(42)).value());
     EXPECT_EQ(Value::from_smi(42), module->get_own_property(global_name));
 
     StorageLocation location =
@@ -277,7 +279,8 @@ TEST(ModuleObject, ShapeChangeInvalidatesLookupCells)
         module->get_or_create_module_globals_validity_cell();
     ValidityCell *builtins_cell = module_builtins_lookup_cell(module);
 
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(42)).value());
 
     EXPECT_FALSE(globals_cell->is_valid());
     EXPECT_FALSE(builtins_cell->is_valid());
@@ -298,7 +301,8 @@ TEST(ModuleObject, DeleteShapeChangeInvalidatesLookupCells)
         name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_oop(module));
 
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+    ASSERT_TRUE(
+        module->set_own_property(global_name, Value::from_smi(42)).value());
     ValidityCell *globals_cell =
         module->get_or_create_module_globals_validity_cell();
     ValidityCell *builtins_cell = module_builtins_lookup_cell(module);

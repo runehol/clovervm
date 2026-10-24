@@ -97,9 +97,13 @@ namespace cl
                                    TValue<String> name,
                                    cl::TValue<cl::Function> function)
         {
-            bool stored =
+            Expected<bool> stored =
                 builder->module->set_own_property(name, function.raw_value());
-            if(!stored)
+            if(stored.has_exception())
+            {
+                return CLOVER_STATUS_ERROR;
+            }
+            if(!stored.value())
             {
                 return cl::set_builder_import_error(
                     builder, L"native module could not set function");
@@ -233,8 +237,13 @@ clover_module_add_value(clover_native_module_builder *builder, const char *name,
         return CLOVER_STATUS_ERROR;
     }
 
-    bool stored = builder->module->set_own_property(*decoded_name, unwrapped);
-    if(!stored)
+    cl::Expected<bool> stored =
+        builder->module->set_own_property(*decoded_name, unwrapped);
+    if(stored.has_exception())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(!stored.value())
     {
         return cl::set_builder_import_error(
             builder, L"native module could not set value");

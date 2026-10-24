@@ -605,9 +605,9 @@ namespace cl
         TValue<Tuple> bases = TValue<Tuple>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyBasesParameter)]);
 
-        TValue<ClassObject> cls = CL_TRY(ClassObject::make(
+        Owned<TValue<ClassObject>> cls(CL_TRY(ClassObject::make(
             thread, thread->get_machine()->type_class(), class_name,
-            kDefaultFactoryInlineSlotCount, bases));
+            kDefaultFactoryInlineSlotCount, bases)));
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {
@@ -621,8 +621,14 @@ namespace cl
             {
                 continue;
             }
-            if(!cls.extract()->set_own_property(
-                   local_scope->get_name_by_slot_index(slot_idx), value))
+            TValue<String> name = local_scope->get_name_by_slot_index(slot_idx);
+            if(string_eq(name, thread->get_machine()->dunder_class_name()))
+            {
+                return Expected<Value>::raise_exception(
+                    L"TypeError",
+                    L"__class__ shadowing in class bodies is not supported");
+            }
+            if(!CL_TRY(cls.extract()->set_own_property(name, value)))
             {
                 return Expected<Value>::raise_exception(
                     L"TypeError", L"cannot set read-only class attribute");
@@ -849,15 +855,16 @@ namespace cl
             L"exceptions must derive from BaseException");
     }
 
-    NOINLINE static void set_exception_context(ThreadState *thread,
-                                               TValue<Exception> raised,
-                                               Value context)
+    NOINLINE static Expected<void>
+    set_exception_context(ThreadState *thread, TValue<Exception> raised,
+                          Value context)
     {
-        [[maybe_unused]] bool ok = raised.extract()->set_own_property(
+        [[maybe_unused]] bool ok = CL_TRY(raised.extract()->set_own_property(
             thread->get_machine()->get_or_create_interned_string_value(
                 L"__context__"),
-            context);
+            context));
         assert(ok);
+        return Expected<void>::ok();
     }
 
     NOINLINE INTERP_CC Value raise_unwind(PARAMS)
@@ -879,7 +886,7 @@ namespace cl
         int8_t context_reg = pc[1];
         TValue<Exception> raised =
             make_raise_exception_object(thread, accumulator);
-        set_exception_context(thread, raised, fp[context_reg]);
+        INTERP_TRY(set_exception_context(thread, raised, fp[context_reg]));
         (void)thread->set_pending_exception_object(raised);
 
         ExceptionalTarget target =
@@ -2803,13 +2810,24 @@ namespace cl
             {
                 cache.populate(receiver, descriptor);
             }
-            if(unlikely(!store_attr_from_plan(receiver, descriptor.plan,
-                                              accumulator)))
+            bool stored = false;
+            bool has_exception;
             {
-                if(thread->has_pending_exception())
+                // Destroy the nontrivial Expected before either MUSTTAIL edge.
+                Expected<bool> result = store_attr_from_plan(
+                    receiver, descriptor.plan, accumulator);
+                has_exception = result.has_exception();
+                if(!has_exception)
                 {
-                    MUSTTAIL return propagate_pending_exception(ARGS);
+                    stored = result.value();
                 }
+            }
+            if(unlikely(has_exception))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            if(unlikely(!stored))
+            {
                 MUSTTAIL return attribute_assignment_error(ARGS);
             }
             COMPLETE();
@@ -3174,13 +3192,24 @@ namespace cl
         }
         if(cache.plan.kind == AttributeMutationPlanKind::StoreExisting)
         {
-            if(unlikely(
-                   !store_attr_from_plan(receiver, cache.plan, accumulator)))
+            bool stored = false;
+            bool has_exception;
             {
-                if(thread->has_pending_exception())
+                // Destroy the nontrivial Expected before either MUSTTAIL edge.
+                Expected<bool> result =
+                    store_attr_from_plan(receiver, cache.plan, accumulator);
+                has_exception = result.has_exception();
+                if(!has_exception)
                 {
-                    MUSTTAIL return propagate_pending_exception(ARGS);
+                    stored = result.value();
                 }
+            }
+            if(unlikely(has_exception))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            if(unlikely(!stored))
+            {
                 MUSTTAIL return attribute_assignment_error(ARGS);
             }
             COMPLETE();

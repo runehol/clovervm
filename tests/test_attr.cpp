@@ -24,10 +24,10 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    cls->set_own_property(attr_name, Value::from_smi(1));
+    cls->set_own_property(attr_name, Value::from_smi(1)).value();
 
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-    instance->set_own_property(attr_name, Value::from_smi(2));
+    instance->set_own_property(attr_name, Value::from_smi(2)).value();
 
     EXPECT_EQ(Value::from_smi(2),
               load_attr(Value::from_oop(instance), attr_name));
@@ -53,19 +53,19 @@ TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
         context.thread()->make_internal_raw<ClassObject>(
             descriptor_cls_name, 2, context.vm().object_class(),
             NativeLayoutId::Instance);
-    descriptor_cls->set_own_property(get_name, Value::from_smi(1));
-    descriptor_cls->set_own_property(set_name, Value::from_smi(2));
+    descriptor_cls->set_own_property(get_name, Value::from_smi(1)).value();
+    descriptor_cls->set_own_property(set_name, Value::from_smi(2)).value();
 
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
         owner_cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor)).value();
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
-    instance->set_own_property(attr_name, Value::from_smi(7));
+    instance->set_own_property(attr_name, Value::from_smi(7)).value();
 
     AttributeReadDescriptor read_descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
@@ -93,18 +93,18 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
         context.thread()->make_internal_raw<ClassObject>(
             descriptor_cls_name, 2, context.vm().object_class(),
             NativeLayoutId::Instance);
-    descriptor_cls->set_own_property(get_name, Value::from_smi(1));
+    descriptor_cls->set_own_property(get_name, Value::from_smi(1)).value();
 
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
         owner_cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor)).value();
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
-    instance->set_own_property(attr_name, Value::from_smi(7));
+    instance->set_own_property(attr_name, Value::from_smi(7)).value();
 
     AttributeReadDescriptor read_descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
@@ -144,11 +144,11 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
         owner_cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor)).value();
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
-    instance->set_own_property(attr_name, Value::from_smi(7));
+    instance->set_own_property(attr_name, Value::from_smi(7)).value();
 
     AttributeReadDescriptor read_descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
@@ -185,7 +185,7 @@ TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
         owner_cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor)).value();
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
@@ -215,7 +215,7 @@ TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)).value());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     AttributeReadDescriptor descriptor =
@@ -232,7 +232,7 @@ TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     ASSERT_EQ(Value::from_smi(7),
               load_attr_from_plan(Value::from_oop(instance), descriptor.plan));
 
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(8)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(8)).value());
 
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(Value::from_smi(8),
@@ -258,7 +258,7 @@ TEST(Attr,
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
@@ -274,9 +274,11 @@ TEST(Attr,
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(meta->set_own_property(
-        context.vm().get_or_create_interned_string_value(L"other"),
-        Value::from_smi(8)));
+    EXPECT_TRUE(
+        meta->set_own_property(
+                context.vm().get_or_create_interned_string_value(L"other"),
+                Value::from_smi(8))
+            .value());
 
     EXPECT_FALSE(cell->is_valid());
 }
@@ -299,7 +301,7 @@ TEST(Attr, ClassReadDescriptorMetaclassFallbackReloadsSlot)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(7)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
@@ -322,7 +324,7 @@ TEST(Attr, ClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
@@ -335,7 +337,7 @@ TEST(Attr, ClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     ASSERT_EQ(Value::from_smi(7),
               load_attr_from_plan(Value::from_oop(cls), descriptor.plan));
 
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(8)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(8)).value());
 
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(
@@ -360,7 +362,7 @@ TEST(Attr, ClassReadDescriptorSurvivesBaseContentsWriteAndReloadsSlot)
         base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(child), attr_name);
@@ -375,7 +377,7 @@ TEST(Attr, ClassReadDescriptorSurvivesBaseContentsWriteAndReloadsSlot)
     ASSERT_EQ(Value::from_smi(7),
               load_attr_from_plan(Value::from_oop(child), descriptor.plan));
 
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(8)));
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(8)).value());
 
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
@@ -400,7 +402,7 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnBaseShapeChange)
         base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(child), attr_name);
@@ -411,7 +413,7 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnBaseShapeChange)
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
 
-    EXPECT_TRUE(base->set_own_property(other_name, Value::from_smi(8)));
+    EXPECT_TRUE(base->set_own_property(other_name, Value::from_smi(8)).value());
 
     EXPECT_FALSE(cell->is_valid());
     EXPECT_EQ(0u, base->attached_mro_shape_validity_cell_count());
@@ -437,8 +439,9 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
-    EXPECT_TRUE(meta->set_own_property(meta_attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)).value());
+    EXPECT_TRUE(
+        meta->set_own_property(meta_attr_name, Value::from_smi(1)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
@@ -449,7 +452,8 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(meta->set_own_property(meta_attr_name, Value::from_smi(2)));
+    EXPECT_TRUE(
+        meta->set_own_property(meta_attr_name, Value::from_smi(2)).value());
 
     EXPECT_FALSE(cell->is_valid());
     EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
@@ -468,7 +472,7 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
         context.vm().get_or_create_interned_string_value(L"inherited"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    base->set_own_property(inherited_name, Value::from_smi(7));
+    base->set_own_property(inherited_name, Value::from_smi(7)).value();
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
 
@@ -494,7 +498,7 @@ TEST(Attr, LoadAttrOnClassFallsBackToMetaclass)
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         meta_name, ClassObject::class_inline_storage_slot_count,
         context.vm().type_class(), NativeLayoutId::ClassObject);
-    meta->set_own_property(attr_name, Value::from_smi(7));
+    meta->set_own_property(attr_name, Value::from_smi(7)).value();
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
@@ -516,11 +520,11 @@ TEST(Attr, LoadAttrOnClassPrefersClassPathOverMetaclass)
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         meta_name, ClassObject::class_inline_storage_slot_count,
         context.vm().type_class(), NativeLayoutId::ClassObject);
-    meta->set_own_property(attr_name, Value::from_smi(7));
+    meta->set_own_property(attr_name, Value::from_smi(7)).value();
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    cls->set_own_property(attr_name, Value::from_smi(11));
+    cls->set_own_property(attr_name, Value::from_smi(11)).value();
 
     EXPECT_EQ(Value::from_smi(11), load_attr(Value::from_oop(cls), attr_name));
 }
@@ -542,7 +546,7 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
         child_name, 2, base, NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
-    base->set_own_property(attr_name, Value::from_smi(7));
+    base->set_own_property(attr_name, Value::from_smi(7)).value();
     Shape *shape_with_attr = child->get_shape()->derive_transition(
         attr_name, ShapeTransitionVerb::Add, flags);
     child->set_shape(shape_with_attr);
@@ -709,10 +713,15 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
         Value original_class = load_attr(instance, dunder_class_name);
         ASSERT_FALSE(original_class.is_not_present());
 
-        EXPECT_FALSE(store_attr(instance, attr_name, Value::from_smi(99)));
+        EXPECT_FALSE(
+            store_attr(instance, attr_name, Value::from_smi(99)).value());
         EXPECT_EQ(Value::not_present(), load_attr(instance, attr_name));
 
-        EXPECT_FALSE(store_attr(instance, dunder_class_name, Value::None()));
+        Expected<bool> assigned =
+            store_attr(instance, dunder_class_name, Value::None());
+        EXPECT_TRUE(assigned.has_exception());
+        EXPECT_TRUE(context.thread()->has_pending_exception());
+        context.thread()->clear_pending_exception();
         EXPECT_EQ(original_class, load_attr(instance, dunder_class_name));
     }
 }
@@ -737,7 +746,7 @@ TEST(Attr, BuiltinTypeObjectsRejectUnsupportedAttributeWrites)
 
     for(Value type: builtin_types)
     {
-        EXPECT_FALSE(store_attr(type, attr_name, Value::from_smi(99)));
+        EXPECT_FALSE(store_attr(type, attr_name, Value::from_smi(99)).value());
         EXPECT_EQ(Value::not_present(), load_attr(type, attr_name));
     }
 }
@@ -770,7 +779,8 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_TRUE(
-        store_attr(Value::from_oop(instance), attr_name, Value::from_smi(9)));
+        store_attr(Value::from_oop(instance), attr_name, Value::from_smi(9))
+            .value());
     EXPECT_EQ(Value::from_smi(9),
               load_attr(Value::from_oop(instance), attr_name));
 }
@@ -789,8 +799,9 @@ TEST(Attr, ReceiverSlotPlansExecuteAgainstCurrentReceiver)
     Instance *first = context.thread()->make_internal_raw<Instance>(cls);
     Instance *second = context.thread()->make_internal_raw<Instance>(cls);
 
-    EXPECT_TRUE(first->set_own_property(attr_name, Value::from_smi(1)));
-    EXPECT_TRUE(second->set_own_property(attr_name, Value::from_smi(2)));
+    EXPECT_TRUE(first->set_own_property(attr_name, Value::from_smi(1)).value());
+    EXPECT_TRUE(
+        second->set_own_property(attr_name, Value::from_smi(2)).value());
     ASSERT_EQ(first->get_shape(), second->get_shape());
 
     AttributeReadDescriptor read_descriptor =
@@ -807,8 +818,9 @@ TEST(Attr, ReceiverSlotPlansExecuteAgainstCurrentReceiver)
     EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
               write_descriptor.cache_blockers);
     ASSERT_EQ(nullptr, write_descriptor.plan.storage_owner);
-    EXPECT_TRUE(store_attr_from_plan(
-        Value::from_oop(second), write_descriptor.plan, Value::from_smi(3)));
+    EXPECT_TRUE(store_attr_from_plan(Value::from_oop(second),
+                                     write_descriptor.plan, Value::from_smi(3))
+                    .value());
 
     EXPECT_EQ(Value::from_smi(1), load_attr(Value::from_oop(first), attr_name));
     EXPECT_EQ(Value::from_smi(3),
@@ -827,8 +839,8 @@ TEST(Attr, StoreAttrWritesClassMember)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
-    EXPECT_TRUE(
-        store_attr(Value::from_oop(cls), attr_name, Value::from_smi(5)));
+    EXPECT_TRUE(store_attr(Value::from_oop(cls), attr_name, Value::from_smi(5))
+                    .value());
     EXPECT_EQ(Value::from_smi(5), load_attr(Value::from_oop(cls), attr_name));
 }
 
@@ -853,7 +865,7 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
         meta, cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
 
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)).value());
 
     AttributeWriteDescriptor descriptor =
         resolve_attr_write_descriptor(Value::from_oop(cls), attr_name);
@@ -865,7 +877,8 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
     EXPECT_EQ(cell, meta->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
-    EXPECT_TRUE(meta->set_own_property(descriptor_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        meta->set_own_property(descriptor_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(cell->is_valid());
 }
@@ -891,11 +904,11 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
         owner_cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor)).value();
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
-    instance->set_own_property(attr_name, Value::from_smi(7));
+    instance->set_own_property(attr_name, Value::from_smi(7)).value();
 
     AttributeWriteDescriptor write_descriptor =
         resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
@@ -928,17 +941,17 @@ TEST(Attr, AttributeWriteDescriptorRejectsClassDataDescriptor)
         context.thread()->make_internal_raw<ClassObject>(
             descriptor_cls_name, 2, context.vm().object_class(),
             NativeLayoutId::Instance);
-    descriptor_cls->set_own_property(set_name, Value::from_smi(1));
+    descriptor_cls->set_own_property(set_name, Value::from_smi(1)).value();
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
         owner_cls_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor)).value();
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
-    instance->set_own_property(attr_name, Value::from_smi(7));
+    instance->set_own_property(attr_name, Value::from_smi(7)).value();
 
     AttributeWriteDescriptor write_descriptor =
         resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
@@ -966,14 +979,14 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
     ValidityCell *add_cell =
         cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, add_cell);
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(5)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(5)).value());
     EXPECT_FALSE(add_cell->is_valid());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
     ValidityCell *update_cell =
         cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, update_cell);
-    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(6)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(6)).value());
     EXPECT_FALSE(update_cell->is_valid());
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
@@ -987,7 +1000,8 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
     ValidityCell *instance_add_delete_cell =
         cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, instance_add_delete_cell);
-    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(
+        instance->set_own_property(attr_name, Value::from_smi(7)).value());
     EXPECT_TRUE(instance_add_delete_cell->is_valid());
     EXPECT_EQ(instance_add_delete_cell,
               cls->current_mro_shape_and_contents_validity_cell());
@@ -1075,7 +1089,8 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
         child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
-    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        instance->set_own_property(attr_name, Value::from_smi(1)).value());
     EXPECT_EQ(nullptr, child->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 
@@ -1093,7 +1108,8 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        base->set_own_property(descriptor_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(cell->is_valid());
 }
@@ -1117,7 +1133,8 @@ TEST(Attr, AttributeDeleteDescriptorCarriesLookupValidityForOwnDelete)
         child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
-    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        instance->set_own_property(attr_name, Value::from_smi(1)).value());
     Shape *shape_before_delete = instance->get_shape();
 
     AttributeDeleteDescriptor descriptor =
@@ -1143,7 +1160,8 @@ TEST(Attr, AttributeDeleteDescriptorCarriesLookupValidityForOwnDelete)
     EXPECT_TRUE(instance->get_own_property(attr_name).is_not_present());
     EXPECT_TRUE(cell->is_valid());
 
-    EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        base->set_own_property(descriptor_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(cell->is_valid());
 }
@@ -1166,7 +1184,8 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
-    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        instance->set_own_property(attr_name, Value::from_smi(1)).value());
 
     AttributeReadDescriptor descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
@@ -1181,7 +1200,8 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        base->set_own_property(descriptor_name, Value::from_smi(1)).value());
 
     EXPECT_FALSE(cell->is_valid());
 }
@@ -1202,7 +1222,8 @@ TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
         shape_flag(ShapeFlag::IsClassObject), instance_shape_flags);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    EXPECT_FALSE(instance->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_FALSE(
+        instance->set_own_property(attr_name, Value::from_smi(7)).value());
 }
 
 TEST(Attr, ClassMetadataAttributesAreReadonly)
@@ -1222,7 +1243,8 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
     EXPECT_EQ(cls_name.raw_value(),
               load_attr(Value::from_oop(cls), dunder_name_name));
     EXPECT_FALSE(store_attr(Value::from_oop(cls), dunder_name_name,
-                            replacement_name.raw_value()));
+                            replacement_name.raw_value())
+                     .value());
     EXPECT_EQ(cls_name.raw_value(),
               load_attr(Value::from_oop(cls), dunder_name_name));
 }
@@ -1245,15 +1267,18 @@ TEST(Attr, StoreAttrChangesDunderClassAndRejectsUnsupportedInlineValues)
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
-                           Value::from_oop(other_cls)));
+                           Value::from_oop(other_cls))
+                    .value());
     EXPECT_EQ(Value::from_oop(other_cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
     EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
-                           Value::from_oop(cls)));
+                           Value::from_oop(cls))
+                    .value());
     EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
 
-    EXPECT_FALSE(store_attr(Value::from_smi(3), attr_name, Value::from_smi(7)));
+    EXPECT_FALSE(
+        store_attr(Value::from_smi(3), attr_name, Value::from_smi(7)).value());
 }
 
 TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
@@ -1281,11 +1306,11 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    cls->set_own_property(method_name, method_value);
-    cls->set_own_property(value_name, Value::from_smi(42));
+    cls->set_own_property(method_name, method_value).value();
+    cls->set_own_property(value_name, Value::from_smi(42)).value();
 
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-    instance->set_own_property(own_name, Value::from_smi(43));
+    instance->set_own_property(own_name, Value::from_smi(43)).value();
 
     Value callable = Value::not_present();
     Value self = Value::not_present();
@@ -1335,7 +1360,7 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    EXPECT_TRUE(cls->set_own_property(attr_name, first_method));
+    EXPECT_TRUE(cls->set_own_property(attr_name, first_method).value());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     AttributeReadDescriptor descriptor =
@@ -1355,7 +1380,7 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
     EXPECT_EQ(first_method, callable);
     EXPECT_EQ(Value::from_oop(instance), self);
 
-    EXPECT_TRUE(cls->set_own_property(attr_name, second_method));
+    EXPECT_TRUE(cls->set_own_property(attr_name, second_method).value());
 
     EXPECT_TRUE(cell->is_valid());
     ASSERT_TRUE(load_method_from_plan(Value::from_oop(instance),
@@ -1380,7 +1405,8 @@ TEST(Attr, ReflectedPrioritySpecialMethodFindsOverrideBeforeAlternateClass)
         base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
-    EXPECT_TRUE(child->set_own_property(reflected_name, Value::from_smi(42)));
+    EXPECT_TRUE(
+        child->set_own_property(reflected_name, Value::from_smi(42)).value());
 
     Instance *base_instance =
         context.thread()->make_internal_raw<Instance>(base);
@@ -1413,7 +1439,8 @@ TEST(Attr, ReflectedPrioritySpecialMethodStopsAtAlternateClass)
 
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
-    EXPECT_TRUE(base->set_own_property(reflected_name, Value::from_smi(13)));
+    EXPECT_TRUE(
+        base->set_own_property(reflected_name, Value::from_smi(13)).value());
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, base, NativeLayoutId::Instance);
 
@@ -1448,8 +1475,8 @@ TEST(Attr, ReflectedPrioritySpecialMethodRequiresAlternateClassInMro)
     ClassObject *receiver = context.thread()->make_internal_raw<ClassObject>(
         receiver_name, 2, context.vm().object_class(),
         NativeLayoutId::Instance);
-    EXPECT_TRUE(
-        receiver->set_own_property(reflected_name, Value::from_smi(99)));
+    EXPECT_TRUE(receiver->set_own_property(reflected_name, Value::from_smi(99))
+                    .value());
 
     Instance *alternate_instance =
         context.thread()->make_internal_raw<Instance>(alternate);
@@ -1462,4 +1489,38 @@ TEST(Attr, ReflectedPrioritySpecialMethodRequiresAlternateClassInMro)
             Value::from_oop(alternate_instance), reflected_name);
 
     EXPECT_FALSE(descriptor.is_found());
+}
+
+TEST(Attr, ClassMutationFailurePropagatesThroughOwnPropertyApis)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"__class__");
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        context.vm().get_or_create_interned_string_value(L"Owner"), 2,
+        context.vm().object_class(), NativeLayoutId::Instance);
+    Value replacement = Value::from_oop(context.vm().object_class());
+    for(int operation = 0; operation < 3; ++operation)
+    {
+        Expected<bool> result =
+            operation == 0 ? cls->set_own_property(name, replacement)
+            : operation == 1
+                ? cls->set_existing_own_property(name, replacement)
+                : store_attr(Value::from_oop(cls), name, replacement);
+        ASSERT_TRUE(result.has_exception());
+        ASSERT_TRUE(context.thread()->has_pending_exception());
+        TValue<Exception> exception =
+            context.thread()->pending_exception_object();
+        EXPECT_STREQ(
+            L"TypeError",
+            string_as_wchar_t(
+                exception.extract()->get_shape()->get_class()->get_name()));
+        EXPECT_STREQ(
+            L"__class__ assignment only supported for mutable types or "
+            L"ModuleType subclasses",
+            string_as_wchar_t(test::native_exception_message(exception)));
+        EXPECT_EQ(context.vm().type_class(), cls->get_shape()->get_class());
+        context.thread()->clear_pending_exception();
+    }
 }

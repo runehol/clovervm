@@ -25,6 +25,7 @@ namespace cl
     class String;
     class Value;
     template <typename T> class TValue;
+    template <typename T, bool> class Expected;
 
     struct BootstrapObjectTag
     {
@@ -65,8 +66,10 @@ namespace cl
         bool add_own_property(TValue<String> name, Value value);
         bool define_own_property(TValue<String> name, Value value,
                                  DescriptorFlags descriptor_flags);
-        bool set_existing_own_property(TValue<String> name, Value value);
-        bool set_own_property(TValue<String> name, Value value);
+        [[nodiscard]] Expected<bool, false>
+        set_existing_own_property(TValue<String> name, Value value);
+        [[nodiscard]] Expected<bool, false>
+        set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         HeapObject *write_existing_storage_location_returning_zero_ref(

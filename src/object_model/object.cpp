@@ -382,7 +382,8 @@ namespace cl
         return true;
     }
 
-    bool Object::set_existing_own_property(TValue<String> name, Value value)
+    Expected<bool> Object::set_existing_own_property(TValue<String> name,
+                                                     Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -390,13 +391,13 @@ namespace cl
             lookup_existing_own_property_write_descriptor(this, name);
         if(!descriptor.is_found())
         {
-            return false;
+            return Expected<bool>::ok(false);
         }
         return store_attr_from_plan(Value::from_oop(this), descriptor.plan,
                                     value);
     }
 
-    bool Object::set_own_property(TValue<String> name, Value value)
+    Expected<bool> Object::set_own_property(TValue<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -409,9 +410,9 @@ namespace cl
         }
         if(descriptor.status == AttributeWriteStatus::NotFound)
         {
-            return add_own_property(name, value);
+            return Expected<bool>::ok(add_own_property(name, value));
         }
-        return false;
+        return Expected<bool>::ok(false);
     }
 
     bool Object::delete_own_property(TValue<String> name)
