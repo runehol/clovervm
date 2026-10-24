@@ -1622,6 +1622,31 @@ namespace cl
 
                 switch(kind.node_kind)
                 {
+                    case AstNodeKind::EXPRESSION_CALL:
+                        {
+                            analyze_child_as_expression(analysis, children[0],
+                                                        state);
+                            AstChildren arguments = av.children[children[1]];
+                            // CPython evaluates positional/starred expressions
+                            // before keywords, regardless of textual
+                            // interleaving.
+                            for(bool keywords: {false, true})
+                            {
+                                for(int32_t argument: arguments)
+                                {
+                                    bool keyword =
+                                        av.kinds[argument].node_kind ==
+                                        AstNodeKind::CALL_ARGUMENT_KEYWORD;
+                                    if(keyword == keywords)
+                                    {
+                                        analyze_child_as_expression(
+                                            analysis, argument, state);
+                                    }
+                                }
+                            }
+                            return fallthrough_summary(state);
+                        }
+
                     case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
                         annotate_read(node_idx);
                         return fallthrough_summary(state);

@@ -1031,6 +1031,7 @@ namespace cl
         {
             AstNodeKind node_kind = av.kinds[node_idx].node_kind;
             if(node_kind == AstNodeKind::CALL_ARGUMENT_POSITIONAL ||
+               node_kind == AstNodeKind::CALL_ARGUMENT_STARRED ||
                node_kind == AstNodeKind::CALL_ARGUMENT_KEYWORD)
             {
                 return av.children[node_idx][0];
@@ -1467,6 +1468,171 @@ namespace cl
             __builtin_unreachable();
         }
 
+        bool has_expanded_call_arguments(AstChildren args) const
+        {
+            for(int32_t arg: args)
+            {
+                if(av.kinds[arg].node_kind ==
+                       AstNodeKind::CALL_ARGUMENT_STARRED ||
+                   (is_keyword_call_argument(arg) &&
+                    av.constants[arg].value().is_none()))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        Expected<void> codegen_expanded_function_call(int32_t node_idx)
+        {
+            AstChildren children = av.children[node_idx];
+            AstChildren args = av.children[children[1]];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            if(av.kinds[children[0]].node_kind ==
+               AstNodeKind::EXPRESSION_ATTRIBUTE)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"expanded attribute calls are not implemented yet");
+            }
+
+            TemporaryReg callable(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(children[0], callable));
+            TemporaryReg containers(*code_obj, 2);
+            uint32_t positional = containers;
+            uint32_t keywords = containers + 1;
+            uint32_t positional_count = 0, starred_count = 0;
+            for(int32_t arg: args)
+            {
+                positional_count += is_positional_call_argument(arg);
+                starred_count += av.kinds[arg].node_kind ==
+                                 AstNodeKind::CALL_ARGUMENT_STARRED;
+            }
+            bool lone_star = positional_count == 0 && starred_count == 1;
+            if(lone_star)
+            {
+                for(int32_t arg: args)
+                {
+                    if(av.kinds[arg].node_kind ==
+                       AstNodeKind::CALL_ARGUMENT_STARRED)
+                    {
+                        CL_TRY(codegen_node_into_specific_register(
+                            call_argument_value(arg), positional));
+                        break;
+                    }
+                }
+            }
+            else if(positional_count + starred_count == 0)
+            {
+                CL_TRY(
+                    code_obj->emit_create_tuple(source_offset, positional, 0));
+                CL_TRY(code_obj->emit_star(source_offset, positional));
+            }
+            else
+            {
+                CL_TRY(
+                    code_obj->emit_create_list(source_offset, positional, 0));
+                CL_TRY(code_obj->emit_star(source_offset, positional));
+                for(int32_t arg: args)
+                {
+                    if(is_keyword_call_argument(arg))
+                    {
+                        continue;
+                    }
+                    CL_TRY(codegen_node(call_argument_value(arg)));
+                    if(is_positional_call_argument(arg))
+                    {
+                        CL_TRY(code_obj->emit_list_append(
+                            av.source_offsets[arg], positional));
+                    }
+                    else
+                    {
+                        CL_TRY(code_obj->emit_list_extend(
+                            av.source_offsets[arg], positional));
+                    }
+                }
+                CL_TRY(code_obj->emit_list_to_tuple(source_offset, positional));
+            }
+
+            std::vector<int32_t> keyword_args;
+            for(int32_t arg: args)
+            {
+                if(is_keyword_call_argument(arg))
+                {
+                    keyword_args.push_back(arg);
+                }
+            }
+            bool has_keyword_dict = false;
+            size_t idx = 0;
+            while(idx < keyword_args.size())
+            {
+                int32_t arg = keyword_args[idx];
+                if(av.constants[arg].value().is_none())
+                {
+                    CL_TRY(codegen_node(call_argument_value(arg)));
+                    if(has_keyword_dict)
+                    {
+                        CL_TRY(code_obj->emit_merge_call_keywords(
+                            av.source_offsets[arg], callable, keywords));
+                    }
+                    else
+                    {
+                        CL_TRY(code_obj->emit_build_call_keywords(
+                            av.source_offsets[arg], callable, keywords));
+                        has_keyword_dict = true;
+                    }
+                    ++idx;
+                    continue;
+                }
+
+                size_t run_end = idx;
+                while(run_end < keyword_args.size() &&
+                      !av.constants[keyword_args[run_end]].value().is_none())
+                {
+                    ++run_end;
+                }
+                TemporaryReg values(*code_obj, run_end - idx);
+                for(size_t value_idx = idx; value_idx < run_end; ++value_idx)
+                {
+                    CL_TRY(codegen_node_into_specific_register(
+                        call_argument_value(keyword_args[value_idx]),
+                        values + value_idx - idx));
+                }
+                if(!has_keyword_dict)
+                {
+                    CL_TRY(
+                        code_obj->emit_create_dict(source_offset, keywords, 0));
+                    CL_TRY(code_obj->emit_star(source_offset, keywords));
+                    has_keyword_dict = true;
+                }
+                for(size_t value_idx = idx; value_idx < run_end; ++value_idx)
+                {
+                    int32_t keyword = keyword_args[value_idx];
+                    uint8_t name = CL_TRY(code_obj->allocate_constant(
+                        av.constants[keyword].value()));
+                    CL_TRY(code_obj->emit_add_call_keyword(
+                        av.source_offsets[keyword], callable, keywords, name,
+                        values + value_idx - idx));
+                }
+                idx = run_end;
+            }
+            if(!has_keyword_dict)
+            {
+                CL_TRY(code_obj->emit_create_dict(source_offset, keywords, 0));
+                CL_TRY(code_obj->emit_star(source_offset, keywords));
+            }
+            if(lone_star)
+            {
+                CL_TRY(
+                    code_obj->emit_to_exact_tuple(source_offset, positional));
+                CL_TRY(code_obj->emit_star(source_offset, positional));
+            }
+            TemporaryReg outgoing(*code_obj, 1, RegisterAlignment::CallFrame);
+            CL_TRY(code_obj->emit_call_expanded(source_offset, callable,
+                                                containers, outgoing));
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_function_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1476,6 +1642,11 @@ namespace cl
             if(CL_TRY(try_codegen_trusted_clover_call(node_idx)))
             {
                 return Expected<void>::ok();
+            }
+
+            if(has_expanded_call_arguments(args))
+            {
+                return codegen_expanded_function_call(node_idx);
             }
 
             if(av.kinds[children[0]].node_kind ==
@@ -2802,6 +2973,7 @@ namespace cl
                     break;
 
                 case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
+                case AstNodeKind::CALL_ARGUMENT_STARRED:
                 case AstNodeKind::CALL_ARGUMENT_KEYWORD:
                     return Expected<void>::raise_exception(
                         L"SystemError",

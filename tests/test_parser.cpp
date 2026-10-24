@@ -1063,3 +1063,55 @@ TEST(Parser, conditional_expression_rejects_incomplete_syntax)
             parse_ast_with_start_rule(source, StartRule::File).has_exception());
     }
 }
+
+TEST(Parser, expanded_call_arguments_preserve_source_structure)
+{
+    EXPECT_EQ("f(1, *a, x=2, *b, **c, y=3, **d)\n",
+              parse(L"f(1, *a, x=2, *b, **c, y=3, **d)"));
+    EXPECT_EQ("(obj.method)(*a, **b)\n", parse(L"obj.method(*a, **b)"));
+    EXPECT_EQ("f(*a, 1)\n", parse(L"f(*a, 1)"));
+}
+
+TEST(Parser, expanded_calls_use_starred_and_optional_keyword_names)
+{
+    test::ParsedFile parsed(L"f(*a, named=b, **c)");
+    size_t starred = 0, named = 0, unpacked = 0;
+    for(size_t idx = 0; idx < parsed.ast.size(); ++idx)
+    {
+        if(parsed.ast.kinds[idx].node_kind ==
+           AstNodeKind::CALL_ARGUMENT_STARRED)
+        {
+            ++starred;
+            EXPECT_EQ(1u, parsed.ast.children[idx].size());
+        }
+        if(parsed.ast.kinds[idx].node_kind ==
+           AstNodeKind::CALL_ARGUMENT_KEYWORD)
+        {
+            EXPECT_EQ(1u, parsed.ast.children[idx].size());
+            if(parsed.ast.constants[idx].value().is_none())
+                ++unpacked;
+            else
+                ++named;
+        }
+    }
+    EXPECT_EQ(1u, starred);
+    EXPECT_EQ(1u, named);
+    EXPECT_EQ(1u, unpacked);
+}
+
+TEST(Parser, expanded_call_ordering_and_duplicate_names_are_checked)
+{
+    expect_parse_error(L"f(**a, *b)",
+                       "SyntaxError: iterable argument unpacking follows "
+                       "keyword argument unpacking");
+    expect_parse_error(
+        L"f(a=1, 2)",
+        "SyntaxError: positional argument follows keyword argument");
+    expect_parse_error(
+        L"f(**a, 2)",
+        "SyntaxError: positional argument follows keyword argument");
+    expect_parse_error(L"f(a=1, **d, a=2)",
+                       "SyntaxError: keyword argument repeated");
+    expect_parse_error(L"f(a=1, *b, a=2)",
+                       "SyntaxError: keyword argument repeated");
+}

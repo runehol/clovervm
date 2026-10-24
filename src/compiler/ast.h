@@ -54,6 +54,8 @@ namespace cl
         PARAMETER_VARARGS,
         PARAMETER_KWARGS,
         CALL_ARGUMENT_POSITIONAL,
+        CALL_ARGUMENT_STARRED,
+        // None name denotes **mapping, matching CPython keyword(arg=None).
         CALL_ARGUMENT_KEYWORD,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
@@ -113,6 +115,7 @@ namespace cl
             case AstNodeKind::PARAMETER_VARARGS:
             case AstNodeKind::PARAMETER_KWARGS:
             case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
+            case AstNodeKind::CALL_ARGUMENT_STARRED:
             case AstNodeKind::CALL_ARGUMENT_KEYWORD:
                 return false;
             case AstNodeKind::EXPRESSION_TUPLE:

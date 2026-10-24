@@ -332,10 +332,24 @@ template <> struct fmt::formatter<cl::AstVector>
                             cl::ExpressionPrecedence::Lowest);
                 break;
 
+            case cl::AstNodeKind::CALL_ARGUMENT_STARRED:
+                fmt::format_to(out, "*");
+                render_node(av, out, children[0], indent,
+                            cl::ExpressionPrecedence::BitwiseOr);
+                break;
+
             case cl::AstNodeKind::CALL_ARGUMENT_KEYWORD:
-                fmt::format_to(out, "{}=",
-                               narrow_wstring_view_ast(string_as_wchar_t(
-                                   ast_print_string_constant(av, node_idx))));
+                if(av.constants[node_idx].value().is_none())
+                {
+                    fmt::format_to(out, "**");
+                }
+                else
+                {
+                    fmt::format_to(
+                        out, "{}=",
+                        narrow_wstring_view_ast(string_as_wchar_t(
+                            ast_print_string_constant(av, node_idx))));
+                }
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
                 break;

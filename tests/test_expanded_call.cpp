@@ -5,6 +5,7 @@
 #include "bytecode/bytecode_decoder.h"
 #include "bytecode/code_object_builder.h"
 #include "bytecode/code_object_print.h"
+#include "compiler/codegen_scope_analysis.h"
 #include "import_system/module_global.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -765,4 +766,311 @@ def check(result): return result[0] == 1 and result[1] == (2, 3) and result[2] =
 )");
     install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
     check();
+}
+
+namespace
+{
+    class ExpandedCallSyntax : public testing::Test
+    {
+    protected:
+        void run(const wchar_t *source)
+        {
+            Value result = context.run_file(source);
+            if(result.is_exception_marker())
+            {
+                auto exception = context.thread()->pending_exception_object();
+                FAIL() << string_as_wchar_t(exception.extract()
+                                                ->get_shape()
+                                                ->get_class()
+                                                ->get_name())
+                       << L": "
+                       << string_as_wchar_t(
+                              test::native_exception_message(exception));
+            }
+            EXPECT_EQ(Value::True(), result);
+        }
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation{context.thread()};
+    };
+}  // namespace
+
+TEST_F(ExpandedCallSyntax, MixedRepeatedSourcesBindNormally)
+{
+    run(LR"(
+def f(a, b, *rest, c=5, **kw):
+    assert a == 1 and b == 2
+    assert rest == (3, 4) and c == 6
+    assert len(kw) == 2 and kw['x'] == 7 and kw['y'] == 8
+f(1, *[2, 3], 4, *(), c=6, **{'x': 7}, y=8)
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax,
+       PureCollectorsReuseExactTupleAndFreshKeywordTransport)
+{
+    run(LR"(
+def args_only(*args, **kw): return args, kw
+values = (1, 2)
+source = {'x': 3}
+first = args_only(*values, **source)
+assert first[0] is values
+assert first[1] is not source and first[1]['x'] == 3
+second = args_only(*values)
+third = args_only(*values)
+assert second[0] is values and len(second[1]) == 0
+assert second[1] is not third[1]
+assert args_only(**{})[0] == ()
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, GenericMappingAndStringSubclassKeysArePreserved)
+{
+    run(LR"(
+class S(str):
+    def __hash__(self): return str.__hash__(self)
+key = S('extra')
+events = []
+class Mapping:
+    def keys(self):
+        events.append('keys')
+        return ['a', key]
+    def __getitem__(self, name):
+        events.append(name)
+        return 1 if name == 'a' else 2
+def f(a, **rest): return a, rest
+result = f(**Mapping())
+assert result[0] == 1 and result[1][key] == 2
+assert next(iter(result[1].keys())) is key
+assert events == ['keys', 'a', key]
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, LoneStarIsEvaluatedEarlyButIteratedAfterKeywords)
+{
+    run(LR"(
+events = []
+class I:
+    def __iter__(self):
+        events.append('iterate')
+        return iter((1,))
+def source():
+    events.append('source')
+    return I()
+def keyword():
+    events.append('keyword')
+    return 2
+def f(*args, **kw): return args, kw
+result = f(*source(), k=keyword())
+assert result[0] == (1,) and result[1]['k'] == 2
+assert events == ['source', 'keyword', 'iterate']
+events.clear()
+result = f(k=keyword(), *source())
+assert events == ['source', 'keyword', 'iterate']
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, MixedStarsAreIteratedBeforeKeywordEvaluation)
+{
+    run(LR"(
+events = []
+class I:
+    def __init__(self, name): self.name = name
+    def __iter__(self):
+        events.append(self.name)
+        return iter((1,))
+def keyword():
+    events.append('keyword')
+    return 2
+def f(*args, **kw): return args
+assert f(0, *I('first'), k=keyword()) == (0, 1)
+assert events == ['first', 'keyword']
+events.clear()
+assert f(*I('first'), k=keyword(), *I('second')) == (1, 1)
+assert events == ['first', 'second', 'keyword']
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax,
+       ExplicitKeywordRunIsEvaluatedBeforeDuplicateInsertion)
+{
+    run(LR"(
+events = []
+def value(name):
+    events.append(name)
+    return 1
+def later():
+    events.append('later')
+    return {}
+def f(**kw): pass
+try:
+    f(**{'a': 0}, a=value('a'), b=value('b'), **later())
+except TypeError:
+    pass
+else:
+    assert False
+assert events == ['a', 'b']
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, MappingDuplicateStopsBeforeLaterKeywordSources)
+{
+    run(LR"(
+events = []
+def later():
+    events.append('later')
+    return 1
+def f(**kw): pass
+try:
+    f(**{'a': 0}, **{'a': 1}, b=later())
+except TypeError:
+    pass
+else:
+    assert False
+assert events == []
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax,
+       NonStringValidationIsDeferredUntilAfterKeywordConstruction)
+{
+    run(LR"(
+events = []
+def later():
+    events.append('later')
+    return 1
+def failure(): raise ValueError('later mapping error')
+def f(**kw): pass
+try:
+    f(**{42: 0}, b=later())
+except TypeError:
+    pass
+else:
+    assert False
+assert events == ['later']
+try:
+    f(**{42: 0}, **failure())
+except ValueError:
+    pass
+else:
+    assert False
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, IterationFailureTimingDependsOnLoneOrMixedStar)
+{
+    run(LR"(
+events = []
+class Broken:
+    def __iter__(self): raise ValueError('broken iterator')
+def keyword():
+    events.append('keyword')
+    return 1
+def f(*args, **kw): pass
+try:
+    f(*Broken(), k=keyword())
+except ValueError:
+    pass
+else:
+    assert False
+assert events == ['keyword']
+events.clear()
+try:
+    f(0, *Broken(), k=keyword())
+except ValueError:
+    pass
+else:
+    assert False
+assert events == []
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, ConstructorsDefaultsAndPositionalOnlyParameters)
+{
+    run(LR"(
+class C:
+    def __init__(self, a, /, *, b=7): self.value = a + b
+assert C(*[3], **{}).value == 10
+assert C(*[3], **{'b': 4}).value == 7
+class N:
+    def __new__(cls, a, *, b=7): return a + b
+assert N(*[3], **{} ) == 10
+def f(a, /, **rest): return a, rest
+result = f(*[3], **{'a': 4})
+assert result[0] == 3 and result[1]['a'] == 4
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, ListSubclassUsesItsIteratorAndEmptySourcesWork)
+{
+    run(LR"(
+class L(list):
+    def __iter__(self): return iter((9,))
+def f(*args, **kw): return args
+assert f(*L()) == (9,)
+assert f(*(), *[], **{}, **{}) == ()
+assert f(1, 2, **{}) == (1, 2)
+True
+)");
+}
+
+TEST(ExpandedCallScope, AnalysisFollowsPositionalBeforeKeywordEvaluation)
+{
+    // Assignment expressions in call arguments are not parsed yet. Exercise
+    // their existing AST form directly to pin down the scope-analysis order.
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CompilationUnit unit(L"");
+    auto name = context.vm().get_or_create_interned_string_value(L"x");
+    for(bool assign_in_star: {false, true})
+    {
+        AstVector ast(&unit);
+        int32_t read = ast.emplace_back(
+            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0, name);
+        int32_t write = ast.emplace_back(
+            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0, name);
+        int32_t literal = ast.emplace_back(
+            AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER),
+            0, Value::from_smi(1));
+        int32_t assign = ast.emplace_back(
+            AstKind(AstNodeKind::EXPRESSION_ASSIGN, AstOperatorKind::NOP), 0,
+            write, literal);
+        int32_t keyword = ast.emplace_back(
+            AstNodeKind::CALL_ARGUMENT_KEYWORD, 0,
+            AstChildren{assign_in_star ? read : assign},
+            context.vm().get_or_create_interned_string_value(L"k"));
+        int32_t tuple =
+            ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, 0,
+                             AstChildren{assign_in_star ? assign : read});
+        int32_t star = ast.emplace_back(AstNodeKind::CALL_ARGUMENT_STARRED, 0,
+                                        AstChildren{tuple});
+        int32_t arguments = ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, 0,
+                                             AstChildren{keyword, star});
+        int32_t callee = ast.emplace_back(
+            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, 0,
+            context.vm().get_or_create_interned_string_value(L"f"));
+        int32_t call = ast.emplace_back(AstNodeKind::EXPRESSION_CALL, 0,
+                                        AstChildren{callee, arguments});
+        Scope *scope = context.vm().make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(&context.vm(), &unit,
+                               context.vm().global_builtins_module(), scope,
+                               context.vm().get_or_create_interned_string_value(
+                                   L"<expanded-scope>"));
+        code.configure_positional_function(0);
+        auto analysis =
+            analyze_code_object_scope(ast, &code, call, CodegenMode::Function);
+        ASSERT_FALSE(analysis.has_exception());
+        ASSERT_TRUE(analysis.value().loads[read].has_value());
+        EXPECT_EQ(assign_in_star ? Presence::Present : Presence::Missing,
+                  analysis.value().loads[read]->presence);
+    }
 }

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Explicit calls, expanded-call container helpers, native binding, and CallExpanded implemented; expanded-call syntax pending |
+| Implementation | Explicit and straight expanded Function/constructor calls implemented; expanded method calls pending |
 | Scope | Python argument binding and adaptation above the managed frame convention |
 | Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
 | Validated against | `a909d10` (2026-06-25); expanded-call container helpers checked against `69269fe1` and native binding-plan representation agreed 2026-10-23 |
@@ -40,11 +40,13 @@ paths:
   layouts, callee `*args`, and callee `**kwargs`;
 - parser/codegen represent explicit caller positional and keyword arguments;
 - parser and codegen support positional-only parameters before `/`;
-- caller `*args` and `**kwargs` expansion remain unsupported.
+- caller `*args` and `**kwargs` expansion use `CallExpanded` for straight
+  Function and eligible constructor calls. Expanded attribute calls parse but
+  remain explicitly rejected by codegen until checkpoint 3d.
 
 The keyword-call path deliberately does not introduce the full Python callable
-protocol. Descriptor dispatch, arbitrary object `__call__`, keyword method-call
-lowering, and caller expansion forms remain separate work.
+protocol. Descriptor dispatch beyond existing method-call support, arbitrary
+object `__call__`, and expanded method-call lowering remain separate work.
 
 ## Python Signature Shape
 
@@ -405,8 +407,8 @@ state in ordinary managed frames. Non-string duplicate-key formatting calls
 construction; string keys are formatted from their stored text directly.
 
 Checkpoint 2b replaces the initial exact-dict-only implementation with the
-generic mapping protocol below. Expanded-call syntax remains disabled until
-the execution path is complete.
+generic mapping protocol below. Expanded-call syntax stayed disabled through
+the container-building stages; checkpoint 3c enables straight expanded calls.
 
 Generic sources, including dict subclasses, use a managed helper receiving
 `(callable, destination, source)`. Build starts with a fresh empty destination;
@@ -962,9 +964,9 @@ The ordinary call runtime supports:
   method-call opcodes.
 
 `CallExpanded` currently supports Functions and eligible constructor thunks.
-Checkpoint 3c enables their source syntax, keeping expanded attribute/method
-calls explicitly unsupported until checkpoint 3d adds a separate method-call
-opcode and receiver binding.
+Checkpoint 3c enables their source syntax. Expanded attribute/method calls parse
+but codegen rejects them explicitly until checkpoint 3d adds a separate
+method-call opcode and receiver binding.
 
 It does not attempt to support:
 

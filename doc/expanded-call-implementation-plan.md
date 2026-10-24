@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stages 1, 2, 3a, and 3b are complete; later checkpoints have not started.
+`3a84a6a2`. Stages 1, 2, 3a, 3b, and 3c are complete; later checkpoints have not started.
 
 ## Working rules
 
@@ -274,7 +274,9 @@ remains disabled until 3c; changes are uncommitted for review.
 ### 3c: Parser and precode for straight expanded calls
 
 Scope: ordinary Function calls and eligible constructor calls. Expanded
-attribute/method-call forms are a separate milestone in 3d.
+attribute/method-call forms are a separate milestone in 3d. Implementation is
+in the parser, AST rendering, scope analysis, and call codegen; syntax and
+observable timing tests accompany the existing binder/opcode tests.
 
 Agreed implementation sketch:
 
@@ -295,25 +297,32 @@ Agreed implementation sketch:
   Ordinary call lowering stays unchanged. Other argument-parser users, such
   as class bases and trusted intrinsics, retain explicit restrictions.
 
-- [ ] Consult CPython's `Parser/Python.asdl`; extend existing call-argument AST
+- [x] Consult CPython's `Parser/Python.asdl`; extend existing call-argument AST
   nodes for starred and double-starred arguments without mixing in binding.
-- [ ] Lower mixed positional arguments through list construction/extension.
-- [ ] For exactly one starred source and no ordinary positional arguments,
+- [x] Lower mixed positional arguments through list construction/extension.
+- [x] For exactly one starred source and no ordinary positional arguments,
   evaluate/root the source before keywords but emit `ToExactTuple` afterward.
-- [ ] Evaluate each consecutive explicit keyword run into temporary registers
+- [x] Evaluate each consecutive explicit keyword run into temporary registers
   before emitting its Add operations; interleave runs and mapping merges in
   keyword order.
-- [ ] Reserve adjacent transport registers and a separate outgoing-window
+- [x] Reserve adjacent transport registers and a separate outgoing-window
   anchor. Always build a fresh keyword dict, including for tuple-only expansion.
-- [ ] Preserve ordinary call opcodes for calls without expansion and explicit
+- [x] Preserve ordinary call opcodes for calls without expansion and explicit
   rejection of expanded attribute/method-call forms until 3d. Keep other
   unsupported callable forms explicit.
-- [ ] Enable expanded-call syntax only once its complete path works.
-- [ ] Add end-to-end tests covering mixed/repeated sources, late conversion,
+- [x] Enable expanded-call syntax only once its complete path works.
+- [x] Add end-to-end tests covering mixed/repeated sources, late conversion,
   early duplicate errors, deferred non-string errors, collectors, subclass keys,
   defaults, and constructor calls. Add structural codegen tests for the agreed
   operand layout and evaluation staging.
-- [ ] Run required checks and leave changes uncommitted for review.
+- [x] Run required checks and leave changes uncommitted for review.
+
+Verification: all 20 new parser, codegen, syntax, and scope-analysis tests
+passed. `ninja -C build-debug all check` passed with 1,749 tests passed and one
+skipped. Attribute-call rejection is in codegen; the parser accepts these forms
+for 3d. Scope-order regression coverage uses the existing assignment AST because
+walrus expressions inside call arguments remain outside current parser support.
+No interpreter handlers changed. Changes remain uncommitted for review.
 
 ### 3d: Expanded method calls
 

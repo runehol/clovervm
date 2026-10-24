@@ -2173,3 +2173,90 @@ TEST(Codegen, user_call_keyword_intrinsic_names_are_ordinary_calls)
     EXPECT_EQ(std::string::npos, actual.find("AddCallKeyword"));
     EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
+
+TEST(Codegen, expanded_calls_defer_lone_star_conversion_until_after_keywords)
+{
+    std::string code = bytecode_str_from_file(L"f(*source(), **keys())");
+    size_t build = code.find("BuildCallKeywords");
+    size_t convert = code.find("ToExactTuple");
+    size_t call = code.find("CallExpanded");
+    ASSERT_NE(std::string::npos, build);
+    ASSERT_NE(std::string::npos, convert);
+    ASSERT_NE(std::string::npos, call);
+    EXPECT_LT(build, convert);
+    EXPECT_LT(convert, call);
+    EXPECT_EQ(std::string::npos, code.find("ListExtend"));
+}
+
+TEST(Codegen, mixed_expansion_finishes_positional_builder_before_keywords)
+{
+    std::string code = bytecode_str_from_file(L"f(1, *source(), key=value())");
+    size_t append = code.find("ListAppend");
+    size_t extend = code.find("ListExtend");
+    size_t convert = code.find("ListToTuple");
+    size_t keyword = code.find("AddCallKeyword");
+    size_t call = code.find("CallExpanded");
+    ASSERT_NE(std::string::npos, append);
+    ASSERT_NE(std::string::npos, extend);
+    ASSERT_NE(std::string::npos, convert);
+    ASSERT_NE(std::string::npos, keyword);
+    ASSERT_NE(std::string::npos, call);
+    EXPECT_LT(append, extend);
+    EXPECT_LT(extend, convert);
+    EXPECT_LT(convert, keyword);
+    EXPECT_LT(keyword, call);
+}
+
+TEST(Codegen, expanded_attribute_calls_and_class_bases_are_explicitly_rejected)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    test::expect_compile_python_error(
+        context, L"obj.method(*args)", L"SyntaxError",
+        L"expanded attribute calls are not implemented yet");
+    context.thread()->clear_pending_exception();
+    test::expect_compile_python_error(
+        context, L"obj.method(**kwargs)", L"SyntaxError",
+        L"expanded attribute calls are not implemented yet");
+    context.thread()->clear_pending_exception();
+    test::expect_compile_python_error(
+        context, L"class C(*bases):\n    pass\n", L"SyntaxError",
+        L"class keyword arguments are not implemented yet");
+}
+
+TEST(Codegen, trusted_intrinsics_still_reject_expanded_arguments)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"__clover_to_exact_tuple__(*args)", L"SyntaxError",
+        L"__clover_to_exact_tuple__ does not accept keyword arguments");
+}
+
+TEST(Codegen,
+     expanded_calls_keep_transport_adjacent_and_outside_outgoing_window)
+{
+    test::VmTestContext context;
+    CodeObject *code = context.compile_file(L"f(*source, **keys)");
+    bool found = false;
+    for(uint32_t pc = 0; pc < code->size();)
+    {
+        BytecodeInstruction instruction = decode_instruction(*code, pc);
+        pc = instruction.next_pc_offset();
+        if(instruction.semantic_opcode() != Bytecode::CallExpanded)
+            continue;
+        found = true;
+        ASSERT_EQ(4u, instruction.operands().size());
+        uint32_t callable = instruction.operands()[0].value;
+        uint32_t containers = instruction.operands()[1].value;
+        uint32_t outgoing = instruction.operands()[2].value;
+        EXPECT_LT(callable, outgoing);
+        EXPECT_LT(containers + 1, outgoing);
+        ASSERT_EQ(3u, instruction.sources().size());
+        EXPECT_EQ(code->encode_reg(containers),
+                  instruction.sources()[1].frame_offset);
+        EXPECT_EQ(code->encode_reg(containers + 1),
+                  instruction.sources()[2].frame_offset);
+        EXPECT_EQ(instruction.sources()[1].frame_offset - 1,
+                  instruction.sources()[2].frame_offset);
+    }
+    EXPECT_TRUE(found);
+}

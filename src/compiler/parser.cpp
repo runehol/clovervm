@@ -1313,21 +1313,35 @@ namespace cl
             AstChildren ch;
             std::unordered_set<std::wstring> keyword_names;
             bool seen_keyword = false;
+            bool seen_mapping_unpack = false;
             while(peek() != Token::RPAR)
             {
                 if(peek() == Token::STAR)
                 {
-                    return Expected<int32_t>::raise_exception(
-                        L"SyntaxError",
-                        L"starred call arguments are not implemented yet");
+                    if(seen_mapping_unpack)
+                    {
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"iterable argument unpacking follows keyword "
+                            L"argument unpacking");
+                    }
+                    uint32_t star_pos = source_pos_and_advance();
+                    int32_t value = CL_TRY(bitwise_or());
+                    ch.push_back(
+                        ast.emplace_back(AstNodeKind::CALL_ARGUMENT_STARRED,
+                                         star_pos, AstChildren{value}));
                 }
-                if(peek() == Token::DOUBLESTAR)
+                else if(peek() == Token::DOUBLESTAR)
                 {
-                    return Expected<int32_t>::raise_exception(
-                        L"SyntaxError",
-                        L"keyword argument unpacking is not implemented yet");
+                    uint32_t star_pos = source_pos_and_advance();
+                    int32_t value = CL_TRY(expression());
+                    ch.push_back(
+                        ast.emplace_back(AstNodeKind::CALL_ARGUMENT_KEYWORD,
+                                         star_pos, AstChildren{value}));
+                    seen_keyword = true;
+                    seen_mapping_unpack = true;
                 }
-                if(peek() == Token::NAME && peek2() == Token::EQUAL)
+                else if(peek() == Token::NAME && peek2() == Token::EQUAL)
                 {
                     uint32_t name_source_pos = source_pos_and_advance();
                     std::wstring name = std::wstring(string_for_name_token(
