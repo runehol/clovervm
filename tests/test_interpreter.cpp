@@ -6255,7 +6255,12 @@ TEST(Interpreter, bytes_new_class_and_source_errors)
     test::VmTestContext context;
     Value result = context.run_file(LR"py(
 class B(bytes): pass
-for cls in (bytes, B):
+class C(B): pass
+for cls in (bytes, B, C):
+    assert cls() == b""
+    assert cls().__class__ is cls
+    assert bytes.__new__(cls) == b""
+    assert bytes.__new__(cls).__class__ is cls
     for source in ([-1], [256], (2**100,), [1, -1]):
         try: cls(source)
         except ValueError as e: assert str(e) == "bytes must be in range(0, 256)"
@@ -6264,11 +6269,13 @@ for cls in (bytes, B):
         try: cls(source)
         except TypeError as e: assert str(e) == "bytes item must be an integer"
         else: raise AssertionError
-    for source in (1.5, "text", range(3)):
+    for source in (None, 1.5, "text", range(3)):
         try: cls(source)
         except TypeError as e: assert str(e) == "cannot convert object to bytes"
         else: raise AssertionError
-    assert cls(None) == b""
+    try: bytes.__new__(cls, None)
+    except TypeError as e: assert str(e) == "cannot convert object to bytes"
+    else: raise AssertionError
     for mode in range(3):
         try:
             if mode == 0: cls(b"a", b"b")

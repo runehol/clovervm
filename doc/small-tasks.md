@@ -45,8 +45,7 @@ than being an immediately ready constructor change.
   element `__index__`, and buffer inputs when their dispatch/storage contracts
   are ready. Bytes subclasses can override `__bytes__`; the current native
   bytes-input shortcut does not honor this yet. Keep this separate from native
-  subclass allocation. Also distinguish an omitted bytes source from explicit
-  `None`: the current default uses `None` and accepts `bytes(None)` as empty.
+  subclass allocation.
 - **Numeric conversion coverage:** float string parsing and user-defined
   `__float__` / `__index__` conversion remain deferred. Int conversion protocols
   and additional constructor forms need their own semantic sketches too.

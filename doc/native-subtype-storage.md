@@ -188,6 +188,9 @@ reused for exact targets; subclass targets receive fresh native storage. A custo
 str conversion may return a string subclass, which exact-target construction
 preserves.
 
+The omitted bytes source defaults to an empty bytes object; explicit None is
+rejected for exact and subclass targets.
+
 Bytes count construction accepts builtin ints, bools, and int subclasses and
 zeroes the final allocation directly. Counts are converted to signed 64-bit
 before checking negativity, so out-of-range integers raise OverflowError and

@@ -161,13 +161,6 @@ namespace cl
         assert(cls.extract()->instance_native_layout_id() ==
                NativeLayoutId::Bytes);
         assert(cls.extract()->get_instance_inline_slot_capacity() == 0);
-        if(source.is_none())
-        {
-            return thread
-                ->make_internal_value<Bytes>(cls.extract(),
-                                             std::span<const uint8_t>{})
-                .raw_value();
-        }
         if(is_intlike_value(source))
         {
             TValue<SMI> count = CL_TRY(bytes_count_to_smi(source));
@@ -209,11 +202,6 @@ namespace cl
         if(cls_value != Value::from_oop(thread->get_machine()->bytes_class()))
         {
             return bytes_new_subclass_slow(thread, cls_value, source);
-        }
-        if(source.is_none())
-        {
-            return thread->make_object_value<Bytes>(std::span<const uint8_t>{})
-                .raw_value();
         }
         if(is_intlike_value(source))
         {
@@ -1391,8 +1379,10 @@ namespace cl
     {
         Owned<TValue<Tuple>> bytes_new_defaults(
             active_thread()->make_object_value<Tuple>(1));
-        bytes_new_defaults.extract()->initialize_item_unchecked(0,
-                                                                Value::None());
+        bytes_new_defaults.extract()->initialize_item_unchecked(
+            0, active_thread()
+                   ->make_object_value<Bytes>(std::span<const uint8_t>{})
+                   .raw_value());
         Owned<TValue<Tuple>> bytes_start_end_defaults(
             active_thread()->make_object_value<Tuple>(2));
         bytes_start_end_defaults.extract()->initialize_item_unchecked(
