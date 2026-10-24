@@ -34,6 +34,7 @@ namespace cl
         ModuleGlobalMutationCache,
         FunctionCallCache,
         KeywordCallCache,
+        ExpandedCallCache,
         OperatorCache,
         NativeTarget,
         RuntimeIntrinsic,
@@ -71,6 +72,7 @@ namespace cl
         SixRegisters,
         PositionalCall,
         KeywordCall,
+        ExpandedCall,
         NativeTarget,
         RuntimeIntrinsic,
         CodeObjectCall,
@@ -304,6 +306,10 @@ namespace cl
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Register,
                     Operand::ArgumentCount, Operand::FunctionCallCache);
+            case BytecodeFormat::ExpandedCall:
+                return make_bytecode_format_info(
+                    Operand::Register, Operand::Register, Operand::Register,
+                    Operand::ExpandedCallCache);
             case BytecodeFormat::KeywordCall:
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Register,

@@ -1218,6 +1218,46 @@ namespace cl::jit
     }
 
     TEST(JitCoreBytecodeTranslator,
+         ExpandedCallsResumeInInterpreterWithTransportInputs)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        Scope *scope = context.vm().make_immortal_internal_raw<Scope>(nullptr);
+        auto name = context.vm().get_or_create_interned_string_value(
+            L"<expanded-fallback>");
+        CodeObjectBuilder code(&context.vm(), nullptr,
+                               context.vm().global_builtins_module(), scope,
+                               name);
+        CompilationSession session(*context.thread());
+        GraphBuilder graph_builder(session, IRLevel::Core);
+        code.configure_positional_function(3);
+        uint32_t call_pc;
+        {
+            CodeObjectBuilder::TemporaryReg outgoing(
+                code, 1, RegisterAlignment::CallFrame);
+            call_pc = code.emit_call_expanded(0, 0, 1, outgoing).value();
+        }
+        code.emit_return(0).value();
+        CoreBytecodeTranslator translator(
+            context.vm(), *code.finalize().value(), graph_builder);
+        ControlFlowGraph *graph = translator.translate();
+        Block *entry = graph->normal_entry_block();
+        auto snapshots = instructions_of_kind(entry, InstructionKind::Snapshot);
+        auto resumes =
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, resumes.size());
+        EXPECT_EQ(
+            call_pc,
+            snapshots.front().as<SnapshotInstruction>().resume_pc_offset());
+        EXPECT_EQ(bytecode_state_size(*graph), snapshots.front()
+                                                   .as<SnapshotInstruction>()
+                                                   .captured_values()
+                                                   .size());
+        EXPECT_TRUE(resumes.front().is_block_terminator());
+    }
+
+    TEST(JitCoreBytecodeTranslator,
          UnsupportedSequentialInstructionSnapshotsAndTerminatesBlock)
     {
         TranslatorFixture fixture;

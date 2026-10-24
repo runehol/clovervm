@@ -17,6 +17,7 @@ namespace cl
     struct FunctionCallInlineCache;
     struct InlineCacheTables;
     struct KeywordCallInlineCache;
+    struct ExpandedCallInlineCache;
     struct OperatorInlineCache;
 
     struct BytecodeOperand
@@ -107,6 +108,7 @@ namespace cl
         module_global_mutation_cache() const;
         const FunctionCallInlineCache *function_call_cache() const;
         const KeywordCallInlineCache *keyword_call_cache() const;
+        const ExpandedCallInlineCache *expanded_call_cache() const;
         const OperatorInlineCache *operator_cache() const;
 
     private:
@@ -136,6 +138,7 @@ namespace cl
         int16_t module_global_mutation_cache_index_ = -1;
         int16_t function_call_cache_index_ = -1;
         int16_t keyword_call_cache_index_ = -1;
+        int16_t expanded_call_cache_index_ = -1;
         int16_t operator_cache_index_ = -1;
     };
 

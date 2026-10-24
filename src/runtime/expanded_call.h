@@ -10,6 +10,7 @@ namespace cl
     class Dict;
     class Function;
     class ThreadState;
+    class Tuple;
 
     enum class KwargsAction : uint8_t
     {
@@ -35,6 +36,15 @@ namespace cl
                                      TValue<Function> function,
                                      uint32_t positional_count,
                                      TValue<Dict> keywords);
+
+    [[nodiscard]] Expected<void>
+    validate_expanded_call_keywords(TValue<Dict> keywords);
+
+    // Construct collectors before writing any outgoing parameter slots.
+    [[nodiscard]] Expected<void> apply_expanded_call_binding_plan(
+        ThreadState *thread, TValue<Function> function,
+        TValue<Tuple> positional, TValue<Dict> keywords,
+        const ExpandedCallBindingPlan &plan, Value *destination_fp);
 }  // namespace cl
 
 #endif  // CL_EXPANDED_CALL_H

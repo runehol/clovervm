@@ -1193,6 +1193,23 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_call_expanded(
+        uint32_t source_offset, uint32_t callable_reg, uint32_t containers_reg,
+        uint32_t first_arg_reg)
+    {
+        assert_call_args_are_topmost(first_arg_reg, 1);
+        assert(callable_reg < first_arg_reg);
+        assert(containers_reg + 1 < first_arg_reg);
+        uint8_t cache_idx = CL_TRY(allocate_expanded_call_cache());
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::CallExpanded));
+        emplace_back(source_offset, encode_reg(callable_reg));
+        emplace_back(source_offset, encode_reg(containers_reg));
+        emplace_back(source_offset, encode_reg(first_arg_reg));
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_call_positional(
         uint32_t source_offset, uint32_t callable_reg, uint32_t first_arg_reg,
         uint8_t argc)
@@ -1406,6 +1423,15 @@ namespace cl
         }
 
         __builtin_unreachable();
+    }
+
+    Expected<uint8_t> CodeObjectBuilder::allocate_expanded_call_cache()
+    {
+        uint32_t idx = code_obj->inline_caches.expanded_call_caches.size();
+        uint8_t encoded_idx =
+            CL_TRY(check_u8_operand_index(idx, L"expanded call cache table"));
+        code_obj->inline_caches.expanded_call_caches.emplace_back();
+        return Expected<uint8_t>::ok(encoded_idx);
     }
 
     Expected<uint8_t> CodeObjectBuilder::allocate_keyword_call_cache()

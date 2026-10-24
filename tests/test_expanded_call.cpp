@@ -2,6 +2,10 @@
 
 #include "builtin_types/dict.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/bytecode_decoder.h"
+#include "bytecode/code_object_builder.h"
+#include "bytecode/code_object_print.h"
+#include "import_system/module_global.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/owned.h"
@@ -375,4 +379,390 @@ def f(a): pass
     ASSERT_TRUE(result.has_exception());
     EXPECT_EQ(input(2),
               context.thread()->pending_exception_object().raw_value());
+}
+
+namespace
+{
+    class ExpandedCallExecution : public testing::Test
+    {
+    protected:
+        void SetUp() override
+        {
+            auto name = context.vm().get_or_create_interned_string_value(
+                L"<expanded-test>");
+            Scope *scope =
+                context.vm().make_immortal_internal_raw<Scope>(nullptr);
+            CodeObjectBuilder code(&context.vm(), nullptr,
+                                   context.vm().global_builtins_module(), scope,
+                                   name);
+            code.configure_positional_function(3);
+            {
+                CodeObjectBuilder::TemporaryReg outgoing(
+                    code, 1, RegisterAlignment::CallFrame);
+                ASSERT_TRUE(code.emit_call_expanded(0, 0, 1, outgoing));
+            }
+            ASSERT_TRUE(code.emit_return(0));
+            auto function = code.finalize_immortal_function(&context.vm());
+            ASSERT_FALSE(function.has_exception());
+            caller = Optional<TValue<Function>>::some(function.value());
+        }
+
+        void load(const wchar_t *source)
+        {
+            inputs = context.run_file(source);
+            ASSERT_FALSE(inputs.value().is_exception_marker());
+            ASSERT_TRUE(can_convert_to<Tuple>(inputs.value()));
+        }
+
+        Value input(size_t idx) const
+        {
+            return inputs.value().get_ptr<Tuple>()->item_unchecked(idx);
+        }
+
+        Value call()
+        {
+            return context.thread()->call_clovervm_function(
+                caller.value().value(), input(0), input(1), input(2));
+        }
+
+        void check()
+        {
+            Owned<Value> result(call());
+            ASSERT_FALSE(result.value().is_exception_marker());
+            EXPECT_EQ(Value::True(),
+                      context.thread()->call_clovervm_function(
+                          TValue<Function>::from_value_assumed(input(3)),
+                          result.value()));
+        }
+
+        void install_expanded_binding(TValue<Function> function)
+        {
+            ASSERT_TRUE(store_module_global(
+                function.extract()
+                    ->code_object.extract()
+                    ->get_defining_module()
+                    .extract(),
+                context.vm().get_or_create_interned_string_value(L"expanded"),
+                caller.value().value().raw_value()));
+        }
+
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation{context.thread()};
+        Owned<Optional<TValue<Function>>> caller;
+        Owned<Value> inputs{Value::None()};
+    };
+}  // namespace
+
+TEST_F(ExpandedCallExecution, AppliesPositionalsKeywordsDefaultsAndCollectors)
+{
+    load(LR"(
+def f(a, b=2, *args, c, d=4, **rest): return a, b, args, c, d, rest
+def check(result):
+    return result[0] == 1 and result[1] == 2 and result[2] == () and result[3] == 3 and result[4] == 4 and result[5]['extra'] == 5
+(f, (1,), {'c': 3, 'extra': 5}, check)
+)");
+    check();
+    check();
+}
+
+TEST_F(ExpandedCallExecution, PacksOnlyThePositionalSuffix)
+{
+    load(LR"(
+def f(a, *args, b=9): return a, args, b
+def check(result): return result[0] == 1 and result[1] == (2, 3) and result[2] == 9
+(f, (1, 2, 3), {}, check)
+)");
+    check();
+}
+
+TEST_F(ExpandedCallExecution, PureCollectorsReceiveBothOriginalContainers)
+{
+    load(LR"(
+def f(*args, **rest): return args, rest
+args = (1, 2)
+keys = {'x': 3}
+def check(result): return result[0] is args and result[1] is keys
+(f, args, keys, check)
+)");
+    check();
+    const auto &cache = caller.value()
+                            .value()
+                            .extract()
+                            ->code_object.extract()
+                            ->inline_caches.expanded_call_caches[0];
+    EXPECT_EQ(ExpandedCallMode::PureCollector, cache.mode);
+}
+
+TEST_F(ExpandedCallExecution,
+       ReusesTransportWithNamedPositionalAndDefaultParameters)
+{
+    load(LR"(
+def f(a, b=9, **rest): return a, b, rest
+keys = {'x': 3}
+def check(result): return result[0] == 1 and result[1] == 9 and result[2] is keys
+(f, (1,), keys, check)
+)");
+    check();
+}
+
+TEST_F(ExpandedCallExecution, BuildsFreshLeftoversPreservingKeysAndOrder)
+{
+    load(LR"(
+class S(str):
+    def __hash__(self): return str.__hash__(self)
+key = S('extra')
+keys = {'a': 1, key: 2, 'last': 3}
+def f(a, **rest): return a, rest
+def check(result):
+    rest = result[1]
+    names = []
+    for name in rest.keys(): names.append(name)
+    return result[0] == 1 and rest is not keys and len(keys) == 3 and len(rest) == 2 and names[0] is key and names[1] == 'last' and rest[key] == 2
+(f, (), keys, check)
+)");
+    check();
+}
+
+TEST_F(ExpandedCallExecution, AllMatchedKeywordsProduceFreshEmptyCollector)
+{
+    load(LR"(
+keys = {'a': 1}
+def f(a, **rest): return a, rest
+def check(result): return result[0] == 1 and len(result[1]) == 0 and result[1] is not keys and len(keys) == 1
+(f, (), keys, check)
+)");
+    check();
+}
+
+TEST_F(ExpandedCallExecution, NonStringKeywordsNeverEnterPureCollector)
+{
+    load(LR"(
+entered = False
+def f(*args, **rest):
+    global entered
+    entered = True
+def check(): return not entered
+(f, (), {42: 1}, check)
+)");
+    EXPECT_TRUE(call().is_exception_marker());
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              context.thread()
+                  ->pending_exception_object()
+                  .extract()
+                  ->get_shape()
+                  ->get_class());
+    context.thread()->clear_pending_exception();
+    EXPECT_EQ(Value::True(),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(input(3))));
+}
+
+TEST_F(ExpandedCallExecution, SupportsInitAndNewOnlyConstructorThunks)
+{
+    load(LR"(
+class C:
+    def __init__(self, a, *, b=7): self.value = a + b
+def check(result): return isinstance(result, C) and result.value == 10
+(C, (), {'a': 3}, check)
+)");
+    check();
+    check();
+    load(LR"(
+class C:
+    def __new__(cls, a, *, b=7): return a + b
+def check(result): return result == 10
+(C, (3,), {}, check)
+)");
+    check();
+}
+
+TEST_F(ExpandedCallExecution, ConstructorLookupInvalidatesAfterInitReplacement)
+{
+    load(LR"(
+class C:
+    def __init__(self, a): self.value = a
+def replace():
+    def init(self, *, b): self.value = b + 10
+    C.__init__ = init
+def verify(value): return value.value == 14
+(C, (), {'a': 3}, replace, verify)
+)");
+    Owned<Value> first(call());
+    ASSERT_FALSE(first.value().is_exception_marker());
+    EXPECT_EQ(Value::None(),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(input(3))));
+    Owned<TValue<Dict>> keys(context.thread()->make_object_value<Dict>());
+    keys.extract()->string_keyed_insert(
+        context.vm().get_or_create_interned_string_value(L"b"),
+        Value::from_smi(4));
+    Owned<Value> second(context.thread()->call_clovervm_function(
+        caller.value().value(), input(0), input(1), keys.raw_value()));
+    ASSERT_FALSE(second.value().is_exception_marker());
+    EXPECT_NE(first.value(), second.value());
+    EXPECT_EQ(Value::True(), context.thread()->call_clovervm_function(
+                                 TValue<Function>::from_value_assumed(input(4)),
+                                 second.value()));
+    const auto &cache = caller.value()
+                            .value()
+                            .extract()
+                            ->code_object.extract()
+                            ->inline_caches.expanded_call_caches[0];
+    ASSERT_NE(nullptr, cache.validity_cell);
+    EXPECT_TRUE(cache.validity_cell->is_valid());
+}
+
+TEST_F(ExpandedCallExecution,
+       NestedExpandedCallsDuringComparisonPreserveCallerRegisters)
+{
+    load(LR"(
+class S(str):
+    def __hash__(self): return 123
+    def __eq__(self, other):
+        def nested(x): return x + 1
+        assert expanded(nested, (40,), {}) == 41
+        return str.__eq__(self, other)
+def target(a, *, b=2): return a + b
+keys = {S('a'): 3}
+def outer():
+    live = [10, 20]
+    result = expanded(target, (), keys)
+    assert live[0] == 10 and live[1] == 20
+    return result
+def check(result): return result == 5
+(outer, (), {}, check)
+)");
+    install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
+    check();
+    check();
+}
+
+TEST_F(ExpandedCallExecution, BindingAndCalleeExceptionsUnwindToPythonCaller)
+{
+    load(LR"(
+error = ValueError('comparison failed')
+class S(str):
+    def __hash__(self): return 123
+    def __eq__(self, other): raise error
+def target(a): raise KeyError('callee failed')
+def outer():
+    live = [10, 20]
+    try:
+        expanded(target, (), {S('a'): 3})
+    except ValueError as caught:
+        assert caught is error
+    else:
+        assert False
+    try:
+        expanded(target, (1,), {})
+    except KeyError:
+        pass
+    else:
+        assert False
+    return live[0] + live[1]
+def check(result): return result == 30
+(outer, (), {}, check)
+)");
+    install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
+    check();
+}
+
+TEST_F(ExpandedCallExecution,
+       CollectorFailurePrecedesEntryAndPreservesTransport)
+{
+    load(LR"(
+armed = False
+entered = False
+error = ValueError('collector hash failed')
+class S(str):
+    def __hash__(self):
+        if armed: raise error
+        return 123
+    def __eq__(self, other): return False
+key = S('extra')
+keys = {'a': 1, key: 2}
+armed = True
+def target(a, **rest):
+    global entered
+    entered = True
+def check(): return not entered and len(keys) == 2
+(target, (), keys, check, error)
+)");
+    EXPECT_TRUE(call().is_exception_marker());
+    EXPECT_EQ(input(4),
+              context.thread()->pending_exception_object().raw_value());
+    context.thread()->clear_pending_exception();
+    EXPECT_EQ(Value::True(),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(input(3))));
+}
+
+TEST_F(ExpandedCallExecution, BytecodeMetadataDescribesAdjacentInputsAndCache)
+{
+    CodeObject *code = caller.value().value().extract()->code_object.extract();
+    BytecodeDecoder decoder(*code);
+    bool found = false;
+    for(const auto &block: decoder.blocks())
+    {
+        for(const auto &instruction: block.instructions())
+        {
+            if(instruction.semantic_opcode() != Bytecode::CallExpanded)
+                continue;
+            found = true;
+            EXPECT_EQ(5u,
+                      instruction.next_pc_offset() - instruction.pc_offset());
+            ASSERT_EQ(4u, instruction.operands().size());
+            EXPECT_EQ(0u, instruction.operands()[0].value);
+            EXPECT_EQ(1u, instruction.operands()[1].value);
+            EXPECT_EQ(BytecodeOperandKind::ExpandedCallCache,
+                      instruction.operands()[3].kind);
+            EXPECT_EQ(3u, instruction.sources().size());
+            EXPECT_EQ(1u, instruction.destinations().size());
+            EXPECT_NE(nullptr, instruction.expanded_call_cache());
+        }
+    }
+    EXPECT_TRUE(found);
+    EXPECT_NE(std::string::npos, fmt::format("{}", *code).find("CallExpanded"));
+}
+
+TEST_F(ExpandedCallExecution, CachedCallableStillBindsChangingCountsAndNames)
+{
+    load(LR"(
+def f(a=1, b=2): return a + b
+(f, (), {'a': 3})
+)");
+    EXPECT_EQ(Value::from_smi(5), call());
+    Owned<TValue<Tuple>> positional(
+        context.thread()->make_object_value<Tuple>(1));
+    positional.extract()->initialize_item_unchecked(0, Value::from_smi(7));
+    Owned<TValue<Dict>> keywords(context.thread()->make_object_value<Dict>());
+    keywords.extract()->string_keyed_insert(
+        context.vm().get_or_create_interned_string_value(L"b"),
+        Value::from_smi(8));
+    EXPECT_EQ(Value::from_smi(15),
+              context.thread()->call_clovervm_function(
+                  caller.value().value(), input(0), positional.raw_value(),
+                  keywords.raw_value()));
+}
+
+TEST_F(ExpandedCallExecution, CollectorCallbacksCanMakeNestedExpandedCalls)
+{
+    load(LR"(
+armed = False
+class S(str):
+    def __hash__(self):
+        if armed:
+            def nested(*args, **rest): return args[0]
+            assert expanded(nested, (41,), {}) == 41
+        return 123
+    def __eq__(self, other): return False
+keys = {'b': 9, S('extra'): 2}
+armed = True
+def target(a, *args, b, **rest): return a, args, b, rest
+def actual(): return expanded(target, (1, 2, 3), keys)
+def check(result): return result[0] == 1 and result[1] == (2, 3) and result[2] == 9 and len(result[3]) == 1
+(actual, (), {}, check)
+)");
+    install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
+    check();
 }

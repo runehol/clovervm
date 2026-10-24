@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Explicit calls and callee adaptation implemented; caller expansion remains a design sketch |
+| Implementation | Explicit calls, expanded-call container helpers, native binding, and CallExpanded implemented; expanded-call syntax pending |
 | Scope | Python argument binding and adaptation above the managed frame convention |
 | Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
 | Validated against | `a909d10` (2026-06-25); expanded-call container helpers checked against `69269fe1` and native binding-plan representation agreed 2026-10-23 |
@@ -519,8 +519,12 @@ callable through existing function/constructor-thunk machinery, then select:
   supply defaults, and pack collector leftovers. Enter only after successful
   normalization. See [Expanded Call Binding](#expanded-call-binding).
 
-The IC guards the resolved callable/signature and applicable lookup validity and
-records the adapter mode. Mode selection does not depend on keyword names.
+`ExpandedCallInlineCache` guards callable identity and constructor lookup validity
+and stores the resolved Function and pure-collector/general adapter mode. It
+contains neither keyword names nor a binding plan. Positional, keyword, and
+expanded calls share callable resolution in the interpreter; the native binder
+takes only the already-resolved Function. Mode selection does not depend on
+keyword names.
 General binding still validates dynamic tuple length and keyword contents unless
 those facts are separately guarded. Transport remains intact: when the callee
 has `**kwargs`, the plan selects direct transport reuse if no incoming keywords
@@ -671,7 +675,15 @@ retain no raw dict-entry pointers across them, and propagate pending exceptions
 through the native builder's fallible return type.
 
 `CallExpanded` keeps the callable and adjacent tuple/dict input pair outside the
-outgoing parameter window. After plan validation, application fills that window,
+outgoing parameter window. Before callback-capable native work, its handler
+publishes the caller's live frame frontier using the existing native-call
+convention. It retains the resolved Function across callbacks, independently of
+the live call-site cache, because nested expanded calls may replace that cache.
+Native plan application constructs and roots collectors before writing any
+outgoing parameters. Exact pure-collector calls validate keys and install the
+original tuple and dict directly. Expanded calls currently resume in the
+interpreter from JIT code; no specialized JIT call lowering is added. After plan
+validation, application fills that window,
 including defaults and collectors, then enters the target using the existing
 prepared-argument frame-entry convention. Tuple-suffix packing and collector
 construction belong to plan application. Callback failures during application

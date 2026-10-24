@@ -32,6 +32,10 @@ namespace cl
         {
             cache = FunctionCallInlineCache{};
         }
+        for(ExpandedCallInlineCache &cache: expanded_call_caches)
+        {
+            cache = ExpandedCallInlineCache{};
+        }
         for(OperatorInlineCache &cache: operator_caches)
         {
             cache.clear();

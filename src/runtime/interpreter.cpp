@@ -1,4 +1,5 @@
 #include "runtime/interpreter.h"
+#include "runtime/expanded_call.h"
 
 #include "api/extension_handle.h"
 #include "builtin_types/dict.h"
@@ -1125,74 +1126,53 @@ namespace cl
             function_call_adaptation_for_positional_call(fun, n_args);
     }
 
-    static ALWAYSINLINE void
-    populate_function_call_cache(FunctionCallInlineCache &cache,
-                                 TValue<Function> fun, uint32_t n_args)
+    struct ResolvedFunctionCallTarget
     {
-        populate_function_call_cache_with_guard(cache, fun.raw_value(), fun,
-                                                nullptr, n_args);
-    }
+        TValue<Function> function;
+        ValidityCell *validity_cell;
+    };
 
-    static ALWAYSINLINE void
-    populate_constructor_call_cache(FunctionCallInlineCache &cache,
-                                    ClassObject *cls, TValue<Function> thunk,
-                                    ValidityCell *lookup_cell, uint32_t n_args)
+    static Expected<ResolvedFunctionCallTarget>
+    resolve_function_call_target(Value callable)
     {
-        populate_function_call_cache_with_guard(cache, Value::from_oop(cls),
-                                                thunk, lookup_cell, n_args);
+        if(callable.is_ptr())
+        {
+            Object *object = callable.get_ptr<Object>();
+            if(object->native_layout_id() == NativeLayoutId::Function)
+            {
+                return Expected<ResolvedFunctionCallTarget>::ok(
+                    {TValue<Function>::from_value_assumed(callable), nullptr});
+            }
+            if(object->native_layout_id() == NativeLayoutId::ClassObject)
+            {
+                ConstructorThunkLookup constructor =
+                    CL_TRY(static_cast<ClassObject *>(object)
+                               ->get_or_create_constructor_thunk());
+                if(constructor.is_found())
+                {
+                    return Expected<ResolvedFunctionCallTarget>::ok(
+                        {TValue<Function>::from_oop(constructor.thunk),
+                         constructor.lookup_cell});
+                }
+            }
+        }
+        return Expected<ResolvedFunctionCallTarget>::raise_exception(
+            L"TypeError", L"object is not callable");
     }
 
     NOINLINE static Expected<void> populate_positional_call_cache_from_callable(
         Value callable, uint32_t n_args, FunctionCallInlineCache &cache)
     {
-        if(unlikely(!callable.is_ptr()))
-        {
-            return Expected<void>::raise_exception(L"TypeError",
-                                                   L"object is not callable");
-        }
-
-        Object *callable_object = callable.get_ptr();
-        if(callable_object->native_layout_id() == NativeLayoutId::ClassObject)
-        {
-            ClassObject *cls = static_cast<ClassObject *>(callable_object);
-            ConstructorThunkLookup constructor =
-                CL_TRY(cls->get_or_create_constructor_thunk());
-            if(unlikely(!constructor.is_found()))
-            {
-                return Expected<void>::raise_exception(
-                    L"TypeError", L"object is not callable");
-            }
-
-            TValue<Function> thunk =
-                TValue<Function>::from_oop(constructor.thunk);
-            if(unlikely(!thunk.extract()->accepts_positional_only_call_arity(
-                   n_args)))
-            {
-                return Expected<void>::raise_exception(
-                    L"TypeError", L"wrong number of arguments");
-            }
-            populate_constructor_call_cache(cache, cls, thunk,
-                                            constructor.lookup_cell, n_args);
-            return Expected<void>::ok();
-        }
-
-        if(unlikely(callable_object->native_layout_id() !=
-                    NativeLayoutId::Function))
-        {
-            return Expected<void>::raise_exception(L"TypeError",
-                                                   L"object is not callable");
-        }
-
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
+        ResolvedFunctionCallTarget target =
+            CL_TRY(resolve_function_call_target(callable));
+        if(!target.function.extract()->accepts_positional_only_call_arity(
+               n_args))
         {
             return Expected<void>::raise_exception(
                 L"TypeError", L"wrong number of arguments");
         }
-
-        populate_function_call_cache(cache, function, n_args);
+        populate_function_call_cache_with_guard(
+            cache, callable, target.function, target.validity_cell, n_args);
         return Expected<void>::ok();
     }
 
@@ -1384,43 +1364,11 @@ namespace cl
         Value callable, Value keyword_names, uint32_t n_pos_args,
         uint32_t n_kw_args, KeywordCallInlineCache &cache)
     {
-        if(unlikely(!callable.is_ptr()))
-        {
-            return Expected<void>::raise_exception(L"TypeError",
-                                                   L"object is not callable");
-        }
-
-        Object *callable_object = callable.get_ptr();
-        if(callable_object->native_layout_id() == NativeLayoutId::ClassObject)
-        {
-            ClassObject *cls = static_cast<ClassObject *>(callable_object);
-            ConstructorThunkLookup constructor =
-                CL_TRY(cls->get_or_create_constructor_thunk());
-            if(unlikely(!constructor.is_found()))
-            {
-                return Expected<void>::raise_exception(
-                    L"TypeError", L"object is not callable");
-            }
-
-            TValue<Function> thunk =
-                TValue<Function>::from_oop(constructor.thunk);
-            return build_and_populate_keyword_call_cache(
-                cache, Value::from_oop(cls), thunk, constructor.lookup_cell,
-                keyword_names, n_pos_args, n_kw_args);
-        }
-
-        if(unlikely(callable_object->native_layout_id() !=
-                    NativeLayoutId::Function))
-        {
-            return Expected<void>::raise_exception(L"TypeError",
-                                                   L"object is not callable");
-        }
-
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
-        return build_and_populate_keyword_call_cache(cache, callable, function,
-                                                     nullptr, keyword_names,
-                                                     n_pos_args, n_kw_args);
+        ResolvedFunctionCallTarget target =
+            CL_TRY(resolve_function_call_target(callable));
+        return build_and_populate_keyword_call_cache(
+            cache, callable, target.function, target.validity_cell,
+            keyword_names, n_pos_args, n_kw_args);
     }
 
     static ALWAYSINLINE void
@@ -1769,6 +1717,58 @@ namespace cl
 
         return invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,
                                          cache.code_object, new_fp, instr_len);
+    }
+
+    static Expected<void> enter_function_frame_from_expanded_args(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
+        CodeObject *&code_object, ExpandedCallInlineCache &cache,
+        Value callable, TValue<Tuple> positional, TValue<Dict> keywords,
+        int32_t first_arg_reg, uint32_t instr_len,
+        DispatchTableEntry &jit_entry)
+    {
+        if(cache.guard_value != callable || cache.function == nullptr ||
+           (cache.validity_cell != nullptr && !cache.validity_cell->is_valid()))
+        {
+            ResolvedFunctionCallTarget target =
+                CL_TRY(resolve_function_call_target(callable));
+            const FunctionSignature signature =
+                target.function.extract()->call_signature.function;
+            cache.guard_value = callable;
+            cache.function = target.function.extract();
+            cache.validity_cell = target.validity_cell;
+            cache.mode = signature.has_varargs() && signature.has_kwargs() &&
+                                 signature.n_positional_parameters == 0 &&
+                                 signature.n_kwonly_parameters == 0
+                             ? ExpandedCallMode::PureCollector
+                             : ExpandedCallMode::General;
+        }
+        // Capture the target before callbacks: a nested call at this same site
+        // may replace the live cache or invalidate constructor lookup.
+        Owned<TValue<Function>> function(
+            TValue<Function>::from_oop(cache.function));
+        ExpandedCallMode mode = cache.mode;
+        CodeObject *target_code = function.extract()->code_object.extract();
+        Value *new_fp =
+            new_frame_pointer_from_first_arg(fp, target_code, first_arg_reg);
+        if(mode == ExpandedCallMode::PureCollector)
+        {
+            CL_TRY(validate_expanded_call_keywords(keywords));
+            new_fp[target_code->encode_reg(0)] = positional.raw_value();
+            new_fp[target_code->encode_reg(1)] = keywords.raw_value();
+        }
+        else
+        {
+            ExpandedCallBindingPlan plan =
+                CL_TRY(build_expanded_call_binding_plan(
+                    thread, function.value(),
+                    uint32_t(positional.extract()->size()), keywords));
+            CL_TRY(apply_expanded_call_binding_plan(
+                thread, function.value(), positional, keywords, plan, new_fp));
+        }
+        jit_entry =
+            invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,
+                                      target_code, new_fp, instr_len);
+        return Expected<void>::ok();
     }
 
     static ALWAYSINLINE int32_t prepare_method_call_argument_slots(
@@ -5194,6 +5194,41 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_call_expanded(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 5;
+        Value callable = fp[int8_t(pc[1])];
+        int32_t containers_reg = int8_t(pc[2]);
+        int32_t first_arg_reg = int8_t(pc[3]);
+        TValue<Tuple> positional =
+            TValue<Tuple>::from_value_assumed(fp[containers_reg]);
+        TValue<Dict> keywords =
+            TValue<Dict>::from_value_assumed(fp[containers_reg - 1]);
+        assert(positional.extract()->get_shape() ==
+               thread->get_exact_tuple_shape());
+        assert(keywords.extract()->get_shape() ==
+                   thread->get_exact_dict_string_key_shape() ||
+               keywords.extract()->get_shape() ==
+                   thread->get_exact_dict_general_shape());
+        ExpandedCallInlineCache &cache =
+            code_object->inline_caches.expanded_call_caches[pc[4]];
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
+        DispatchTableEntry jit_entry = nullptr;
+        INTERP_TRY(enter_function_frame_from_expanded_args(
+            thread, fp, pc, dispatch, code_object, cache, callable, positional,
+            keywords, first_arg_reg, call_instr_len, jit_entry));
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_call_keyword_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 8;
@@ -6733,6 +6768,7 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::CallPositional, op_call_positional);
         SET_TABLE_ENTRY(Bytecode::CallKeyword, op_call_keyword);
+        SET_TABLE_ENTRY(Bytecode::CallExpanded, op_call_expanded);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic2, op_call_intrinsic2);

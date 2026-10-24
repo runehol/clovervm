@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stages 1, 2, and 3a are complete; later checkpoints have not started.
+`3a84a6a2`. Stages 1, 2, 3a, and 3b are complete; later checkpoints have not started.
 
 ## Working rules
 
@@ -241,24 +241,35 @@ uncommitted for review.
 
 ### 3b: Plan application and CallExpanded
 
-- [ ] Resolve functions and eligible constructor thunks through existing call
+Implementation: native application in `src/runtime/expanded_call.{h,cpp}`,
+`CallExpanded` dispatch and shared callable resolution in `interpreter.cpp`,
+and a dedicated `ExpandedCallInlineCache` for the target and adapter mode.
+The cache contains no keyword names or binding plan. Bytecode effects and
+interpreter fallback are covered by execution and JIT translation tests.
+
+- [x] Resolve functions and eligible constructor thunks through existing call
   machinery before invoking the binder; do not duplicate resolution in the
   binder. Keep callable/signature caching independent of binding-plan caching,
   and defer positional arity errors until after keyword matching.
-- [ ] Add `CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx`.
+- [x] Add `CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx`.
   Require adjacent exact tuple/fresh exact dict inputs, both always present.
-- [ ] Keep input containers and callable outside the outgoing parameter window.
+- [x] Keep input containers and callable outside the outgoing parameter window.
   Fill it only after successful validation, using existing prepared frame entry.
-- [ ] Apply positional values, defaults, tuple-suffix varargs, and collector
+- [x] Apply positional values, defaults, tuple-suffix varargs, and collector
   actions. Preserve transport; build leftovers only after successful planning.
-- [ ] Implement pure collection with key validation and direct container handoff.
-- [ ] Preserve the agreed collector incompatibility: do not reproduce CPython's
+- [x] Implement pure collection with key validation and direct container handoff.
+- [x] Preserve the agreed collector incompatibility: do not reproduce CPython's
   extra collector hash/equality calls or their interleaving with matching.
-- [ ] Handle collector construction failures without entering the callee.
-- [ ] Test frame alignment, nested calls, roots, unwind/return behavior, both
+- [x] Handle collector construction failures without entering the callee.
+- [x] Test frame alignment, nested calls, roots, unwind/return behavior, both
   collector actions, and constructor-thunk forwarding.
-- [ ] Wire safe interpreter fallback/JIT effects and run required checks.
-- [ ] Leave changes uncommitted for review.
+- [x] Wire safe interpreter fallback/JIT effects and run required checks.
+- [x] Leave changes uncommitted for review.
+
+Verification: 15 expanded-call execution tests, 17 binder tests, and the JIT
+fallback test passed. `ninja -C build-debug all check` passed with 1,729 tests
+passed and one skipped. Release `check_opcode_frames` passed. Expanded syntax
+remains disabled until 3c; changes are uncommitted for review.
 
 ### 3c: Parser and call precode
 

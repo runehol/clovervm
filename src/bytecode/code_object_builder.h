@@ -512,6 +512,10 @@ namespace cl
         Expected<uint32_t>
         emit_call_runtime_intrinsic0(uint32_t source_offset,
                                      RuntimeIntrinsic0 intrinsic);
+        Expected<uint32_t> emit_call_expanded(uint32_t source_offset,
+                                              uint32_t callable_reg,
+                                              uint32_t containers_reg,
+                                              uint32_t first_arg_reg);
         Expected<uint32_t> emit_call_positional(uint32_t source_offset,
                                                 uint32_t callable_reg,
                                                 uint32_t first_arg_reg,
@@ -554,6 +558,7 @@ namespace cl
         Expected<uint8_t> allocate_function_call_cache();
         Expected<uint8_t> allocate_operator_cache();
         Expected<uint8_t> allocate_keyword_call_cache();
+        Expected<uint8_t> allocate_expanded_call_cache();
         Expected<void>
         emit_operator_cache_suffix(uint32_t source_offset,
                                    OperatorBytecodeFormat format);

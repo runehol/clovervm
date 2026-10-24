@@ -2,6 +2,7 @@
 
 #include "builtin_types/dict.h"
 #include "builtin_types/str.h"
+#include "builtin_types/tuple.h"
 #include "object_model/function.h"
 #include "object_model/owned.h"
 #include "runtime/thread_state.h"
@@ -11,6 +12,19 @@
 
 namespace cl
 {
+    Expected<void> validate_expanded_call_keywords(TValue<Dict> keywords)
+    {
+        for(Dict::EntryView entry: *keywords.extract())
+        {
+            if(!can_convert_to<String>(entry.key))
+            {
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"keywords must be strings");
+            }
+        }
+        return Expected<void>::ok();
+    }
+
     Expected<ExpandedCallBindingPlan> build_expanded_call_binding_plan(
         ThreadState *thread, TValue<Function> function,
         uint32_t positional_count, TValue<Dict> keywords)
@@ -21,14 +35,7 @@ namespace cl
                    thread->get_exact_dict_general_shape());
 
         // Validate the whole transport before any equality callback can run.
-        for(Dict::EntryView entry: *keywords.extract())
-        {
-            if(!can_convert_to<String>(entry.key))
-            {
-                return Expected<ExpandedCallBindingPlan>::raise_exception(
-                    L"TypeError", L"keywords must be strings");
-            }
-        }
+        CL_TRY(validate_expanded_call_keywords(keywords));
 
         ExpandedCallBindingPlan plan;
         plan.keyword_destinations.reserve(keywords.extract()->size());
@@ -125,5 +132,116 @@ namespace cl
                                                  : KwargsAction::ReuseTransport;
         }
         return Expected<ExpandedCallBindingPlan>::ok(std::move(plan));
+    }
+
+    Expected<void> apply_expanded_call_binding_plan(
+        ThreadState *thread, TValue<Function> function,
+        TValue<Tuple> positional, TValue<Dict> keywords,
+        const ExpandedCallBindingPlan &plan, Value *destination_fp)
+    {
+        const FunctionSignature signature =
+            function.extract()->call_signature.function;
+        const size_t positional_fills =
+            std::min(positional.extract()->size(),
+                     size_t(signature.n_positional_parameters));
+        Owned<Optional<TValue<Tuple>>> varargs;
+        if(signature.has_varargs())
+        {
+            if(positional_fills == 0)
+            {
+                varargs = Optional<TValue<Tuple>>::some(positional);
+            }
+            else
+            {
+                varargs = Optional<TValue<Tuple>>::some(
+                    thread->make_object_value<Tuple>(
+                        positional.extract()->size() - positional_fills));
+                for(size_t idx = positional_fills;
+                    idx < positional.extract()->size(); ++idx)
+                {
+                    varargs.value()
+                        .value()
+                        .extract()
+                        ->initialize_item_unchecked(
+                            idx - positional_fills,
+                            positional.extract()->item_unchecked(idx));
+                }
+            }
+        }
+
+        Owned<Optional<TValue<Dict>>> collector;
+        if(plan.kwargs_action == KwargsAction::ReuseTransport)
+        {
+            collector = Optional<TValue<Dict>>::some(keywords);
+        }
+        else if(plan.kwargs_action == KwargsAction::BuildLeftovers)
+        {
+            collector =
+                Optional<TValue<Dict>>::some(thread->make_object_value<Dict>());
+            size_t keyword_idx = 0;
+            for(size_t entry_idx = 0;
+                entry_idx < keywords.extract()->entry_storage_size();
+                ++entry_idx)
+            {
+                Dict::EntryView entry;
+                if(!keywords.extract()->entry_at(entry_idx, entry))
+                {
+                    continue;
+                }
+                assert(keyword_idx < plan.keyword_destinations.size());
+                if(plan.keyword_destinations[keyword_idx++] ==
+                   ExpandedCallBindingPlan::UnmatchedKeyword)
+                {
+                    // Insertion may call subclass protocols; the dict and
+                    // current entry must survive nested interpreter entry.
+                    Owned<Value> key(entry.key);
+                    Owned<Value> value(entry.value);
+                    CL_TRY(collector.value().value().extract()->set_item(
+                        thread, key.value(), value.value()));
+                }
+            }
+            assert(keyword_idx == plan.keyword_destinations.size());
+        }
+
+        // All callback-capable work is complete. The outgoing window can now
+        // be populated without a nested call overwriting partial arguments.
+        CodeObject *code = function.extract()->code_object.extract();
+        for(uint32_t idx = 0; idx < positional_fills; ++idx)
+        {
+            destination_fp[code->encode_reg(idx)] =
+                positional.extract()->item_unchecked(idx);
+        }
+        size_t keyword_idx = 0;
+        for(Dict::EntryView entry: *keywords.extract())
+        {
+            assert(keyword_idx < plan.keyword_destinations.size());
+            uint32_t destination = plan.keyword_destinations[keyword_idx++];
+            if(destination != ExpandedCallBindingPlan::UnmatchedKeyword)
+            {
+                destination_fp[code->encode_reg(destination)] = entry.value;
+            }
+        }
+        assert(keyword_idx == plan.keyword_destinations.size());
+        for(uint32_t slot: plan.default_slots)
+        {
+            destination_fp[code->encode_reg(slot)] =
+                function.extract()
+                    ->default_parameters.value()
+                    .value()
+                    .extract()
+                    ->item_unchecked(slot - signature.first_default_slot);
+        }
+        if(signature.has_varargs())
+        {
+            destination_fp[code->encode_reg(
+                signature.n_positional_parameters)] =
+                varargs.value().value().raw_value();
+        }
+        if(signature.has_kwargs())
+        {
+            destination_fp[code->encode_reg(signature.n_parameters - 1)] =
+                collector.value().value().raw_value();
+        }
+        return Expected<void>::ok();
     }
 }  // namespace cl

@@ -71,6 +71,15 @@ namespace cl
                               keyword_call_cache_index_);
     }
 
+    const ExpandedCallInlineCache *
+    BytecodeInstruction::expanded_call_cache() const
+    {
+        return inline_cache_tables_ == nullptr
+                   ? nullptr
+                   : cache_at(inline_cache_tables_->expanded_call_caches,
+                              expanded_call_cache_index_);
+    }
+
     const OperatorInlineCache *BytecodeInstruction::operator_cache() const
     {
         return inline_cache_tables_ == nullptr
@@ -488,6 +497,12 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::CallExpanded:
+                effects.source_register(0);
+                effects.source_register(1, 2);
+                effects.destination_accumulator();
+                break;
+
             case Bytecode::CallKeyword:
                 effects.source_register(0);
                 if(effects.operand(2) != 0)
@@ -761,6 +776,10 @@ namespace cl
                 case BytecodeOperandKind::FunctionCallCache:
                     assert(instruction.function_call_cache_index_ == -1);
                     instruction.function_call_cache_index_ = int16_t(value);
+                    break;
+                case BytecodeOperandKind::ExpandedCallCache:
+                    assert(instruction.expanded_call_cache_index_ == -1);
+                    instruction.expanded_call_cache_index_ = int16_t(value);
                     break;
                 case BytecodeOperandKind::KeywordCallCache:
                     assert(instruction.keyword_call_cache_index_ == -1);

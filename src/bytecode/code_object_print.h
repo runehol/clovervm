@@ -734,6 +734,17 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::CallExpanded:
+                fmt::format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", containers=");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", first_arg=");
+                disassemble_reg(code_obj, out, pc++);
+                fmt::format_to(out, ", expanded_call_cache[{}]",
+                               code_obj.code[pc++]);
+                break;
+
             case cl::Bytecode::CallPositional:
                 {
                     fmt::format_to(out, " ");

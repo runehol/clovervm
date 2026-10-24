@@ -169,6 +169,7 @@ CL_BYTECODE(Nop, NoOperands, Sequential, None)
 
 CL_BYTECODE(CallPositional, PositionalCall, Sequential, None)
 CL_BYTECODE(CallKeyword, KeywordCall, Sequential, None)
+CL_BYTECODE(CallExpanded, ExpandedCall, Sequential, None)
 CL_BYTECODE(CallIntrinsic0, NativeTarget, Sequential, None)
 CL_BYTECODE(CallIntrinsic1, NativeTarget, Sequential, None)
 CL_BYTECODE(CallIntrinsic2, NativeTarget, Sequential, None)

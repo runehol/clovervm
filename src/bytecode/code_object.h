@@ -250,6 +250,20 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
+    enum class ExpandedCallMode : uint8_t
+    {
+        General,
+        PureCollector,
+    };
+
+    struct ExpandedCallInlineCache
+    {
+        Value guard_value = Value::not_present();
+        Function *function = nullptr;
+        ValidityCell *validity_cell = nullptr;
+        ExpandedCallMode mode = ExpandedCallMode::General;
+    };
+
     struct OperatorInlineCache
     {
         ShapeKey operand_shape_keys[2];
@@ -467,6 +481,7 @@ namespace cl
         std::vector<FunctionCallInlineCache> function_call_caches;
         std::vector<OperatorInlineCache> operator_caches;
         std::vector<KeywordCallInlineCache> keyword_call_caches;
+        std::vector<ExpandedCallInlineCache> expanded_call_caches;
     };
 
     static constexpr int32_t FrameHeaderPreviousFpOffset = 0;
