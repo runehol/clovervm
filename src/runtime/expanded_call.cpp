@@ -6,6 +6,7 @@
 #include "object_model/function.h"
 #include "object_model/owned.h"
 #include "runtime/thread_state.h"
+#include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <cassert>
 #include <utility>
@@ -41,7 +42,7 @@ namespace cl
         plan.keyword_destinations.reserve(keywords.extract()->size());
         const FunctionSignature signature =
             function.extract()->call_signature.function;
-        std::vector<bool> filled(signature.n_parameters, false);
+        absl::InlinedVector<bool, 16> filled(signature.n_parameters, false);
         const uint32_t positional_fills =
             std::min(positional_count, signature.n_positional_parameters);
         for(uint32_t idx = 0; idx < positional_fills; ++idx)

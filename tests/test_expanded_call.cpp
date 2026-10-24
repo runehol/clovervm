@@ -93,6 +93,20 @@ def f(a, b=2, *args, c, d=4, **rest): pass
     EXPECT_EQ(3u, keywords().extract()->size());
 }
 
+TEST_F(ExpandedCallBinding, LargeSignaturesTrackDefaultsAndDuplicateKeywords)
+{
+    load(LR"(
+def f(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q=17, r=18): pass
+(f, {'r': 19})
+)");
+    auto result = build(16);
+    ASSERT_FALSE(result.has_exception());
+    EXPECT_EQ((std::vector<uint32_t>{17}), result.value().keyword_destinations);
+    EXPECT_EQ((std::vector<uint32_t>{16}), result.value().default_slots);
+
+    expect_type_error(build(18), L"invalid keyword argument");
+}
+
 TEST_F(ExpandedCallBinding, ReusesTransportWhenNoKeywordsMatch)
 {
     load(LR"(
