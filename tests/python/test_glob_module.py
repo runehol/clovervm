@@ -82,7 +82,10 @@ assert contains(recursive_all, "stdlib/native_modules")
 assert contains(recursive_all, "stdlib/")
 assert not contains(recursive_all, "stdlib")
 
-assert glob.glob1("stdlib", "g*.py")[0] == "glob.py"
+glob1_matches = glob.glob1("stdlib", "g*.py")
+# Filesystem enumeration order is unspecified; both module names match.
+assert contains(glob1_matches, "glob.py")
+assert contains(glob1_matches, "getopt.py")
 assert glob.glob0("stdlib", "glob.py")[0] == "glob.py"
 assert len(glob.glob0("stdlib", "not-present.py")) == 0
 
