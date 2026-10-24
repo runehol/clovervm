@@ -144,7 +144,7 @@ class TestCase:
         if not isinstance(obj, cls):
             self.fail(msg)
 
-    def assertRaises(self, expected_exception, function, *args, **kwargs):
+    def assertRaises(self, expected_exception, *args, **kwargs):
         # Validate before calling the function, including the no-exception path.
         if isinstance(expected_exception, tuple):
             for exception in expected_exception:
@@ -152,6 +152,11 @@ class TestCase:
                     raise TypeError("expected an exception class")
         elif not issubclass(expected_exception, BaseException):
             raise TypeError("expected an exception class")
+        if not args:
+            raise TypeError("assertRaises requires a callable")
+        # Extract the callable without reserving any of its keyword names.
+        function = args[0]
+        args = args[1:]
         try:
             function(*args, **kwargs)
         except BaseException as error:
