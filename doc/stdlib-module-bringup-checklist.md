@@ -108,7 +108,8 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `gzip` | Common compressed file format. | Depends on `zlib` and `io`. |
 | [ ] | `zipfile` | Wheels, eggs, package data, archives. | Depends on `zlib`, `io`, `struct`, `os`, and path handling. |
 | [ ] | `tarfile` | Source archives and package tooling. | Depends on file I/O, paths, compression modules. |
-| [ ] | `base64` | Encoding helpers for protocols and data files. | Not started / not assessed. |
+| [~] | `base64` | Encoding helpers for protocols and data files. | Pure-Python bounded Base64 slice referenced to CPython 3.14.5: `b64encode`/`b64decode`, separate standard and URL-safe wrappers, arbitrary two-byte `altchars` (including subclass-reported and stored-length checks), strict/permissive validation, padding, and codec errors. Supports stored bytes payloads (including subclasses) and ASCII strings for decoding; encoding altchars must be bytes, decoding altchars may also be ASCII strings. Custom decoding subclass hooks through the currently missing `str.encode`/`bytes.translate` APIs are omitted. No bytearray, memoryview, array, or general buffer protocol support. Base16/32/85, file APIs, and line-wrapping helpers remain omitted. |
+| [~] | `binascii` | Shared binary/ASCII conversion errors. | Exception-only Python module defining `Error(ValueError)`, shared by `base64`; no conversion functions or `Incomplete` yet. |
 | [ ] | `hashlib` | Hashes for packaging, caches, protocols. | Native crypto/hash backend likely needed. |
 | [ ] | `hmac` | Protocol authentication helper. | Depends on `hashlib`. |
 | [ ] | `urllib.parse` | URL parsing used without requiring networking. | Not started / not assessed. |
