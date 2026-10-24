@@ -385,6 +385,26 @@ def _clover_tuple_ne(self, other, /):
     return not result
 
 
+# Slice fields are immutable; tuple comparison owns callback and truth semantics.
+def _clover_slice_eq(self, other, /):
+    if not isinstance(self, slice):
+        raise TypeError("slice.__eq__ expects a slice receiver")
+    if not isinstance(other, slice):
+        return NotImplemented
+    if self is other:
+        return True
+    return (self.start, self.stop, self.step) == (other.start, other.stop, other.step)
+
+
+def _clover_slice_ne(self, other, /):
+    if not isinstance(self, slice):
+        raise TypeError("slice.__ne__ expects a slice receiver")
+    result = _clover_slice_eq(self, other)
+    if result is NotImplemented:
+        return result
+    return not result
+
+
 def _clover_tuple_count(self, needle, /):
     """Return number of occurrences of value."""
     if not isinstance(self, tuple):

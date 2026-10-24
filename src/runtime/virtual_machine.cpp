@@ -1421,22 +1421,13 @@ namespace cl
 
         // Seed dependencies explicitly: empty __builtins__ disables public
         // fallback.
-        const wchar_t *seed_names[] = {L"list",
-                                       L"tuple",
-                                       L"dict",
-                                       L"int",
-                                       L"str",
-                                       L"isinstance",
-                                       L"TypeError",
-                                       L"ValueError",
-                                       L"IndexError",
-                                       L"StopIteration",
-                                       L"NotImplemented",
-                                       L"True",
-                                       L"False",
-                                       L"None",
-                                       L"Ellipsis",
-                                       L"AttributeError"};
+        const wchar_t *seed_names[] = {
+            L"list",       L"tuple",         L"slice",
+            L"dict",       L"int",           L"str",
+            L"isinstance", L"TypeError",     L"ValueError",
+            L"IndexError", L"StopIteration", L"NotImplemented",
+            L"True",       L"False",         L"None",
+            L"Ellipsis",   L"AttributeError"};
         for(const wchar_t *name: seed_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);
@@ -1525,6 +1516,7 @@ namespace cl
         install_dict_python_methods(this, implementation_module);
         install_list_python_methods(this, implementation_module);
         install_tuple_python_methods(this, implementation_module);
+        install_slice_python_methods(this, implementation_module);
 
         TValue<String> membership_iter_fallback_name =
             get_or_create_interned_string_value(
