@@ -266,7 +266,7 @@ Open.
 ### CVR-013: Fused method calls resolve attributes after arguments
 
 - Severity: P1
-- Status: open
+- Status: accepted
 - Review unit: R6
 - Found at: `477e1af`
 - Affected code: `src/compiler/codegen.cpp:1204`,
@@ -318,14 +318,19 @@ evaluation. Keep descriptor execution and escaped bound-method construction as
 their separately documented contracts. Add positional and keyword differential
 tests with mutation and missing-attribute side effects.
 
-Verification:
+Original review verification:
 
 Confirmed with direct CloverVM and CPython reproductions for replacement and
-missing-method cases. No fix has been implemented.
+missing-method cases. No fix had been implemented at that review.
 
 Disposition:
 
-Open.
+Accepted compatibility difference, explicitly reaffirmed during expanded
+method-call work. Positional, keyword, and expanded attribute calls retain fused
+late lookup. Expanded-call tests pin this behavior; any correction must cover
+all call forms independently of argument expansion. See
+[Function Call Adaptation](function-call-adaptation.md#compatibility-boundaries).
+This is a recorded deviation, not an unapproved fix waiting in the active queue.
 
 ### CVR-014: Recursive calls overrun the fixed Clover stack
 
@@ -521,7 +526,7 @@ Open.
 ### CVR-016: Sequence search methods compare identity instead of equality
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R7
 - Found at: `e2c5c3b`
 - Affected code: `src/builtin_types/list.cpp:516`,
@@ -566,13 +571,19 @@ Route candidate comparison through the existing fallible equality protocol,
 propagate exceptions, and define mutation-safe iteration behavior matching the
 sequence method contract. Add primitive cross-type and custom-`__eq__` tests.
 
-Verification:
+Original review verification:
 
-Confirmed with CloverVM and CPython probes. No fix has been implemented.
+Confirmed with CloverVM and CPython probes. No fix had been implemented at
+that review.
 
 Disposition:
 
-Open.
+Resolved by `b3dd5ae3` (cached Python equality for list/tuple searches).
+The 2026-10-24 inventory rechecked `list.count`, `list.index`, `list.remove`,
+`tuple.count`, and `tuple.index` with distinct equal objects and bool/int pairs.
+The probes pass. Implementations now use identity-before-equality dispatch in
+`src/bootstrap/builtin_implementations.py`; the original native-handle-only
+comparison path is no longer installed.
 
 ### CVR-017: Unicode case conversion loses expanding mappings
 
@@ -687,7 +698,7 @@ Resolved locally; uncommitted.
 ### CVR-019: Exception handler targets remain bound after exit
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R8
 - Found at: `e2c5c3b`
 - Affected code: `src/compiler/codegen.cpp:2159`,
@@ -731,18 +742,23 @@ Lower the handler binding as an implicit cleanup region that clears and deletes
 the name on normal completion, `return`, `break`, `continue`, and exceptional
 exit. Add local, global, prior-binding, nested-handler, and nonlocal-exit tests.
 
-Verification:
+Original review verification:
 
-Confirmed with CloverVM and CPython. No fix has been implemented.
+Confirmed with CloverVM and CPython. No fix had been implemented at that
+review.
 
 Disposition:
 
-Open.
+Resolved by `0c25090d` (exception handler binding cleanup).
+`emit_exception_handler_binding_cleanup` and cleanup contexts now cover handler
+exit in `src/compiler/codegen.cpp`. The 2026-10-24 inventory rechecked ordinary
+handler exit and confirmed that the caught name becomes unbound; the cleanup
+implementation also routes nonlocal and exceptional exits through deletion.
 
 ### CVR-020: Parenthesized assignment expressions are rejected
 
 - Severity: P2
-- Status: open
+- Status: resolved
 - Review unit: R8
 - Found at: `e2c5c3b`
 - Affected code: `src/compiler/parser.cpp:637`,
@@ -785,14 +801,17 @@ Use the named-expression grammar at parenthesized expression positions while
 preserving generator-expression and tuple disambiguation. Add assignments,
 calls, nesting, and invalid-unparenthesized-context parser/interpreter tests.
 
-Verification:
+Original review verification:
 
-Confirmed with CloverVM and CPython parser/runtime probes. No fix has been
-implemented.
+Confirmed with CloverVM and CPython parser/runtime probes. No fix had been
+implemented at that review.
 
 Disposition:
 
-Open.
+Resolved by `7a85468f` (walrus expression parsing and binding analysis),
+with subsequent end-to-end coverage in `f0631c48`. The 2026-10-24 inventory
+rechecked parenthesized assignment expressions against CloverVM and CPython;
+both pass. Parser, codegen, and interpreter tests cover the supported syntax.
 
 ### CVR-021: Star import converts missing exported attributes to ImportError
 

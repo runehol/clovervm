@@ -61,11 +61,6 @@ For bounded work that can land independently of this priority order, see
    Unsupported public call forms should remain explicit adapter edges, not
    implicit fallback machinery hidden inside the hot path.
 
-   This does not require completing every Python call syntax first. Runtime
-   support for caller `*args`, caller `**kwargs`, richer duplicate/error
-   ordering, and native keyword-call convenience APIs can land later as
-   additional call-plan variants.
-
 3. **Implicit protocol dispatch and cached special calls**
 
    Move guarded special-method dispatch to implicit protocols: cached dunder
@@ -77,11 +72,6 @@ For bounded work that can land independently of this priority order, see
    `NotImplemented` continuation. Protocol caches should record the lookup,
    binding, call target, and continuation behavior that a JIT would otherwise
    have to rediscover.
-
-   [Truthiness dispatch](truthiness-dispatch.md) now implements cached explicit
-   conversions and combined conditional jumps, with embedded Python return
-   validation and preserved short-circuit operands. Length-result index coercion
-   and correcting sys.maxsize remain separate follow-ups.
 
 4. **Traceable iteration protocol and loop plans**
 
@@ -135,27 +125,19 @@ For bounded work that can land independently of this priority order, see
     objects and therefore need explicit lifetime, root visibility, teardown, and
     pending-exception behavior for uninitialized cell reads.
 
-8. **Remaining operator and expression surface**
-
-    Remaining operator surface should be filled in only where it has a clear
-    semantic design and benchmark or compatibility demand.
-
-    Known remaining gaps include the `operator` module helpers that mirror
-    existing operations.
-
-9. **Class semantics cleanup**
+8. **Class semantics cleanup**
 
     Class scopes are currently implemented as local scopes, but this is not
     correct. Instead these should be dynamic scopes backed by a dict that is
     eventually slurped up into the class object when the initialization is done.
 
-10. **Generators, `yield`, and `yield from`**
+9. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-11. **Slice write/delete support when it becomes the shortest path**
+10. **Slice write/delete support when it becomes the shortest path**
 
     Keep `slice.__new__` and syntax construction validation-free: slice fields
     are raw objects, and `__index__` conversion must happen at consumption time
@@ -165,7 +147,7 @@ For bounded work that can land independently of this priority order, see
     decisions, should wait until a concrete benchmark or stdlib bringup task
     needs them.
 
-12. **Comprehensions and richer syntax**
+11. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
@@ -190,8 +172,6 @@ Revisit this ordering when:
   benchmark-source adaptation;
 - implicit protocols such as `__len__`, `__iter__`, `__next__`, and numeric
   conversion have guarded dispatch plans comparable to operator dispatch;
-- caller `*args` / `**kwargs` expansion or exact CPython call diagnostics
-  become the next blocker for stdlib module bringup;
 - importlib, public finder/loader APIs, path hooks, or exact module namespace
   compatibility become necessary for broader Python source;
 - public `range()` semantics become a practical blocker rather than a visible

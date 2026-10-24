@@ -12,38 +12,65 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
-### Tuple construction and subclassing
+### Simplify builtin native method installation
 
-Deferred after readiness discussion; no tuple constructor is implemented yet.
-Revisit native `tuple.__new__` with empty construction, exact tuple identity reuse,
-direct exact-list conversion, and fresh native storage for subclass targets.
-Subclass storage must use the requested class root shape, zero inline capacity,
-and common overflow attributes. Copy and retain element references, not elements.
+- **Dict native methods:** replace the local `install` lambda in
+  `src/builtin_types/dict.cpp` with entries in its existing
+  `BuiltinIntrinsicMethod` table. `with_defaults` and
+  `install_builtin_intrinsic_methods` already support defaults; the TODO claiming
+  otherwise is stale. Preserve the separate generated dict Functions and their
+  trusted resolvers; this is not a rewrite of those generators.
+- **List `pop`:** remove the equivalent bespoke registration lambda in
+  `src/builtin_types/list.cpp` and express its `-1` default through
+  `with_defaults` in the existing table.
 
-General iterable conversion remains an unsettled boundary: there is no existing
-general C++ iterable-consumption helper, and invoking a retained Python helper
-to materialize a temporary list was discussed but not accepted for implementation.
-Tuple/list subclass inputs can override `__iter__`; do not bypass those callbacks
-by copying their native payload unconditionally. Agree on the first supported
-input slice and fallback design before coding.
+Use the existing descriptor flags and native-function metadata. These can land
+as separate focused refactors with no Python-visible behavior change.
 
-Verify argument/error behavior, exact and subclass result identity, element
-lifetime, iteration overrides, attributes, operation results, and constructor
-invalidation. Tuple equality is implemented separately. This item remains deferred
-rather than the next active native-constructor stage.
+### Use ordinary inline flags in the explicit-keyword binder
 
-### Complete small `operator` helpers
+`build_and_populate_keyword_call_cache` in `src/runtime/interpreter.cpp` still
+uses `std::vector<bool>` for its local filled-parameter flags. Use the same
+`absl::InlinedVector<bool, 16>` scratch representation as the expanded binder.
+This does not change either cached-plan representation. It is a consistency and
+scratch-storage simplification, not a claimed hot-cache performance improvement.
 
-Implement one helper at a time where the underlying VM operation already
-exists. Check `stdlib/operator.py` before starting because this list can become
-stale as the module grows. Likely candidates are exact `operator.call`, a
-better `length_hint`, and the remaining sequence helpers whose required
-protocols are already available.
+### Consolidate string/bytes search-bound normalization
 
-Done when the helper has focused stdlib tests and does not claim compatibility
-for protocol behavior the VM cannot yet execute.
+`normalize_string_bound` and `normalize_bytes_bound`, plus their range wrappers,
+duplicate the recently corrected search-range policy. Reuse a common native
+normalization helper while keeping receiver extraction and error wording in the
+owning type implementations. Preserve out-of-range starts and reversed ranges
+as no-match cases; do not replace this with slice clamping. Agree the concrete
+helper boundary before coding.
+
+### Add `operator.call`
+
+`operator.call` is absent from `stdlib/operator.py`. Expanded argument forwarding
+now supports a direct forwarding wrapper. Add it with focused stdlib tests,
+retaining the VM's existing callable limitations.
 
 ## Bounded, But Larger
+
+### Tuple construction and subclassing
+
+No public tuple constructor is implemented yet. Revisit native `tuple.__new__`
+with empty construction, exact tuple identity reuse, direct exact-list
+conversion, and fresh native storage for subclass targets. Subclasses must use
+the requested class root shape, zero inline capacity, and common overflow
+attributes; retain element references rather than copying elements.
+
+Iterable materialization is no longer missing infrastructure:
+`ToExactTuple`, `ToExactList`, and VM-owned managed helpers are implemented for
+expanded calls. That does not settle how a native tuple constructor enters the
+helper and allocates the requested subclass. Agree that boundary and the first
+supported input slice before implementation. Subclass iterator overrides must
+still run.
+
+Verify argument/error behavior, exact and subclass result identity, element
+lifetime, iteration overrides, attributes, and constructor invalidation. Tuple
+equality is already implemented separately. This item remains deferred, rather
+than being an immediately ready constructor change.
 
 ### Follow-ups from native constructor work
 
@@ -74,8 +101,10 @@ for protocol behavior the VM cannot yet execute.
   classes/functions where appropriate.
 - **Combined `__new__` / `__init__`:** retain original call arguments and bind
   the two methods independently, then check the returned type and resolve its
-  initializer after allocation. General call unpacking/forwarding is prerequisite
-  work; handle initializer replacement during allocation and coordinated default
+  initializer after allocation. General call unpacking/forwarding is now
+  available; retaining the original argument containers across allocation and
+  independently binding both methods still needs its own readiness sketch.
+  Handle initializer replacement during allocation and coordinated default
   method argument rules. See the current
   [constructor limitations](native-subtype-storage.md#constructor-limitations).
 

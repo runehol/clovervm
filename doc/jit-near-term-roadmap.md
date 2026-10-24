@@ -42,36 +42,7 @@ executing compiled code. The test must prove both that roots are published and
 that execution resumes at the backedge target without replaying loop-body
 effects.
 
-### 2. Unbox Float Arithmetic
-
-Use Mandelbrot as the first end-to-end unboxing target. Implement the float
-pipeline in this order:
-
-1. Recognize trusted-handler calls from their registered semantics and guarded
-   operand shape keys.
-2. Replace recognized calls with explicit `UnboxF64`, F64 operation, and
-   `BoxF64` instructions. `BoxF64` produces an exact builtin-float shape fact.
-3. Propagate exact shapes for immutable types such as float, then eliminate
-   redundant shape guards. In particular, the shape guard immediately after a
-   `BoxF64` must be eliminated using the shape fact produced by the box itself.
-4. Fold `UnboxF64(BoxF64(value))` to `value` once the intervening guards are
-   gone.
-5. Carry unboxed F64 values through loop parameters so loop bodies do not box
-   values merely to feed the next iteration.
-6. Sink remaining boxes into side exits and interpreter-visible returns.
-
-This requires F64 allocation constraints and AArch64 emission, SIMD stack
-transfers, boxing allocation, and recovery computation. Boxing must remain
-where object identity can become observable. Arithmetic temporaries that escape
-only through recovery or return paths should stay unboxed on the main path.
-Guards themselves remain on the executable path because a transition program
-cannot recursively side exit.
-
-The acceptance shape for Mandelbrot is an inner loop containing F64 arithmetic
-and comparisons, integer loop control, and branches, without per-iteration
-float allocation or trusted-handler calls.
-
-### 3. Complete the Direct Operator Slice
+### 2. Complete the Direct Operator Slice
 
 Extend the direct Core path through the remaining common operators whose fast
 paths fit the existing guard and side-exit model. Floor division and modulo are
@@ -90,7 +61,7 @@ functions rather than introducing one-off instructions. Preserve comparison and
 branch fusion, tagged-fact propagation, and redundant-guard elimination as the
 operator set grows.
 
-### 4. Add Known-Field Access
+### 3. Add Known-Field Access
 
 Add known-offset field loads behind the existing executable shape and validity
 guards. This is the first high-leverage object-oriented slice and should reuse
@@ -100,7 +71,7 @@ Guard commoning and motion may begin here, once repeated shape checks exist in
 real generated programs. Keep shape and validity checks independently
 optimizable as required by their separate Core instructions.
 
-### 5. Broaden Compiled Calls
+### 4. Broaden Compiled Calls
 
 For JIT-to-JIT calls, move ownership of return-address and return-`CodeObject`
 spilling from the caller to the callee. The caller should transport that return

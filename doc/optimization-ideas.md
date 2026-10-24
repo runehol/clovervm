@@ -4,76 +4,19 @@
 |---|---|
 | Document type | Investigation |
 | Status | Experimental |
-| Implementation | Partial |
-| Scope | Interpreter optimization inventory, implemented baselines, and candidate follow-ups |
+| Implementation | Candidate opcode unimplemented; scratch-ABI experiment rejected |
+| Scope | Unimplemented interpreter optimization experiments and retained negative results |
 | Owning layers | Codegen, interpreter, inline caches, runtime calls, and object protocols |
-| Validated against | `755d08b` (2026-05-26) |
+| Validated against | `ecf3faa9` (2026-10-24) |
 | Supersedes | N/A |
 
-This note collects interpreter optimization ideas. Some sections describe
-implemented baseline machinery plus remaining follow-ups.
-
-## CallPositional Inline Cache
-
-`CallPositional` now has a positive, monomorphic inline cache for ordinary
-`Function` calls and eligible constructor calls. The cache is keyed by exact
-callable identity and the fixed positional argument count encoded in the
-bytecode.
-
-Current behavior:
-
-- Positive results are cached; non-callable and wrong-arity misses are not.
-- Plain `Function` calls cache the callable, code object, argument adaptation,
-  and any lookup validity needed by the plan.
-- Eligible `ClassObject` calls cache the class identity plus the constructor
-  thunk returned by `ClassObject::get_or_create_constructor_thunk()`.
-- Constructor cache entries use the class's existing MRO shape+contents
-  validity cell. The class owns thunk creation and invalidation.
-
-Useful follow-ups:
-
-- Keep only the hottest plan kind in the main `op_call_positional` handler.
-- Execute bulkier cached plans through a cold cached slow path.
-- Add structural tests for the constructor-cache lowering and guard shape if
-  those decisions become externally visible enough to pin down.
-
-The implemented shape is roughly:
-
-```cpp
-enum class FunctionCallInlineCacheKind : uint8_t
-{
-    Empty,
-    Function,
-    Constructor,
-};
-
-struct FunctionCallInlineCache
-{
-    FunctionCallInlineCacheKind kind = FunctionCallInlineCacheKind::Empty;
-    Object *guard_object = nullptr;
-    Function *function = nullptr;
-    CodeObject *code_object = nullptr;
-    ValidityCell *validity_cell = nullptr;
-    uint32_t n_args = 0;
-    FunctionCallAdaptation adaptation = FunctionCallAdaptation::Invalid;
-};
-```
-
-For ordinary functions, the hot path checks callable identity and enters the
-cached function frame directly. Fixed-arity native thunks share that plan
-because they are ordinary `Function` objects. A later `NativeThunkExactFrame`
-plan could recognize tiny `CallIntrinsicN; Return` code objects and jump to a
-slimmer adapter when benchmarks show that the extra inline code pays for itself.
-
-Python call features should extend the plan model instead of turning
-`CallPositional` into one generic mega-handler. Defaults and `*args` already flow
-through call adaptation; keyword arguments and `**kwargs` should add their own
-normalization/adaptation plans rather than becoming an unstructured slow path.
+This note records unimplemented optimization experiments and evidence against
+repeating rejected experiments. Implemented call machinery is documented in
+[Function Call Adaptation](function-call-adaptation.md).
 
 ## CallGlobalSimple Macro Opcode
 
-After `CallPositional` has a useful call-plan cache, add a macro opcode for the
-common pattern:
+A possible next experiment is a macro opcode for the common pattern:
 
 ```text
 LdaGlobal name
@@ -100,8 +43,10 @@ The likely execution tiers are:
 - Fall back to a slow path that resolves the global, validates the call, and
   populates the positive cache entry.
 
-This should be implemented after the `CallPositional` inline cache so the macro
-opcode can reuse the call-plan builder and plan execution code.
+The call-plan cache prerequisite is satisfied, but this fused opcode is not
+implemented or selected as the next task. Measure the lookup/dispatch cost
+before adding it; reuse the existing call-plan builder rather than introducing
+another binder.
 
 ## AArch64 Scratch Argument Experiment
 
