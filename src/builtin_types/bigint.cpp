@@ -357,6 +357,10 @@ namespace cl
 
     Expected<Value> bigint_from_int64(ThreadState *thread, int64_t value)
     {
+        if(value >= value_smi_min && value <= value_smi_max)
+        {
+            return Expected<Value>::ok(Value::from_smi(value));
+        }
         digit_t digits[2];
         signum_t signum;
         double_digit_t magnitude;

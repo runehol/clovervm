@@ -7,7 +7,7 @@ import unicodedata
 
 
 UNICODE_VERSION = "16.0.0"
-OUTPUT = Path(__file__).resolve().parents[1] / "src/util/num_parse_unicode.inc"
+OUTPUT = Path(__file__).resolve().parents[1] / "src/builtin_types/num_parse_unicode.inc"
 
 
 def generate():

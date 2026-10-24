@@ -2,6 +2,7 @@
 
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
+#include "builtin_types/num_parse.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
@@ -10,7 +11,6 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
-#include "util/num_parse.h"
 #include <cmath>
 #include <cstdint>
 #include <fmt/format.h>

@@ -71,12 +71,12 @@ add_library(libclovervm_objects OBJECT
     runtime/fatal.cpp
     runtime/fatal.h
     util/compiler.h
-    util/num_parse.cpp
-    util/num_parse.h
-    util/num_parse_unicode.inc
     util/result.h
     builtin_types/float.cpp
     builtin_types/float.h
+    builtin_types/num_parse.cpp
+    builtin_types/num_parse.h
+    builtin_types/num_parse_unicode.inc
     builtin_types/hash.cpp
     builtin_types/hash.h
     object_model/function.cpp

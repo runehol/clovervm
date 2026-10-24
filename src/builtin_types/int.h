@@ -6,7 +6,6 @@
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "util/compiler.h"
-#include <string_view>
 
 namespace cl
 {
@@ -44,8 +43,6 @@ namespace cl
                                               SmiViewStorage *smi_storage);
     ConstBigIntView exact_int_value_bigint_view(Value value,
                                                 SmiViewStorage *smi_storage);
-    [[nodiscard]] Expected<Value> parse_int_string_view(ThreadState *thread,
-                                                        std::wstring_view text);
 
     BuiltinClassDefinition make_int_class(VirtualMachine *vm);
     void install_int_class_methods(VirtualMachine *vm);

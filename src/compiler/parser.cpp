@@ -3,6 +3,7 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
+#include "builtin_types/num_parse.h"
 #include "compiler/ast.h"
 #include "compiler/compilation_unit.h"
 #include "compiler/token.h"
@@ -10,7 +11,6 @@
 #include "runtime/fatal.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
-#include "util/num_parse.h"
 #include <cstdint>
 #include <iomanip>
 #include <locale>

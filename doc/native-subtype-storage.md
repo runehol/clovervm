@@ -188,9 +188,22 @@ reused for exact targets; subclass targets receive fresh native storage. A custo
 str conversion may return a string subclass, which exact-target construction
 preserves.
 
+Integer string conversion and integer literals share `parse_int_string_view`
+in `builtin_types/num_parse`. The handwritten digit loop first handles ordinary SMI text without allocation.
+On a miss, a private fast_float helper parses the original wide-character input
+into int64. Successful conversion uses `bigint_from_int64`, preserving SMI
+results where possible; valid decimal overflow uses the native BigInt builder
+instead of raising OverflowError. Failed direct parsing uses the private shared
+normalization helper and retries. It owns rewritten text while
+borrowing unchanged trimmed text, without storing views into its own buffer.
+This shares float's Unicode 16.0 decimal-digit and numeric-whitespace rules and
+underscore validation; integer base arguments and other conversion protocols
+remain separate work. Constructor type errors stay in `int.cpp`; invalid-text
+ValueError is raised by the shared integer parser.
+
 Float string conversion and source literals share `try_parse_float` in
-`util/num_parse`. It first parses the existing wide-character storage directly
-with fast_float. Only failure enters normalization for surrounding numeric
+`builtin_types/num_parse`. It first parses the existing wide-character storage
+directly with fast_float. Only failure enters normalization for surrounding numeric
 whitespace, underscores between decimal digits, and Unicode decimal digits.
 Trimming alone uses a view; character changes use a temporary buffer. Numeric
 Unicode tables are generated from Unicode 16.0 by

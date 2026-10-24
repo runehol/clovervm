@@ -2,6 +2,7 @@
 
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
+#include "builtin_types/num_parse.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
@@ -13,7 +14,6 @@
 #include "runtime/virtual_machine.h"
 #include <bit>
 #include <cmath>
-#include <cwctype>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -146,171 +146,6 @@ namespace cl
         }
         assert(can_convert_to<BigInt>(value));
         return value.get_ptr<BigInt>()->view();
-    }
-
-    static Value invalid_int_literal(ThreadState *thread)
-    {
-        return thread->set_pending_builtin_exception_string(
-            L"ValueError", L"invalid literal for int()");
-    }
-
-    static bool is_ascii_digit(cl_wchar ch) { return ch >= L'0' && ch <= L'9'; }
-
-    static Value parse_int_string_fast(ThreadState *thread,
-                                       std::wstring_view text)
-    {
-        if(text.empty())
-        {
-            return invalid_int_literal(thread);
-        }
-
-        size_t digit_begin = 0;
-        bool negative = false;
-        if(text.front() == L'+' || text.front() == L'-')
-        {
-            negative = text.front() == L'-';
-            digit_begin = 1;
-        }
-
-        static constexpr uint64_t positive_limit =
-            static_cast<uint64_t>(value_smi_max);
-        static constexpr uint64_t negative_limit = positive_limit + 1;
-        uint64_t limit = negative ? negative_limit : positive_limit;
-        uint64_t parsed = 0;
-        bool saw_digit = false;
-        for(size_t idx = digit_begin; idx < text.size(); ++idx)
-        {
-            cl_wchar ch = text[idx];
-            if(ch == L'_')
-            {
-                return Value::not_present();
-            }
-            if(!is_ascii_digit(ch))
-            {
-                return invalid_int_literal(thread);
-            }
-
-            uint64_t digit = static_cast<uint64_t>(ch - L'0');
-            if(parsed > (limit - digit) / 10)
-            {
-                return Value::not_present();
-            }
-            parsed = parsed * 10 + digit;
-            saw_digit = true;
-        }
-        if(!saw_digit)
-        {
-            return invalid_int_literal(thread);
-        }
-
-        int64_t result = static_cast<int64_t>(parsed);
-        if(negative)
-        {
-            result = -result;
-        }
-        return Value::from_smi(result);
-    }
-
-    static Value parse_int_string_slow(ThreadState *thread,
-                                       std::wstring_view text)
-    {
-        if(text.empty())
-        {
-            return invalid_int_literal(thread);
-        }
-
-        size_t digit_begin = 0;
-        bool negative = false;
-        if(text.front() == L'+' || text.front() == L'-')
-        {
-            negative = text.front() == L'-';
-            digit_begin = 1;
-        }
-
-        size_t scratch_capacity = text.size() - digit_begin + 1;
-        BigIntScratch scratch0(scratch_capacity);
-        BigIntScratch scratch1(scratch_capacity);
-        MutableBigIntView initial = scratch0.mutable_view();
-        ConstBigIntView current{0, 0, initial.digits};
-        bool use_first_scratch = false;
-        bool saw_digit = false;
-        bool previous_underscore = false;
-
-        for(size_t idx = digit_begin; idx < text.size(); ++idx)
-        {
-            cl_wchar ch = text[idx];
-            if(ch == L'_')
-            {
-                if(!saw_digit || previous_underscore)
-                {
-                    return invalid_int_literal(thread);
-                }
-                previous_underscore = true;
-                continue;
-            }
-            if(!is_ascii_digit(ch))
-            {
-                return invalid_int_literal(thread);
-            }
-
-            MutableBigIntView dest = use_first_scratch
-                                         ? scratch0.mutable_view()
-                                         : scratch1.mutable_view();
-            bigint_abs_mul_add_u32(&dest, current, 10,
-                                   static_cast<uint32_t>(ch - L'0'));
-            current = dest.view();
-            use_first_scratch = !use_first_scratch;
-            saw_digit = true;
-            previous_underscore = false;
-        }
-        if(!saw_digit || previous_underscore)
-        {
-            return invalid_int_literal(thread);
-        }
-
-        current = normalize_bigint_view(current);
-        if(current.signum != 0)
-        {
-            current.signum = negative ? -1 : 1;
-        }
-        Expected<Value> result = finalize_bigint(thread, current);
-        if(result.has_exception())
-        {
-            return Value::exception_marker();
-        }
-        return result.value();
-    }
-
-    Expected<Value> parse_int_string_view(ThreadState *thread,
-                                          std::wstring_view text)
-    {
-        size_t begin = 0;
-        size_t end = text.size();
-        while(begin < end && std::iswspace(text[begin]))
-        {
-            ++begin;
-        }
-        while(begin < end && std::iswspace(text[end - 1]))
-        {
-            --end;
-        }
-        std::wstring_view trimmed = text.substr(begin, end - begin);
-
-        Value fast = parse_int_string_fast(thread, trimmed);
-        if(!fast.is_not_present())
-        {
-            if(fast.is_exception_marker())
-            {
-                return Expected<Value>::propagate_exception();
-            }
-            return Expected<Value>::ok(fast);
-        }
-        Value slow = parse_int_string_slow(thread, trimmed);
-        if(slow.is_exception_marker())
-        {
-            return Expected<Value>::propagate_exception();
-        }
-        return Expected<Value>::ok(slow);
     }
 
     static Value parse_int_string(ThreadState *thread, TValue<String> string)

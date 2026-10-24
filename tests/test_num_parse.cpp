@@ -1,4 +1,8 @@
-#include "util/num_parse.h"
+#include "builtin_types/num_parse.h"
+
+#include "builtin_types/bigint.h"
+#include "object_model/owned.h"
+#include "test_helpers.h"
 
 #include <bit>
 #include <cmath>
@@ -191,6 +195,38 @@ namespace cl
         {
             std::wstring text(1, static_cast<wchar_t>(0x110000));
             EXPECT_FALSE(try_parse_float(text).has_value());
+        }
+    }
+
+    TEST(IntParse, NormalizedResultsSurviveInputDestruction)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        Owned<Value> value(Value::None());
+        {
+            std::wstring input = L"12_345_678_901_234_567_890_123_456_789";
+            auto parsed = parse_int_string_view(context.thread(), input);
+            ASSERT_FALSE(parsed.has_exception());
+            value = parsed.value();
+        }
+        ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
+        EXPECT_EQ(
+            L"12345678901234567890123456789",
+            bigint_to_decimal_string(value.value().get_ptr<BigInt>()->view()));
+    }
+
+    TEST(IntParse, ReturnsSMIFromBoundedAndNormalizedViews)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        const wchar_t buffer[] = {L'1', L'2', L'3', L'4', L'5', L'x'};
+        for(std::wstring_view input: {std::wstring_view(buffer, 5),
+                                      std::wstring_view(L" \t12_345\u2003")})
+        {
+            auto parsed = parse_int_string_view(context.thread(), input);
+            ASSERT_FALSE(parsed.has_exception());
+            ASSERT_TRUE(parsed.value().is_smi());
+            EXPECT_EQ(Value::from_smi(12345), parsed.value());
         }
     }
 
