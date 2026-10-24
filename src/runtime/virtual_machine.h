@@ -20,6 +20,7 @@
 #include "builtin_types/str.h"
 #include "memory/global_heap.h"
 #include "object_model/class_object.h"
+#include "object_model/heap_ptr.h"
 #include "object_model/owned.h"
 #include "object_model/shape_key.h"
 #include "object_model/typed_value.h"
@@ -205,7 +206,7 @@ namespace cl
         }
         Shape *exact_dict_general_shape() const
         {
-            return exact_dict_general_shape_;
+            return exact_dict_general_shape_.get();
         }
         ClassObject *slotdict_class() const
         {
@@ -466,7 +467,8 @@ namespace cl
         Shape *ellipsis_shape_ = nullptr;
         Shape *str_instance_root_shape_ = nullptr;
         Shape *exact_dict_string_key_shape_ = nullptr;
-        Shape *exact_dict_general_shape_ = nullptr;
+        // Unlike the string-key root, this clone has no owning class edge.
+        OwnedHeapPtr<Shape> exact_dict_general_shape_;
         Shape *slice_step_none_shape_ = nullptr;
         Shape *slice_general_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
