@@ -10,15 +10,13 @@
 #include "runtime/fatal.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
-#include <charconv>
+#include "util/num_parse.h"
 #include <cstdint>
 #include <iomanip>
-#include <limits>
 #include <locale>
 #include <span>
 #include <sstream>
 #include <string>
-#include <system_error>
 #include <unordered_set>
 #include <vector>
 
@@ -31,106 +29,27 @@ namespace cl
         return Expected<T>::raise_exception(type_name, message.c_str());
     }
 
-    static std::string remove_number_separators(std::wstring_view token)
-    {
-        std::string result;
-        result.reserve(token.size());
-        for(wchar_t c: token)
-        {
-            if(c != L'_')
-            {
-                result.push_back(static_cast<char>(c));
-            }
-        }
-        return result;
-    }
-
-    static int64_t parse_saturated_decimal_exponent(std::string_view text)
-    {
-        bool negative = false;
-        if(!text.empty() && (text.front() == '+' || text.front() == '-'))
-        {
-            negative = text.front() == '-';
-            text.remove_prefix(1);
-        }
-
-        int64_t exponent = 0;
-        constexpr int64_t max_relevant_decimal_exponent = 1000000;
-        for(char c: text)
-        {
-            if(exponent < max_relevant_decimal_exponent)
-            {
-                exponent = exponent * 10 + (c - '0');
-            }
-        }
-        if(exponent > max_relevant_decimal_exponent)
-        {
-            exponent = max_relevant_decimal_exponent;
-        }
-        return negative ? -exponent : exponent;
-    }
-
-    static bool float_literal_range_error_is_underflow(std::string_view literal)
-    {
-        size_t exponent_idx = literal.find_first_of("eE");
-        std::string_view significand = exponent_idx == std::string_view::npos
-                                           ? literal
-                                           : literal.substr(0, exponent_idx);
-        int64_t exponent = exponent_idx == std::string_view::npos
-                               ? 0
-                               : parse_saturated_decimal_exponent(
-                                     literal.substr(exponent_idx + 1));
-
-        int64_t digits_before_point = 0;
-        int64_t digit_idx = 0;
-        int64_t first_nonzero_digit_idx = -1;
-        bool before_point = true;
-        for(char c: significand)
-        {
-            if(c == '.')
-            {
-                before_point = false;
-                continue;
-            }
-            if(before_point)
-            {
-                digits_before_point++;
-            }
-            if(c != '0' && first_nonzero_digit_idx < 0)
-            {
-                first_nonzero_digit_idx = digit_idx;
-            }
-            digit_idx++;
-        }
-
-        if(first_nonzero_digit_idx < 0)
-        {
-            return true;
-        }
-
-        int64_t adjusted_exponent =
-            digits_before_point - first_nonzero_digit_idx - 1 + exponent;
-        return adjusted_exponent < 0;
-    }
-
     static double parse_float_literal(std::wstring_view token)
     {
-        std::string literal = remove_number_separators(token);
-        double value = 0.0;
-        const char *begin = literal.data();
-        const char *end = begin + literal.size();
-        std::from_chars_result result = std::from_chars(begin, end, value);
-        if(result.ec == std::errc() && result.ptr == end)
+        if(auto value = try_parse_float(token))
         {
-            return value;
+            return *value;
         }
-        if(result.ec == std::errc::result_out_of_range && result.ptr == end)
+        if(token.find(L'_') != std::wstring_view::npos)
         {
-            if(float_literal_range_error_is_underflow(literal))
+            std::wstring literal;
+            literal.reserve(token.size());
+            for(wchar_t c: token)
             {
-                return 0.0;
+                if(c != L'_')
+                {
+                    literal.push_back(c);
+                }
             }
-            return std::numeric_limits<double>::infinity();
+            if(auto value = try_parse_float(literal))
+            {
+                return *value;
+            }
         }
         fatal("tokenizer accepted invalid float literal");
     }

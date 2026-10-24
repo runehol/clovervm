@@ -71,6 +71,8 @@ add_library(libclovervm_objects OBJECT
     runtime/fatal.cpp
     runtime/fatal.h
     util/compiler.h
+    util/num_parse.cpp
+    util/num_parse.h
     util/result.h
     builtin_types/float.cpp
     builtin_types/float.h
@@ -351,7 +353,8 @@ target_include_directories(
     libclovervm_objects PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
 
 target_link_libraries(
-    libclovervm_objects PRIVATE project_options project_warnings)
+    libclovervm_objects PRIVATE project_options project_warnings
+                               FastFloat::fast_float)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
     target_compile_options(libclovervm_objects PRIVATE -fno-exceptions)
 else()

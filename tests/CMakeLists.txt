@@ -19,6 +19,7 @@ target_sources(test_clovervm PRIVATE
 	test_exception_handling.cpp
 	test_expanded_call.cpp
 	test_float.cpp
+	test_num_parse.cpp
 	test_hash.cpp
 	test_heap.cpp
 	test_import_system.cpp

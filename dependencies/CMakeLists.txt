@@ -57,11 +57,18 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
+FetchContent_Declare(
+  fast_float
+  URL               https://codeload.github.com/fastfloat/fast_float/tar.gz/refs/tags/v8.3.2
+  URL_HASH          SHA256=71bb9e865b888df01351558db5a39586d13ea97ada162156b3a07784d8c1b26b
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
 block()
   set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
   FetchContent_MakeAvailable(googletest)
   if(CLOVERVM_BUILD_BENCHMARK_DEPS)
     FetchContent_MakeAvailable(googlebenchmark)
   endif()
-  FetchContent_MakeAvailable(absl ctre cxxopts fmt)
+  FetchContent_MakeAvailable(absl ctre cxxopts fmt fast_float)
 endblock()

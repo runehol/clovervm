@@ -1244,6 +1244,14 @@ TEST(Interpreter, float_literal_values)
     expect_float_literal(L"1E3\n", 1000.0);
     expect_float_literal(L"1.2e-3\n", 0.0012);
     expect_float_literal(L"1_2.3_4\n", 12.34);
+    expect_float_literal(L"1_2.3_4e+1_0\n", 123400000000.0);
+    expect_float_literal(L"4.9406564584124654e-324\n",
+                         std::numeric_limits<double>::denorm_min());
+    expect_float_literal(
+        L"1.00000000000000011102230246251565404236316680908203125\n", 1.0);
+    expect_float_literal(
+        L"1.00000000000000011102230246251565404236316680908203126\n",
+        0x1.0000000000001p0);
 
     Value huge_actual = test_context.run_file(L"1e1000\n");
     ASSERT_TRUE(can_convert_to<Float>(huge_actual));
