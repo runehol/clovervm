@@ -1578,6 +1578,46 @@ namespace cl::jit
                   fixture.call(L"is_distinct", Value::None(), Value::True()));
     }
 
+    TEST(AArch64Execution, InheritedObjectNeUsesManagedEqualityAndTruth)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(LR"py(
+class Truth:
+    def __bool__(self): return False
+class Equal:
+    def __eq__(self, other): return Truth()
+x = Equal()
+y = Equal()
+def shadow(other): raise AssertionError("instance shadow called")
+x.__eq__ = shadow
+def compare(): return x != y
+def direct(): return object.__ne__(x, y)
+def replace_truth():
+    def truth(self): return True
+    Truth.__bool__ = truth
+def replace_equal():
+    def equal(self, other): return NotImplemented
+    Equal.__eq__ = equal
+)py");
+        // Warm the operator and generated helper caches before compiling
+        // callers.
+        for(int i = 0; i < 20; ++i)
+        {
+            EXPECT_EQ(Value::True(), fixture.call(L"compare"));
+            EXPECT_EQ(Value::True(), fixture.call(L"direct"));
+        }
+        ASSERT_TRUE(fixture.jit_compile(L"compare"));
+        ASSERT_TRUE(fixture.jit_compile(L"direct"));
+        EXPECT_EQ(Value::True(), fixture.call(L"compare"));
+        EXPECT_EQ(Value::True(), fixture.call(L"direct"));
+        ASSERT_EQ(Value::None(), fixture.call(L"replace_truth"));
+        EXPECT_EQ(Value::False(), fixture.call(L"compare"));
+        EXPECT_EQ(Value::False(), fixture.call(L"direct"));
+        ASSERT_EQ(Value::None(), fixture.call(L"replace_equal"));
+        EXPECT_EQ(Value::True(), fixture.call(L"compare"));
+        EXPECT_EQ(Value::NotImplemented(), fixture.call(L"direct"));
+    }
+
     TEST(AArch64Execution, CompilesAllPythonSMIComparisons)
     {
         PythonJitExecutionFixture fixture;
