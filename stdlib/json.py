@@ -290,27 +290,6 @@ def _hex_escape(code):
     )
 
 
-def _item_less(left, right):
-    # The VM does not yet provide tuple/list ordering. Match builtin
-    # lexicographic comparison before validating malformed item rows.
-    if isinstance(left, tuple) and isinstance(right, tuple):
-        kind = tuple
-    elif left.__class__ is list and right.__class__ is list:
-        kind = list
-    else:
-        return left < right
-    left_len = kind.__len__(left)
-    right_len = kind.__len__(right)
-    idx = 0
-    while idx < left_len and idx < right_len:
-        a = kind.__getitem__(left, idx)
-        b = kind.__getitem__(right, idx)
-        if not (a is b or a == b):
-            return _item_less(a, b)
-        idx += 1
-    return left_len < right_len
-
-
 def _sort_items_in_place(items):
     # CPython retains an exact list returned by items() and sorts that list.
     # Comparisons see it empty. Detect writes left there during sorting.
@@ -330,7 +309,7 @@ def _sort_items_in_place(items):
 
 
 def _sort_items(items):
-    # Sort snapshotted pairs before key coercion. Reproduce tuple ordering,
+    # Sort snapshotted pairs before key coercion using builtin ordering,
     # including values when a dict subclass returns duplicate keys.
     if len(items) < 2:
         return items
@@ -341,7 +320,7 @@ def _sort_items(items):
     i = 0
     j = 0
     while i < len(left) and j < len(right):
-        if _item_less(right[j], left[i]):
+        if right[j] < left[i]:
             result.append(right[j])
             j += 1
         else:
@@ -363,25 +342,16 @@ class _Encoder:
         self.item_separator = ", "
         self.key_separator = ": "
         if separators is not None:
-            if (isinstance(separators, str)
-                    and not hasattr(separators.__class__, "__iter__")):
-                # Builtin str has no iterator in CloverVM yet. Read its actual
-                # payload; custom subclass iterators take the normal path.
-                text = str.__str__(separators)
-                if len(text) != 2:
-                    raise ValueError("separators must contain exactly two values")
-                parts = [text[0], text[1]]
-            else:
-                # Tuple unpacking requests at most three items. In particular,
-                # do not exhaust arbitrary or unbounded separator iterators.
-                iterator = iter(separators)
-                parts = []
-                for idx in range(3):
-                    try:
-                        part = next(iterator)
-                    except StopIteration:
-                        break
-                    parts.append(part)
+            # Tuple unpacking requests at most three items. In particular,
+            # do not exhaust arbitrary or unbounded separator iterators.
+            iterator = iter(separators)
+            parts = []
+            for idx in range(3):
+                try:
+                    part = next(iterator)
+                except StopIteration:
+                    break
+                parts.append(part)
             if len(parts) != 2:
                 raise ValueError("separators must contain exactly two values")
             self.item_separator = parts[0]
