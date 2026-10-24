@@ -22,6 +22,13 @@
 
 namespace cl
 {
+    [[nodiscard]] static Value builtin_validate_length(ThreadState *thread,
+                                                       Value result)
+    {
+        int64_t length = CL_TRY(validate_length_result(result));
+        return CL_TRY(int_value_from_int64(thread, length));
+    }
+
     [[nodiscard]] static Value
     classinfo_matches(ThreadState *thread, ClassObject *cls, Value classinfo,
                       const wchar_t *invalid_classinfo_message)
@@ -382,6 +389,10 @@ namespace cl
         install_builtin_function_binding(
             vm, implementation_module, L"_clover_builtin_dir",
             CL_TRY(make_intrinsic_function(vm, builtin_dir)).raw_value());
+        install_builtin_function_binding(
+            vm, implementation_module, L"_clover_builtin_validate_length",
+            CL_TRY(make_intrinsic_function(vm, builtin_validate_length))
+                .raw_value());
         return Expected<void>::ok();
     }
 }  // namespace cl

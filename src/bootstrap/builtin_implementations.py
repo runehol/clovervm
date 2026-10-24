@@ -54,8 +54,10 @@ def hash(obj):
 
 def len(obj):
     """Return the number of items in a container."""
-    return __clover_call_special__(
-        obj, "__len__", TypeError, "object has no len()"
+    return _clover_builtin_validate_length(
+        __clover_call_special__(
+            obj, "__len__", TypeError, "object has no len()"
+        )
     )
 
 
