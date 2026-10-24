@@ -34,9 +34,10 @@ def split(s, comments=False, posix=True):
     state = " "
     escaped_state = "a"
     idx = 0
-    length = len(s)
+    # Like StringIO(s), scan the payload without subclass length/index overrides.
+    length = str.__len__(s)
     while idx < length:
-        ch = s[idx]
+        ch = str.__getitem__(s, idx)
         idx += 1
         if state == "\\":
             # Inside double quotes, only quote and backslash lose the escape.
@@ -67,7 +68,7 @@ def split(s, comments=False, posix=True):
             state = " "
         elif comments and ch == "#":
             # StringIO.readline() consumes through LF, not through bare CR.
-            while idx < length and s[idx] != "\n":
+            while idx < length and str.__getitem__(s, idx) != "\n":
                 idx += 1
             if idx < length:
                 idx += 1
