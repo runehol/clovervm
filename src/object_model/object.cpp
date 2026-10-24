@@ -2,9 +2,12 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/string_builder.h"
+#include "bytecode/code_object_builder.h"
+#include "compiler/scope.h"
 #include "object_model/attr.h"
 #include "object_model/attribute_descriptor.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/native_function.h"
 #include "object_model/overflow_slots.h"
 #include "object_model/refcount.h"
@@ -186,28 +189,74 @@ namespace cl
         return self == other ? Value::True() : Value::NotImplemented();
     }
 
-    static Value native_object_ne(ThreadState *thread, Value self, Value other)
+    [[nodiscard]] static Value
+    object_not_equal_receiver_error(ThreadState *thread)
     {
-        if(self.is_vm_sentinel())
-        {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"object.__ne__ expects an object receiver");
-        }
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError", L"object.__ne__ expects an object receiver");
+    }
 
-        TValue<String> eq_name =
-            thread->get_machine()->get_or_create_interned_string_value(
-                L"__eq__");
-        Value equal = thread->call_clovervm_method(self, eq_name, other);
-        if(equal.is_exception_marker() || equal.is_not_implemented_singleton())
+    static Expected<TValue<Function>>
+    make_object_not_equal_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), scope,
+            vm->get_or_create_interned_string_value(L"<object.__ne__>"));
+        code.configure_positional_function(2);
+        code.function_signature().n_pos_or_kw_parameters = 0;
+        uint8_t object_class =
+            CL_TRY(code.allocate_constant(Value::from_oop(vm->object_class())));
+        uint8_t eq_name = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"__eq__").raw_value()));
+        uint8_t type_error = CL_TRY(code.allocate_constant(Value::from_oop(
+            vm->get_default_thread()->class_for_builtin_name(L"TypeError"))));
+        uint8_t missing_eq = CL_TRY(code.allocate_constant(
+            vm->get_or_create_interned_string_value(L"object has no __eq__")
+                .raw_value()));
+        uint8_t not_implemented =
+            CL_TRY(code.allocate_constant(Value::NotImplemented()));
+        NativeFunctionTarget receiver_error;
+        receiver_error.fixed0 = object_not_equal_receiver_error;
+        uint8_t receiver_error_idx =
+            CL_TRY(code.add_native_function_target(receiver_error));
+        JumpTarget receiver_ok(&code);
+        CL_TRY(code.emit_ldar(0, 0));
+        CL_TRY(code.emit_is_instance_of_known_class(0, object_class));
+        CL_TRY(code.emit_jump_if_true(0, receiver_ok));
+        CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic0,
+                                        receiver_error_idx));
+        CL_TRY(code.emit_return_or_raise_exception(0));
+        CL_TRY(receiver_ok.resolve());
         {
-            return equal;
+            // Special lookup ignores instance shadows. Call just the receiver's
+            // __eq__; the outer inequality walk owns reflected continuation.
+            CodeObjectBuilder::TemporaryReg args(code, 2,
+                                                 RegisterAlignment::CallFrame);
+            CL_TRY(code.emit_mov(0, args, 0));
+            CL_TRY(code.emit_mov(0, args + 1, 1));
+            CL_TRY(code.emit_call_special_method(0, args, eq_name, 1,
+                                                 type_error, missing_eq));
         }
-        if(equal.is_ptr())
         {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"unsupported truthiness for object");
+            CodeObjectBuilder::TemporaryReg result(code);
+            CL_TRY(code.emit_star(0, result));
+            CL_TRY(code.emit_lda_constant(0, not_implemented));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, result,
+                                          OperatorBytecodeFormat::Plain));
+            JumpTarget invert(&code);
+            CL_TRY(code.emit_jump_if_false(0, invert));
+            CL_TRY(code.emit_ldar(0, result));
+            CL_TRY(code.emit_return(0));
+            CL_TRY(invert.resolve());
+            CL_TRY(code.emit_ldar(0, result));
+            CL_TRY(code.emit_to_bool_not(0));
+            CL_TRY(code.emit_return(0));
         }
-        return equal.is_truthy() ? Value::False() : Value::True();
+        return code.finalize_immortal_function(
+            vm, Optional<TValue<String>>::some(
+                    vm->get_or_create_interned_string_value(
+                        L"Return self != value.")));
     }
 
     void install_object_class_methods(VirtualMachine *vm)
@@ -215,8 +264,6 @@ namespace cl
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"__eq__", native_object_eq,
                                      L"Return self == value."),
-            builtin_intrinsic_method(L"__ne__", native_object_ne,
-                                     L"Return self != value."),
             builtin_intrinsic_method(L"__str__", native_object_str,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_object_repr,
@@ -227,6 +274,16 @@ namespace cl
             install_builtin_intrinsic_methods(vm, vm->object_class(), methods,
                                               std::size(methods)),
             "installing intrinsic methods");
+        TValue<Function> not_equal =
+            unwrap_bootstrap_expected(vm, make_object_not_equal_function(vm),
+                                      "creating object inequality");
+        bool stored = vm->object_class()->define_own_property(
+            vm->get_or_create_interned_string_value(L"__ne__"),
+            not_equal.raw_value(),
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+                descriptor_flag(DescriptorFlag::StableSlot));
+        assert(stored);
+        (void)stored;
     }
 
     void Object::install_bootstrap_class(ClassObject *new_cls)
