@@ -293,6 +293,36 @@ namespace cl
             L"TypeError", L"int.__str__ expects an int receiver");
     }
 
+    [[nodiscard]] static Value native_int_trunc(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__trunc__ expects an int receiver");
+        }
+        return convert_to_exact_int(thread, self);
+    }
+
+    [[nodiscard]] static Value native_int_floor(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__floor__ expects an int receiver");
+        }
+        return convert_to_exact_int(thread, self);
+    }
+
+    [[nodiscard]] static Value native_int_ceil(ThreadState *thread, Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__ceil__ expects an int receiver");
+        }
+        return convert_to_exact_int(thread, self);
+    }
+
     [[nodiscard]] static Value native_int_is_integer(ThreadState *thread,
                                                      Value self)
     {
@@ -2009,6 +2039,12 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_int_str,
                                      L"Return repr(self)."),
+            builtin_intrinsic_method(L"__trunc__", native_int_trunc,
+                                     L"Return self as an exact int."),
+            builtin_intrinsic_method(L"__floor__", native_int_floor,
+                                     L"Return self as an exact int."),
+            builtin_intrinsic_method(L"__ceil__", native_int_ceil,
+                                     L"Return self as an exact int."),
             builtin_intrinsic_method(L"is_integer", native_int_is_integer,
                                      L"Return True for integers."),
             builtin_intrinsic_method(L"bit_length", native_int_bit_length,
