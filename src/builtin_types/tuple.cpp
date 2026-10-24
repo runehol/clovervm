@@ -10,6 +10,7 @@
 #include "object_model/refcount.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/ordering_op.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
@@ -79,20 +80,20 @@ namespace cl
             .raw_value();
     }
 
-    template <Bytecode Operation>
+    template <OrderingOp Operation>
     static bool tuple_order_sizes(size_t left, size_t right)
     {
-        if constexpr(Operation == Bytecode::TestLess)
+        if constexpr(Operation == OrderingOp::Less)
             return left < right;
-        if constexpr(Operation == Bytecode::TestLessEqual)
+        if constexpr(Operation == OrderingOp::LessEqual)
             return left <= right;
-        if constexpr(Operation == Bytecode::TestGreater)
+        if constexpr(Operation == OrderingOp::Greater)
             return left > right;
-        if constexpr(Operation == Bytecode::TestGreaterEqual)
+        if constexpr(Operation == OrderingOp::GreaterEqual)
             return left >= right;
     }
 
-    template <Bytecode Operation>
+    template <OrderingOp Operation>
     static Value tuple_order(ThreadState *thread, TValue<Tuple> left,
                              TValue<Tuple> right)
     {
@@ -127,7 +128,7 @@ namespace cl
             left_item.value(), right_item.value());
     }
 
-    template <Bytecode Operation, FixedWideString ReceiverError>
+    template <OrderingOp Operation, FixedWideString ReceiverError>
     static Value native_tuple_order(ThreadState *thread, Value self,
                                     Value other)
     {
@@ -143,7 +144,7 @@ namespace cl
                                       TValue<Tuple>::from_value_assumed(other));
     }
 
-    template <Bytecode Operation, bool Reflected>
+    template <OrderingOp Operation, bool Reflected>
     static Value trusted_tuple_order(ThreadState *thread, Value left,
                                      Value right)
     {
@@ -154,13 +155,13 @@ namespace cl
                                       TValue<Tuple>::from_value_assumed(right));
     }
 
-    template <Bytecode Operation, bool Reflected>
+    template <OrderingOp Operation, bool Reflected>
     using TupleOrderHandler = TrustedHandlerDefinition<
         trusted_tuple_order<Operation, Reflected>,
         TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Safepoint |
             TrustedHandlerEffects::Raise | TrustedHandlerEffects::CallPython>;
 
-    template <Bytecode Operation>
+    template <OrderingOp Operation>
     class TupleOrderResolver final
         : public TrustedHandlerResolverBase<TupleOrderHandler<Operation, false>,
                                             TupleOrderHandler<Operation, true>>
@@ -318,33 +319,32 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_tuple_repr,
                                      L"Return repr(self)."),
-            with_trusted_handler_resolver<
-                TupleOrderResolver<Bytecode::TestLess>>(
+            with_trusted_handler_resolver<TupleOrderResolver<OrderingOp::Less>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__lt__", native_tuple_order<
-                                   Bytecode::TestLess,
+                                   OrderingOp::Less,
                                    L"tuple.__lt__ expects a tuple receiver">)),
             with_trusted_handler_resolver<
-                TupleOrderResolver<Bytecode::TestLessEqual>>(
+                TupleOrderResolver<OrderingOp::LessEqual>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__le__", native_tuple_order<
-                                   Bytecode::TestLessEqual,
+                                   OrderingOp::LessEqual,
                                    L"tuple.__le__ expects a tuple receiver">)),
             with_trusted_handler_resolver<
-                TupleOrderResolver<Bytecode::TestGreater>>(
+                TupleOrderResolver<OrderingOp::Greater>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__gt__", native_tuple_order<
-                                   Bytecode::TestGreater,
+                                   OrderingOp::Greater,
                                    L"tuple.__gt__ expects a tuple receiver">)),
             with_trusted_handler_resolver<
-                TupleOrderResolver<Bytecode::TestGreaterEqual>>(
+                TupleOrderResolver<OrderingOp::GreaterEqual>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__ge__", native_tuple_order<
-                                   Bytecode::TestGreaterEqual,
+                                   OrderingOp::GreaterEqual,
                                    L"tuple.__ge__ expects a tuple receiver">)),
             builtin_intrinsic_method(L"__len__", native_tuple_len,
                                      L"Return len(self)."),

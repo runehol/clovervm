@@ -11,6 +11,7 @@
 #include "object_model/shape.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/ordering_op.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
@@ -92,20 +93,20 @@ namespace cl
         return Value::None();
     }
 
-    template <Bytecode Operation>
+    template <OrderingOp Operation>
     static bool list_order_sizes(size_t left, size_t right)
     {
-        if constexpr(Operation == Bytecode::TestLess)
+        if constexpr(Operation == OrderingOp::Less)
             return left < right;
-        if constexpr(Operation == Bytecode::TestLessEqual)
+        if constexpr(Operation == OrderingOp::LessEqual)
             return left <= right;
-        if constexpr(Operation == Bytecode::TestGreater)
+        if constexpr(Operation == OrderingOp::Greater)
             return left > right;
-        if constexpr(Operation == Bytecode::TestGreaterEqual)
+        if constexpr(Operation == OrderingOp::GreaterEqual)
             return left >= right;
     }
 
-    template <Bytecode Operation>
+    template <OrderingOp Operation>
     static Value list_order(ThreadState *thread, TValue<List> left,
                             TValue<List> right)
     {
@@ -140,7 +141,7 @@ namespace cl
             left_item.value(), right_item.value());
     }
 
-    template <Bytecode Operation, FixedWideString ReceiverError>
+    template <OrderingOp Operation, FixedWideString ReceiverError>
     static Value native_list_order(ThreadState *thread, Value self, Value other)
     {
         if(!can_convert_to<List>(self))
@@ -155,7 +156,7 @@ namespace cl
                                      TValue<List>::from_value_assumed(other));
     }
 
-    template <Bytecode Operation, bool Reflected>
+    template <OrderingOp Operation, bool Reflected>
     static Value trusted_list_order(ThreadState *thread, Value left,
                                     Value right)
     {
@@ -166,13 +167,13 @@ namespace cl
                                      TValue<List>::from_value_assumed(right));
     }
 
-    template <Bytecode Operation, bool Reflected>
+    template <OrderingOp Operation, bool Reflected>
     using ListOrderHandler = TrustedHandlerDefinition<
         trusted_list_order<Operation, Reflected>,
         TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Safepoint |
             TrustedHandlerEffects::Raise | TrustedHandlerEffects::CallPython>;
 
-    template <Bytecode Operation>
+    template <OrderingOp Operation>
     class ListOrderResolver final
         : public TrustedHandlerResolverBase<ListOrderHandler<Operation, false>,
                                             ListOrderHandler<Operation, true>>
@@ -478,33 +479,32 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_list_repr,
                                      L"Return repr(self)."),
-            with_trusted_handler_resolver<
-                ListOrderResolver<Bytecode::TestLess>>(
+            with_trusted_handler_resolver<ListOrderResolver<OrderingOp::Less>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__lt__",
-                    native_list_order<Bytecode::TestLess,
+                    native_list_order<OrderingOp::Less,
                                       L"list.__lt__ expects a list receiver">)),
             with_trusted_handler_resolver<
-                ListOrderResolver<Bytecode::TestLessEqual>>(
+                ListOrderResolver<OrderingOp::LessEqual>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__le__",
-                    native_list_order<Bytecode::TestLessEqual,
+                    native_list_order<OrderingOp::LessEqual,
                                       L"list.__le__ expects a list receiver">)),
             with_trusted_handler_resolver<
-                ListOrderResolver<Bytecode::TestGreater>>(
+                ListOrderResolver<OrderingOp::Greater>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__gt__",
-                    native_list_order<Bytecode::TestGreater,
+                    native_list_order<OrderingOp::Greater,
                                       L"list.__gt__ expects a list receiver">)),
             with_trusted_handler_resolver<
-                ListOrderResolver<Bytecode::TestGreaterEqual>>(
+                ListOrderResolver<OrderingOp::GreaterEqual>>(
                 vm,
                 builtin_intrinsic_method(
                     L"__ge__",
-                    native_list_order<Bytecode::TestGreaterEqual,
+                    native_list_order<OrderingOp::GreaterEqual,
                                       L"list.__ge__ expects a list receiver">)),
             builtin_intrinsic_method(L"__len__", native_list_len,
                                      L"Return len(self)."),

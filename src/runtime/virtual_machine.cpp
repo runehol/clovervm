@@ -1408,9 +1408,9 @@ namespace cl
                 this, make_test_equal_helper_function(this),
                 "creating test equal helper"));
 
-        const Bytecode ordering_operations[] = {
-            Bytecode::TestLess, Bytecode::TestLessEqual, Bytecode::TestGreater,
-            Bytecode::TestGreaterEqual};
+        const OrderingOp ordering_operations[] = {
+            OrderingOp::Less, OrderingOp::LessEqual, OrderingOp::Greater,
+            OrderingOp::GreaterEqual};
         for(size_t i = 0; i < std::size(ordering_operations); ++i)
         {
             ordering_helper_functions_[i] =
@@ -1668,21 +1668,21 @@ namespace cl
     }
 
     TValue<Function>
-    VirtualMachine::ordering_helper_function(Bytecode operation) const
+    VirtualMachine::ordering_helper_function(OrderingOp operation) const
     {
         size_t index;
         switch(operation)
         {
-            case Bytecode::TestLess:
+            case OrderingOp::Less:
                 index = 0;
                 break;
-            case Bytecode::TestLessEqual:
+            case OrderingOp::LessEqual:
                 index = 1;
                 break;
-            case Bytecode::TestGreater:
+            case OrderingOp::Greater:
                 index = 2;
                 break;
-            case Bytecode::TestGreaterEqual:
+            case OrderingOp::GreaterEqual:
                 index = 3;
                 break;
             default:

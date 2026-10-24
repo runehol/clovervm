@@ -1,9 +1,9 @@
 #ifndef CL_PROTOCOL_HELPER_FUNCTIONS_H
 #define CL_PROTOCOL_HELPER_FUNCTIONS_H
 
-#include "bytecode/bytecode.h"
 #include "object_model/function.h"
 #include "object_model/typed_value.h"
+#include "runtime/ordering_op.h"
 
 namespace cl
 {
@@ -16,7 +16,7 @@ namespace cl
     make_test_equal_helper_function(VirtualMachine *vm);
 
     Expected<TValue<Function>>
-    make_ordering_helper_function(VirtualMachine *vm, Bytecode operation);
+    make_ordering_helper_function(VirtualMachine *vm, OrderingOp operation);
 
 }  // namespace cl
 
