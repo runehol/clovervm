@@ -15,6 +15,13 @@ namespace cl
     [[nodiscard]] Expected<Value> parse_int_string_view(ThreadState *thread,
                                                         std::wstring_view text);
 
+    // Parse an explicit base (0 or 2..36), including matching Python
+    // prefixes. The caller must validate the base. Base 10 uses the
+    // existing decimal parsing path.
+    [[nodiscard]] Expected<Value> parse_int_string_view(ThreadState *thread,
+                                                        std::wstring_view text,
+                                                        int base);
+
     // Parse Python float text, including surrounding numeric whitespace,
     // digit separators, and Unicode decimal digits. Ordinary input is parsed
     // directly; normalization is attempted only after direct parsing fails.

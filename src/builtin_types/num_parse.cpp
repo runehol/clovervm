@@ -253,7 +253,8 @@ namespace cl
         int64_t value = 0;
     };
 
-    static Int64ParseResult parse_int_string_direct(std::wstring_view text)
+    static Int64ParseResult parse_int_string_direct(std::wstring_view text,
+                                                    int base = 10)
     {
         if(text.empty())
         {
@@ -264,7 +265,7 @@ namespace cl
         auto result = fast_float::from_chars_advanced(
             text.data(), end, value,
             fast_float::parse_options_t<wchar_t>(
-                fast_float::chars_format::allow_leading_plus, L'.', 10));
+                fast_float::chars_format::allow_leading_plus, L'.', base));
         if(result.ptr != end)
         {
             return {Int64ParseStatus::Invalid};
@@ -280,10 +281,28 @@ namespace cl
         return {Int64ParseStatus::Invalid};
     }
 
+    static int ascii_int_digit_value(wchar_t ch)
+    {
+        if(ch >= L'0' && ch <= L'9')
+        {
+            return ch - L'0';
+        }
+        if(ch >= L'a' && ch <= L'z')
+        {
+            return ch - L'a' + 10;
+        }
+        if(ch >= L'A' && ch <= L'Z')
+        {
+            return ch - L'A' + 10;
+        }
+        return -1;
+    }
+
     // The direct parser has proved that text is an optional ASCII sign followed
-    // by decimal digits, with a value outside int64 range.
+    // by valid digits in base, with a value outside int64 range.
     [[nodiscard]] static Expected<Value>
-    build_bigint_from_decimal_text(ThreadState *thread, std::wstring_view text)
+    build_bigint_from_text(ThreadState *thread, std::wstring_view text,
+                           int base = 10)
     {
         assert(!text.empty());
         bool negative = text.front() == L'-';
@@ -301,12 +320,13 @@ namespace cl
         bool use_first_scratch = false;
         for(wchar_t ch: text)
         {
-            assert(ch >= L'0' && ch <= L'9');
+            int digit = ascii_int_digit_value(ch);
+            assert(digit >= 0 && digit < base);
             MutableBigIntView dest = use_first_scratch
                                          ? scratch0.mutable_view()
                                          : scratch1.mutable_view();
-            bigint_abs_mul_add_u32(&dest, current, 10,
-                                   static_cast<uint32_t>(ch - L'0'));
+            bigint_abs_mul_add_u32(&dest, current, static_cast<uint32_t>(base),
+                                   static_cast<uint32_t>(digit));
             current = dest.view();
             use_first_scratch = !use_first_scratch;
         }
@@ -332,7 +352,7 @@ namespace cl
             }
             if(result.status == Int64ParseStatus::NeedsBigInt)
             {
-                return build_bigint_from_decimal_text(thread, normalized_text);
+                return build_bigint_from_text(thread, normalized_text);
             }
         }
         return Expected<Value>::raise_exception(L"ValueError",
@@ -349,7 +369,7 @@ namespace cl
         }
         if(result.status == Int64ParseStatus::NeedsBigInt)
         {
-            return build_bigint_from_decimal_text(thread, text);
+            return build_bigint_from_text(thread, text);
         }
         return parse_normalized_int_string(thread, text);
     }
@@ -363,6 +383,166 @@ namespace cl
             return Expected<Value>::ok(smi);
         }
         return parse_int_string_with_library(thread, text);
+    }
+
+    // Explicit-base grammar is separate from float/decimal normalization:
+    // letters can be digits, and a single underscore may follow a prefix.
+    static std::optional<NormalizedNumberText>
+    normalize_based_int_text(std::wstring_view text, int &base)
+    {
+        while(!text.empty() &&
+              is_numeric_whitespace(static_cast<uint32_t>(text.front())))
+        {
+            text.remove_prefix(1);
+        }
+        while(!text.empty() &&
+              is_numeric_whitespace(static_cast<uint32_t>(text.back())))
+        {
+            text.remove_suffix(1);
+        }
+        size_t position = 0;
+        if(!text.empty() && (text.front() == L'+' || text.front() == L'-'))
+        {
+            ++position;
+        }
+        size_t sign_length = position;
+        if(position == text.size())
+        {
+            return std::nullopt;
+        }
+        size_t after_first = position;
+        auto first = next_codepoint(text, after_first);
+        if(!first)
+        {
+            return std::nullopt;
+        }
+        bool starts_with_zero = decimal_digit_value(*first) == 0;
+        int prefix_base = 0;
+        if(starts_with_zero && after_first < text.size())
+        {
+            switch(text[after_first])
+            {
+                case L'b':
+                case L'B':
+                    prefix_base = 2;
+                    break;
+                case L'o':
+                case L'O':
+                    prefix_base = 8;
+                    break;
+                case L'x':
+                case L'X':
+                    prefix_base = 16;
+                    break;
+                default:
+                    break;
+            }
+        }
+        bool has_prefix =
+            prefix_base != 0 && (base == 0 || base == prefix_base);
+        bool require_zero = base == 0 && !has_prefix && starts_with_zero;
+        if(base == 0)
+        {
+            base = has_prefix ? prefix_base : 10;
+        }
+        std::wstring normalized;
+        bool rewritten = has_prefix;
+        if(has_prefix)
+        {
+            normalized.reserve(text.size());
+            normalized.append(text.substr(0, sign_length));
+            position = after_first + 1;
+            if(position < text.size() && text[position] == L'_')
+            {
+                ++position;
+            }
+        }
+        bool previous_was_digit = false;
+        while(position < text.size())
+        {
+            size_t source_position = position;
+            auto codepoint = next_codepoint(text, position);
+            if(!codepoint)
+            {
+                return std::nullopt;
+            }
+            bool underscore = *codepoint == L'_';
+            int digit =
+                *codepoint < 0x80
+                    ? ascii_int_digit_value(static_cast<wchar_t>(*codepoint))
+                    : decimal_digit_value(*codepoint);
+            if(underscore)
+            {
+                if(!previous_was_digit)
+                {
+                    return std::nullopt;
+                }
+                previous_was_digit = false;
+            }
+            else
+            {
+                if(digit < 0 || digit >= base || (require_zero && digit != 0))
+                {
+                    return std::nullopt;
+                }
+                previous_was_digit = true;
+            }
+            if(!rewritten && (underscore || *codepoint >= 0x80))
+            {
+                normalized.reserve(text.size());
+                normalized.append(text.substr(0, source_position));
+                rewritten = true;
+            }
+            if(rewritten && !underscore)
+            {
+                normalized.push_back(*codepoint < 0x80
+                                         ? static_cast<wchar_t>(*codepoint)
+                                         : static_cast<wchar_t>(L'0' + digit));
+            }
+        }
+        if(!previous_was_digit)
+        {
+            return std::nullopt;
+        }
+        return NormalizedNumberText{text, std::move(normalized)};
+    }
+
+    Expected<Value> parse_int_string_view(ThreadState *thread,
+                                          std::wstring_view text, int base)
+    {
+        assert(base == 0 || (base >= 2 && base <= 36));
+        if(base == 10)
+        {
+            return parse_int_string_view(thread, text);
+        }
+        if(base != 0)
+        {
+            Int64ParseResult result = parse_int_string_direct(text, base);
+            if(result.status == Int64ParseStatus::Parsed)
+            {
+                return bigint_from_int64(thread, result.value);
+            }
+            if(result.status == Int64ParseStatus::NeedsBigInt)
+            {
+                return build_bigint_from_text(thread, text, base);
+            }
+        }
+        auto normalized = normalize_based_int_text(text, base);
+        if(normalized)
+        {
+            std::wstring_view digits = normalized->text();
+            Int64ParseResult result = parse_int_string_direct(digits, base);
+            if(result.status == Int64ParseStatus::Parsed)
+            {
+                return bigint_from_int64(thread, result.value);
+            }
+            if(result.status == Int64ParseStatus::NeedsBigInt)
+            {
+                return build_bigint_from_text(thread, digits, base);
+            }
+        }
+        return Expected<Value>::raise_exception(L"ValueError",
+                                                L"invalid literal for int()");
     }
 
     std::optional<double> try_parse_float(std::wstring_view text)

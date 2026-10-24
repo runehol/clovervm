@@ -230,6 +230,181 @@ namespace cl
         }
     }
 
+    TEST(IntParse, ExplicitBasesAcrossSupportedRange)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        const std::wstring_view samples[] = {
+            L"111010110111100110100010101",
+            L"22121022020212200",
+            L"13112330310111",
+            L"223101104124",
+            L"20130035113",
+            L"3026236221",
+            L"726746425",
+            L"277266780",
+            L"123456789",
+            L"63762a05",
+            L"35418a99",
+            L"1c767471",
+            L"12579781",
+            L"ac89bc9",
+            L"75bcd15",
+            L"51g2a21",
+            L"3b60f89",
+            L"2bg64ae",
+            L"1ibc1j9",
+            L"194gh7f",
+            L"11l0805",
+            L"j43jfb",
+            L"fc2egl",
+            L"cg15le",
+            L"aa44a1",
+            L"8g86ni",
+            L"74nqb1",
+            L"60fshj",
+            L"52ce69",
+            L"49l302",
+            L"3lnj8l",
+            L"353c3r",
+            L"2od2i1",
+            L"2c9g1t",
+            L"21i3v9",
+        };
+        int base = 2;
+        for(std::wstring_view text: samples)
+        {
+            SCOPED_TRACE(base);
+            auto parsed = parse_int_string_view(context.thread(), text, base++);
+            ASSERT_FALSE(parsed.has_exception());
+            EXPECT_EQ(Value::from_smi(123456789), parsed.value());
+        }
+    }
+
+    TEST(IntParse, ExplicitBasesNormalizeAndBuildBigInts)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        struct Sample
+        {
+            std::wstring_view text;
+            int base;
+            std::wstring_view expected;
+        };
+        const Sample samples[] = {
+            {L"0b_101", 0, L"5"},
+            {L"0O_777", 8, L"511"},
+            {L"  -0X_Ff \t", 0, L"-255"},
+            {L"0x_ff", 16, L"255"},
+            {L"\u0660x_f", 0, L"15"},
+            {L"0b\u0661_\u0660", 0, L"2"},
+            {L"ff_ff", 16, L"65535"},
+            {L"z_Z", 36, L"1295"},
+            {L"1_\u0662", 16, L"18"},
+            {L"00", 0, L"0"},
+            {L"0_0", 0, L"0"},
+            {L"-000", 0, L"0"},
+            {L"0010", 10, L"10"},
+            {L"0b10", 16, L"2832"},
+            {L"0x10", 36, L"42804"},
+            {L"+123", 0, L"123"},
+            {L"-0x8000000000000000", 0, L"-9223372036854775808"},
+            {L"0x8000000000000000", 16, L"9223372036854775808"},
+            {L"0xffffffffffffffff", 0, L"18446744073709551615"},
+            {L"0x10000000000000000", 16, L"18446744073709551616"},
+            {L"\u00a0-\U0001d7d9_f\u2003", 16, L"-31"},
+            {L"\u0663_\u0664", 5, L"19"},
+            {L"-100000000000000000000000000000000000000000000000000000000000000"
+             L"0000000000000000000000000000000000000000000000000000000000000000"
+             L"0000000000000000000011000000111001",
+             2, L"-1461501637330902918203684832716283019655932555321"},
+            {L"2211120021211021012111220122110102020121122220221120222201021000"
+             L"2111111201101120221012122101221000111",
+             3, L"1461501637330902918203684832716283019655932555321"},
+            {L"662313122254561664144230006644464633403520441042540615606", 7,
+             L"1461501637330902918203684832716283019655932555321"},
+            {L"-10000000000000000000000000000000000003039", 16,
+             L"-1461501637330902918203684832716283019655932555321"},
+            {L"-TWJ4YIDKW7A8PN4G709KZMFOAOL46RD", 36,
+             L"-1461501637330902918203684832716283019655932555321"},
+            {L"ff_ffffffff_ffffffff", 16, L"4722366482869645213695"},
+            {L"0000", 0, L"0"},
+            {L"12345", 10, L"12345"},
+        };
+        for(const Sample &sample: samples)
+        {
+            SCOPED_TRACE(std::wstring(sample.text));
+            SCOPED_TRACE(sample.base);
+            auto parsed = parse_int_string_view(context.thread(), sample.text,
+                                                sample.base);
+            ASSERT_FALSE(parsed.has_exception());
+            Owned<Value> value(parsed.value());
+            std::wstring decimal =
+                value.value().is_smi()
+                    ? std::to_wstring(value.value().get_smi())
+                    : bigint_to_decimal_string(
+                          value.value().get_ptr<BigInt>()->view());
+            EXPECT_EQ(sample.expected, decimal);
+        }
+    }
+
+    TEST(IntParse, ExplicitBasesRejectInvalidText)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        struct Sample
+        {
+            std::wstring_view text;
+            int base;
+        };
+        const Sample samples[] = {
+            {L"", 2},
+            {L" ", 0},
+            {L"+", 16},
+            {L"0x", 0},
+            {L"0x_", 16},
+            {L"0x__1", 0},
+            {L"0_x1", 0},
+            {L"_f", 16},
+            {L"f_", 16},
+            {L"f__f", 16},
+            {L"0b2", 0},
+            {L"0o8", 0},
+            {L"0xg", 16},
+            {L"01", 0},
+            {L"0_1", 0},
+            {L"00010", 0},
+            {L"0xff", 10},
+            {L"0o7", 16},
+            {L"f", 15},
+            {L"z", 35},
+            {L"1 2", 16},
+            {L"1,000", 16},
+            {L"1.0", 16},
+            {L"nan", 10},
+            {L"\03412", 16},
+            {L"12\037", 16},
+            {L"\u00b2", 16},
+            {L"\uff21", 16},
+            {L"\u22121", 16},
+            {L"\u0660\u0661", 0},
+            {L"0b\u0662", 0},
+            {L"ffffffffffffffffffffffffffffffffffffffffg", 16},
+            {L"ffffffffffffffffffffffffffffffffffffffff_", 16},
+            {std::wstring_view(L"1\0", 2), 16},
+        };
+        for(const Sample &sample: samples)
+        {
+            SCOPED_TRACE(std::wstring(sample.text));
+            SCOPED_TRACE(sample.base);
+            auto parsed = parse_int_string_view(context.thread(), sample.text,
+                                                sample.base);
+            EXPECT_TRUE(parsed.has_exception());
+            EXPECT_TRUE(context.thread()->has_pending_exception());
+            context.thread()->clear_pending_exception();
+        }
+    }
+
     TEST(FloatParse, RespectsViewBoundsWithoutRequiringTerminator)
     {
         const wchar_t buffer[] = {L'1', L'.', L'2', L'5', L'x'};
