@@ -3364,14 +3364,18 @@ namespace cl
 
                         ScopedRegister recv_reg =
                             CL_TRY(codegen_node_into_a_register(children[0]));
-                        TemporaryReg prod_reg(*code_obj);
+                        TemporaryReg intermediate_regs(
+                            *code_obj, children.size() > 3 ? 2 : 1);
+                        int32_t first_intermediate_reg = intermediate_regs;
                         int32_t recv = recv_reg.reg;
-                        int32_t prod = prod_reg;
                         for(size_t i = 1; i < children.size(); ++i)
                         {
                             bool last = i == children.size() - 1;
-                            if(last)
-                                prod = -1;
+                            // Only the temporaries are destinations. The
+                            // initial receiver may be a borrowed local.
+                            int32_t prod = last ? -1
+                                                : first_intermediate_reg +
+                                                      int32_t((i - 1) % 2);
 
                             CL_TRY(codegen_comparison_fragment(children[i],
                                                                recv, prod));
@@ -3380,8 +3384,8 @@ namespace cl
                             {
                                 CL_TRY(code_obj->emit_jump_if_false(
                                     source_offset, skip_target));
+                                recv = prod;
                             }
-                            std::swap(recv, prod);
                         }
                         CL_TRY(skip_target.resolve());
 
