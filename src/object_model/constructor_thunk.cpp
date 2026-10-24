@@ -5,6 +5,7 @@
 #include "bytecode/code_object_builder.h"
 #include "compiler/scope.h"
 #include "object_model/class_object.h"
+#include "runtime/exception_object.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/virtual_machine.h"
 #include <optional>
@@ -228,6 +229,96 @@ namespace cl
         return code.finalize();
     }
 
+    // Both operands are proven by the generated thunk: the dedicated native
+    // allocator produced self, and argument binding produced an exact tuple.
+    [[nodiscard]] static Value
+    capture_constructor_exception_args(ThreadState *, Value self, Value args)
+    {
+        TValue<Exception>::from_value_assumed(self).extract()->args =
+            TValue<Tuple>::from_value_assumed(args);
+        return Value::None();
+    }
+
+    static Expected<CodeObject *> make_exception_args_initializer_code()
+    {
+        CodeObjectBuilder code(
+            nullptr, active_vm()->global_builtins_module(),
+            make_internal_raw<Scope>(nullptr),
+            interned_string(L"<exception_args_initializer>"));
+        code.n_parameters() = 2;
+        code.n_positional_parameters() = 2;
+        code.function_signature().n_pos_or_kw_parameters = 2;
+        code.reserve_parameter_slots_and_frame_header();
+        NativeFunctionTarget target{};
+        target.fixed2 = capture_constructor_exception_args;
+        uint32_t target_idx = CL_TRY(code.add_native_function_target(target));
+        CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2,
+                                        uint8_t(target_idx)));
+        CL_TRY(code.emit_return_or_raise_exception(0));
+        return code.finalize();
+    }
+
+    static Expected<TValue<Function>>
+    make_exception_constructor_thunk(ClassObject *cls, TValue<Function> init)
+    {
+        CodeObjectBuilder code(nullptr, active_vm()->global_builtins_module(),
+                               make_internal_raw<Scope>(nullptr),
+                               interned_string(L"<constructor_thunk>"));
+        // Keep the original call shape: binding to __init__ would otherwise
+        // lose which arguments were positional, including defaulted values.
+        code.n_parameters() = 2;
+        code.parameter_flags() = FunctionParameterFlags::HasVarArgs |
+                                 FunctionParameterFlags::HasKwArgs;
+        code.reserve_parameter_slots_and_frame_header();
+        uint32_t class_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(cls)));
+        CodeObject *args_initializer =
+            CL_TRY(make_exception_args_initializer_code());
+        uint32_t args_initializer_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(args_initializer)));
+        {
+            CodeObjectBuilder::TemporaryReg instance(code);
+            CL_TRY(emit_default_instance_allocation(code, cls, class_idx));
+            CL_TRY(code.emit_star(0, instance));
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 2, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, args, instance));
+                CL_TRY(code.emit_mov(0, args + 1, 0));
+                CL_TRY(code.emit_call_code_object(0, args_initializer_idx, args,
+                                                  2));
+            }
+
+            CodeObjectBuilder::TemporaryReg callable(code);
+            uint32_t init_idx =
+                CL_TRY(code.allocate_constant(init.raw_value()));
+            CL_TRY(code.emit_lda_constant(0, init_idx));
+            CL_TRY(code.emit_star(0, callable));
+            CodeObjectBuilder::TemporaryReg containers(code, 2);
+            // Build (self, *args) using the existing exact-container
+            // operations.
+            CL_TRY(code.emit_create_list(0, instance, 1));
+            CL_TRY(code.emit_star(0, containers));
+            CL_TRY(code.emit_ldar(0, 0));
+            CL_TRY(code.emit_list_extend(0, containers));
+            CL_TRY(code.emit_list_to_tuple(0, containers));
+            CL_TRY(code.emit_mov(0, containers + 1, 1));
+            {
+                CodeObjectBuilder::TemporaryReg outgoing(
+                    code, 1, RegisterAlignment::CallFrame);
+                CL_TRY(
+                    code.emit_call_expanded(0, callable, containers, outgoing));
+            }
+            CL_TRY(code.emit_check_init_returned_none(0));
+            CL_TRY(code.emit_ldar(0, instance));
+            CL_TRY(code.emit_return(0));
+        }
+        TValue<CodeObject> thunk_code =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        return Expected<TValue<Function>>::ok(make_object_value<Function>(
+            thunk_code, Optional<TValue<String>>::none()));
+    }
+
     static Expected<TValue<Tuple>> make_constructor_thunk_defaults_drop_first(
         TValue<Tuple> source_defaults, FunctionSignature source_signature,
         const wchar_t *source_parameter_layout_description)
@@ -351,6 +442,12 @@ namespace cl
     make_init_only_constructor_thunk_function(ClassObject *cls,
                                               Optional<TValue<Function>> init)
     {
+        if(init.has_value() &&
+           (cls->instance_native_layout_id() == NativeLayoutId::Exception ||
+            cls->instance_native_layout_id() == NativeLayoutId::StopIteration))
+        {
+            return make_exception_constructor_thunk(cls, init.value());
+        }
         CodeObject *code =
             CL_TRY(make_init_only_constructor_thunk_code(cls, init));
         if(!init.has_value())

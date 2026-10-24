@@ -225,10 +225,16 @@ The ordinary builtin hierarchy is checked against CPython 3.14.5. It includes
 `UnicodeWarning`, and `UserWarning`. `KeyboardInterrupt` remains a direct
 `BaseException` child, outside `Exception`.
 
-These classes reuse the existing exception allocation and positional `args`
-behavior. `KeyError` still uses generic string conversion rather than quoting a
-single argument with `repr`. The syntax-error family still uses generic
-constructors and formatting, without CPython's structured location fields or
+Default-allocated exception constructors capture the original positional `args`
+before binding and calling `__init__`. Custom Python initializers therefore see
+those arguments even when they omit a base initializer. Reinitializing a subclass
+only changes the fields assigned by its initializer, leaving `args` unchanged
+unless it explicitly calls the native base initializer.
+`StopIteration.value` starts as `None` during allocation and is set by the native
+`StopIteration.__init__`; internal exception factories still construct their
+fully initialized values directly. `KeyError` still uses generic string
+conversion rather than quoting a single argument with `repr`. The syntax-error
+family still uses generic constructors and formatting, without CPython's structured location fields or
 argument validation. Exception `args` remains read-only. Specialized constructor
 attributes for existing classes such as `ImportError`, `NameError`, and
 `AttributeError` are also incomplete.

@@ -5649,14 +5649,15 @@ assert f.extra == 42
 assert f.__dict__["extra"] == 42
 class G(Exception):
     def __init__(self, value=7, *, other=9):
-        assert len(self.args) == 0
+        assert isinstance(self.args, tuple)
         self.value = value
         self.other = other
 assert G().value == 7
+assert G().args == ()
 g = G(11, other=13)
 assert g.value == 11
 assert g.other == 13
-assert len(g.args) == 0
+assert g.args == (11,)
 try:
     raise f
 except F as caught:
@@ -5705,14 +5706,16 @@ for cls in (C, D, F):
 class G(StopIteration):
     def __init__(self, value=7, *, other=9):
         assert self.value is None
-        assert len(self.args) == 0
+        assert isinstance(self.args, tuple)
         self.extra = value
         self.other = other
 class H(G): pass
 assert H().extra == 7
+assert H().args == ()
 s = H(11, other=13)
 assert s.extra == 11
 assert s.other == 13
+assert s.args == (11,)
 assert s.value is None
 try:
     raise s
