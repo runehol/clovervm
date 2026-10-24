@@ -154,6 +154,7 @@ guards prove that the trusted builtin method is the selected operation.
 The implemented slice surface includes:
 
 - `slice` construction, attributes, representation, and `indices()`;
+- structural equality and lexicographic ordering of `(start, stop, step)`;
 - two- and three-field slice syntax with omitted fields;
 - slice keys delivered to user-defined `__getitem__`, `__setitem__`, and
   `__delitem__` methods;
@@ -162,6 +163,21 @@ The implemented slice surface includes:
 - trusted nonstrided and general read handlers for builtin sequences;
 - positive and negative steps, clipping, reverse slices, and consumption-time
   validation for the supported integer range.
+
+Slice comparison follows CPython 3.14.5 `slice_richcompare`: direct methods
+validate the receiver and return `NotImplemented` for non-slice peers. Comparing
+a slice with itself returns `False` for `<`/`>` and `True` for `<=`/`>=` without
+field callbacks. Otherwise, managed slice methods compare temporary field tuples
+using existing tuple comparisons. Identical fields skip equality; equality
+results are truth-tested, and the first unequal field supplies the requested
+ordering result unchanged. Normal reflection, method invalidation, and exception
+propagation apply. Comparison does not normalize fields or invoke `__index__`;
+unequal unorderable fields can raise `TypeError`.
+
+Both native slice shapes use these same managed methods. Managed frames retain
+the slices and field tuples across callbacks; tuple ordering retains containers
+and elements across native-to-managed calls. No new trusted slice comparison
+handler or cache state is introduced.
 
 Tuple and string slice mutation is correctly unsupported because those types
 are immutable.
