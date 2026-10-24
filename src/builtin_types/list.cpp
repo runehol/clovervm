@@ -11,11 +11,14 @@
 #include "object_model/shape.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/ordering_op.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include "util/fixed_wide_string.h"
 #include <algorithm>
 #include <cassert>
 #include <iterator>
+#include <utility>
 
 namespace cl
 {
@@ -89,6 +92,109 @@ namespace cl
         }
         return Value::None();
     }
+
+    template <OrderingOp Operation>
+    static bool list_order_sizes(size_t left, size_t right)
+    {
+        if constexpr(Operation == OrderingOp::Less)
+            return left < right;
+        if constexpr(Operation == OrderingOp::LessEqual)
+            return left <= right;
+        if constexpr(Operation == OrderingOp::Greater)
+            return left > right;
+        if constexpr(Operation == OrderingOp::GreaterEqual)
+            return left >= right;
+    }
+
+    template <OrderingOp Operation>
+    static Value list_order(ThreadState *thread, TValue<List> left,
+                            TValue<List> right)
+    {
+        // Keep containers and elements alive across arbitrary Python callbacks.
+        Owned<TValue<List>> left_owner(left);
+        Owned<TValue<List>> right_owner(right);
+        size_t index = 0;
+        for(; index < left.extract()->size() && index < right.extract()->size();
+            ++index)
+        {
+            Owned<Value> left_item(left.extract()->item_unchecked(index));
+            Owned<Value> right_item(right.extract()->item_unchecked(index));
+            if(left_item.value() == right_item.value())
+                continue;
+            if(!CL_TRY(
+                   thread->test_equal(left_item.value(), right_item.value())))
+                break;
+        }
+        if(index >= left.extract()->size() || index >= right.extract()->size())
+        {
+            return list_order_sizes<Operation>(left.extract()->size(),
+                                               right.extract()->size())
+                       ? Value::True()
+                       : Value::False();
+        }
+        // Equality may have replaced items or resized a list. Reload only after
+        // checking current bounds; never retain a backing-storage reference.
+        Owned<Value> left_item(left.extract()->item_unchecked(index));
+        Owned<Value> right_item(right.extract()->item_unchecked(index));
+        return thread->call_clovervm_function(
+            thread->get_machine()->ordering_helper_function(Operation),
+            left_item.value(), right_item.value());
+    }
+
+    template <OrderingOp Operation, FixedWideString ReceiverError>
+    static Value native_list_order(ThreadState *thread, Value self, Value other)
+    {
+        if(!can_convert_to<List>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", ReceiverError.c_str());
+        }
+        if(!can_convert_to<List>(other))
+            return Value::NotImplemented();
+        return list_order<Operation>(thread,
+                                     TValue<List>::from_value_assumed(self),
+                                     TValue<List>::from_value_assumed(other));
+    }
+
+    template <OrderingOp Operation, bool Reflected>
+    static Value trusted_list_order(ThreadState *thread, Value left,
+                                    Value right)
+    {
+        if constexpr(Reflected)
+            std::swap(left, right);
+        return list_order<Operation>(thread,
+                                     TValue<List>::from_value_assumed(left),
+                                     TValue<List>::from_value_assumed(right));
+    }
+
+    template <OrderingOp Operation, bool Reflected>
+    using ListOrderHandler = TrustedHandlerDefinition<
+        trusted_list_order<Operation, Reflected>,
+        TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Safepoint |
+            TrustedHandlerEffects::Raise | TrustedHandlerEffects::CallPython>;
+
+    template <OrderingOp Operation>
+    class ListOrderResolver final
+        : public TrustedHandlerResolverBase<ListOrderHandler<Operation, false>,
+                                            ListOrderHandler<Operation, true>>
+    {
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm, ShapeKey left,
+                                         ShapeKey right,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity arity)
+        {
+            if(arity != TrustedHandlerArity::Binary ||
+               vm->shape_for_key(left)->get_class() != vm->list_class() ||
+               vm->shape_for_key(right)->get_class() != vm->list_class())
+            {
+                return TrustedResolution::no_trusted_handler_call_untrusted();
+            }
+            if(order == TrustedHandlerOperandOrder::Reflected)
+                return ListOrderHandler<Operation, true>::resolution();
+            return ListOrderHandler<Operation, false>::resolution();
+        }
+    };
 
     static Value require_smi_index(Value value, const wchar_t *message,
                                    int64_t &out)
@@ -373,6 +479,33 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_list_repr,
                                      L"Return repr(self)."),
+            with_trusted_handler_resolver<ListOrderResolver<OrderingOp::Less>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__lt__",
+                    native_list_order<OrderingOp::Less,
+                                      L"list.__lt__ expects a list receiver">)),
+            with_trusted_handler_resolver<
+                ListOrderResolver<OrderingOp::LessEqual>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__le__",
+                    native_list_order<OrderingOp::LessEqual,
+                                      L"list.__le__ expects a list receiver">)),
+            with_trusted_handler_resolver<
+                ListOrderResolver<OrderingOp::Greater>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__gt__",
+                    native_list_order<OrderingOp::Greater,
+                                      L"list.__gt__ expects a list receiver">)),
+            with_trusted_handler_resolver<
+                ListOrderResolver<OrderingOp::GreaterEqual>>(
+                vm,
+                builtin_intrinsic_method(
+                    L"__ge__",
+                    native_list_order<OrderingOp::GreaterEqual,
+                                      L"list.__ge__ expects a list receiver">)),
             builtin_intrinsic_method(L"__len__", native_list_len,
                                      L"Return len(self)."),
             with_trusted_handler_resolver(

@@ -8917,3 +8917,146 @@ TEST(Interpreter, conditional_truthiness_roots_saved_operand_and_hides_finisher)
         }
     }
 }
+
+TEST(Interpreter, sequence_ordering_caches_trusted_handlers)
+{
+    for(const wchar_t *expression: {L"a < b", L"a <= b", L"a > b", L"a >= b"})
+    {
+        for(const wchar_t *arguments: {L"[1], [2]", L"(1,), (2,)"})
+        {
+            SCOPED_TRACE(expression);
+            SCOPED_TRACE(arguments);
+            test::VmTestContext context;
+            ThreadState::ActivationScope activation(context.thread());
+            std::wstring source = L"def compare(a, b):\n    return ";
+            source += expression;
+            source += L"\ncompare(";
+            source += arguments;
+            source += L")\ncompare(";
+            source += arguments;
+            source += L")\n";
+            CodeObject *code = context.compile_file(source.c_str());
+            ASSERT_FALSE(context.thread()
+                             ->run_clovervm_code_object(code)
+                             .is_exception_marker());
+            Value function = load_global_from_module_for_test(
+                code, interned_string(L"compare"));
+            const auto &caches = function.get_ptr<Function>()
+                                     ->code_object.extract()
+                                     ->inline_caches.operator_caches;
+            ASSERT_EQ(1u, caches.size());
+            const auto &cache = caches[0];
+            ASSERT_FALSE(cache.trusted_handler.is_null());
+            EXPECT_EQ(nullptr, cache.function);
+            EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[0]);
+            EXPECT_NE(nullptr, cache.operand_lookup_validity_cells[1]);
+            auto metadata = context.vm().trusted_handler_metadata(
+                cache.trusted_handler.target(TrustedHandlerArity::Binary));
+            ASSERT_TRUE(metadata.has_value());
+            EXPECT_TRUE(has_trusted_handler_effects(
+                metadata->effects, TrustedHandlerEffects::CallPython |
+                                       TrustedHandlerEffects::Raise |
+                                       TrustedHandlerEffects::Allocate |
+                                       TrustedHandlerEffects::Safepoint));
+        }
+    }
+}
+
+TEST(Interpreter, sequence_ordering_resolvers_preserve_operand_order)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(ClassObject *cls:
+        {context.vm().list_class(), context.vm().tuple_class()})
+    {
+        bool is_list = cls == context.vm().list_class();
+        Owned<Value> left(context.run_file(is_list ? L"[1]\n" : L"(1,)\n"));
+        Owned<Value> right(context.run_file(is_list ? L"[2]\n" : L"(2,)\n"));
+        for(const wchar_t *name: {L"__lt__", L"__le__", L"__gt__", L"__ge__"})
+        {
+            SCOPED_TRACE(name);
+            auto resolver = cls->get_own_property(interned_string(name))
+                                .get_ptr<Function>()
+                                ->code_object.extract()
+                                ->trusted_handler_resolver;
+            ASSERT_NE(nullptr, resolver);
+            bool less = std::wstring(name) == L"__lt__" ||
+                        std::wstring(name) == L"__le__";
+            for(auto order: {TrustedHandlerOperandOrder::Normal,
+                             TrustedHandlerOperandOrder::Reflected})
+            {
+                auto resolution =
+                    resolver(&context.vm(), ShapeKey::from_value(left.value()),
+                             ShapeKey::from_value(right.value()), order,
+                             TrustedHandlerArity::Binary);
+                ASSERT_TRUE(resolution.has_trusted_handler());
+                bool expected =
+                    order == TrustedHandlerOperandOrder::Normal ? less : !less;
+                EXPECT_EQ(expected ? Value::True() : Value::False(),
+                          resolution.binary(context.thread(), left.value(),
+                                            right.value()));
+            }
+            EXPECT_FALSE(resolver(&context.vm(),
+                                  ShapeKey::from_value(left.value()),
+                                  ShapeKey::from_value(Value::from_smi(0)),
+                                  TrustedHandlerOperandOrder::Normal,
+                                  TrustedHandlerArity::Binary)
+                             .has_trusted_handler());
+            EXPECT_FALSE(resolver(&context.vm(),
+                                  ShapeKey::from_value(left.value()),
+                                  ShapeKey::from_value(right.value()),
+                                  TrustedHandlerOperandOrder::Normal,
+                                  TrustedHandlerArity::Unary)
+                             .has_trusted_handler());
+        }
+    }
+}
+
+TEST(Interpreter,
+     sequence_ordering_retains_elements_across_callback_reclamation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+left = []
+right = []
+class Element:
+    def __init__(self, marker):
+        self.marker = marker
+    def __eq__(self, other):
+        left.clear()
+        right.clear()
+        garbage = []
+        for i in range(30):
+            garbage.append(Element(i))
+        assert self.marker == 7
+        assert other.marker == 8
+        assert [1] < [2]
+        return False
+left = [Element(7)]
+right = [Element(8)]
+assert (left < right) is False
+class OrderedElement:
+    def __init__(self, marker):
+        self.marker = marker
+    def __eq__(self, other):
+        return False
+    def __lt__(self, other):
+        left.clear()
+        right.clear()
+        garbage = []
+        for i in range(30):
+            garbage.append(Element(i))
+        assert self.marker == 7
+        assert other.marker == 8
+        assert (1,) < (2,)
+        return self
+left = [OrderedElement(7)]
+right = [OrderedElement(8)]
+assert (left < right).marker == 7
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}

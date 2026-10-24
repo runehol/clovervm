@@ -452,6 +452,10 @@ namespace cl
                         Optional<TValue<Function>>::none();
                     vm->test_equal_helper_function_ =
                         Optional<TValue<Function>>::none();
+                    for(auto &helper: vm->ordering_helper_functions_)
+                    {
+                        helper = Optional<TValue<Function>>::none();
+                    }
                     vm->membership_iter_fallback_function_ =
                         Optional<TValue<Function>>::none();
                     vm->membership_sequence_fallback_function_ =
@@ -480,6 +484,10 @@ namespace cl
             range_builtin = Value::None();
             hash_value_helper_function_ = Optional<TValue<Function>>::none();
             test_equal_helper_function_ = Optional<TValue<Function>>::none();
+            for(auto &helper: ordering_helper_functions_)
+            {
+                helper = Optional<TValue<Function>>::none();
+            }
             membership_iter_fallback_function_ =
                 Optional<TValue<Function>>::none();
             membership_sequence_fallback_function_ =
@@ -1400,6 +1408,18 @@ namespace cl
                 this, make_test_equal_helper_function(this),
                 "creating test equal helper"));
 
+        const OrderingOp ordering_operations[] = {
+            OrderingOp::Less, OrderingOp::LessEqual, OrderingOp::Greater,
+            OrderingOp::GreaterEqual};
+        for(size_t i = 0; i < std::size(ordering_operations); ++i)
+        {
+            ordering_helper_functions_[i] =
+                Optional<TValue<Function>>::some(unwrap_bootstrap_expected(
+                    this,
+                    make_ordering_helper_function(this, ordering_operations[i]),
+                    "creating ordering helper"));
+        }
+
         // Retain the native allocator without creating a class lookup cache:
         // installing Python dict methods later replaces the __new__ slot.
         install_implementation_binding(
@@ -1645,6 +1665,31 @@ namespace cl
     {
         assert(test_equal_helper_function_.value().has_value());
         return test_equal_helper_function_.value().value();
+    }
+
+    TValue<Function>
+    VirtualMachine::ordering_helper_function(OrderingOp operation) const
+    {
+        size_t index;
+        switch(operation)
+        {
+            case OrderingOp::Less:
+                index = 0;
+                break;
+            case OrderingOp::LessEqual:
+                index = 1;
+                break;
+            case OrderingOp::Greater:
+                index = 2;
+                break;
+            case OrderingOp::GreaterEqual:
+                index = 3;
+                break;
+            default:
+                fatal("invalid ordering helper operation");
+        }
+        assert(ordering_helper_functions_[index].value().has_value());
+        return ordering_helper_functions_[index].value().value();
     }
 
     TValue<Function>

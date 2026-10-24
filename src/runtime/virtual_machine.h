@@ -25,6 +25,7 @@
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "runtime/operator_dispatch.h"
+#include "runtime/ordering_op.h"
 #include "runtime/trusted_handler.h"
 
 namespace cl
@@ -126,6 +127,7 @@ namespace cl
         Value get_range_builtin() const { return range_builtin; }
         TValue<Function> hash_value_helper_function() const;
         TValue<Function> test_equal_helper_function() const;
+        TValue<Function> ordering_helper_function(OrderingOp operation) const;
         TValue<Function> iterable_to_exact_tuple_function() const;
         TValue<Function> iterable_to_exact_list_function() const;
         TValue<Function> dict_insert_if_absent_known_hash_function() const;
@@ -474,6 +476,8 @@ namespace cl
         Owned<Value> range_builtin;
         Owned<Optional<TValue<Function>>> hash_value_helper_function_;
         Owned<Optional<TValue<Function>>> test_equal_helper_function_;
+        std::array<Owned<Optional<TValue<Function>>>, 4>
+            ordering_helper_functions_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_tuple_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_list_function_;
         Owned<Optional<TValue<Function>>>

@@ -255,3 +255,32 @@ argument and delegates to the VM registry.
 Native error helpers and compiler-generated exception constants use these
 canonical identities. Rebinding or deleting a public builtin class name still
 changes ordinary Python name lookup, but cannot redirect internal exceptions.
+
+## List and Tuple Ordering
+
+Builtin `list` and `tuple` own `__lt__`, `__le__`, `__gt__`, and `__ge__`.
+They compare native payloads lexicographically, skipping identical elements,
+truth-testing element equality, and returning the requested ordering result at
+the first unequal index without coercing it to bool. Exhausted prefixes compare
+by length. List callbacks may mutate either operand: the implementation retains
+elements across equality callbacks, rechecks current lengths, and reloads the
+unequal index before ordering, matching CPython 3.14.5.
+
+Ordinary operator dispatch owns reflected precedence, subclass overrides,
+`NotImplemented`, and lookup-cache invalidation. Exact builtin pairs have direct
+trusted handlers; inherited calls still validate native receivers. Element
+ordering uses VM-owned bytecode helpers, following the equality-helper pattern,
+so it shares the regular operator protocol and cache invalidation. Cold and
+cached reflectable binary dispatch prepare the native-call frame frontier before
+invoking a trusted handler, keeping reentrant helper frames below live caller
+slots.
+
+In JSON PR #35, `_sort_items` can replace
+`_item_less(right[j], left[i])` with `right[j] < left[i]` and delete `_item_less`
+once this change is available. This applies to tuple/list item rows, including
+nested containers and malformed rows that are compared before validation.
+This preserves the value tie-break when keys compare equal. Replacing it with
+key-only comparison would change that behavior. JSON integration is separate;
+this change does not add `list.sort` or `sorted`. Tuple subclass construction
+remains an existing limitation, as does calling `tuple()` itself; tests use
+tuple literals and reflected element comparisons without changing allocation.

@@ -1,6 +1,7 @@
 #include "runtime/protocol_helper_functions.h"
 
 #include "builtin_types/module_object.h"
+#include "bytecode/bytecode.h"
 #include "bytecode/code_object_builder.h"
 #include "compiler/scope.h"
 #include "object_model/function.h"
@@ -59,6 +60,41 @@ namespace cl
         CL_TRY(code.emit_to_bool(0));
         CL_TRY(code.emit_return(0));
 
+        return code.finalize_immortal_function(vm);
+    }
+
+    Expected<TValue<Function>>
+    make_ordering_helper_function(VirtualMachine *vm, OrderingOp operation)
+    {
+        Bytecode bytecode;
+        switch(operation)
+        {
+            case OrderingOp::Less:
+                bytecode = Bytecode::TestLess;
+                break;
+            case OrderingOp::LessEqual:
+                bytecode = Bytecode::TestLessEqual;
+                break;
+            case OrderingOp::Greater:
+                bytecode = Bytecode::TestGreater;
+                break;
+            case OrderingOp::GreaterEqual:
+                bytecode = Bytecode::TestGreaterEqual;
+                break;
+            default:
+                fatal("invalid ordering helper operation");
+        }
+        Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), local_scope,
+            vm->get_or_create_interned_string_value(L"<ordering_helper>"));
+        code.configure_positional_function(2);
+        CL_TRY(code.emit_ldar(0, 1));
+        CL_TRY(code.emit_operator_reg(
+            0, bytecode, 0,
+            OperatorBytecodeFormat::WithCacheAndNotImplementedCheck));
+        // Preserve arbitrary rich-comparison results without truth conversion.
+        CL_TRY(code.emit_return(0));
         return code.finalize_immortal_function(vm);
     }
 

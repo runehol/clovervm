@@ -3,6 +3,7 @@
 
 #include "object_model/function.h"
 #include "object_model/typed_value.h"
+#include "runtime/ordering_op.h"
 
 namespace cl
 {
@@ -13,6 +14,9 @@ namespace cl
 
     Expected<TValue<Function>>
     make_test_equal_helper_function(VirtualMachine *vm);
+
+    Expected<TValue<Function>>
+    make_ordering_helper_function(VirtualMachine *vm, OrderingOp operation);
 
 }  // namespace cl
 
