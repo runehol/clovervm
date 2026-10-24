@@ -91,6 +91,10 @@ extern "C"
         clover_extension_fn_7 function, const char *docstring);
 
     CL_EXPORT clover_handle clover_none(clover_context *ctx);
+    CL_EXPORT clover_handle clover_bool_from_bool(clover_context *ctx,
+                                                  bool value);
+    CL_EXPORT clover_handle clover_true(clover_context *ctx);
+    CL_EXPORT clover_handle clover_false(clover_context *ctx);
     CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
                                                   int64_t value);
     CL_EXPORT clover_handle clover_int_from_uint64(clover_context *ctx,
