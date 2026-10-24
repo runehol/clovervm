@@ -126,7 +126,7 @@ namespace cl
         result.reserve(tuple->size());
         for(size_t idx = 0; idx < tuple->size(); ++idx)
         {
-            result.push_back(assume_convert_to<T>(tuple->item_unchecked(idx)));
+            result.push_back(native_cast<T>(tuple->item_unchecked(idx)));
         }
         return result;
     }

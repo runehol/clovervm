@@ -764,7 +764,7 @@ else:
 assert values == [3, 1, 2]
 keys
 )"));
-    ASSERT_TRUE(can_convert_to<List>(keys.value()));
+    ASSERT_TRUE(has_native_layout<List>(keys.value()));
     // Execution has returned to C++. Exclude obsolete interpreter slots from
     // the conservative scan before checking that temporary key arrays die.
     context.thread()->publish_safepoint_scan_record(

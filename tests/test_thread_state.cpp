@@ -309,7 +309,7 @@ namespace cl
                                             L"obj = C()\n"
                                             L"(obj, hash(obj))\n");
         ASSERT_FALSE(pair_value.is_exception_marker());
-        ASSERT_TRUE(can_convert_to<Tuple>(pair_value));
+        ASSERT_TRUE(has_native_layout<Tuple>(pair_value));
         Tuple *pair = pair_value.get_ptr<Tuple>();
         ASSERT_TRUE(pair->item_unchecked(1).is_smi());
 
@@ -399,7 +399,7 @@ namespace cl
                                             L"        return 0\n"
                                             L"(Truthy(), Falsey())\n");
         ASSERT_FALSE(pair_value.is_exception_marker());
-        ASSERT_TRUE(can_convert_to<Tuple>(pair_value));
+        ASSERT_TRUE(has_native_layout<Tuple>(pair_value));
         Tuple *pair = pair_value.get_ptr<Tuple>();
 
         Expected<bool> truthy =
@@ -518,9 +518,9 @@ namespace cl
             make_exception_object_with_arg(thread, cls, Value::None()));
         Owned<TValue<Exception>> number(
             make_exception_object_with_arg(thread, cls, Value::from_smi(42)));
-        ASSERT_TRUE(can_convert_to<StopIterationObject>(empty.raw_value()));
-        ASSERT_TRUE(can_convert_to<StopIterationObject>(none.raw_value()));
-        ASSERT_TRUE(can_convert_to<StopIterationObject>(number.raw_value()));
+        ASSERT_TRUE(has_native_layout<StopIterationObject>(empty.raw_value()));
+        ASSERT_TRUE(has_native_layout<StopIterationObject>(none.raw_value()));
+        ASSERT_TRUE(has_native_layout<StopIterationObject>(number.raw_value()));
         EXPECT_TRUE(empty.extract()->args.extract()->empty());
         EXPECT_EQ(1u, none.extract()->args.extract()->size());
         EXPECT_EQ(Value::None(),
@@ -823,7 +823,7 @@ namespace cl
         {
             TValue<String> name = shape->get_property_name(idx);
             Value value = builtins->get_own_property(name);
-            if(can_convert_to<ClassObject>(value))
+            if(has_native_layout<ClassObject>(value))
             {
                 ++class_count;
                 name = value.get_ptr<ClassObject>()->get_name();

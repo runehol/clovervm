@@ -19,11 +19,11 @@ namespace cl
     static ValidityCellDependencyMutability
     mro_dependency_mutability(const ClassObject *cls)
     {
-        Tuple *mro = assume_convert_to<Tuple>(cls->get_mro_value());
+        Tuple *mro = native_cast<Tuple>(cls->get_mro_value());
         for(size_t index = 0; index < mro->size(); ++index)
         {
             ClassObject *mro_class =
-                assume_convert_to<ClassObject>(mro->item_unchecked(index));
+                native_cast<ClassObject>(mro->item_unchecked(index));
             if(!mro_class->get_shape()->has_flag(ShapeFlag::IsImmutable))
             {
                 return ValidityCellDependencyMutability::Mutable;
@@ -101,7 +101,7 @@ namespace cl
         }
 
         Value mro_value = cls->get_mro_value();
-        if(!can_convert_to<Tuple>(mro_value))
+        if(!has_native_layout<Tuple>(mro_value))
         {
             return false;
         }
@@ -131,10 +131,10 @@ namespace cl
         for(size_t base_idx = 0; base_idx < bases->size(); ++base_idx)
         {
             ClassObject *base =
-                assume_convert_to<ClassObject>(bases->item_unchecked(base_idx));
+                native_cast<ClassObject>(bases->item_unchecked(base_idx));
             Value base_mro_value = base->get_own_property(dunder_mro_name);
-            sequences.push_back(class_deque_from_tuple(
-                assume_convert_to<Tuple>(base_mro_value)));
+            sequences.push_back(
+                class_deque_from_tuple(native_cast<Tuple>(base_mro_value)));
         }
         sequences.push_back(class_deque_from_tuple(bases));
 
@@ -174,8 +174,8 @@ namespace cl
                                           ordinary_instance_capacity};
         for(size_t idx = 1; idx < mro.extract()->size(); ++idx)
         {
-            ClassObject *ancestor = assume_convert_to<ClassObject>(
-                mro.extract()->item_unchecked(idx));
+            ClassObject *ancestor =
+                native_cast<ClassObject>(mro.extract()->item_unchecked(idx));
             NativeLayoutId layout = ancestor->instance_native_layout_id();
             if(layout == NativeLayoutId::Instance)
             {
@@ -214,7 +214,7 @@ namespace cl
         for(size_t idx = 0; idx < bases_tuple->size(); ++idx)
         {
             ClassObject *base =
-                try_convert_to<ClassObject>(bases_tuple->item_unchecked(idx));
+                try_native_cast<ClassObject>(bases_tuple->item_unchecked(idx));
             if(base == nullptr)
             {
                 return Expected<void>::raise_exception(
@@ -336,7 +336,7 @@ namespace cl
             Value bases_tuple = make_bases_tuple(single_base);
             bases = bases_tuple;
             Expected<TValue<Tuple>> computed_mro =
-                compute_mro(this, assume_convert_to<Tuple>(bases_tuple));
+                compute_mro(this, native_cast<Tuple>(bases_tuple));
             assert(computed_mro.has_value());
             mro = computed_mro.value().raw_value();
         }
@@ -674,8 +674,8 @@ namespace cl
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,
                                                     Value mro_tuple)
     {
-        assert(can_convert_to<Tuple>(bases_tuple));
-        assert(can_convert_to<Tuple>(mro_tuple));
+        assert(has_native_layout<Tuple>(bases_tuple));
+        assert(has_native_layout<Tuple>(mro_tuple));
         bases = bases_tuple;
         mro = mro_tuple;
         invalidate_lookup_validity_cells_for_shape_change();
@@ -733,13 +733,13 @@ namespace cl
         assert(cell->is_valid());
 
         Value mro_value = inline_slot_base()[class_metadata_slot_mro];
-        Tuple *mro = assume_convert_to<Tuple>(mro_value);
+        Tuple *mro = native_cast<Tuple>(mro_value);
         uint32_t start_idx =
             mode == MroValidityCellInstallMode::IncludeSelf ? 0 : 1;
         for(uint32_t mro_idx = start_idx; mro_idx < mro->size(); ++mro_idx)
         {
             ClassObject *base =
-                assume_convert_to<ClassObject>(mro->item_unchecked(mro_idx));
+                native_cast<ClassObject>(mro->item_unchecked(mro_idx));
             base->attach_mro_validity_cell(cell, dependency);
         }
     }
@@ -855,7 +855,7 @@ namespace cl
 
             Value new_value =
                 load_attr_from_plan(Value::from_oop(self), new_descriptor.plan);
-            if(!can_convert_to<Function>(new_value))
+            if(!has_native_layout<Function>(new_value))
             {
                 return Expected<ConstructorThunkLookup>::ok(
                     ConstructorThunkLookup{nullptr, nullptr});
@@ -886,7 +886,7 @@ namespace cl
 
         Value init_value =
             load_attr_from_plan(Value::from_oop(self), init_descriptor.plan);
-        if(!can_convert_to<Function>(init_value))
+        if(!has_native_layout<Function>(init_value))
         {
             return Expected<ConstructorThunkLookup>::ok(
                 ConstructorThunkLookup{nullptr, nullptr});

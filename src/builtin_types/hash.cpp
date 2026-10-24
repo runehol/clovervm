@@ -24,7 +24,7 @@ namespace cl
             return Expected<TValue<SMI>>::ok(
                 remap_hash_sentinel(value.get_smi()));
         }
-        if(can_convert_to<BigInt>(value))
+        if(has_native_layout<BigInt>(value))
         {
             TValue<SMI> hash = bigint_hash(value.get_ptr<BigInt>()->view());
             return Expected<TValue<SMI>>::ok(

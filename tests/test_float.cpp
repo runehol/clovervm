@@ -158,8 +158,8 @@ namespace cl
         Owned<Value> first(box_float(context.thread(), 2.5));
         Owned<Value> second(box_float(context.thread(), 2.5));
 
-        ASSERT_TRUE(can_convert_to<Float>(first.raw_value()));
-        ASSERT_TRUE(can_convert_to<Float>(second.raw_value()));
+        ASSERT_TRUE(has_native_layout<Float>(first.raw_value()));
+        ASSERT_TRUE(has_native_layout<Float>(second.raw_value()));
         EXPECT_DOUBLE_EQ(2.5, first.raw_value().get_ptr<Float>()->value());
         EXPECT_DOUBLE_EQ(2.5, second.raw_value().get_ptr<Float>()->value());
         EXPECT_NE(first.raw_value(), second.raw_value());
@@ -172,7 +172,7 @@ namespace cl
         Owned<Value> result(
             context.run_file(L"class F(float): pass\nF(-0.0)\n"));
         ASSERT_FALSE(result.value().is_exception_marker());
-        ASSERT_TRUE(can_convert_to<Float>(result.value()));
+        ASSERT_TRUE(has_native_layout<Float>(result.value()));
         Float *value = result.value().get_ptr<Float>();
         EXPECT_TRUE(std::signbit(value->value()));
         EXPECT_DOUBLE_EQ(0.0, value->value());
@@ -346,7 +346,7 @@ True
         ThreadState::ActivationScope activation(context.thread());
         Value method = context.vm().float_class()->get_own_property(
             interned_string(L"__bool__"));
-        ASSERT_TRUE(can_convert_to<Function>(method));
+        ASSERT_TRUE(has_native_layout<Function>(method));
         auto resolver = method.get_ptr<Function>()
                             ->code_object.extract()
                             ->trusted_handler_resolver;

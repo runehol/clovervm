@@ -310,7 +310,7 @@ namespace cl
             ASSERT_FALSE(parsed.has_exception());
             value = parsed.value();
         }
-        ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
+        ASSERT_TRUE(has_native_layout<BigInt>(value.value()));
         EXPECT_EQ(
             L"12345678901234567890123456789",
             bigint_to_decimal_string(value.value().get_ptr<BigInt>()->view()));

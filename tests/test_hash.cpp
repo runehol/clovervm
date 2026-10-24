@@ -53,7 +53,7 @@ TEST(Hash, NoneHashResolverGuardsReceiverAndArity)
     ThreadState::ActivationScope activation_scope(context.thread());
     Value method = load_attr(Value::from_oop(context.vm().none_type_class()),
                              interned_string(L"__hash__"));
-    ASSERT_TRUE(can_convert_to<Function>(method));
+    ASSERT_TRUE(has_native_layout<Function>(method));
     CodeObject *code = method.get_ptr<Function>()->code_object.extract();
     ASSERT_NE(nullptr, code->trusted_handler_resolver);
 
@@ -125,13 +125,13 @@ TEST(Hash, CanonicalizeHashReducesOutOfSmiBigInt)
     Expected<Value> positive =
         int_value_from_int64(context.thread(), value_smi_max + 1);
     ASSERT_TRUE(positive.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(positive.value()));
+    ASSERT_TRUE(has_native_layout<BigInt>(positive.value()));
     EXPECT_EQ(1, canonicalize_hash_result(positive.value()).value().extract());
 
     Expected<Value> negative =
         int_value_from_int64(context.thread(), -(2 * clover_hash_modulus + 1));
     ASSERT_TRUE(negative.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(negative.value()));
+    ASSERT_TRUE(has_native_layout<BigInt>(negative.value()));
     EXPECT_EQ(-2, canonicalize_hash_result(negative.value()).value().extract());
 }
 
@@ -141,12 +141,12 @@ TEST(Hash, CanonicalizeHashReducesLargeBigIntWithoutOverflowingIntermediate)
     ThreadState::ActivationScope activation_scope(context.thread());
 
     Value ten_to_100 = context.run_file(L"10**100\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(ten_to_100));
+    ASSERT_TRUE(has_native_layout<BigInt>(ten_to_100));
     EXPECT_EQ(69889855055785222,
               canonicalize_hash_result(ten_to_100).value().extract());
 
     Value ten_to_101 = context.run_file(L"10**101\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(ten_to_101));
+    ASSERT_TRUE(has_native_layout<BigInt>(ten_to_101));
     EXPECT_EQ(122437798254428734,
               canonicalize_hash_result(ten_to_101).value().extract());
 }

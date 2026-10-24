@@ -88,7 +88,7 @@ namespace cl
     [[nodiscard]] NOINLINE static Value
     str_new_subclass_slow(ThreadState *thread, Value cls_value, Value obj)
     {
-        if(!can_convert_to<ClassObject>(cls_value))
+        if(!has_native_layout<ClassObject>(cls_value))
         {
             TValue<String> name = thread->class_of_value(cls_value)->get_name();
             std::wstring message = L"str.__new__(X): X is not a type object (";
@@ -152,7 +152,7 @@ namespace cl
 
     static Value native_str_str(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<String>(self))
+        if(!has_native_layout<String>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__str__ expects a str receiver");
@@ -169,7 +169,7 @@ namespace cl
 
     static Value native_str_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<String>(self))
+        if(!has_native_layout<String>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__repr__ expects a str receiver");
@@ -209,7 +209,7 @@ namespace cl
 
     static Value native_str_len(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<String>(self))
+        if(!has_native_layout<String>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__len__ expects a str receiver");
@@ -219,7 +219,7 @@ namespace cl
 
     static Value native_str_hash(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<String>(self))
+        if(!has_native_layout<String>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__hash__ expects a str receiver");
@@ -231,12 +231,12 @@ namespace cl
     static Value native_str_add(ThreadState *thread, Value left_value,
                                 Value right_value)
     {
-        if(!can_convert_to<String>(left_value))
+        if(!has_native_layout<String>(left_value))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__add__ expects a str receiver");
         }
-        if(!can_convert_to<String>(right_value))
+        if(!has_native_layout<String>(right_value))
         {
             return Value::NotImplemented();
         }
@@ -342,12 +342,12 @@ namespace cl
     static Value native_str_compare_operator(ThreadState *thread, Value self,
                                              Value other)
     {
-        if(!can_convert_to<String>(self))
+        if(!has_native_layout<String>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", Operator::receiver_error);
         }
-        if(!can_convert_to<String>(other))
+        if(!has_native_layout<String>(other))
         {
             return Value::NotImplemented();
         }
@@ -424,7 +424,7 @@ namespace cl
 
     static Value require_str_receiver(Value self, const wchar_t *method_name)
     {
-        if(!can_convert_to<String>(self))
+        if(!has_native_layout<String>(self))
         {
             std::wstring message = L"str.";
             message += method_name;
@@ -437,7 +437,7 @@ namespace cl
 
     static Value require_string_argument(Value value, const wchar_t *message)
     {
-        if(!can_convert_to<String>(value))
+        if(!has_native_layout<String>(value))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", message);
@@ -474,7 +474,7 @@ namespace cl
                                     Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__getitem__"));
-        if(can_convert_to<Slice>(index_value))
+        if(has_native_layout<Slice>(index_value))
         {
             TValue<Slice> slice =
                 TValue<Slice>::from_value_assumed(index_value);
@@ -538,7 +538,7 @@ namespace cl
     static Value trusted_str_contains_handler(ThreadState *thread, Value self,
                                               Value needle_value)
     {
-        if(!can_convert_to<String>(needle_value))
+        if(!has_native_layout<String>(needle_value))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"'in <string>' requires string as left operand");
@@ -1090,7 +1090,8 @@ namespace cl
 
     static bool is_string_sequence(Value value)
     {
-        return can_convert_to<List>(value) || can_convert_to<Tuple>(value);
+        return has_native_layout<List>(value) ||
+               has_native_layout<Tuple>(value);
     }
 
     static Value native_str_join(ThreadState *thread, Value self,
@@ -1103,7 +1104,7 @@ namespace cl
                 L"TypeError", L"str.join expects a list or tuple");
         }
 
-        if(can_convert_to<List>(sequence))
+        if(has_native_layout<List>(sequence))
         {
             List *list = sequence.get_ptr<List>();
             for(size_t idx = 0; idx < list->size(); ++idx)

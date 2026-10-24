@@ -30,7 +30,7 @@ namespace cl
     [[nodiscard]] inline Expected<size_t> normalize_search_index(Value value,
                                                                  int64_t length)
     {
-        if(can_convert_to<BigInt>(value))
+        if(has_native_layout<BigInt>(value))
         {
             ConstBigIntView index = value.get_ptr<BigInt>()->view();
             SmiViewStorage length_storage;

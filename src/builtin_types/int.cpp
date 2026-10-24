@@ -50,7 +50,7 @@ namespace cl
 
     bool is_intlike_value(Value value)
     {
-        return is_smi_or_bool_value(value) || can_convert_to<BigInt>(value);
+        return is_smi_or_bool_value(value) || has_native_layout<BigInt>(value);
     }
 
     Expected<int64_t> validate_length_result(Value value)
@@ -60,7 +60,7 @@ namespace cl
         {
             length = smi_or_bool_as_int(value);
         }
-        else if(can_convert_to<BigInt>(value))
+        else if(has_native_layout<BigInt>(value))
         {
             ConstBigIntView view = value.get_ptr<BigInt>()->view();
             if(view.signum < 0)
@@ -85,7 +85,7 @@ namespace cl
 
     bool is_exact_int_value(Value value)
     {
-        return value.is_smi() || can_convert_to<BigInt>(value);
+        return value.is_smi() || has_native_layout<BigInt>(value);
     }
 
     NOINLINE Expected<TValue<SMI>>
@@ -97,7 +97,7 @@ namespace cl
             return Expected<TValue<SMI>>::ok(
                 TValue<SMI>::from_smi(smi_or_bool_as_int(value)));
         }
-        if(can_convert_to<BigInt>(value))
+        if(has_native_layout<BigInt>(value))
         {
             return bigint_to_smi(value.get_ptr<BigInt>()->view());
         }
@@ -113,7 +113,7 @@ namespace cl
             *out = TValue<SMI>::from_smi(value.get_smi());
             return Expected<IntToSmiStatus>::ok(IntToSmiStatus::Converted);
         }
-        if(can_convert_to<BigInt>(value))
+        if(has_native_layout<BigInt>(value))
         {
             Expected<TValue<SMI>> smi =
                 bigint_to_smi(value.get_ptr<BigInt>()->view());
@@ -134,7 +134,7 @@ namespace cl
         {
             return smi_bigint_view(smi_or_bool_as_int(value), smi_storage);
         }
-        assert(can_convert_to<BigInt>(value));
+        assert(has_native_layout<BigInt>(value));
         return value.get_ptr<BigInt>()->view();
     }
 
@@ -145,7 +145,7 @@ namespace cl
         {
             return smi_bigint_view(value.get_smi(), smi_storage);
         }
-        assert(can_convert_to<BigInt>(value));
+        assert(has_native_layout<BigInt>(value));
         return value.get_ptr<BigInt>()->view();
     }
 
@@ -183,7 +183,7 @@ namespace cl
             return result;
         }
 
-        if(can_convert_to<BigInt>(obj))
+        if(has_native_layout<BigInt>(obj))
         {
             BigInt *integer = obj.get_ptr<BigInt>();
             if(integer->get_shape()->get_class() ==
@@ -194,17 +194,17 @@ namespace cl
             return CL_TRY(finalize_bigint(thread, integer->view()));
         }
 
-        if(can_convert_to<Float>(obj))
+        if(has_native_layout<Float>(obj))
         {
             return CL_TRY(
                 int_value_from_double(thread, obj.get_ptr<Float>()->value()));
         }
-        if(can_convert_to<String>(obj))
+        if(has_native_layout<String>(obj))
         {
             return parse_int_string(thread,
                                     TValue<String>::from_value_assumed(obj));
         }
-        if(can_convert_to<Bytes>(obj))
+        if(has_native_layout<Bytes>(obj))
         {
             auto bytes = bytes_view(TValue<Bytes>::from_value_assumed(obj));
             return CL_TRY(parse_int_string_view(
@@ -220,7 +220,7 @@ namespace cl
     int_new_subclass_slow(ThreadState *thread, Value cls_value, Value obj)
     {
         VirtualMachine *vm = thread->get_machine();
-        if(!can_convert_to<ClassObject>(cls_value))
+        if(!has_native_layout<ClassObject>(cls_value))
         {
             TValue<String> name = thread->class_of_value(cls_value)->get_name();
             std::wstring message = L"int.__new__(X): X is not a type object (";
@@ -280,9 +280,9 @@ namespace cl
                 ->make_object_value<String>(std::to_wstring(self.get_smi()))
                 .raw_value();
         }
-        if(can_convert_to<BigInt>(self))
+        if(has_native_layout<BigInt>(self))
         {
-            BigInt *bigint = assume_convert_to<BigInt>(self);
+            BigInt *bigint = native_cast<BigInt>(self);
             return thread
                 ->make_object_value<String>(
                     bigint_to_decimal_string(bigint->view()))
@@ -376,7 +376,7 @@ namespace cl
                           : static_cast<uint64_t>(value);
             return Value::from_smi(std::bit_width(magnitude));
         }
-        if(can_convert_to<BigInt>(self))
+        if(has_native_layout<BigInt>(self))
         {
             return CL_TRY(int_value_from_uint64(
                 thread, bigint_abs_bit_length(self.get_ptr<BigInt>()->view())));
@@ -396,7 +396,7 @@ namespace cl
                           : static_cast<uint64_t>(value);
             return Value::from_smi(std::popcount(magnitude));
         }
-        if(can_convert_to<BigInt>(self))
+        if(has_native_layout<BigInt>(self))
         {
             return CL_TRY(int_value_from_uint64(
                 thread, bigint_abs_bit_count(self.get_ptr<BigInt>()->view())));
@@ -1303,7 +1303,7 @@ namespace cl
         {
             return SMIAbsOperator{}(thread, value);
         }
-        if(can_convert_to<BigInt>(self))
+        if(has_native_layout<BigInt>(self))
         {
             BigInt *integer = self.get_ptr<BigInt>();
             if(integer->signum() < 0 || integer->get_shape()->get_class() ==
@@ -1456,9 +1456,9 @@ namespace cl
         {
             return SMINegOperator{}(thread, value);
         }
-        if(can_convert_to<BigInt>(self))
+        if(has_native_layout<BigInt>(self))
         {
-            BigInt *bigint = assume_convert_to<BigInt>(self);
+            BigInt *bigint = native_cast<BigInt>(self);
             Expected<Value> result = bigint_negate(thread, bigint->view());
             if(result.has_exception())
             {
@@ -1476,7 +1476,7 @@ namespace cl
         {
             return self;
         }
-        if(can_convert_to<BigInt>(self))
+        if(has_native_layout<BigInt>(self))
         {
             BigInt *integer = self.get_ptr<BigInt>();
             if(integer->get_shape()->get_class() ==

@@ -119,8 +119,7 @@ namespace cl::jit
 
             ASSERT_TRUE(result->accumulator.is_ptr());
             EXPECT_EQ(result->accumulator, frame_pointer[-1]);
-            double value =
-                assume_convert_to<Float>(result->accumulator)->value();
+            double value = native_cast<Float>(result->accumulator)->value();
             EXPECT_EQ(bits, std::bit_cast<uint64_t>(value));
         }
     }

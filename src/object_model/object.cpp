@@ -49,11 +49,11 @@ namespace cl
                 {
                     case DescriptorSpecialKind::ModuleBuiltins:
                         {
-                            if(!can_convert_to<ModuleObject>(object))
+                            if(!has_native_layout<ModuleObject>(object))
                             {
                                 return AttributeWriteDescriptor::disallowed();
                             }
-                            assume_convert_to<ModuleObject>(object)
+                            native_cast<ModuleObject>(object)
                                 ->invalidate_module_builtins_binding_validity_cell();
                             return AttributeWriteDescriptor::found(
                                 AttributeMutationPlan::store_existing(
@@ -105,11 +105,11 @@ namespace cl
                 {
                     case DescriptorSpecialKind::ModuleBuiltins:
                         {
-                            if(!can_convert_to<ModuleObject>(object))
+                            if(!has_native_layout<ModuleObject>(object))
                             {
                                 return AttributeDeleteDescriptor::disallowed();
                             }
-                            assume_convert_to<ModuleObject>(object)
+                            native_cast<ModuleObject>(object)
                                 ->invalidate_module_builtins_binding_validity_cell();
                             Shape *next_shape =
                                 current_shape->derive_transition(
@@ -334,14 +334,14 @@ namespace cl
            new_shape != nullptr &&
            new_shape->has_flag(ShapeFlag::IsClassObject))
         {
-            assume_convert_to<ClassObject>(this)
+            native_cast<ClassObject>(this)
                 ->invalidate_lookup_validity_cells_for_shape_change();
         }
         if(old_shape != nullptr && old_shape != new_shape &&
            new_shape != nullptr &&
            new_shape->has_flag(ShapeFlag::IsModuleObject))
         {
-            assume_convert_to<ModuleObject>(this)
+            native_cast<ModuleObject>(this)
                 ->invalidate_module_lookup_validity_cells();
         }
     }

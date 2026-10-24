@@ -207,15 +207,15 @@ TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
     Object *object = string_value.get_ptr<Object>();
 
     EXPECT_EQ(NativeLayoutId::String, object->native_layout_id());
-    EXPECT_TRUE(can_convert_to<String>(object));
-    EXPECT_FALSE(can_convert_to<Dict>(object));
-    EXPECT_EQ(string, try_convert_to<String>(object));
-    EXPECT_EQ(nullptr, try_convert_to<Dict>(object));
-    EXPECT_EQ(string, assume_convert_to<String>(object));
-    EXPECT_TRUE(can_convert_to<String>(string_value));
-    EXPECT_EQ(string, try_convert_to<String>(string_value));
-    EXPECT_EQ(string, assume_convert_to<String>(string_value));
-    EXPECT_EQ(nullptr, try_convert_to<String>(Value::None()));
+    EXPECT_TRUE(has_native_layout<String>(object));
+    EXPECT_FALSE(has_native_layout<Dict>(object));
+    EXPECT_EQ(string, try_native_cast<String>(object));
+    EXPECT_EQ(nullptr, try_native_cast<Dict>(object));
+    EXPECT_EQ(string, native_cast<String>(object));
+    EXPECT_TRUE(has_native_layout<String>(string_value));
+    EXPECT_EQ(string, try_native_cast<String>(string_value));
+    EXPECT_EQ(string, native_cast<String>(string_value));
+    EXPECT_EQ(nullptr, try_native_cast<String>(Value::None()));
 }
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)

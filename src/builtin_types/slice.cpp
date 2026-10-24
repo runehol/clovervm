@@ -186,7 +186,7 @@ namespace cl
         {
             Value function = implementation_module->get_own_property(
                 vm->get_or_create_interned_string_value(helper_names[idx]));
-            if(!can_convert_to<Function>(function))
+            if(!has_native_layout<Function>(function))
             {
                 fatal("trusted builtin_implementations.py did not define slice "
                       "method");

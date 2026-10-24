@@ -166,7 +166,7 @@ namespace cl
 
     static Value native_dict_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Dict>(self))
+        if(!has_native_layout<Dict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"dict.__repr__ expects a dict receiver");
@@ -193,7 +193,7 @@ namespace cl
 
     static Value native_dict_len(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Dict>(self))
+        if(!has_native_layout<Dict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"dict.__len__ expects a dict receiver");
@@ -205,7 +205,7 @@ namespace cl
 
     static Value require_dict_receiver(Value self, const wchar_t *method_name)
     {
-        if(!can_convert_to<Dict>(self))
+        if(!has_native_layout<Dict>(self))
         {
             std::wstring message = L"dict.";
             message += method_name;
@@ -371,7 +371,7 @@ namespace cl
         {
             return Value::None();
         }
-        if(!can_convert_to<Dict>(other))
+        if(!has_native_layout<Dict>(other))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"dict.update expects a dict argument");
@@ -385,12 +385,12 @@ namespace cl
     static Value native_dict_fromkeys(ThreadState *thread, Value keys,
                                       Value value)
     {
-        if(can_convert_to<Tuple>(keys))
+        if(has_native_layout<Tuple>(keys))
         {
             Tuple *tuple = keys.get_ptr<Tuple>();
             return Dict::from_tuple_keys(tuple, value);
         }
-        if(can_convert_to<List>(keys))
+        if(has_native_layout<List>(keys))
         {
             List *list = keys.get_ptr<List>();
             return Dict::from_list_keys(list, value);
@@ -519,7 +519,7 @@ namespace cl
 
     static Value dict_sizes_match(ThreadState *, Value self, Value other)
     {
-        assert(can_convert_to<Dict>(self) && can_convert_to<Dict>(other));
+        assert(has_native_layout<Dict>(self) && has_native_layout<Dict>(other));
         return self.get_ptr<Dict>()->size() == other.get_ptr<Dict>()->size()
                    ? Value::True()
                    : Value::False();
@@ -1318,13 +1318,13 @@ namespace cl
                                                    Value callable)
     {
         TValue<String> name = thread->class_of_value(callable)->get_name();
-        if(can_convert_to<Function>(callable))
+        if(has_native_layout<Function>(callable))
         {
             name = callable.get_ptr<Function>()
                        ->code_object.extract()
                        ->name.value();
         }
-        else if(can_convert_to<ClassObject>(callable))
+        else if(has_native_layout<ClassObject>(callable))
         {
             name = callable.get_ptr<ClassObject>()->get_name();
         }
@@ -1358,7 +1358,7 @@ namespace cl
     static Value call_keyword_duplicate_error(ThreadState *thread,
                                               Value callable, Value key_text)
     {
-        if(!can_convert_to<String>(key_text))
+        if(!has_native_layout<String>(key_text))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"__str__ returned non-string");
@@ -1370,7 +1370,7 @@ namespace cl
     static Value call_keyword_source_size(ThreadState *, Value, Value,
                                           Value source)
     {
-        assert(can_convert_to<Dict>(source));
+        assert(has_native_layout<Dict>(source));
         return Value::from_smi(
             static_cast<int64_t>(source.get_ptr<Dict>()->size()));
     }
@@ -1719,7 +1719,7 @@ namespace cl
                 vm->get_or_create_interned_string_value(helper_names[idx]);
             Value function =
                 implementation_module->get_own_property(helper_name);
-            if(!can_convert_to<Function>(function))
+            if(!has_native_layout<Function>(function))
             {
                 fatal("trusted builtin_implementations.py did not define dict "
                       "method");

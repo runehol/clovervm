@@ -21,7 +21,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_none(
                 L"AttributeError");
         }
-        if(!can_convert_to<Function>(callable))
+        if(!has_native_layout<Function>(callable))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"object is not callable");
@@ -34,7 +34,7 @@ namespace cl
                 : active_thread()->call_clovervm_function(
                       TValue<Function>::from_value_assumed(callable), self);
         CL_PROPAGATE_EXCEPTION(result);
-        if(!can_convert_to<String>(result))
+        if(!has_native_layout<String>(result))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", error_message);

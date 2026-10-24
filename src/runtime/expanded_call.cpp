@@ -65,7 +65,7 @@ namespace cl
     {
         for(Dict::EntryView entry: *keywords.extract())
         {
-            if(!can_convert_to<String>(entry.key))
+            if(!has_native_layout<String>(entry.key))
             {
                 return Expected<void>::raise_exception(
                     L"TypeError", L"keywords must be strings");

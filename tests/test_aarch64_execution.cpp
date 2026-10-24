@@ -242,9 +242,8 @@ namespace cl::jit
             {
                 assert(module_ != nullptr);
                 Value value = module_->get_own_property(interned_string(name));
-                assert(can_convert_to<Function>(value));
-                return TValue<Function>::from_oop(
-                    assume_convert_to<Function>(value));
+                assert(has_native_layout<Function>(value));
+                return TValue<Function>::from_oop(native_cast<Function>(value));
             }
 
             test::VmTestContext context_;
@@ -619,7 +618,7 @@ def delete_equality():
             result.as.integer = static_cast<int64_t>(
                 execute_published_jit(code, {}, context.thread()));
             Owned<Value> owned_result(result);
-            ASSERT_TRUE(can_convert_to<Float>(owned_result.raw_value()));
+            ASSERT_TRUE(has_native_layout<Float>(owned_result.raw_value()));
             EXPECT_EQ(bits,
                       std::bit_cast<uint64_t>(
                           owned_result.raw_value().get_ptr<Float>()->value()));
@@ -1521,8 +1520,8 @@ def delete_equality():
                               L"    collect(value=index)\n";
         fixture.execute_module(source.c_str());
         Value result = fixture.call(L"collect", Value::from_smi(42));
-        ASSERT_TRUE(can_convert_to<Tuple>(result));
-        Tuple *arguments = assume_convert_to<Tuple>(result);
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        Tuple *arguments = native_cast<Tuple>(result);
         ASSERT_EQ(1u, arguments->size());
         EXPECT_EQ(Value::from_smi(42), arguments->item_unchecked(0));
         EXPECT_TRUE(fixture.is_jit_compiled(L"collect"));
@@ -1789,7 +1788,7 @@ def replace_equal():
                                               one.value().raw_value()));
         Owned<Value> sum(fixture.call(L"add", one.value().raw_value(),
                                       two.value().raw_value()));
-        ASSERT_TRUE(can_convert_to<Float>(sum.raw_value()));
+        ASSERT_TRUE(has_native_layout<Float>(sum.raw_value()));
         EXPECT_DOUBLE_EQ(3.0, sum.raw_value().get_ptr<Float>()->value());
         EXPECT_EQ(Value::True(), fixture.call(L"equal", Value::from_smi(7),
                                               Value::from_smi(7)));
@@ -1845,7 +1844,7 @@ def replace_equal():
             fixture.thread()->make_object_value<Float>(2.5));
         Owned<Value> negated(
             fixture.call(L"negate", operand.value().raw_value()));
-        ASSERT_TRUE(can_convert_to<Float>(negated.raw_value()));
+        ASSERT_TRUE(has_native_layout<Float>(negated.raw_value()));
         EXPECT_DOUBLE_EQ(-2.5, negated.raw_value().get_ptr<Float>()->value());
         EXPECT_EQ(operand.value().raw_value(),
                   fixture.call(L"positive", operand.value().raw_value()));
@@ -1951,7 +1950,7 @@ def replace_equal():
         Value result = fixture.call(L"add", lhs.value().raw_value(),
                                     rhs.value().raw_value());
 
-        ASSERT_TRUE(can_convert_to<String>(result));
+        ASSERT_TRUE(has_native_layout<String>(result));
         EXPECT_STREQ(
             L"hello world",
             string_as_wchar_t(TValue<String>::from_value_assumed(result)));
@@ -2355,7 +2354,7 @@ def replace_equal():
             context.thread()));
         Owned<Value> owned_result(boxed_result);
 
-        ASSERT_TRUE(can_convert_to<Float>(owned_result.raw_value()));
+        ASSERT_TRUE(has_native_layout<Float>(owned_result.raw_value()));
         EXPECT_DOUBLE_EQ(6.5,
                          owned_result.raw_value().get_ptr<Float>()->value());
         EXPECT_NE(lhs.raw_value(), owned_result.raw_value());

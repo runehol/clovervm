@@ -75,7 +75,7 @@ namespace cl
                                               const std::wstring &leaf_name,
                                               Value path_entry)
         {
-            if(!can_convert_to<String>(path_entry))
+            if(!has_native_layout<String>(path_entry))
             {
                 return std::nullopt;
             }
@@ -192,7 +192,7 @@ namespace cl
         Value path_value =
             thread->get_machine()->sys_module().extract()->get_own_property(
                 path_name);
-        if(!can_convert_to<List>(path_value))
+        if(!has_native_layout<List>(path_value))
         {
             return nullptr;
         }

@@ -100,7 +100,7 @@ namespace
         TValue<String> method_name =
             context.vm().get_or_create_interned_string_value(name);
         Value method = context.vm().dict_class()->get_own_property(method_name);
-        assert(can_convert_to<Function>(method));
+        assert(has_native_layout<Function>(method));
         return method.get_ptr<Function>();
     }
 }  // namespace
@@ -861,7 +861,7 @@ TEST(Dict, PublicStringPopKeepsStringKeyShape)
                                     L"assert d.pop('missing', 22) == 22\n"
                                     L"d\n");
 
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
     EXPECT_EQ(0u, result.get_ptr<Dict>()->size());
 }
@@ -930,7 +930,7 @@ TEST(Dict, PublicAssignmentKeepsPromotionWhenHashFails)
                                     L"    pass\n"
                                     L"d\n");
 
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     Dict *dict = result.get_ptr<Dict>();
     EXPECT_NE(string_key_shape, dict->get_shape());
     EXPECT_EQ(1u, dict->table_generation());
@@ -955,7 +955,7 @@ TEST(Dict, SemanticApiSetItemPropagatesEqualityExceptionAfterPromotion)
                                              L"        return 7\n"
                                              L"(Stored(), Probe())\n"));
     ASSERT_FALSE(thread->has_pending_exception());
-    ASSERT_TRUE(can_convert_to<Tuple>(keys_value.value()));
+    ASSERT_TRUE(has_native_layout<Tuple>(keys_value.value()));
     Tuple *keys = keys_value.value().get_ptr<Tuple>();
     Value stored_key = keys->item_unchecked(0);
     Value probe_key = keys->item_unchecked(1);
@@ -1324,7 +1324,7 @@ TEST(Dict, PublicStringSetdefaultKeepsStringKeyShape)
                                     L"assert d.setdefault('key', 22) == 11\n"
                                     L"d\n");
 
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
     EXPECT_EQ(1u, result.get_ptr<Dict>()->size());
 }
@@ -1804,7 +1804,7 @@ TEST(Dict, FromTupleKeysPromotesForNonStringKeys)
     Value result = Dict::from_tuple_keys(keys.extract(), Value::from_smi(7));
 
     ASSERT_FALSE(result.is_exception_marker());
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     Dict *dict = result.get_ptr<Dict>();
     EXPECT_NE(string_key_shape, dict->get_shape());
     EXPECT_EQ(1u, dict->table_generation());
@@ -1834,7 +1834,7 @@ TEST(Dict, FromListKeysPromotesForNonStringKeys)
     Value result = Dict::from_list_keys(keys.extract(), Value::from_smi(7));
 
     ASSERT_FALSE(result.is_exception_marker());
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     Dict *dict = result.get_ptr<Dict>();
     EXPECT_NE(string_key_shape, dict->get_shape());
     EXPECT_EQ(1u, dict->table_generation());
@@ -1860,7 +1860,7 @@ TEST(Dict, FromTupleKeysKeepsStringShapeForStringKeys)
     Value result = Dict::from_tuple_keys(keys.extract(), Value::from_smi(7));
 
     ASSERT_FALSE(result.is_exception_marker());
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     Dict *dict = result.get_ptr<Dict>();
     EXPECT_EQ(string_key_shape, dict->get_shape());
     EXPECT_EQ(0u, dict->table_generation());
@@ -1921,11 +1921,11 @@ TEST(Dict, ExactBuiltinDictConstructionStartsStringKeyed)
     EXPECT_EQ(string_key_shape, native_dict->get_shape());
 
     Value literal = context.run_file(L"{}\n");
-    ASSERT_TRUE(can_convert_to<Dict>(literal));
+    ASSERT_TRUE(has_native_layout<Dict>(literal));
     EXPECT_EQ(string_key_shape, literal.get_ptr<Dict>()->get_shape());
 
     Value constructed = context.run_file(L"dict()\n");
-    ASSERT_TRUE(can_convert_to<Dict>(constructed));
+    ASSERT_TRUE(has_native_layout<Dict>(constructed));
     EXPECT_EQ(string_key_shape, constructed.get_ptr<Dict>()->get_shape());
 }
 
@@ -2174,7 +2174,7 @@ TEST(Dict, TrustedStringOperationsKeepStringKeyShape)
                                     L"del d['key']\n"
                                     L"d\n");
 
-    ASSERT_TRUE(can_convert_to<Dict>(result));
+    ASSERT_TRUE(has_native_layout<Dict>(result));
     EXPECT_EQ(0u, result.get_ptr<Dict>()->size());
     EXPECT_EQ(string_key_shape, result.get_ptr<Dict>()->get_shape());
 }

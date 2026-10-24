@@ -270,7 +270,7 @@ namespace cl
         (void)locals;
         (void)fromlist;
 
-        if(!can_convert_to<String>(name))
+        if(!has_native_layout<String>(name))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"__import__ name must be str");
@@ -288,12 +288,12 @@ namespace cl
         };
 
         auto globals_item = [](Value globals_arg, TValue<String> key) {
-            if(can_convert_to<SlotDict>(globals_arg))
+            if(has_native_layout<SlotDict>(globals_arg))
             {
                 return globals_arg.get_ptr<SlotDict>()->get_item(
                     key.raw_value());
             }
-            if(can_convert_to<Dict>(globals_arg))
+            if(has_native_layout<Dict>(globals_arg))
             {
                 Expected<Value> result =
                     globals_arg.get_ptr<Dict>()->get_item_for_str(
@@ -328,17 +328,17 @@ namespace cl
                         ->get_machine()
                         ->get_or_create_interned_string_value(L"__spec__");
                 Value spec_value = globals_item(globals, spec_key);
-                if(can_convert_to<ModuleSpecObject>(spec_value))
+                if(has_native_layout<ModuleSpecObject>(spec_value))
                 {
                     Value parent =
                         spec_value.get_ptr<ModuleSpecObject>()->parent;
-                    if(can_convert_to<String>(parent))
+                    if(has_native_layout<String>(parent))
                     {
                         package_value = parent;
                     }
                 }
             }
-            if(!can_convert_to<String>(package_value))
+            if(!has_native_layout<String>(package_value))
             {
                 if(!package_value.is_none() && !package_value.is_not_present())
                 {
@@ -400,11 +400,11 @@ namespace cl
         TValue<String> module_name = maybe_module_name.value();
         Value imported = import_module_absolute(active_thread(), module_name);
         bool wants_leaf_module = !fromlist.is_none();
-        if(can_convert_to<Tuple>(fromlist))
+        if(has_native_layout<Tuple>(fromlist))
         {
             wants_leaf_module = !fromlist.get_ptr<Tuple>()->empty();
         }
-        else if(can_convert_to<List>(fromlist))
+        else if(has_native_layout<List>(fromlist))
         {
             wants_leaf_module = fromlist.get_ptr<List>()->size() != 0;
         }
@@ -923,7 +923,7 @@ namespace cl
     static void install_bootstrap_tuple_class_on_value(Value value,
                                                        ClassObject *tuple_class)
     {
-        assert(can_convert_to<Tuple>(value));
+        assert(has_native_layout<Tuple>(value));
         Object *object = value.get_ptr<Object>();
         if(!object->is_class_bootstrapped())
         {
@@ -1502,7 +1502,7 @@ namespace cl
         Value to_exact_tuple = implementation_module->get_own_property(
             get_or_create_interned_string_value(
                 L"_clover_iterable_to_exact_tuple"));
-        if(!can_convert_to<Function>(to_exact_tuple))
+        if(!has_native_layout<Function>(to_exact_tuple))
         {
             fatal("trusted builtin_implementations.py did not define "
                   "exact-tuple helper");
@@ -1513,7 +1513,7 @@ namespace cl
         Value to_exact_list = implementation_module->get_own_property(
             get_or_create_interned_string_value(
                 L"_clover_iterable_to_exact_list"));
-        if(!can_convert_to<Function>(to_exact_list))
+        if(!has_native_layout<Function>(to_exact_list))
         {
             fatal("trusted builtin_implementations.py did not define "
                   "exact-list helper");
@@ -1524,7 +1524,7 @@ namespace cl
         Value keyword_mapping = implementation_module->get_own_property(
             get_or_create_interned_string_value(
                 L"_clover_merge_call_keyword_mapping"));
-        if(!can_convert_to<Function>(keyword_mapping))
+        if(!has_native_layout<Function>(keyword_mapping))
         {
             fatal("trusted builtin_implementations.py did not define keyword "
                   "mapping helper");
@@ -1534,7 +1534,7 @@ namespace cl
 
         Value list_extend = implementation_module->get_own_property(
             get_or_create_interned_string_value(L"_clover_list_extend"));
-        if(!can_convert_to<Function>(list_extend))
+        if(!has_native_layout<Function>(list_extend))
         {
             fatal("trusted builtin_implementations.py did not define "
                   "list-extend helper");
@@ -1551,7 +1551,7 @@ namespace cl
         {
             TValue<String> key = get_or_create_interned_string_value(name);
             Value function = implementation_module->get_own_property(key);
-            if(!can_convert_to<Function>(function))
+            if(!has_native_layout<Function>(function))
             {
                 fatal("trusted builtin_implementations.py did not define "
                       "public builtin");
@@ -1569,7 +1569,7 @@ namespace cl
         Value membership_iter_fallback_value =
             implementation_module->get_own_property(
                 membership_iter_fallback_name);
-        if(!can_convert_to<Function>(membership_iter_fallback_value))
+        if(!has_native_layout<Function>(membership_iter_fallback_value))
         {
             fatal("trusted builtin_implementations.py did not define iter "
                   "membership "
@@ -1585,7 +1585,7 @@ namespace cl
         Value membership_sequence_fallback_value =
             implementation_module->get_own_property(
                 membership_sequence_fallback_name);
-        if(!can_convert_to<Function>(membership_sequence_fallback_value))
+        if(!has_native_layout<Function>(membership_sequence_fallback_value))
         {
             fatal("trusted builtin_implementations.py did not define sequence "
                   "membership "

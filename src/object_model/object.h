@@ -188,7 +188,7 @@ namespace cl
     {
     };
 
-    template <typename T> bool can_convert_to(const Object *object)
+    template <typename T> bool has_native_layout(const Object *object)
     {
         static_assert(std::is_base_of_v<Object, T>);
         static_assert(HasNativeLayoutId<T>::value);
@@ -196,26 +196,27 @@ namespace cl
                object->native_layout_id() == T::native_layout;
     }
 
-    template <typename T> T *try_convert_to(Object *object)
+    template <typename T> T *try_native_cast(Object *object)
     {
-        return can_convert_to<T>(object) ? static_cast<T *>(object) : nullptr;
+        return has_native_layout<T>(object) ? static_cast<T *>(object)
+                                            : nullptr;
     }
 
-    template <typename T> const T *try_convert_to(const Object *object)
+    template <typename T> const T *try_native_cast(const Object *object)
     {
-        return can_convert_to<T>(object) ? static_cast<const T *>(object)
-                                         : nullptr;
+        return has_native_layout<T>(object) ? static_cast<const T *>(object)
+                                            : nullptr;
     }
 
-    template <typename T> T *assume_convert_to(Object *object)
+    template <typename T> T *native_cast(Object *object)
     {
-        assert(can_convert_to<T>(object));
+        assert(has_native_layout<T>(object));
         return static_cast<T *>(object);
     }
 
-    template <typename T> const T *assume_convert_to(const Object *object)
+    template <typename T> const T *native_cast(const Object *object)
     {
-        assert(can_convert_to<T>(object));
+        assert(has_native_layout<T>(object));
         return static_cast<const T *>(object);
     }
 

@@ -39,7 +39,7 @@ namespace cl
 
     static Value native_list_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<List>(self))
+        if(!has_native_layout<List>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"list.__repr__ expects a list receiver");
@@ -63,7 +63,7 @@ namespace cl
 
     static Value native_list_len(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<List>(self))
+        if(!has_native_layout<List>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"list.__len__ expects a list receiver");
@@ -82,7 +82,7 @@ namespace cl
 
     static Value require_list_receiver(Value self, const wchar_t *method_name)
     {
-        if(!can_convert_to<List>(self))
+        if(!has_native_layout<List>(self))
         {
             std::wstring message = L"list.";
             message += method_name;
@@ -144,12 +144,12 @@ namespace cl
     template <OrderingOp Operation, FixedWideString ReceiverError>
     static Value native_list_order(ThreadState *thread, Value self, Value other)
     {
-        if(!can_convert_to<List>(self))
+        if(!has_native_layout<List>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", ReceiverError.c_str());
         }
-        if(!can_convert_to<List>(other))
+        if(!has_native_layout<List>(other))
             return Value::NotImplemented();
         return list_order<Operation>(thread,
                                      TValue<List>::from_value_assumed(self),
@@ -208,7 +208,7 @@ namespace cl
                                      Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"__getitem__"));
-        if(can_convert_to<Slice>(index_value))
+        if(has_native_layout<Slice>(index_value))
         {
             TValue<Slice> slice =
                 TValue<Slice>::from_value_assumed(index_value);
@@ -394,12 +394,12 @@ namespace cl
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"extend"));
         List *list = self.get_ptr<List>();
-        if(can_convert_to<List>(other))
+        if(has_native_layout<List>(other))
         {
             list->extend_from_list(other.get_ptr<List>());
             return Value::None();
         }
-        if(can_convert_to<Tuple>(other))
+        if(has_native_layout<Tuple>(other))
         {
             list->extend_from_tuple(other.get_ptr<Tuple>());
             return Value::None();
@@ -440,7 +440,7 @@ namespace cl
                                   Value sort_items, Value reverse)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"sort"));
-        assert(can_convert_to<Function>(sort_items));
+        assert(has_native_layout<Function>(sort_items));
         assert(reverse.is_bool());
         return self.get_ptr<List>()->sort(
             thread, key, TValue<Function>::from_value_assumed(sort_items),
@@ -449,7 +449,7 @@ namespace cl
 
     static Value native_list_add(ThreadState *thread, Value left, Value right)
     {
-        if(!can_convert_to<List>(left) || !can_convert_to<List>(right))
+        if(!has_native_layout<List>(left) || !has_native_layout<List>(right))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"can only concatenate list to list");
@@ -589,7 +589,7 @@ namespace cl
                 vm->get_or_create_interned_string_value(helper_names[idx]);
             Value function =
                 implementation_module->get_own_property(helper_name);
-            if(!can_convert_to<Function>(function))
+            if(!has_native_layout<Function>(function))
             {
                 fatal("trusted builtin_implementations.py did not define list "
                       "method");

@@ -746,7 +746,7 @@ namespace cl
         {
             MUSTTAIL return active_exception_required_system_error(ARGS);
         }
-        if(!can_convert_to<ClassObject>(accumulator))
+        if(!has_native_layout<ClassObject>(accumulator))
         {
             MUSTTAIL return exception_handler_type_error(ARGS);
         }
@@ -831,7 +831,7 @@ namespace cl
         {
             return TValue<Exception>::from_value_assumed(raised);
         }
-        if(can_convert_to<ClassObject>(raised))
+        if(has_native_layout<ClassObject>(raised))
         {
             ClassObject *cls = raised.get_ptr<ClassObject>();
             if(!is_subclass_of(cls, thread->class_for_native_layout(
@@ -3992,7 +3992,7 @@ namespace cl
         {
             value = static_cast<double>(a.get_smi());
         }
-        else if(can_convert_to<Float>(a))
+        else if(has_native_layout<Float>(a))
         {
             value = a.get_ptr<Float>()->value();
         }
@@ -4023,7 +4023,7 @@ namespace cl
     {
         START(2);
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         TrustedDictBytecodeAccess::promote_string_keyed(
             thread, fp[receiver_reg].get_ptr<Dict>());
         COMPLETE();
@@ -4032,7 +4032,7 @@ namespace cl
     static INTERP_CC Value op_dict_promote_string_keyed(PARAMS)
     {
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         Dict *dict = fp[receiver_reg].get_ptr<Dict>();
         if(unlikely(dict->get_shape() ==
                     thread->get_exact_dict_string_key_shape()))
@@ -4052,7 +4052,7 @@ namespace cl
         int8_t key_reg = pc[2];
         int8_t default_reg = pc[3];
         int8_t result_reg = pc[4];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         TrustedDictBytecodeAccess::StringKeyedSetDefaultResult result =
             TrustedDictBytecodeAccess::try_string_keyed_setdefault(
                 thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg],
@@ -4065,7 +4065,7 @@ namespace cl
     static INTERP_CC Value op_dict_try_string_keyed_setdefault(PARAMS)
     {
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         Dict *dict = fp[receiver_reg].get_ptr<Dict>();
         if(unlikely(dict->get_shape() ==
                     thread->get_exact_dict_string_key_shape()))
@@ -4088,7 +4088,7 @@ namespace cl
         int8_t receiver_reg = pc[1];
         int8_t key_reg = pc[2];
         int8_t result_reg = pc[3];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         TrustedDictBytecodeAccess::StringKeyedPopResult result =
             TrustedDictBytecodeAccess::try_string_keyed_pop(
                 thread, fp[receiver_reg].get_ptr<Dict>(), fp[key_reg]);
@@ -4100,7 +4100,7 @@ namespace cl
     static INTERP_CC Value op_dict_try_string_keyed_pop(PARAMS)
     {
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         Dict *dict = fp[receiver_reg].get_ptr<Dict>();
         if(unlikely(dict->get_shape() ==
                     thread->get_exact_dict_string_key_shape()))
@@ -4121,7 +4121,7 @@ namespace cl
         int8_t receiver_reg = pc[1];
         int8_t generation_reg = pc[2];
         int8_t hash_idx_reg = pc[3];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(accumulator.is_smi());
 
         TValue<SMI> generation = TValue<SMI>::from_smi(0);
@@ -4141,7 +4141,7 @@ namespace cl
         START(3);
         int8_t receiver_reg = pc[1];
         int8_t hash_idx_reg = pc[2];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(accumulator.is_smi());
         assert(fp[hash_idx_reg].is_smi());
 
@@ -4158,7 +4158,7 @@ namespace cl
         START(3);
         int8_t receiver_reg = pc[1];
         int8_t hash_idx_reg = pc[2];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(accumulator.is_smi());
         assert(fp[hash_idx_reg].is_smi());
 
@@ -4174,7 +4174,7 @@ namespace cl
     {
         START(2);
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(accumulator.is_smi());
 
         size_t hash_idx = TrustedDictBytecodeAccess::probe_advance(
@@ -4189,7 +4189,7 @@ namespace cl
     {
         START(2);
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(accumulator.is_smi());
         accumulator = TrustedDictBytecodeAccess::entry_key(
             fp[receiver_reg].get_ptr<Dict>(),
@@ -4201,7 +4201,7 @@ namespace cl
     {
         START(2);
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(accumulator.is_smi());
         accumulator = TrustedDictBytecodeAccess::entry_value(
             fp[receiver_reg].get_ptr<Dict>(),
@@ -4217,7 +4217,7 @@ namespace cl
         int8_t hash_idx_reg = pc[3];
         int8_t entry_idx_reg = pc[4];
         int8_t candidate_key_reg = pc[5];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(fp[generation_reg].is_smi());
         assert(fp[hash_idx_reg].is_smi());
         assert(fp[entry_idx_reg].is_smi());
@@ -4236,7 +4236,7 @@ namespace cl
     {
         START(2);
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         TrustedDictBytecodeAccess::resize_for_insert(
             fp[receiver_reg].get_ptr<Dict>());
         COMPLETE();
@@ -4245,7 +4245,7 @@ namespace cl
     static INTERP_CC Value op_dict_resize_for_insert(PARAMS)
     {
         int8_t receiver_reg = pc[1];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         if(unlikely(TrustedDictBytecodeAccess::needs_resize_for_insert(
                fp[receiver_reg].get_ptr<Dict>())))
         {
@@ -4265,7 +4265,7 @@ namespace cl
         int8_t hash_reg = pc[4];
         int8_t key_reg = pc[5];
         int8_t value_reg = pc[6];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(fp[hash_idx_reg].is_smi());
         assert(fp[hash_idx_reg].get_smi() >= 0);
         assert(fp[first_tombstone_idx_reg].is_smi());
@@ -4286,7 +4286,7 @@ namespace cl
         int8_t receiver_reg = pc[1];
         int8_t entry_idx_reg = pc[2];
         int8_t value_reg = pc[3];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(fp[entry_idx_reg].is_smi());
         assert(fp[entry_idx_reg].get_smi() >= 0);
         TrustedDictBytecodeAccess::overwrite_entry(
@@ -4301,7 +4301,7 @@ namespace cl
         START(3);
         int8_t receiver_reg = pc[1];
         int8_t hash_idx_reg = pc[2];
-        assert(can_convert_to<Dict>(fp[receiver_reg]));
+        assert(has_native_layout<Dict>(fp[receiver_reg]));
         assert(fp[hash_idx_reg].is_smi());
         assert(fp[hash_idx_reg].get_smi() >= 0);
         TrustedDictBytecodeAccess::delete_entry(
@@ -4314,7 +4314,7 @@ namespace cl
     static INTERP_CC Value op_write_stdout(PARAMS)
     {
         START(1);
-        if(!can_convert_to<String>(accumulator))
+        if(!has_native_layout<String>(accumulator))
         {
             accumulator = thread->set_pending_builtin_exception_string(
                 L"TypeError", L"__clover_write_stdout__ expects str");
@@ -4552,7 +4552,7 @@ namespace cl
     {
         START(2);
         uint8_t const_offset = pc[1];
-        ClassObject *cls = assume_convert_to<ClassObject>(
+        ClassObject *cls = native_cast<ClassObject>(
             code_object->constant_table[const_offset].value());
         if(unlikely(cls->instance_native_layout_id() !=
                     NativeLayoutId::Instance))
@@ -4619,7 +4619,7 @@ namespace cl
     {
         START(2);
         uint8_t const_offset = pc[1];
-        ClassObject *target_class = assume_convert_to<ClassObject>(
+        ClassObject *target_class = native_cast<ClassObject>(
             code_object->constant_table[const_offset].value());
         ClassObject *actual_class = thread->class_of_value(accumulator);
         accumulator = actual_class == target_class ||
@@ -4650,7 +4650,7 @@ namespace cl
     {
         START(2);
         int8_t reg = pc[1];
-        assert(can_convert_to<List>(fp[reg]));
+        assert(has_native_layout<List>(fp[reg]));
         List *builder = fp[reg].get_ptr<List>();
         assert(builder->get_shape() ==
                thread->get_machine()->list_class()->get_instance_root_shape());
@@ -4664,7 +4664,7 @@ namespace cl
         START(5);
         int8_t dict_reg = pc[1], key_reg = pc[2], value_reg = pc[3],
                result_reg = pc[4];
-        assert(can_convert_to<Dict>(fp[dict_reg]));
+        assert(has_native_layout<Dict>(fp[dict_reg]));
         Dict *dict = fp[dict_reg].get_ptr<Dict>();
         fp[result_reg] = Value::None();
         accumulator = Value::False();
@@ -4690,7 +4690,7 @@ namespace cl
     {
         START(4);
         int8_t source_reg = pc[1], index_reg = pc[2], entry_reg = pc[3];
-        assert(can_convert_to<Dict>(fp[source_reg]));
+        assert(has_native_layout<Dict>(fp[source_reg]));
         assert(fp[index_reg].is_smi() && fp[index_reg].get_smi() >= 0);
         size_t index = static_cast<size_t>(fp[index_reg].get_smi());
         Value key = Value::None(), value = Value::None();
@@ -4746,7 +4746,7 @@ namespace cl
     NOINLINE static INTERP_CC Value op_merge_call_keywords(PARAMS)
     {
         int8_t callable_reg = pc[1], dict_reg = pc[2];
-        assert(can_convert_to<Dict>(fp[dict_reg]));
+        assert(has_native_layout<Dict>(fp[dict_reg]));
         Shape *source_shape = accumulator.is_ptr()
                                   ? accumulator.get_ptr<Object>()->get_shape()
                                   : nullptr;
@@ -4798,7 +4798,7 @@ namespace cl
         TValue<String> key = TValue<String>::from_value_assumed(
             code_object->constant_table[pc[3]].value());
         assert(is_exact_string(thread, key.raw_value()));
-        assert(can_convert_to<Dict>(fp[dict_reg]));
+        assert(has_native_layout<Dict>(fp[dict_reg]));
         Dict *destination = fp[dict_reg].get_ptr<Dict>();
         if(destination->get_shape() ==
            thread->get_exact_dict_string_key_shape())
@@ -4838,7 +4838,7 @@ namespace cl
     NOINLINE static INTERP_CC Value op_list_extend(PARAMS)
     {
         int8_t builder_reg = pc[1];
-        assert(can_convert_to<List>(fp[builder_reg]));
+        assert(has_native_layout<List>(fp[builder_reg]));
         List *builder = fp[builder_reg].get_ptr<List>();
         assert(builder->get_shape() == thread->get_exact_list_shape());
         Value source = accumulator;
@@ -4883,7 +4883,7 @@ namespace cl
     {
         START(2);
         int8_t reg = pc[1];
-        assert(can_convert_to<List>(fp[reg]));
+        assert(has_native_layout<List>(fp[reg]));
         List *builder = fp[reg].get_ptr<List>();
         assert(builder->get_shape() ==
                thread->get_machine()->list_class()->get_instance_root_shape());
@@ -5207,7 +5207,7 @@ namespace cl
         uint8_t const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
-        CodeObject *target_code_object = assume_convert_to<CodeObject>(
+        CodeObject *target_code_object = native_cast<CodeObject>(
             code_object->constant_table[const_offset].value());
         assert(n_args == target_code_object->function_signature.n_parameters);
         (void)n_args;

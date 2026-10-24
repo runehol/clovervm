@@ -140,12 +140,12 @@ t.extra = 1
 (s, t)
 )"));
     ASSERT_FALSE(result.value().is_exception_marker());
-    ASSERT_TRUE(can_convert_to<Tuple>(result.value()));
+    ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
     Tuple *values = result.value().get_ptr<Tuple>();
     for(size_t i = 0; i < values->size(); ++i)
     {
         Value value = values->item_unchecked(i);
-        EXPECT_TRUE(can_convert_to<String>(value));
+        EXPECT_TRUE(has_native_layout<String>(value));
         EXPECT_FALSE(is_exact_string(context.thread(), value));
     }
 }
@@ -170,7 +170,7 @@ TEST(StringPredicates, ExactStringRejectsNonStrings)
     Owned<Value> result(context.run_file(L"(None, True, False, 0, 1, 2**100, "
                                          L"1.25, b'text', [], {}, (), str)\n"));
     ASSERT_FALSE(result.value().is_exception_marker());
-    ASSERT_TRUE(can_convert_to<Tuple>(result.value()));
+    ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
     Tuple *values = result.value().get_ptr<Tuple>();
     for(size_t i = 0; i < values->size(); ++i)
     {

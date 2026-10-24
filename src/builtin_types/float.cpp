@@ -48,7 +48,7 @@ namespace cl
 
     static Value native_float_str(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__str__ expects a float receiver");
@@ -61,7 +61,7 @@ namespace cl
 
     static Value native_float_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__repr__ expects a float receiver");
@@ -82,7 +82,7 @@ namespace cl
             *out = static_cast<double>(integer_value.get_smi());
             return true;
         }
-        if(can_convert_to<Float>(value))
+        if(has_native_layout<Float>(value))
         {
             *out = value.get_ptr<Float>()->value();
             return true;
@@ -107,17 +107,17 @@ namespace cl
         {
             return Expected<double>::ok(value);
         }
-        if(can_convert_to<BigInt>(input))
+        if(has_native_layout<BigInt>(input))
         {
             return bigint_to_double(input.get_ptr<BigInt>()->view());
         }
         std::optional<double> parsed;
-        if(can_convert_to<String>(input))
+        if(has_native_layout<String>(input))
         {
             parsed = try_parse_float(
                 string_view(TValue<String>::from_value_assumed(input)));
         }
-        else if(can_convert_to<Bytes>(input))
+        else if(has_native_layout<Bytes>(input))
         {
             auto bytes = bytes_view(TValue<Bytes>::from_value_assumed(input));
             parsed = try_parse_float(std::string_view(
@@ -141,7 +141,7 @@ namespace cl
     [[nodiscard]] NOINLINE static Value
     float_new_subclass_slow(ThreadState *thread, Value cls_value, Value input)
     {
-        if(!can_convert_to<ClassObject>(cls_value))
+        if(!has_native_layout<ClassObject>(cls_value))
         {
             TValue<String> name = thread->class_of_value(cls_value)->get_name();
             std::wstring message =
@@ -179,7 +179,7 @@ namespace cl
         {
             return float_new_subclass_slow(thread, cls_value, input);
         }
-        if(can_convert_to<Float>(input) &&
+        if(has_native_layout<Float>(input) &&
            input.get_ptr<Float>()->get_shape()->get_class() ==
                thread->get_machine()->float_class())
         {
@@ -192,7 +192,7 @@ namespace cl
     [[nodiscard]] static Value native_float_float(ThreadState *thread,
                                                   Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__float__ expects a float receiver");
@@ -208,7 +208,7 @@ namespace cl
 
     [[nodiscard]] static Value native_float_int(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__int__ expects a float receiver");
@@ -220,7 +220,7 @@ namespace cl
     [[nodiscard]] static Value native_float_trunc(ThreadState *thread,
                                                   Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__trunc__ expects a float receiver");
@@ -232,7 +232,7 @@ namespace cl
     [[nodiscard]] static Value native_float_floor(ThreadState *thread,
                                                   Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__floor__ expects a float receiver");
@@ -244,7 +244,7 @@ namespace cl
     [[nodiscard]] static Value native_float_ceil(ThreadState *thread,
                                                  Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__ceil__ expects a float receiver");
@@ -256,7 +256,7 @@ namespace cl
     [[nodiscard]] static Value native_float_conjugate(ThreadState *thread,
                                                       Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.conjugate expects a float receiver");
@@ -273,7 +273,7 @@ namespace cl
     [[nodiscard]] static Value native_float_is_integer(ThreadState *thread,
                                                        Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.is_integer expects a float receiver");
@@ -529,7 +529,7 @@ namespace cl
 
         static Value native(ThreadState *thread, Value self, Value other)
         {
-            if(!can_convert_to<Float>(self))
+            if(!has_native_layout<Float>(self))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", ReceiverError.c_str());
@@ -616,7 +616,7 @@ namespace cl
 
         static Value native(ThreadState *thread, Value self)
         {
-            if(!can_convert_to<Float>(self))
+            if(!has_native_layout<Float>(self))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", ReceiverError.c_str());
@@ -746,14 +746,14 @@ namespace cl
         [[nodiscard]] static Value native(ThreadState *thread, Value self,
                                           Value other)
         {
-            if(!can_convert_to<Float>(self))
+            if(!has_native_layout<Float>(self))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", ReceiverError.c_str());
             }
             double number = self.get_ptr<Float>()->value();
             bool equal;
-            if(can_convert_to<Float>(other))
+            if(has_native_layout<Float>(other))
             {
                 equal = number == other.get_ptr<Float>()->value();
             }
@@ -954,7 +954,7 @@ namespace cl
     {
         static Value native(ThreadState *thread, Value self)
         {
-            if(!can_convert_to<Float>(self))
+            if(!has_native_layout<Float>(self))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", L"float.__pos__ expects a float receiver");
@@ -1056,7 +1056,7 @@ namespace cl
 
     static Value native_float_hash(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__hash__ expects a float receiver");
@@ -1079,7 +1079,7 @@ namespace cl
 
     static Value native_float_bool(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__bool__ expects a float receiver");

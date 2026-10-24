@@ -714,9 +714,9 @@ TEST(BytecodeInstruction,
                 if(return_source && !exact)
                     expect_tuple = !expect_tuple;
                 if(expect_tuple)
-                    EXPECT_TRUE(can_convert_to<Tuple>(result.value()));
+                    EXPECT_TRUE(has_native_layout<Tuple>(result.value()));
                 else
-                    EXPECT_TRUE(can_convert_to<List>(result.value()));
+                    EXPECT_TRUE(has_native_layout<List>(result.value()));
             }
         }
     }

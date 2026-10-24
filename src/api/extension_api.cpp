@@ -52,7 +52,7 @@ namespace cl
             {
                 return nullptr;
             }
-            if(!can_convert_to<Dict>(value))
+            if(!has_native_layout<Dict>(value))
             {
                 (void)set_extension_api_error(
                     ctx, L"TypeError", L"value cannot be converted to dict");
@@ -268,7 +268,7 @@ extern "C" CL_EXPORT clover_status clover_tuple_size(clover_context *ctx,
     {
         return CLOVER_STATUS_ERROR;
     }
-    if(!cl::can_convert_to<cl::Tuple>(unwrapped))
+    if(!cl::has_native_layout<cl::Tuple>(unwrapped))
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
             L"TypeError", L"value cannot be converted to tuple");
@@ -298,7 +298,7 @@ extern "C" CL_EXPORT clover_status clover_tuple_get_item(clover_context *ctx,
     {
         return CLOVER_STATUS_ERROR;
     }
-    if(!cl::can_convert_to<cl::Tuple>(unwrapped))
+    if(!cl::has_native_layout<cl::Tuple>(unwrapped))
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
             L"TypeError", L"value cannot be converted to tuple");
@@ -337,7 +337,7 @@ extern "C" CL_EXPORT clover_status clover_string_as_utf8(clover_context *ctx,
     {
         return CLOVER_STATUS_ERROR;
     }
-    if(!cl::can_convert_to<cl::String>(unwrapped))
+    if(!cl::has_native_layout<cl::String>(unwrapped))
     {
         (void)ctx->thread->set_pending_builtin_exception_string(
             L"TypeError", L"value cannot be converted to str");
@@ -386,7 +386,7 @@ extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
         return CLOVER_STATUS_OK;
     }
 
-    if(cl::can_convert_to<cl::Float>(unwrapped))
+    if(cl::has_native_layout<cl::Float>(unwrapped))
     {
         *out = unwrapped.get_ptr<cl::Float>()->value();
         return CLOVER_STATUS_OK;
@@ -421,7 +421,7 @@ extern "C" CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
         return CLOVER_STATUS_OK;
     }
 
-    if(cl::can_convert_to<cl::BigInt>(unwrapped))
+    if(cl::has_native_layout<cl::BigInt>(unwrapped))
     {
         cl::Expected<int64_t> result =
             cl::bigint_to_int64(unwrapped.get_ptr<cl::BigInt>()->view());
@@ -461,7 +461,7 @@ extern "C" CL_EXPORT clover_status clover_int_as_uint64(clover_context *ctx,
     {
         view = cl::smi_bigint_view(unwrapped.get_smi(), &storage);
     }
-    else if(cl::can_convert_to<cl::BigInt>(unwrapped))
+    else if(cl::has_native_layout<cl::BigInt>(unwrapped))
     {
         view = unwrapped.get_ptr<cl::BigInt>()->view();
     }
@@ -518,7 +518,7 @@ extern "C" CL_EXPORT clover_status clover_dict_check(clover_context *ctx,
     {
         return CLOVER_STATUS_ERROR;
     }
-    *out = cl::can_convert_to<cl::Dict>(unwrapped);
+    *out = cl::has_native_layout<cl::Dict>(unwrapped);
     return CLOVER_STATUS_OK;
 }
 

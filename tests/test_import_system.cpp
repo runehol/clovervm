@@ -235,7 +235,7 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsExistingSourceTreeModule)
 
     TValue<String> name = module_name(context, L"assignment");
     Value imported = import_module_absolute(context.thread(), name);
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
 
     EXPECT_EQ(imported, sys_modules_get(context, name));
@@ -245,11 +245,11 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsExistingSourceTreeModule)
     EXPECT_EQ(L"",
               value_as_wstring(module_attr(context, module, L"__package__")));
     Value loader = module_attr(context, module, L"__loader__");
-    ASSERT_TRUE(can_convert_to<ModuleLoaderObject>(loader));
+    ASSERT_TRUE(has_native_layout<ModuleLoaderObject>(loader));
     EXPECT_EQ(L"source",
               value_as_wstring(loader.get_ptr<ModuleLoaderObject>()->kind));
     Value spec = module_attr(context, module, L"__spec__");
-    ASSERT_TRUE(can_convert_to<ModuleSpecObject>(spec));
+    ASSERT_TRUE(has_native_layout<ModuleSpecObject>(spec));
     EXPECT_EQ(loader, spec.get_ptr<ModuleSpecObject>()->loader);
     EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
               module_attr(context, module, L"__builtins__"));
@@ -324,12 +324,12 @@ TEST(ImportSystem, ImportModuleAbsoluteInstallsPackagePath)
 
     Value imported =
         import_module_absolute(context.thread(), module_name(context, L"pkg"));
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
     EXPECT_EQ(L"pkg",
               value_as_wstring(module_attr(context, module, L"__package__")));
     Value package_path = module_attr(context, module, L"__path__");
-    ASSERT_TRUE(can_convert_to<List>(package_path));
+    ASSERT_TRUE(has_native_layout<List>(package_path));
     List *package_path_list = package_path.get_ptr<List>();
     ASSERT_EQ(1u, package_path_list->size());
     EXPECT_EQ((root.path / L"pkg").lexically_normal().wstring(),
@@ -345,7 +345,7 @@ TEST(ImportSystem, ImportModuleAbsoluteUsesCachedModuleWithoutReexecution)
 
     TValue<String> name = module_name(context, L"assignment");
     Value first = import_module_absolute(context.thread(), name);
-    ASSERT_TRUE(can_convert_to<ModuleObject>(first));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(first));
     ModuleObject *module = first.get_ptr<ModuleObject>();
     ASSERT_TRUE(module
                     ->set_own_property(module_name(context, L"marker"),
@@ -374,7 +374,7 @@ TEST(ImportSystem, ImportModuleAbsoluteAllowsSelfImportDuringExecution)
 
     Value imported = import_module_absolute(
         context.thread(), module_name(context, L"self_import"));
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
     EXPECT_EQ(Value::from_smi(1),
               module_attr(context, module, L"seen_during_import"));
@@ -397,7 +397,7 @@ TEST(ImportSystem, ImportModuleAbsoluteAllowsSelfStarImportDuringExecution)
 
     Value imported = import_module_absolute(
         context.thread(), module_name(context, L"self_import"));
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
     EXPECT_EQ(Value::from_smi(1),
               module_attr(context, module, L"seen_during_import"));
@@ -418,7 +418,7 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsDottedModuleAndBindsParentAttribute)
 
     Value imported = import_module_absolute(context.thread(),
                                             module_name(context, L"pkg.mod"));
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *child = imported.get_ptr<ModuleObject>();
     EXPECT_EQ(L"pkg.mod",
               value_as_wstring(module_attr(context, child, L"__name__")));
@@ -427,7 +427,7 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsDottedModuleAndBindsParentAttribute)
     EXPECT_EQ(Value::from_smi(42), module_attr(context, child, L"value"));
 
     Value parent_value = sys_modules_get(context, module_name(context, L"pkg"));
-    ASSERT_TRUE(can_convert_to<ModuleObject>(parent_value));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(parent_value));
     ModuleObject *parent = parent_value.get_ptr<ModuleObject>();
     EXPECT_EQ(imported, module_attr(context, parent, L"mod"));
     EXPECT_EQ(imported,
@@ -534,7 +534,7 @@ TEST(ImportSystem, BuiltinImportLoadsAbsoluteModule)
     use_source_tree_python_path(context);
 
     Value imported = context.run_file(L"__import__('assignment')\n");
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
     EXPECT_EQ(L"assignment",
               value_as_wstring(module_attr(context, module, L"__name__")));
@@ -593,7 +593,7 @@ TEST(ImportSystem, ModuleReprFormatsBuiltinModule)
 
     Value actual = context.run_file(L"import sys\n"
                                     L"repr(sys)\n");
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     EXPECT_EQ(L"<module 'sys' (built-in)>", value_as_wstring(actual));
 }
 
@@ -632,12 +632,12 @@ TEST(ImportSystem, BuiltinImportOfDottedModuleReturnsTopLevelPackage)
     replace_sys_path(context, path);
 
     Value imported = context.run_file(L"__import__('pkg.mod')\n");
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *parent = imported.get_ptr<ModuleObject>();
     EXPECT_EQ(L"pkg",
               value_as_wstring(module_attr(context, parent, L"__name__")));
     Value child = module_attr(context, parent, L"mod");
-    ASSERT_TRUE(can_convert_to<ModuleObject>(child));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(child));
     EXPECT_EQ(Value::from_smi(42),
               module_attr(context, child.get_ptr<ModuleObject>(), L"value"));
 }
@@ -814,7 +814,7 @@ TEST(ImportSystem, ModuleReprFormatsSourceModule)
 
     Value actual = context.run_file(L"import mod\n"
                                     L"repr(mod)\n");
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     std::wstring expected = L"<module 'mod' from '";
     expected += (root.path / L"mod.py").lexically_normal().wstring();
     expected += L"'>";
@@ -958,7 +958,7 @@ TEST(ImportSystem, ModuleReprFormatsNamespacePackage)
 
     Value actual = context.run_file(L"import tests.python.arithmetic\n"
                                     L"repr(tests)\n");
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     std::wstring expected = L"<module 'tests' (namespace) from ['";
     expected += (root.path / L"tests").lexically_normal().wstring();
     expected += L"']>";
@@ -1243,7 +1243,7 @@ TEST(ImportSystem,
     replace_sys_path(context, path);
 
     Value package = context.run_file(L"import pkg\npkg\n");
-    ASSERT_TRUE(can_convert_to<ModuleObject>(package));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(package));
     sys_modules_set(context, module_name(context, L"pkg.child"), Value::None());
 
     Value imported = context.run_file(L"from pkg import child\n");
@@ -1416,7 +1416,7 @@ TEST(ImportSystem, FromImportStarPassesStarFromlistToImportHook)
         L"__builtins__.__import__ = fake\n"
         L"from assignment import *\n"
         L"seen[0]\n");
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     EXPECT_EQ(L"*", value_as_wstring(actual));
 }
 

@@ -32,7 +32,7 @@ namespace cl
         Shape *shape = object->get_shape();
         if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
         {
-            assume_convert_to<ClassObject>(object)
+            native_cast<ClassObject>(object)
                 ->invalidate_lookup_validity_cells_for_contents_change();
         }
     }
@@ -41,7 +41,7 @@ namespace cl
     attribute_read_plan_kind_for_path(AttributeReadPlanPath path, Value value)
     {
         if(path == AttributeReadPlanPath::InstanceClassChain &&
-           can_convert_to<Function>(value))
+           has_native_layout<Function>(value))
         {
             // Class-chain method plans reload the defining class slot before
             // binding, so ordinary class contents writes do not invalidate the
@@ -159,7 +159,7 @@ namespace cl
                 L"__class__ assignment only supported for mutable types or "
                 L"ModuleType subclasses");
         }
-        if(!can_convert_to<ClassObject>(value))
+        if(!has_native_layout<ClassObject>(value))
         {
             return Expected<bool>::raise_exception(
                 L"TypeError", L"__class__ assignment requires a class object");
@@ -309,12 +309,12 @@ namespace cl
         AttributeReadPlanPath path, AttributeBindingContext binding)
     {
         Value mro_value = class_object->get_mro_value();
-        assert(can_convert_to<Tuple>(mro_value));
-        Tuple *mro = assume_convert_to<Tuple>(mro_value);
+        assert(has_native_layout<Tuple>(mro_value));
+        Tuple *mro = native_cast<Tuple>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
             Value class_value = mro->item_unchecked(mro_idx);
-            ClassObject *cls = try_convert_to<ClassObject>(class_value);
+            ClassObject *cls = try_native_cast<ClassObject>(class_value);
             if(cls == nullptr)
             {
                 continue;
@@ -357,7 +357,7 @@ namespace cl
         for(uint32_t mro_idx = 0; mro_idx < stop_mro_idx; ++mro_idx)
         {
             Value class_value = mro->item_unchecked(mro_idx);
-            ClassObject *cls = try_convert_to<ClassObject>(class_value);
+            ClassObject *cls = try_native_cast<ClassObject>(class_value);
             if(cls == nullptr)
             {
                 continue;
@@ -584,8 +584,8 @@ namespace cl
         }
 
         Value mro_value = receiver_class->get_mro_value();
-        assert(can_convert_to<Tuple>(mro_value));
-        Tuple *mro = assume_convert_to<Tuple>(mro_value);
+        assert(has_native_layout<Tuple>(mro_value));
+        Tuple *mro = native_cast<Tuple>(mro_value);
         uint32_t alternate_mro_idx = 0;
         if(!find_class_in_mro(mro, alternate_class, alternate_mro_idx))
         {
@@ -643,7 +643,7 @@ namespace cl
             return true;
         }
         if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver &&
-           can_convert_to<Function>(callable_out))
+           has_native_layout<Function>(callable_out))
         {
             self_out = receiver;
         }

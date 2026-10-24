@@ -222,7 +222,7 @@ namespace cl
         return a == b.data;
     }
 
-    // Unlike can_convert_to<String>, this excludes string subclasses.
+    // Unlike has_native_layout<String>, this excludes string subclasses.
     bool is_exact_string(ThreadState *thread, Value value);
 
     uint64_t string_hash(TValue<String> s);

@@ -108,7 +108,7 @@ namespace cl::jit
             context.vm().get_or_create_interned_string_value(L"FloatSubclass");
         Value declared =
             load_module_global(classes->get_defining_module().extract(), name);
-        ASSERT_TRUE(can_convert_to<ClassObject>(declared));
+        ASSERT_TRUE(has_native_layout<ClassObject>(declared));
         Owned<TValue<ClassObject>> subclass_class(
             TValue<ClassObject>::from_value_assumed(declared));
         EXPECT_EQ(NativeLayoutId::Float,

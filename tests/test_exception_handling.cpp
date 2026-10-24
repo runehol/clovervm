@@ -246,7 +246,7 @@ TEST(ExceptionHandling, lda_active_exception_reads_pending_exception_object)
         make_lda_active_exception_handler_code(test_context, exception_class);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(can_convert_to<ExceptionObject>(actual));
+    ASSERT_TRUE(has_native_layout<ExceptionObject>(actual));
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
     test_context.thread()->clear_pending_exception();
 }
@@ -296,7 +296,7 @@ TEST(ExceptionHandling,
         make_drain_active_exception_handler_code(test_context, exception_class);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(can_convert_to<ExceptionObject>(actual));
+    ASSERT_TRUE(has_native_layout<ExceptionObject>(actual));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 

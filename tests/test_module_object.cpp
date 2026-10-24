@@ -114,7 +114,7 @@ TEST(ModuleObject, SysPathStartsWithEmptyStringBuildStdlibAndStdlib)
     TValue<String> path_name =
         context.vm().get_or_create_interned_string_value(L"path");
     Value path_value = sys->get_own_property(path_name);
-    ASSERT_TRUE(can_convert_to<List>(path_value));
+    ASSERT_TRUE(has_native_layout<List>(path_value));
     List *path = path_value.get_ptr<List>();
     EXPECT_EQ(-1, path->refcount);
     ASSERT_EQ(3u, path->size());

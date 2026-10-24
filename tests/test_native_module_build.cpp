@@ -80,7 +80,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         context.vm().get_or_create_interned_string_value(L"_test_native");
     Value imported = import_module_absolute(context.thread(), name);
     ASSERT_FALSE(imported.is_exception_marker());
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     ModuleObject *module = imported.get_ptr<ModuleObject>();
 
     TValue<String> answer_name =
@@ -89,7 +89,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> greeting_name =
         context.vm().get_or_create_interned_string_value(L"greeting");
     Value greeting = module->get_own_property(greeting_name);
-    ASSERT_TRUE(can_convert_to<String>(greeting));
+    ASSERT_TRUE(has_native_layout<String>(greeting));
     EXPECT_EQ(std::wstring(L"hello \u03bb"),
               std::wstring(
                   string_view(TValue<String>::from_value_assumed(greeting))));
@@ -100,12 +100,12 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         context.vm().get_or_create_interned_string_value(
             L"overflow_init_value");
     Value overflow_init = module->get_own_property(overflow_init_name);
-    ASSERT_TRUE(can_convert_to<Float>(overflow_init));
+    ASSERT_TRUE(has_native_layout<Float>(overflow_init));
     EXPECT_DOUBLE_EQ(4.5, overflow_init.get_ptr<Float>()->value());
     TValue<String> answer_func_name =
         context.vm().get_or_create_interned_string_value(L"answer_func");
     Value answer_func = module->get_own_property(answer_func_name);
-    ASSERT_TRUE(can_convert_to<Function>(answer_func));
+    ASSERT_TRUE(has_native_layout<Function>(answer_func));
     CodeObject *answer_code =
         answer_func.get_ptr<Function>()->code_object.extract();
     if constexpr(native_handle_detail::cl_indirect_handles)
@@ -118,7 +118,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         EXPECT_EQ(0u, answer_code->get_padded_n_ordinary_below_frame_slots());
     }
     Optional<TValue<String>> answer_func_docstring =
-        assume_convert_to<Function>(answer_func)->docstring.value();
+        native_cast<Function>(answer_func)->docstring.value();
     ASSERT_TRUE(answer_func_docstring.has_value());
     EXPECT_EQ(L"Return 42.",
               std::wstring(string_as_wchar_t(answer_func_docstring.value())));
@@ -129,7 +129,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> identity_func_name =
         context.vm().get_or_create_interned_string_value(L"identity_func");
     Value identity_func = module->get_own_property(identity_func_name);
-    ASSERT_TRUE(can_convert_to<Function>(identity_func));
+    ASSERT_TRUE(has_native_layout<Function>(identity_func));
     EXPECT_EQ(Value::from_smi(123),
               context.thread()->call_clovervm_function(
                   TValue<Function>::from_value_assumed(identity_func),
@@ -138,7 +138,7 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> is_identical_name =
         context.vm().get_or_create_interned_string_value(L"is_identical");
     Value is_identical = module->get_own_property(is_identical_name);
-    ASSERT_TRUE(can_convert_to<Function>(is_identical));
+    ASSERT_TRUE(has_native_layout<Function>(is_identical));
     TValue<Function> is_identical_function =
         TValue<Function>::from_value_assumed(is_identical);
     Value same_string =
@@ -157,25 +157,25 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> double_constant_name =
         context.vm().get_or_create_interned_string_value(L"double_constant");
     Value double_constant = module->get_own_property(double_constant_name);
-    ASSERT_TRUE(can_convert_to<Function>(double_constant));
+    ASSERT_TRUE(has_native_layout<Function>(double_constant));
     Value double_constant_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(double_constant));
-    ASSERT_TRUE(can_convert_to<Float>(double_constant_result));
+    ASSERT_TRUE(has_native_layout<Float>(double_constant_result));
     EXPECT_DOUBLE_EQ(1.5, double_constant_result.get_ptr<Float>()->value());
 
     TValue<String> float_plus_one_name =
         context.vm().get_or_create_interned_string_value(L"float_plus_one");
     Value float_plus_one = module->get_own_property(float_plus_one_name);
-    ASSERT_TRUE(can_convert_to<Function>(float_plus_one));
+    ASSERT_TRUE(has_native_layout<Function>(float_plus_one));
     Value smi_float_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(float_plus_one),
         Value::from_smi(2));
-    ASSERT_TRUE(can_convert_to<Float>(smi_float_result));
+    ASSERT_TRUE(has_native_layout<Float>(smi_float_result));
     EXPECT_DOUBLE_EQ(3.0, smi_float_result.get_ptr<Float>()->value());
     Value float_float_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(float_plus_one),
         context.thread()->make_object_value<Float>(2.5).raw_value());
-    ASSERT_TRUE(can_convert_to<Float>(float_float_result));
+    ASSERT_TRUE(has_native_layout<Float>(float_float_result));
     EXPECT_DOUBLE_EQ(3.5, float_float_result.get_ptr<Float>()->value());
     Value non_float_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(float_plus_one), Value::None());
@@ -193,11 +193,11 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> tuple2_name =
         context.vm().get_or_create_interned_string_value(L"tuple2");
     Value tuple2 = module->get_own_property(tuple2_name);
-    ASSERT_TRUE(can_convert_to<Function>(tuple2));
+    ASSERT_TRUE(has_native_layout<Function>(tuple2));
     Value tuple2_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(tuple2), Value::from_smi(5),
         Value::from_smi(8));
-    ASSERT_TRUE(can_convert_to<Tuple>(tuple2_result));
+    ASSERT_TRUE(has_native_layout<Tuple>(tuple2_result));
     Tuple *tuple2_object = tuple2_result.get_ptr<Tuple>();
     ASSERT_EQ(2u, tuple2_object->size());
     EXPECT_EQ(Value::from_smi(5), tuple2_object->item_unchecked(0));
@@ -206,11 +206,11 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> tuple3_name =
         context.vm().get_or_create_interned_string_value(L"tuple3");
     Value tuple3 = module->get_own_property(tuple3_name);
-    ASSERT_TRUE(can_convert_to<Function>(tuple3));
+    ASSERT_TRUE(has_native_layout<Function>(tuple3));
     Value tuple3_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(tuple3), Value::from_smi(1),
         Value::from_smi(2), Value::from_smi(3));
-    ASSERT_TRUE(can_convert_to<Tuple>(tuple3_result));
+    ASSERT_TRUE(has_native_layout<Tuple>(tuple3_result));
     Tuple *tuple3_object = tuple3_result.get_ptr<Tuple>();
     ASSERT_EQ(3u, tuple3_object->size());
     EXPECT_EQ(Value::from_smi(1), tuple3_object->item_unchecked(0));
@@ -220,16 +220,16 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     TValue<String> empty_tuple_name =
         context.vm().get_or_create_interned_string_value(L"empty_tuple");
     Value empty_tuple = module->get_own_property(empty_tuple_name);
-    ASSERT_TRUE(can_convert_to<Function>(empty_tuple));
+    ASSERT_TRUE(has_native_layout<Function>(empty_tuple));
     Value empty_tuple_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(empty_tuple));
-    ASSERT_TRUE(can_convert_to<Tuple>(empty_tuple_result));
+    ASSERT_TRUE(has_native_layout<Tuple>(empty_tuple_result));
     EXPECT_TRUE(empty_tuple_result.get_ptr<Tuple>()->empty());
 
     TValue<String> bad_tuple_name =
         context.vm().get_or_create_interned_string_value(L"bad_tuple");
     Value bad_tuple = module->get_own_property(bad_tuple_name);
-    ASSERT_TRUE(can_convert_to<Function>(bad_tuple));
+    ASSERT_TRUE(has_native_layout<Function>(bad_tuple));
     Value bad_tuple_result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(bad_tuple));
     EXPECT_TRUE(bad_tuple_result.is_exception_marker());
@@ -249,10 +249,10 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         TValue<String> sum_name =
             context.vm().get_or_create_interned_string_value(function_name);
         Value sum = module->get_own_property(sum_name);
-        ASSERT_TRUE(can_convert_to<Function>(sum));
+        ASSERT_TRUE(has_native_layout<Function>(sum));
         Value sum_result = context.thread()->call_clovervm_function(
             TValue<Function>::from_value_assumed(sum), args...);
-        ASSERT_TRUE(can_convert_to<Float>(sum_result));
+        ASSERT_TRUE(has_native_layout<Float>(sum_result));
         EXPECT_DOUBLE_EQ(expected, sum_result.get_ptr<Float>()->value());
     };
     expect_sum_result(L"sum2", 3.0, Value::from_smi(1), Value::from_smi(2));
@@ -704,11 +704,11 @@ TEST(NativeModuleBuild, ValueConsumersPreservePropagatedErrorHandles)
     TValue<String> module_name =
         context.vm().get_or_create_interned_string_value(L"_test_native");
     Value imported = import_module_absolute(context.thread(), module_name);
-    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ASSERT_TRUE(has_native_layout<ModuleObject>(imported));
     Value function = imported.get_ptr<ModuleObject>()->get_own_property(
         context.vm().get_or_create_interned_string_value(
             L"propagated_error_consumers"));
-    ASSERT_TRUE(can_convert_to<Function>(function));
+    ASSERT_TRUE(has_native_layout<Function>(function));
 
     Value result = context.thread()->call_clovervm_function(
         TValue<Function>::from_value_assumed(function));

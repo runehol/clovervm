@@ -27,7 +27,7 @@ namespace
         {
             inputs = context.run_file(source);
             ASSERT_FALSE(inputs.value().is_exception_marker());
-            ASSERT_TRUE(can_convert_to<Tuple>(inputs.value()));
+            ASSERT_TRUE(has_native_layout<Tuple>(inputs.value()));
         }
 
         Value input(size_t idx) const
@@ -480,7 +480,7 @@ namespace
         {
             inputs = context.run_file(source);
             ASSERT_FALSE(inputs.value().is_exception_marker());
-            ASSERT_TRUE(can_convert_to<Tuple>(inputs.value()));
+            ASSERT_TRUE(has_native_layout<Tuple>(inputs.value()));
         }
 
         Value input(size_t idx) const

@@ -292,7 +292,7 @@ namespace cl::jit
                     {
                         return RewriteResult::keep();
                     }
-                    double floating = assume_convert_to<Float>(value)->value();
+                    double floating = native_cast<Float>(value)->value();
                     ConstF64Instruction replacement =
                         context.make_instruction<ConstF64Instruction>(
                             std::bit_cast<uint64_t>(floating));

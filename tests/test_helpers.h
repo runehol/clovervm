@@ -36,8 +36,8 @@ namespace cl::test
                 ->get_or_create_interned_string_value(L"");
         }
         Value arg = args->item_unchecked(0);
-        EXPECT_TRUE(can_convert_to<String>(arg));
-        if(!can_convert_to<String>(arg))
+        EXPECT_TRUE(has_native_layout<String>(arg));
+        if(!has_native_layout<String>(arg))
         {
             return compiler_thread()
                 .get_machine()
@@ -144,8 +144,8 @@ namespace cl::test
 #define CL_ASSERT_CONVERT_TO(type, value)                                      \
     ({                                                                         \
         ::cl::Value cl_assert_convert_value = (value);                         \
-        ASSERT_TRUE(::cl::can_convert_to<type>(cl_assert_convert_value));      \
-        ::cl::assume_convert_to<type>(cl_assert_convert_value);                \
+        ASSERT_TRUE(::cl::has_native_layout<type>(cl_assert_convert_value));   \
+        ::cl::native_cast<type>(cl_assert_convert_value);                      \
     })
 
 #endif  // CL_TEST_HELPERS_H

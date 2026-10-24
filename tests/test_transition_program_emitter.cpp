@@ -195,7 +195,7 @@ namespace cl::jit
             context.thread(), program.data(), execution.frame_pointer);
 
         ASSERT_TRUE(resume->accumulator.is_ptr());
-        double value = assume_convert_to<Float>(resume->accumulator)->value();
+        double value = native_cast<Float>(resume->accumulator)->value();
         EXPECT_EQ(Bits, std::bit_cast<uint64_t>(value));
     }
 

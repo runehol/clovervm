@@ -220,20 +220,20 @@ namespace cl
         }
     };
 
-    template <typename T> bool can_convert_to(Value value)
+    template <typename T> bool has_native_layout(Value value)
     {
-        return value.is_ptr() && can_convert_to<T>(value.get_ptr<Object>());
+        return value.is_ptr() && has_native_layout<T>(value.get_ptr<Object>());
     }
 
-    template <typename T> T *try_convert_to(Value value)
+    template <typename T> T *try_native_cast(Value value)
     {
-        return value.is_ptr() ? try_convert_to<T>(value.get_ptr<Object>())
+        return value.is_ptr() ? try_native_cast<T>(value.get_ptr<Object>())
                               : nullptr;
     }
 
-    template <typename T> T *assume_convert_to(Value value)
+    template <typename T> T *native_cast(Value value)
     {
-        assert(can_convert_to<T>(value));
+        assert(has_native_layout<T>(value));
         return static_cast<T *>(value.get_ptr<Object>());
     }
 

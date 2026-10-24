@@ -378,7 +378,7 @@ struct FloatBinaryOperation
 
     static Value native(ThreadState *thread, Value self, Value other)
     {
-        if(!can_convert_to<Float>(self))
+        if(!has_native_layout<Float>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", ReceiverError.c_str());

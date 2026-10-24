@@ -290,7 +290,7 @@ namespace cl
         {
             return set_pending_builtin_exception_none(L"AttributeError");
         }
-        if(!can_convert_to<Function>(callable))
+        if(!has_native_layout<Function>(callable))
         {
             return set_pending_builtin_exception_string(
                 L"TypeError", L"object is not callable");

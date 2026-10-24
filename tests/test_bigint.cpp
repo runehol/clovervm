@@ -35,7 +35,7 @@ namespace
         {
             return std::to_wstring(value.get_smi());
         }
-        BigInt *bigint = assume_convert_to<BigInt>(value);
+        BigInt *bigint = native_cast<BigInt>(value);
         return bigint_to_decimal_string(bigint->view());
     }
 
@@ -147,7 +147,7 @@ TEST(BigInt, IntSubclassSmallValuesRemainHeapBigInts)
             L"class I(int): pass\nx = I(" + std::to_wstring(value) + L")\nx\n";
         Owned<Value> result(context.run_file(source.c_str()));
         ASSERT_FALSE(result.value().is_exception_marker());
-        ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+        ASSERT_TRUE(has_native_layout<BigInt>(result.value()));
         EXPECT_FALSE(result.value().is_smi());
         Expected<TValue<SMI>> converted =
             try_intlike_value_to_smi(result.value());
@@ -215,8 +215,8 @@ TEST(BigInt, FinalizeReturnsHeapBigIntForNonSmiMagnitude)
         finalize_bigint(context.thread(), ConstBigIntView{2, 1, digits});
 
     ASSERT_TRUE(value.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
-    BigInt *bigint = assume_convert_to<BigInt>(value.value());
+    ASSERT_TRUE(has_native_layout<BigInt>(value.value()));
+    BigInt *bigint = native_cast<BigInt>(value.value());
     ConstBigIntView view = bigint->view();
     EXPECT_EQ(2u, view.n_digits);
     EXPECT_EQ(1, view.signum);
@@ -246,8 +246,8 @@ TEST(BigInt, BigIntFromInt64CanProduceHeapBigInt)
         context.thread(), std::numeric_limits<int64_t>::min());
 
     ASSERT_TRUE(value.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(value.value()));
-    BigInt *bigint = assume_convert_to<BigInt>(value.value());
+    ASSERT_TRUE(has_native_layout<BigInt>(value.value()));
+    BigInt *bigint = native_cast<BigInt>(value.value());
     ConstBigIntView view = bigint->view();
     EXPECT_EQ(2u, view.n_digits);
     EXPECT_EQ(-1, view.signum);
@@ -327,7 +327,7 @@ TEST(BigInt, IntValueFromDoubleBuildsExactLargeIntegers)
         SCOPED_TRACE(sample.input);
         auto result = int_value_from_double(context.thread(), sample.input);
         ASSERT_FALSE(result.has_exception());
-        ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+        ASSERT_TRUE(has_native_layout<BigInt>(result.value()));
         Owned<Value> value(result.value());
         EXPECT_EQ(std::wstring(sample.expected),
                   int_value_decimal(value.value()));
@@ -343,7 +343,7 @@ TEST(BigInt, IntValueFromDoubleHandlesLargestFiniteValues)
     {
         auto result = int_value_from_double(context.thread(), input);
         ASSERT_FALSE(result.has_exception());
-        ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+        ASSERT_TRUE(has_native_layout<BigInt>(result.value()));
         Owned<Value> value(result.value());
         ConstBigIntView view = value.value().get_ptr<BigInt>()->view();
         EXPECT_TRUE(is_normalized_bigint_view(view));
@@ -476,8 +476,8 @@ TEST(BigInt, BigIntNegateFinalizesToSmiOrHeapBigInt)
     ASSERT_TRUE(small.has_value());
     EXPECT_EQ(Value::from_smi(1), small.value());
     ASSERT_TRUE(large.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(large.value()));
-    BigInt *bigint = assume_convert_to<BigInt>(large.value());
+    ASSERT_TRUE(has_native_layout<BigInt>(large.value()));
+    BigInt *bigint = native_cast<BigInt>(large.value());
     ConstBigIntView view = bigint->view();
     EXPECT_EQ(3u, view.n_digits);
     EXPECT_EQ(-1, view.signum);
@@ -511,7 +511,7 @@ TEST(BigInt, DecimalStringFormatsInt64MinHeapBigInt)
     Expected<Value> value = int_value_from_int64(
         context.thread(), std::numeric_limits<int64_t>::min());
     ASSERT_TRUE(value.has_value());
-    BigInt *bigint = assume_convert_to<BigInt>(value.value());
+    BigInt *bigint = native_cast<BigInt>(value.value());
 
     EXPECT_EQ(std::to_wstring(std::numeric_limits<int64_t>::min()),
               bigint_to_decimal_string(bigint->view()));
@@ -553,8 +553,8 @@ TEST(BigInt, AddPropagatesCarryToHeapBigInt)
                    ConstBigIntView{1, 1, right});
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
-    ConstBigIntView view = assume_convert_to<BigInt>(result.value())->view();
+    ASSERT_TRUE(has_native_layout<BigInt>(result.value()));
+    ConstBigIntView view = native_cast<BigInt>(result.value())->view();
     EXPECT_EQ(3u, view.n_digits);
     EXPECT_EQ(1, view.signum);
     EXPECT_EQ(0u, view.digits[0]);
@@ -669,8 +669,8 @@ TEST(BigInt, MulPropagatesSingleDigitCarry)
                    ConstBigIntView{1, 1, right});
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
-    ConstBigIntView view = assume_convert_to<BigInt>(result.value())->view();
+    ASSERT_TRUE(has_native_layout<BigInt>(result.value()));
+    ConstBigIntView view = native_cast<BigInt>(result.value())->view();
     EXPECT_EQ(2u, view.n_digits);
     EXPECT_EQ(-1, view.signum);
     EXPECT_EQ(1u, view.digits[0]);
@@ -689,8 +689,8 @@ TEST(BigInt, MulAccumulatesMultiDigitProducts)
                    ConstBigIntView{2, -1, right});
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
-    ConstBigIntView view = assume_convert_to<BigInt>(result.value())->view();
+    ASSERT_TRUE(has_native_layout<BigInt>(result.value()));
+    ConstBigIntView view = native_cast<BigInt>(result.value())->view();
     EXPECT_EQ(3u, view.n_digits);
     EXPECT_EQ(-1, view.signum);
     EXPECT_EQ(1u, view.digits[0]);
@@ -1011,14 +1011,14 @@ class I(int):
         raise AssertionError
 (I(0), I(1), I(2**58), I(2**63 - 1))
 )"));
-    ASSERT_TRUE(can_convert_to<Tuple>(values.value()));
+    ASSERT_TRUE(has_native_layout<Tuple>(values.value()));
     const int64_t expected[] = {0, 1, int64_t{1} << 58,
                                 std::numeric_limits<int64_t>::max()};
     Tuple *tuple = values.value().get_ptr<Tuple>();
     ASSERT_EQ(std::size(expected), tuple->size());
     for(size_t idx = 0; idx < tuple->size(); ++idx)
     {
-        ASSERT_TRUE(can_convert_to<BigInt>(tuple->item_unchecked(idx)));
+        ASSERT_TRUE(has_native_layout<BigInt>(tuple->item_unchecked(idx)));
         auto result = validate_length_result(tuple->item_unchecked(idx));
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(expected[idx], result.value());

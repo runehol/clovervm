@@ -23,7 +23,7 @@ namespace cl
 {
     static Value require_bytes_receiver(Value self, const wchar_t *method_name)
     {
-        if(!can_convert_to<Bytes>(self))
+        if(!has_native_layout<Bytes>(self))
         {
             std::wstring message = L"bytes.";
             message += method_name;
@@ -36,7 +36,7 @@ namespace cl
 
     static Value require_bytes_argument(Value value, const wchar_t *message)
     {
-        if(!can_convert_to<Bytes>(value))
+        if(!has_native_layout<Bytes>(value))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", message);
@@ -135,7 +135,7 @@ namespace cl
     [[nodiscard]] NOINLINE static Value
     bytes_new_subclass_slow(ThreadState *thread, Value cls_value, Value source)
     {
-        if(!can_convert_to<ClassObject>(cls_value))
+        if(!has_native_layout<ClassObject>(cls_value))
         {
             TValue<String> name = thread->class_of_value(cls_value)->get_name();
             std::wstring message =
@@ -166,7 +166,7 @@ namespace cl
             TValue<SMI> count = CL_TRY(bytes_count_to_smi(source));
             return allocate_zero_filled_bytes(thread, cls, count).raw_value();
         }
-        if(can_convert_to<Bytes>(source))
+        if(has_native_layout<Bytes>(source))
         {
             return thread
                 ->make_internal_value<Bytes>(
@@ -174,7 +174,7 @@ namespace cl
                     bytes_view(TValue<Bytes>::from_value_assumed(source)))
                 .raw_value();
         }
-        if(can_convert_to<List>(source))
+        if(has_native_layout<List>(source))
         {
             std::vector<uint8_t> bytes =
                 CL_TRY(bytes_from_list(source.get_ptr<List>()));
@@ -183,7 +183,7 @@ namespace cl
                                              std::span<const uint8_t>(bytes))
                 .raw_value();
         }
-        if(can_convert_to<Tuple>(source))
+        if(has_native_layout<Tuple>(source))
         {
             std::vector<uint8_t> bytes =
                 CL_TRY(bytes_from_tuple(source.get_ptr<Tuple>()));
@@ -212,7 +212,7 @@ namespace cl
                        count)
                 .raw_value();
         }
-        if(can_convert_to<Bytes>(source))
+        if(has_native_layout<Bytes>(source))
         {
             if(source.get_ptr<Bytes>()->get_shape()->get_class() ==
                thread->get_machine()->bytes_class())
@@ -224,7 +224,7 @@ namespace cl
                     bytes_view(TValue<Bytes>::from_value_assumed(source)))
                 .raw_value();
         }
-        if(can_convert_to<List>(source))
+        if(has_native_layout<List>(source))
         {
             std::vector<uint8_t> bytes =
                 CL_TRY(bytes_from_list(source.get_ptr<List>()));
@@ -232,7 +232,7 @@ namespace cl
                 ->make_object_value<Bytes>(std::span<const uint8_t>(bytes))
                 .raw_value();
         }
-        if(can_convert_to<Tuple>(source))
+        if(has_native_layout<Tuple>(source))
         {
             std::vector<uint8_t> bytes =
                 CL_TRY(bytes_from_tuple(source.get_ptr<Tuple>()));
@@ -268,7 +268,7 @@ namespace cl
                                   Value right_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(left_value, L"__add__"));
-        if(!can_convert_to<Bytes>(right_value))
+        if(!has_native_layout<Bytes>(right_value))
         {
             return Value::NotImplemented();
         }
@@ -373,12 +373,12 @@ namespace cl
     static Value native_bytes_compare_operator(ThreadState *thread, Value self,
                                                Value other)
     {
-        if(!can_convert_to<Bytes>(self))
+        if(!has_native_layout<Bytes>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", Operator::receiver_error);
         }
-        if(!can_convert_to<Bytes>(other))
+        if(!has_native_layout<Bytes>(other))
         {
             return Value::NotImplemented();
         }
@@ -454,7 +454,7 @@ namespace cl
                                       Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"__getitem__"));
-        if(can_convert_to<Slice>(index_value))
+        if(has_native_layout<Slice>(index_value))
         {
             TValue<Slice> slice =
                 TValue<Slice>::from_value_assumed(index_value);
@@ -622,7 +622,7 @@ namespace cl
                                        Value needle_value)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"__contains__"));
-        if(can_convert_to<Bytes>(needle_value))
+        if(has_native_layout<Bytes>(needle_value))
         {
             return self.get_ptr<Bytes>()->find(needle_value.get_ptr<Bytes>()) >=
                            0

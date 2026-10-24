@@ -225,9 +225,9 @@ and VM-semantic raising conversion.
 Native-layout predicates:
 
 ```cpp
-can_convert_to<T>(value)       // non-raising predicate
-try_convert_to<T>(value)       // T * or nullptr
-assume_convert_to<T>(value)    // assert-only pointer conversion
+has_native_layout<T>(value)  // non-raising native-layout identity check
+try_native_cast<T>(value)    // T * or nullptr on layout mismatch
+native_cast<T>(value)        // caller establishes layout; assertion retained
 ```
 
 Typed handle conversion:

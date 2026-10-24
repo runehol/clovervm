@@ -136,7 +136,7 @@ static void expect_python_error(const wchar_t *source,
 
 static void expect_string_value(Value actual, const wchar_t *expected)
 {
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     EXPECT_STREQ(expected,
                  string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
 }
@@ -982,12 +982,12 @@ TEST(Interpreter, int_constructor_converts_large_string_to_bigint)
     test::VmTestContext context;
 
     Value positive = context.run_file(L"int('288230376151711744')\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(positive));
+    ASSERT_TRUE(has_native_layout<BigInt>(positive));
     expect_string_value(context.run_file(L"str(int('288230376151711744'))\n"),
                         L"288230376151711744");
 
     Value negative = context.run_file(L"int('-288230376151711745')\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(negative));
+    ASSERT_TRUE(has_native_layout<BigInt>(negative));
     expect_string_value(context.run_file(L"str(int('-288230376151711745'))\n"),
                         L"-288230376151711745");
 }
@@ -997,7 +997,7 @@ TEST(Interpreter, integer_literal_can_be_bigint)
     test::VmTestContext context;
 
     Value literal = context.run_file(L"288230376151711744\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(literal));
+    ASSERT_TRUE(has_native_layout<BigInt>(literal));
     expect_string_value(context.run_file(L"str(288230376151711744)\n"),
                         L"288230376151711744");
     EXPECT_EQ(Value::True(),
@@ -1010,7 +1010,7 @@ TEST(Interpreter, negative_integer_literal_can_be_bigint)
     test::VmTestContext context;
 
     Value literal = context.run_file(L"-288230376151711745\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(literal));
+    ASSERT_TRUE(has_native_layout<BigInt>(literal));
     expect_string_value(context.run_file(L"str(-288230376151711745)\n"),
                         L"-288230376151711745");
 }
@@ -1236,7 +1236,7 @@ TEST(Interpreter, float_literal_values)
 
     auto expect_float_literal = [&](const wchar_t *source, double expected) {
         Value actual = test_context.run_file(source);
-        ASSERT_TRUE(can_convert_to<Float>(actual));
+        ASSERT_TRUE(has_native_layout<Float>(actual));
         EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value());
     };
 
@@ -1257,29 +1257,29 @@ TEST(Interpreter, float_literal_values)
         0x1.0000000000001p0);
 
     Value huge_actual = test_context.run_file(L"1e1000\n");
-    ASSERT_TRUE(can_convert_to<Float>(huge_actual));
+    ASSERT_TRUE(has_native_layout<Float>(huge_actual));
     EXPECT_TRUE(std::isinf(huge_actual.get_ptr<Float>()->value()));
     EXPECT_FALSE(std::signbit(huge_actual.get_ptr<Float>()->value()));
 
     Value negative_huge_actual = test_context.run_file(L"-1e1000\n");
-    ASSERT_TRUE(can_convert_to<Float>(negative_huge_actual));
+    ASSERT_TRUE(has_native_layout<Float>(negative_huge_actual));
     EXPECT_TRUE(std::isinf(negative_huge_actual.get_ptr<Float>()->value()));
     EXPECT_TRUE(std::signbit(negative_huge_actual.get_ptr<Float>()->value()));
 
     Value tiny_actual = test_context.run_file(L"1e-1000\n");
-    ASSERT_TRUE(can_convert_to<Float>(tiny_actual));
+    ASSERT_TRUE(has_native_layout<Float>(tiny_actual));
     EXPECT_EQ(0.0, tiny_actual.get_ptr<Float>()->value());
     EXPECT_FALSE(std::signbit(tiny_actual.get_ptr<Float>()->value()));
 
     Value negative_tiny_actual = test_context.run_file(L"-1e-1000\n");
-    ASSERT_TRUE(can_convert_to<Float>(negative_tiny_actual));
+    ASSERT_TRUE(has_native_layout<Float>(negative_tiny_actual));
     EXPECT_EQ(0.0, negative_tiny_actual.get_ptr<Float>()->value());
     EXPECT_TRUE(std::signbit(negative_tiny_actual.get_ptr<Float>()->value()));
 
     std::wstring tiny_decimal_source = L"0." + std::wstring(400, L'0') + L"1\n";
     Value tiny_decimal_actual =
         test_context.run_file(tiny_decimal_source.c_str());
-    ASSERT_TRUE(can_convert_to<Float>(tiny_decimal_actual));
+    ASSERT_TRUE(has_native_layout<Float>(tiny_decimal_actual));
     EXPECT_EQ(0.0, tiny_decimal_actual.get_ptr<Float>()->value());
     EXPECT_FALSE(std::signbit(tiny_decimal_actual.get_ptr<Float>()->value()));
 }
@@ -1390,14 +1390,14 @@ TEST(Interpreter, unary_float_handler_has_registered_metadata)
                                                      L"negate(2.5)\n");
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(can_convert_to<Float>(actual));
+    ASSERT_TRUE(has_native_layout<Float>(actual));
     EXPECT_DOUBLE_EQ(-2.5, actual.get_ptr<Float>()->value());
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -1434,7 +1434,7 @@ TEST(Interpreter, sequence_search_methods_have_local_equality_caches)
     Value cls =
         load_global_from_module_for_test(code, interned_string(L"Equal"));
     Value equality = load_attr(cls, interned_string(L"__eq__"));
-    ASSERT_TRUE(can_convert_to<Function>(equality));
+    ASSERT_TRUE(has_native_layout<Function>(equality));
 
     for(ClassObject *sequence_class:
         {test_context.vm().list_class(), test_context.vm().tuple_class()})
@@ -1448,7 +1448,7 @@ TEST(Interpreter, sequence_search_methods_have_local_equality_caches)
             }
             Value method = load_attr(Value::from_oop(sequence_class),
                                      interned_string(name));
-            ASSERT_TRUE(can_convert_to<Function>(method));
+            ASSERT_TRUE(has_native_layout<Function>(method));
             CodeObject *method_code =
                 method.get_ptr<Function>()->code_object.extract();
             EXPECT_EQ(nullptr, method_code->trusted_handler_resolver);
@@ -1949,7 +1949,7 @@ assert not (left == right)
     ASSERT_FALSE(result.is_exception_marker());
     Value equality = load_attr(Value::from_oop(context.vm().list_class()),
                                interned_string(L"__eq__"));
-    ASSERT_TRUE(can_convert_to<Function>(equality));
+    ASSERT_TRUE(has_native_layout<Function>(equality));
     CodeObject *code = equality.get_ptr<Function>()->code_object.extract();
     EXPECT_EQ(nullptr, code->trusted_handler_resolver);
     bool found_element_cache = false;
@@ -2031,7 +2031,7 @@ assert not (left == right)
     ASSERT_FALSE(result.is_exception_marker());
     Value equality = load_attr(Value::from_oop(context.vm().tuple_class()),
                                interned_string(L"__eq__"));
-    ASSERT_TRUE(can_convert_to<Function>(equality));
+    ASSERT_TRUE(has_native_layout<Function>(equality));
     CodeObject *code = equality.get_ptr<Function>()->code_object.extract();
     EXPECT_EQ(nullptr, code->trusted_handler_resolver);
     bool found_element_cache = false;
@@ -2080,7 +2080,7 @@ class OnlyEq(Plain):
     {
         Value cls = load_global_from_module_for_test(
             classes, interned_string(class_names[idx]));
-        ASSERT_TRUE(can_convert_to<ClassObject>(cls));
+        ASSERT_TRUE(has_native_layout<ClassObject>(cls));
         values.emplace_back(context.thread()->make_internal_value<Tuple>(
             cls.get_ptr<ClassObject>(), 2));
         values[idx].extract()->initialize_item_unchecked(0, Value::from_smi(1));
@@ -2143,8 +2143,8 @@ TEST(Interpreter, sequence_search_methods_bypass_subclass_storage_overrides)
         classes, interned_string(L"HostileList"));
     Value tuple_class = load_global_from_module_for_test(
         classes, interned_string(L"HostileTuple"));
-    ASSERT_TRUE(can_convert_to<ClassObject>(list_class));
-    ASSERT_TRUE(can_convert_to<ClassObject>(tuple_class));
+    ASSERT_TRUE(has_native_layout<ClassObject>(list_class));
+    ASSERT_TRUE(has_native_layout<ClassObject>(tuple_class));
     Owned<TValue<ClassObject>> native_list_class(
         TValue<ClassObject>::from_value_assumed(list_class));
     Owned<TValue<ClassObject>> native_tuple_class(
@@ -2196,7 +2196,7 @@ TEST(Interpreter, builtin_abs_caches_trusted_unary_handlers)
                                  .global_builtins_module()
                                  .extract()
                                  ->get_own_property(interned_string(L"abs"));
-        ASSERT_TRUE(can_convert_to<Function>(abs_function));
+        ASSERT_TRUE(has_native_layout<Function>(abs_function));
         CodeObject *abs_code =
             abs_function.get_ptr<Function>()->code_object.extract();
         ASSERT_EQ(1u, abs_code->inline_caches.operator_caches.size());
@@ -2221,7 +2221,7 @@ TEST(Interpreter, int_abs_resolver_selects_trusted_smi_and_bool_handlers)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     Value method = load_attr(Value::from_oop(test_context.vm().int_class()),
                              interned_string(L"__abs__"));
-    ASSERT_TRUE(can_convert_to<Function>(method));
+    ASSERT_TRUE(has_native_layout<Function>(method));
     CodeObject *method_code = method.get_ptr<Function>()->code_object.extract();
     ASSERT_NE(nullptr, method_code->trusted_handler_resolver);
     for(Value value: {Value::from_smi(-3), Value::True(), Value::False()})
@@ -2262,9 +2262,9 @@ TEST(Interpreter, unary_positive_float_preserves_exact_identity)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2313,9 +2313,9 @@ TEST(Interpreter,
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(2u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2364,9 +2364,9 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
 
     Value dict_function_value =
         load_global_from_module_for_test(dict_code, dict_function_name);
-    ASSERT_TRUE(can_convert_to<Function>(dict_function_value));
+    ASSERT_TRUE(has_native_layout<Function>(dict_function_value));
     CodeObject *dict_function_code =
-        assume_convert_to<Function>(dict_function_value)->code_object.extract();
+        native_cast<Function>(dict_function_value)->code_object.extract();
     ASSERT_EQ(2u, dict_function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &dict_cache =
         dict_function_code->inline_caches.operator_caches[0];
@@ -2391,9 +2391,9 @@ TEST(Interpreter, native_contains_membership_uses_trusted_handler)
 
     Value str_function_value =
         load_global_from_module_for_test(str_code, str_function_name);
-    ASSERT_TRUE(can_convert_to<Function>(str_function_value));
+    ASSERT_TRUE(has_native_layout<Function>(str_function_value));
     CodeObject *str_function_code =
-        assume_convert_to<Function>(str_function_value)->code_object.extract();
+        native_cast<Function>(str_function_value)->code_object.extract();
     ASSERT_EQ(2u, str_function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &str_cache =
         str_function_code->inline_caches.operator_caches[0];
@@ -2614,9 +2614,9 @@ TEST(Interpreter, operator_add_dispatch_python_cache_hit)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2653,9 +2653,9 @@ TEST(Interpreter, operator_add_dispatch_reflected_subclass_python_cache_hit)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2679,15 +2679,15 @@ TEST(Interpreter, operator_add_dispatch_trusted_str_handler_cache_hit)
                                   L"add('c', 'd')\n");
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     EXPECT_STREQ(L"cd",
                  string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2711,14 +2711,14 @@ TEST(Interpreter, operator_add_dispatch_reflected_float_trusted_cache_hit)
                                   L"add(2, 1.5)\n");
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
-    ASSERT_TRUE(can_convert_to<Float>(actual));
+    ASSERT_TRUE(has_native_layout<Float>(actual));
     EXPECT_DOUBLE_EQ(3.5, actual.get_ptr<Float>()->value());
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2756,9 +2756,9 @@ TEST(Interpreter, operator_dispatch_trusted_bigint_arithmetic_cache_hit)
             test_context.vm().get_or_create_interned_string_value(
                 function_name));
         Value function_value = load_global_from_module_for_test(code_obj, name);
-        ASSERT_TRUE(can_convert_to<Function>(function_value));
+        ASSERT_TRUE(has_native_layout<Function>(function_value));
         CodeObject *function_code =
-            assume_convert_to<Function>(function_value)->code_object.extract();
+            native_cast<Function>(function_value)->code_object.extract();
         ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
         const OperatorInlineCache &cache =
             function_code->inline_caches.operator_caches[0];
@@ -2800,9 +2800,9 @@ TEST(Interpreter, operator_eq_dispatch_reflected_python_cache_hit)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2830,9 +2830,9 @@ TEST(Interpreter, operator_eq_dispatch_trusted_handler_cache)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2900,9 +2900,9 @@ TEST(Interpreter, operator_eq_dispatch_python_cache_installs_before_call)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -2931,8 +2931,8 @@ TEST(Interpreter, subscript_load_passes_binary_slice_object)
                                  L"Bag()[1:2]\n");
     Value actual = file_runner.return_value;
 
-    ASSERT_TRUE(can_convert_to<Slice>(actual));
-    Slice *slice = assume_convert_to<Slice>(actual);
+    ASSERT_TRUE(has_native_layout<Slice>(actual));
+    Slice *slice = native_cast<Slice>(actual);
     EXPECT_EQ(Value::from_smi(1), slice->start);
     EXPECT_EQ(Value::from_smi(2), slice->stop);
     EXPECT_EQ(Value::None(), slice->step);
@@ -2948,8 +2948,8 @@ TEST(Interpreter, subscript_load_passes_ternary_slice_object)
                                  L"Bag()[1:2:3]\n");
     Value actual = file_runner.return_value;
 
-    ASSERT_TRUE(can_convert_to<Slice>(actual));
-    Slice *slice = assume_convert_to<Slice>(actual);
+    ASSERT_TRUE(has_native_layout<Slice>(actual));
+    Slice *slice = native_cast<Slice>(actual);
     EXPECT_EQ(Value::from_smi(1), slice->start);
     EXPECT_EQ(Value::from_smi(2), slice->stop);
     EXPECT_EQ(Value::from_smi(3), slice->step);
@@ -2965,8 +2965,8 @@ TEST(Interpreter, subscript_load_passes_none_for_omitted_slice_bounds)
                                  L"Bag()[:]\n");
     Value actual = file_runner.return_value;
 
-    ASSERT_TRUE(can_convert_to<Slice>(actual));
-    Slice *slice = assume_convert_to<Slice>(actual);
+    ASSERT_TRUE(has_native_layout<Slice>(actual));
+    Slice *slice = native_cast<Slice>(actual);
     EXPECT_EQ(Value::None(), slice->start);
     EXPECT_EQ(Value::None(), slice->stop);
     EXPECT_EQ(Value::None(), slice->step);
@@ -2978,8 +2978,8 @@ TEST(Interpreter, slice_constructor_uses_python_argument_convention)
 {
     test::FileRunner unary_runner(L"slice(5)\n");
     Value unary = unary_runner.return_value;
-    ASSERT_TRUE(can_convert_to<Slice>(unary));
-    Slice *unary_slice = assume_convert_to<Slice>(unary);
+    ASSERT_TRUE(has_native_layout<Slice>(unary));
+    Slice *unary_slice = native_cast<Slice>(unary);
     EXPECT_EQ(Value::None(), unary_slice->start);
     EXPECT_EQ(Value::from_smi(5), unary_slice->stop);
     EXPECT_EQ(Value::None(), unary_slice->step);
@@ -2988,8 +2988,8 @@ TEST(Interpreter, slice_constructor_uses_python_argument_convention)
 
     test::FileRunner ternary_runner(L"slice(1, 2, 3)\n");
     Value ternary = ternary_runner.return_value;
-    ASSERT_TRUE(can_convert_to<Slice>(ternary));
-    Slice *ternary_slice = assume_convert_to<Slice>(ternary);
+    ASSERT_TRUE(has_native_layout<Slice>(ternary));
+    Slice *ternary_slice = native_cast<Slice>(ternary);
     EXPECT_EQ(Value::from_smi(1), ternary_slice->start);
     EXPECT_EQ(Value::from_smi(2), ternary_slice->stop);
     EXPECT_EQ(Value::from_smi(3), ternary_slice->step);
@@ -3067,9 +3067,9 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -3106,9 +3106,9 @@ TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -3141,9 +3141,9 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -3182,9 +3182,9 @@ TEST(Interpreter, subscript_load_caches_slice_key_shape)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -3219,9 +3219,9 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(3u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &general_cache =
         function_code->inline_caches.operator_caches[1];
@@ -3291,9 +3291,9 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
                 function_name));
         Value function_value =
             load_global_from_module_for_test(code_obj, function_name_value);
-        ASSERT_TRUE(can_convert_to<Function>(function_value));
+        ASSERT_TRUE(has_native_layout<Function>(function_value));
         CodeObject *function_code =
-            assume_convert_to<Function>(function_value)->code_object.extract();
+            native_cast<Function>(function_value)->code_object.extract();
         const OperatorInlineCache *cache = nullptr;
         for(const OperatorInlineCache &candidate:
             function_code->inline_caches.operator_caches)
@@ -3371,9 +3371,9 @@ TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -3414,9 +3414,9 @@ TEST(Interpreter, subscript_store_cache_ignores_value_shape)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
     const OperatorInlineCache &cache =
         function_code->inline_caches.operator_caches[0];
@@ -3746,9 +3746,9 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
 
     Value function_value =
         load_global_from_module_for_test(code_obj, function_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(1u,
               function_code->inline_caches.attribute_mutation_caches.size());
     const AttributeMutationInlineCache &cache =
@@ -3779,9 +3779,9 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
         load_global_from_module_for_test(definition_code, clear_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
+        native_cast<Function>(function_value)->code_object.extract();
     ASSERT_EQ(uint8_t(Bytecode::DelAttr), function_code->code[0]);
     ASSERT_TRUE(function_code->inline_caches.attribute_read_caches.empty());
     ASSERT_EQ(1u,
@@ -3841,7 +3841,7 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
         load_global_from_module_for_test(definition_code, clear_name);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, test_context.vm().object_class(),
@@ -4724,7 +4724,7 @@ TEST(Interpreter, value_repr_uses_special_method_lookup)
     Value actual = value_to_repr_string(Value::from_oop(instance));
 
     ASSERT_FALSE(actual.is_exception_marker());
-    ASSERT_TRUE(can_convert_to<String>(actual));
+    ASSERT_TRUE(has_native_layout<String>(actual));
     EXPECT_STREQ(L"class repr",
                  string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
@@ -4745,7 +4745,7 @@ TEST(Interpreter, call_clovervm_method_calls_inline_value_native_methods)
             test_context.thread()->call_clovervm_method(receiver, name);
 
         ASSERT_FALSE(actual.is_exception_marker());
-        ASSERT_TRUE(can_convert_to<String>(actual));
+        ASSERT_TRUE(has_native_layout<String>(actual));
         EXPECT_STREQ(expected, string_as_wchar_t(
                                    TValue<String>::from_value_assumed(actual)));
         EXPECT_FALSE(test_context.thread()->has_pending_exception());
@@ -4809,7 +4809,7 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
             test_context.thread()->call_clovervm_method(receiver, name);
 
         ASSERT_FALSE(actual.is_exception_marker());
-        ASSERT_TRUE(can_convert_to<String>(actual));
+        ASSERT_TRUE(has_native_layout<String>(actual));
         EXPECT_STREQ(expected, string_as_wchar_t(
                                    TValue<String>::from_value_assumed(actual)));
         EXPECT_FALSE(test_context.thread()->has_pending_exception());
@@ -4881,8 +4881,8 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
         Value::from_oop(reordered_dict), dunder_str_name);
     ASSERT_FALSE(dict_str.is_exception_marker());
     ASSERT_FALSE(reordered_dict_str.is_exception_marker());
-    ASSERT_TRUE(can_convert_to<String>(dict_str));
-    ASSERT_TRUE(can_convert_to<String>(reordered_dict_str));
+    ASSERT_TRUE(has_native_layout<String>(dict_str));
+    ASSERT_TRUE(has_native_layout<String>(reordered_dict_str));
     EXPECT_NE(dict_str, reordered_dict_str);
     EXPECT_STREQ(L"{'beta': True, 'alpha': 1}",
                  string_as_wchar_t(
@@ -5025,7 +5025,7 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
               test_context.thread()->pending_exception_kind());
     TValue<Exception> exception =
         test_context.thread()->pending_exception_object();
-    ASSERT_TRUE(can_convert_to<StopIterationObject>(exception.raw_value()));
+    ASSERT_TRUE(has_native_layout<StopIterationObject>(exception.raw_value()));
     StopIterationObject *stop_iteration =
         exception.raw_value().get_ptr<StopIterationObject>();
     EXPECT_EQ(Value::from_smi(123), stop_iteration->value);
@@ -5054,7 +5054,7 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
               test_context.thread()->pending_exception_kind());
     TValue<Exception> exception =
         test_context.thread()->pending_exception_object();
-    ASSERT_TRUE(can_convert_to<StopIterationObject>(exception.raw_value()));
+    ASSERT_TRUE(has_native_layout<StopIterationObject>(exception.raw_value()));
     StopIterationObject *stop_iteration =
         exception.raw_value().get_ptr<StopIterationObject>();
     EXPECT_EQ(Value::from_smi(123), stop_iteration->value);
@@ -5105,7 +5105,7 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
     TValue<String> context_name =
         test_context.vm().get_or_create_interned_string_value(L"__context__");
     Value context = exception.extract()->get_own_property(context_name);
-    ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
+    ASSERT_TRUE(has_native_layout<ExceptionObject>(context));
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
               context.get_ptr<ExceptionObject>()->get_shape()->get_class());
 }
@@ -5152,7 +5152,7 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
     TValue<String> context_name =
         test_context.vm().get_or_create_interned_string_value(L"__context__");
     Value context = exception.extract()->get_own_property(context_name);
-    ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
+    ASSERT_TRUE(has_native_layout<ExceptionObject>(context));
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
               context.get_ptr<ExceptionObject>()->get_shape()->get_class());
 }
@@ -5512,17 +5512,17 @@ TEST(Interpreter, main_module_file_sets_file_not_name)
                                      L"/tmp/script.py")
                            .value();
     Value result = test_context.thread()->run_clovervm_code_object(code);
-    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
     Tuple *tuple = result.get_ptr<Tuple>();
     ASSERT_EQ(2, tuple->size());
 
     Value name = tuple->item_unchecked(0);
-    ASSERT_TRUE(can_convert_to<String>(name));
+    ASSERT_TRUE(has_native_layout<String>(name));
     EXPECT_STREQ(L"__main__",
                  string_as_wchar_t(TValue<String>::from_value_assumed(name)));
 
     Value file = tuple->item_unchecked(1);
-    ASSERT_TRUE(can_convert_to<String>(file));
+    ASSERT_TRUE(has_native_layout<String>(file));
     EXPECT_STREQ(L"/tmp/script.py",
                  string_as_wchar_t(TValue<String>::from_value_assumed(file)));
 }
@@ -6875,8 +6875,8 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
             test_context.vm().get_or_create_interned_string_value(L"__mro__");
         Value bases_value = cls->get_own_property(dunder_bases_name);
         Value mro_value = cls->get_own_property(dunder_mro_name);
-        ASSERT_TRUE(can_convert_to<Tuple>(bases_value));
-        ASSERT_TRUE(can_convert_to<Tuple>(mro_value));
+        ASSERT_TRUE(has_native_layout<Tuple>(bases_value));
+        ASSERT_TRUE(has_native_layout<Tuple>(mro_value));
         EXPECT_EQ(test_context.vm().tuple_class(),
                   bases_value.get_ptr<Object>()->get_shape()->get_class());
         EXPECT_EQ(test_context.vm().tuple_class(),
@@ -6940,14 +6940,14 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         test_context.vm().get_or_create_interned_string_value(L"__doc__");
     Value str_method = str_class->get_own_property(dunder_str_name);
     Value add_method = str_class->get_own_property(dunder_add_name);
-    ASSERT_TRUE(can_convert_to<Function>(str_method));
-    ASSERT_TRUE(can_convert_to<Function>(add_method));
+    ASSERT_TRUE(has_native_layout<Function>(str_method));
+    ASSERT_TRUE(has_native_layout<Function>(add_method));
     EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount);
     EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount);
     Optional<TValue<String>> str_docstring =
-        assume_convert_to<Function>(str_method)->docstring.value();
+        native_cast<Function>(str_method)->docstring.value();
     Optional<TValue<String>> add_docstring =
-        assume_convert_to<Function>(add_method)->docstring.value();
+        native_cast<Function>(add_method)->docstring.value();
     ASSERT_TRUE(str_docstring.has_value());
     ASSERT_TRUE(add_docstring.has_value());
     EXPECT_EQ(test_context.vm().get_or_create_interned_string_value(
@@ -6972,7 +6972,7 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
 
     Value value =
         test_context.thread()->make_object_value<Float>(1.5).raw_value();
-    ASSERT_TRUE(can_convert_to<Float>(value));
+    ASSERT_TRUE(has_native_layout<Float>(value));
     EXPECT_EQ(NativeLayoutId::Float,
               value.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(test_context.vm().float_class(),
@@ -7021,14 +7021,14 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
 
     Value str_result =
         test_context.thread()->call_clovervm_method(value, dunder_str_name);
-    ASSERT_TRUE(can_convert_to<String>(str_result));
+    ASSERT_TRUE(has_native_layout<String>(str_result));
     EXPECT_TRUE(string_eq(
         TValue<String>::from_value_unchecked(str_result),
         test_context.vm().get_or_create_interned_string_value(L"1.5")));
 
     Value repr_result =
         test_context.thread()->call_clovervm_method(value, dunder_repr_name);
-    ASSERT_TRUE(can_convert_to<String>(repr_result));
+    ASSERT_TRUE(has_native_layout<String>(repr_result));
     EXPECT_TRUE(string_eq(
         TValue<String>::from_value_unchecked(repr_result),
         test_context.vm().get_or_create_interned_string_value(L"1.5")));
@@ -7037,7 +7037,7 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
                                           Value argument, double expected) {
         Value result = test_context.thread()->call_clovervm_method(
             receiver, name, argument);
-        ASSERT_TRUE(can_convert_to<Float>(result));
+        ASSERT_TRUE(has_native_layout<Float>(result));
         EXPECT_DOUBLE_EQ(expected, result.get_ptr<Float>()->value());
     };
 
@@ -7146,7 +7146,7 @@ TEST(Interpreter, float_string_methods_format_special_values)
             test_context.thread()->make_object_value<Float>(value).raw_value();
         Value result = test_context.thread()->call_clovervm_method(float_value,
                                                                    method_name);
-        ASSERT_TRUE(can_convert_to<String>(result));
+        ASSERT_TRUE(has_native_layout<String>(result));
         EXPECT_STREQ(expected, string_as_wchar_t(
                                    TValue<String>::from_value_assumed(result)));
     };
@@ -7605,7 +7605,7 @@ TEST(Interpreter, negate_overflow)
     test::VmTestContext context;
     Value promoted = context.run_file(L"x = -288230376151711743 - 1\n"
                                       L"-x\n");
-    ASSERT_TRUE(can_convert_to<BigInt>(promoted));
+    ASSERT_TRUE(has_native_layout<BigInt>(promoted));
     expect_string_value(context.run_file(L"x = -288230376151711743 - 1\n"
                                          L"str(-x)\n"),
                         L"288230376151711744");
@@ -7629,14 +7629,14 @@ TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
         context.vm().global_builtins_module().extract();
     Value len_function =
         public_module->get_own_property(interned_string(L"len"));
-    ASSERT_TRUE(can_convert_to<Function>(len_function));
+    ASSERT_TRUE(has_native_layout<Function>(len_function));
     ModuleObject *implementation = len_function.get_ptr<Function>()
                                        ->code_object.extract()
                                        ->get_defining_module()
                                        .extract();
     ASSERT_NE(public_module, implementation);
     Value fallback = implementation->get_builtins_binding();
-    ASSERT_TRUE(can_convert_to<Dict>(fallback));
+    ASSERT_TRUE(has_native_layout<Dict>(fallback));
     EXPECT_EQ(0u, fallback.get_ptr<Dict>()->size());
     for(const wchar_t *name:
         {L"list", L"tuple", L"dict", L"int", L"str", L"isinstance",
@@ -7653,7 +7653,7 @@ TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
         const wchar_t *name =
             cls == context.vm().dict_class() ? L"update" : L"count";
         Value method = cls->get_own_property(interned_string(name));
-        ASSERT_TRUE(can_convert_to<Function>(method));
+        ASSERT_TRUE(has_native_layout<Function>(method));
         EXPECT_EQ(implementation, method.get_ptr<Function>()
                                       ->code_object.extract()
                                       ->get_defining_module()
@@ -8129,7 +8129,7 @@ TEST(Interpreter, int_bool_resolver_registers_allocation_free_exact_handlers)
     ThreadState::ActivationScope activation(context.thread());
     Value method = context.vm().int_class()->get_own_property(
         interned_string(L"__bool__"));
-    ASSERT_TRUE(can_convert_to<Function>(method));
+    ASSERT_TRUE(has_native_layout<Function>(method));
     auto resolver = method.get_ptr<Function>()
                         ->code_object.extract()
                         ->trusted_handler_resolver;
@@ -8140,7 +8140,7 @@ TEST(Interpreter, int_bool_resolver_registers_allocation_free_exact_handlers)
                                         signum_t{0})
             .raw_value());
     Owned<Value> large(context.run_file(L"2**100\n"));
-    ASSERT_TRUE(can_convert_to<BigInt>(large.value()));
+    ASSERT_TRUE(has_native_layout<BigInt>(large.value()));
     for(Value value: {Value::from_smi(0), Value::from_smi(-1), Value::False(),
                       Value::True(), boxed_zero.value(), large.value()})
     {
@@ -8160,7 +8160,7 @@ TEST(Interpreter, int_bool_resolver_registers_allocation_free_exact_handlers)
         EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
     }
     Owned<Value> subclass(context.run_file(L"class I(int): pass\nI(0)\n"));
-    ASSERT_TRUE(can_convert_to<BigInt>(subclass.value()));
+    ASSERT_TRUE(has_native_layout<BigInt>(subclass.value()));
     EXPECT_FALSE(resolver(&context.vm(), ShapeKey::from_value(subclass.value()),
                           ShapeKey::from_value(Value::not_present()),
                           TrustedHandlerOperandOrder::Normal,
@@ -8195,7 +8195,7 @@ class Length:
     def __len__(self): raise AssertionError
 (Both(), Inherited(), Length())
 )"));
-    ASSERT_TRUE(can_convert_to<Tuple>(values.value()));
+    ASSERT_TRUE(has_native_layout<Tuple>(values.value()));
     Tuple *tuple = values.value().get_ptr<Tuple>();
     for(size_t idx = 0; idx < tuple->size(); ++idx)
     {
@@ -8206,7 +8206,7 @@ class Length:
         Value expected = load_attr(
             Value::from_oop(context.thread()->class_of_value(receiver)),
             interned_string(name));
-        ASSERT_TRUE(can_convert_to<Function>(expected));
+        ASSERT_TRUE(has_native_layout<Function>(expected));
         EXPECT_EQ(expected.get_ptr<Function>(), selected.cache_entry.function);
         EXPECT_EQ(idx == 2 ? TruthResultKind::Length : TruthResultKind::Bool,
                   selected.cache_entry.truth_result_kind);
@@ -8264,7 +8264,7 @@ TEST(Interpreter,
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
     Owned<Value> values(context.run_file(L"([], (), {}, '', b'')\n"));
-    ASSERT_TRUE(can_convert_to<Tuple>(values.value()));
+    ASSERT_TRUE(has_native_layout<Tuple>(values.value()));
     Tuple *tuple = values.value().get_ptr<Tuple>();
     for(size_t idx = 0; idx < tuple->size(); ++idx)
     {
@@ -8332,7 +8332,7 @@ TEST(Interpreter, truthiness_walker_retains_callable_after_arithmetic_skip_hint)
     Value method = load_attr(
         Value::from_oop(context.thread()->class_of_value(receiver.value())),
         interned_string(L"__bool__"));
-    ASSERT_TRUE(can_convert_to<Function>(method));
+    ASSERT_TRUE(has_native_layout<Function>(method));
     CodeObject *code = method.get_ptr<Function>()->code_object.extract();
     code->trusted_handler_resolver = truth_test_skip_resolver;
     auto selected = walk_truthiness_for_test(context, receiver.value());
@@ -8542,7 +8542,7 @@ except TypeError:
     caught = True
 (caught, convert(OuterLength()))
 )");
-    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
     EXPECT_EQ(Value::True(), result.get_ptr<Tuple>()->item_unchecked(0));
     EXPECT_EQ(Value::True(), result.get_ptr<Tuple>()->item_unchecked(1));
 }
@@ -8569,7 +8569,7 @@ a = convert(c)
 b = convert(c)
 (a, b, len(calls), calls[0], calls[1])
 )");
-    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
     Tuple *tuple = result.get_ptr<Tuple>();
     EXPECT_EQ(Value::False(), tuple->item_unchecked(0));
     EXPECT_EQ(Value::True(), tuple->item_unchecked(1));
@@ -8627,7 +8627,7 @@ TEST(Interpreter,
     Value method = load_attr(
         Value::from_oop(context.thread()->class_of_value(receiver.value())),
         interned_string(L"__bool__"));
-    ASSERT_TRUE(can_convert_to<Function>(method));
+    ASSERT_TRUE(has_native_layout<Function>(method));
     CodeObject *caller = make_truthiness_conversion_code(
         context, Bytecode::ToBool, receiver.value());
     TruthinessSafepointCheck check{
@@ -8674,7 +8674,7 @@ except TypeError:
     caught = True
 (caught, convert(OuterLength()))
 )");
-    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
     EXPECT_EQ(Value::True(), result.get_ptr<Tuple>()->item_unchecked(0));
     EXPECT_EQ(Value::False(), result.get_ptr<Tuple>()->item_unchecked(1));
 }
@@ -8701,7 +8701,7 @@ b = negate(c)
 d = c not in Container()
 (a, b, d, len(calls), calls[0], calls[1], calls[2], not NotImplemented)
 )");
-    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
     Tuple *tuple = result.get_ptr<Tuple>();
     const Value expected[] = {Value::True(),      Value::False(),
                               Value::False(),     Value::from_smi(3),
@@ -8905,7 +8905,7 @@ TEST(Interpreter, conditional_truthiness_roots_saved_operand_and_hides_finisher)
         Value method = load_attr(
             Value::from_oop(context.thread()->class_of_value(receiver.value())),
             interned_string(L"__bool__"));
-        ASSERT_TRUE(can_convert_to<Function>(method));
+        ASSERT_TRUE(has_native_layout<Function>(method));
         for(Bytecode opcode: {Bytecode::JumpIfTrue, Bytecode::JumpIfFalse})
         {
             CodeObject *caller = make_conditional_truthiness_code(

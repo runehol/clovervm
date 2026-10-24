@@ -26,7 +26,7 @@ namespace cl
     classinfo_matches(ThreadState *thread, ClassObject *cls, Value classinfo,
                       const wchar_t *invalid_classinfo_message)
     {
-        if(can_convert_to<ClassObject>(classinfo))
+        if(has_native_layout<ClassObject>(classinfo))
         {
             return is_subclass_of(
                        cls, TValue<ClassObject>::from_value_assumed(classinfo)
@@ -34,7 +34,7 @@ namespace cl
                        ? Value::True()
                        : Value::False();
         }
-        if(can_convert_to<Tuple>(classinfo))
+        if(has_native_layout<Tuple>(classinfo))
         {
             Tuple *tuple = classinfo.get_ptr<Tuple>();
             for(size_t idx = 0; idx < tuple->size(); ++idx)
@@ -70,7 +70,7 @@ namespace cl
     static Value builtin_issubclass(ThreadState *thread, Value cls_value,
                                     Value classinfo)
     {
-        if(!can_convert_to<ClassObject>(cls_value))
+        if(!has_native_layout<ClassObject>(cls_value))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"issubclass() arg 1 must be a type");
@@ -84,7 +84,7 @@ namespace cl
 
     static Value require_attribute_name(Value name)
     {
-        if(!can_convert_to<String>(name))
+        if(!has_native_layout<String>(name))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"attribute name must be str");
@@ -108,7 +108,7 @@ namespace cl
                                          Value name, Value default_tuple)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        assert(can_convert_to<Tuple>(default_tuple));
+        assert(has_native_layout<Tuple>(default_tuple));
         Tuple *defaults = default_tuple.get_ptr<Tuple>();
         if(defaults->size() > 1)
         {
@@ -170,7 +170,8 @@ namespace cl
 
     static Value builtin_callable(ThreadState *thread, Value obj)
     {
-        if(can_convert_to<Function>(obj) || can_convert_to<ClassObject>(obj))
+        if(has_native_layout<Function>(obj) ||
+           has_native_layout<ClassObject>(obj))
         {
             return Value::True();
         }
@@ -182,7 +183,7 @@ namespace cl
 
     static Value builtin_ord(ThreadState *thread, Value obj)
     {
-        if(can_convert_to<String>(obj))
+        if(has_native_layout<String>(obj))
         {
             String *str = obj.get_ptr<String>();
             if(str->count.extract() != 1)
@@ -192,7 +193,7 @@ namespace cl
             }
             return Value::from_smi(static_cast<int64_t>(str->data[0]));
         }
-        if(can_convert_to<Bytes>(obj))
+        if(has_native_layout<Bytes>(obj))
         {
             Bytes *bytes = obj.get_ptr<Bytes>();
             if(bytes->count.extract() != 1)
@@ -248,7 +249,7 @@ namespace cl
     static void append_unique_dir_name(std::vector<std::wstring> &names,
                                        Value name_value)
     {
-        if(!can_convert_to<String>(name_value))
+        if(!has_native_layout<String>(name_value))
         {
             return;
         }
@@ -275,7 +276,7 @@ namespace cl
                                       ClassObject *cls)
     {
         Value mro_value = cls->get_mro_value();
-        if(!can_convert_to<Tuple>(mro_value))
+        if(!has_native_layout<Tuple>(mro_value))
         {
             collect_own_dir_names(names, cls);
             return;
@@ -284,7 +285,7 @@ namespace cl
         for(size_t idx = 0; idx < mro->size(); ++idx)
         {
             Value cls_value = mro->item_unchecked(idx);
-            if(can_convert_to<ClassObject>(cls_value))
+            if(has_native_layout<ClassObject>(cls_value))
             {
                 collect_own_dir_names(
                     names, TValue<ClassObject>::from_value_assumed(cls_value)
@@ -301,7 +302,7 @@ namespace cl
             collect_own_dir_names(names, obj.get_ptr<Object>());
         }
 
-        if(can_convert_to<ClassObject>(obj))
+        if(has_native_layout<ClassObject>(obj))
         {
             collect_mro_dir_names(
                 names, TValue<ClassObject>::from_value_assumed(obj).extract());

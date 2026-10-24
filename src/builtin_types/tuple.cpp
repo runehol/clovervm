@@ -22,7 +22,7 @@ namespace cl
 {
     static Value native_tuple_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Tuple>(self))
+        if(!has_native_layout<Tuple>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"tuple.__repr__ expects a tuple receiver");
@@ -57,7 +57,7 @@ namespace cl
 
     static Value native_tuple_len(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<Tuple>(self))
+        if(!has_native_layout<Tuple>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"tuple.__len__ expects a tuple receiver");
@@ -69,7 +69,7 @@ namespace cl
 
     static Value native_tuple_add(ThreadState *thread, Value left, Value right)
     {
-        if(!can_convert_to<Tuple>(left) || !can_convert_to<Tuple>(right))
+        if(!has_native_layout<Tuple>(left) || !has_native_layout<Tuple>(right))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"can only concatenate tuple to tuple");
@@ -132,12 +132,12 @@ namespace cl
     static Value native_tuple_order(ThreadState *thread, Value self,
                                     Value other)
     {
-        if(!can_convert_to<Tuple>(self))
+        if(!has_native_layout<Tuple>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", ReceiverError.c_str());
         }
-        if(!can_convert_to<Tuple>(other))
+        if(!has_native_layout<Tuple>(other))
             return Value::NotImplemented();
         return tuple_order<Operation>(thread,
                                       TValue<Tuple>::from_value_assumed(self),
@@ -195,13 +195,13 @@ namespace cl
     static Value native_tuple_getitem(ThreadState *thread, Value self,
                                       Value index_value)
     {
-        if(!can_convert_to<Tuple>(self))
+        if(!has_native_layout<Tuple>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"tuple.__getitem__ expects a tuple receiver");
         }
 
-        if(can_convert_to<Slice>(index_value))
+        if(has_native_layout<Slice>(index_value))
         {
             TValue<Slice> slice =
                 TValue<Slice>::from_value_assumed(index_value);
@@ -381,7 +381,7 @@ namespace cl
                 vm->get_or_create_interned_string_value(helper_names[idx]);
             Value function =
                 implementation_module->get_own_property(helper_name);
-            if(!can_convert_to<Function>(function))
+            if(!has_native_layout<Function>(function))
             {
                 fatal("trusted builtin_implementations.py did not define tuple "
                       "method");

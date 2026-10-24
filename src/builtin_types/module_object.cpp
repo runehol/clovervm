@@ -76,7 +76,7 @@ namespace cl
 
     static Value native_module_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<ModuleObject>(self))
+        if(!has_native_layout<ModuleObject>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"module.__repr__ expects a module receiver");
@@ -86,7 +86,7 @@ namespace cl
         Value name = module->get_name_binding();
         StringBuilder builder;
         builder.append_c_str(L"<module '");
-        if(can_convert_to<String>(name))
+        if(has_native_layout<String>(name))
         {
             builder.append_string(TValue<String>::from_value_assumed(name));
         }
@@ -97,7 +97,7 @@ namespace cl
         builder.append_char(L'\'');
 
         Value file = module->get_own_property(interned_string(L"__file__"));
-        if(can_convert_to<String>(file))
+        if(has_native_layout<String>(file))
         {
             builder.append_c_str(L" from '");
             builder.append_string(TValue<String>::from_value_assumed(file));
@@ -174,13 +174,12 @@ namespace cl
         {
             builtins = active_vm()->global_builtins_module().raw_value();
         }
-        if(!can_convert_to<ModuleObject>(builtins))
+        if(!has_native_layout<ModuleObject>(builtins))
         {
             return ModuleBuiltinsLookup::uncacheable(builtins);
         }
 
-        ModuleObject *builtins_module =
-            assume_convert_to<ModuleObject>(builtins);
+        ModuleObject *builtins_module = native_cast<ModuleObject>(builtins);
         ValidityCell *cell = module_builtins_validity_cell.extract();
         if(likely(cell != nullptr && cell->is_valid()))
         {

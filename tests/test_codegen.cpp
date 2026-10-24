@@ -683,8 +683,8 @@ TEST(Codegen, function_copies_hot_call_signature_from_code_object)
 
     Value function_value =
         test_context.thread()->run_clovervm_code_object(module_code);
-    ASSERT_TRUE(can_convert_to<Function>(function_value));
-    Function *function = assume_convert_to<Function>(function_value);
+    ASSERT_TRUE(has_native_layout<Function>(function_value));
+    Function *function = native_cast<Function>(function_value);
     CodeObject *function_code = function->code_object.extract();
 
     EXPECT_EQ(function_code->function_signature.n_parameters,
@@ -1157,7 +1157,7 @@ TEST(Codegen, bytes_literal_constant_value)
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     Value constant = code_obj->constant_table[0].value();
-    ASSERT_TRUE(can_convert_to<Bytes>(constant));
+    ASSERT_TRUE(has_native_layout<Bytes>(constant));
     std::span<const uint8_t> view =
         bytes_view(TValue<Bytes>::from_value_assumed(constant));
     ASSERT_EQ(size_t(3), view.size());
@@ -1179,7 +1179,7 @@ TEST(Codegen, float_literal_constant_value)
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     Value constant = code_obj->constant_table[0].value();
-    ASSERT_TRUE(can_convert_to<Float>(constant));
+    ASSERT_TRUE(has_native_layout<Float>(constant));
     EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value());
 }
 
@@ -2027,7 +2027,7 @@ TEST(Codegen, operator_length_hint_uses_special_method_call)
     test::VmTestContext context;
     Value callable =
         context.run_file(L"import operator\noperator.length_hint\n");
-    ASSERT_TRUE(can_convert_to<Function>(callable));
+    ASSERT_TRUE(has_native_layout<Function>(callable));
     Function *function = callable.get_ptr<Function>();
     std::string actual = fmt::to_string(*function->code_object.extract());
     EXPECT_NE(std::string::npos, actual.find("CallSpecialMethod0"));

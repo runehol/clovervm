@@ -34,7 +34,7 @@ namespace cl
 
     static Value native_slotdict_repr(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<SlotDict>(self))
+        if(!has_native_layout<SlotDict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"slotdict.__repr__ expects a slotdict receiver");
@@ -68,7 +68,7 @@ namespace cl
 
     static Value native_slotdict_len(ThreadState *thread, Value self)
     {
-        if(!can_convert_to<SlotDict>(self))
+        if(!has_native_layout<SlotDict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"slotdict.__len__ expects a slotdict receiver");
@@ -81,7 +81,7 @@ namespace cl
     [[nodiscard]] static Value native_slotdict_keys(ThreadState *thread,
                                                     Value self)
     {
-        if(!can_convert_to<SlotDict>(self))
+        if(!has_native_layout<SlotDict>(self))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"slotdict.keys expects a slotdict receiver");
@@ -98,7 +98,7 @@ namespace cl
     static Value native_slotdict_getitem(ThreadState *thread, Value self,
                                          Value key)
     {
-        if(!can_convert_to<SlotDict>(self))
+        if(!has_native_layout<SlotDict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError",
@@ -111,7 +111,7 @@ namespace cl
     static Value native_slotdict_setitem(ThreadState *thread, Value self,
                                          Value key, Value value)
     {
-        if(!can_convert_to<SlotDict>(self))
+        if(!has_native_layout<SlotDict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError",
@@ -124,7 +124,7 @@ namespace cl
     static Value native_slotdict_delitem(ThreadState *thread, Value self,
                                          Value key)
     {
-        if(!can_convert_to<SlotDict>(self))
+        if(!has_native_layout<SlotDict>(self))
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError",
@@ -161,7 +161,7 @@ namespace cl
 
     bool SlotDict::key_is_string(Value key)
     {
-        return can_convert_to<String>(key);
+        return has_native_layout<String>(key);
     }
 
     Value SlotDict::key_type_error()

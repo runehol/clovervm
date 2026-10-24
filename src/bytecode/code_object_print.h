@@ -106,7 +106,7 @@ namespace cl
                 fmt::format_to(out, ", ");
             }
             Value item = tuple->item_unchecked(idx);
-            if(can_convert_to<String>(item))
+            if(has_native_layout<String>(item))
             {
                 out = format_string_constant(out, item.get_ptr<String>());
             }
@@ -496,7 +496,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                     uint8_t constant_idx = code_obj.code[keyword_names_idx];
                     cl::Value constant =
                         code_obj.constant_table[constant_idx].value();
-                    if(cl::can_convert_to<cl::Tuple>(constant))
+                    if(cl::has_native_layout<cl::Tuple>(constant))
                     {
                         cl::format_tuple_constant(
                             out, constant.get_ptr<cl::Tuple>());
@@ -796,7 +796,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                     uint8_t constant_idx = code_obj.code[keyword_names_idx];
                     cl::Value constant =
                         code_obj.constant_table[constant_idx].value();
-                    if(cl::can_convert_to<cl::Tuple>(constant))
+                    if(cl::has_native_layout<cl::Tuple>(constant))
                     {
                         cl::format_tuple_constant(
                             out, constant.get_ptr<cl::Tuple>());

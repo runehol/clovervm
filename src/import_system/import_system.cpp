@@ -145,11 +145,11 @@ namespace cl
             std::wstring message = L"cannot import name '";
             message += string_to_wstring(name);
             message += L"' from '";
-            if(can_convert_to<ModuleObject>(module))
+            if(has_native_layout<ModuleObject>(module))
             {
                 Value module_name =
                     module.get_ptr<ModuleObject>()->get_name_binding();
-                if(can_convert_to<String>(module_name))
+                if(has_native_layout<String>(module_name))
                 {
                     message += string_to_wstring(
                         TValue<String>::from_value_assumed(module_name));
@@ -170,11 +170,11 @@ namespace cl
 
         std::wstring module_name_for_message(Value module)
         {
-            if(can_convert_to<ModuleObject>(module))
+            if(has_native_layout<ModuleObject>(module))
             {
                 Value module_name =
                     module.get_ptr<ModuleObject>()->get_name_binding();
-                if(can_convert_to<String>(module_name))
+                if(has_native_layout<String>(module_name))
                 {
                     return string_to_wstring(
                         TValue<String>::from_value_assumed(module_name));
@@ -493,7 +493,7 @@ namespace cl
                 builtins =
                     thread->get_machine()->global_builtins_module().raw_value();
             }
-            if(!can_convert_to<ModuleObject>(builtins))
+            if(!has_native_layout<ModuleObject>(builtins))
             {
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", L"__builtins__ must be a module");
@@ -514,7 +514,7 @@ namespace cl
                            const std::wstring &full_name,
                            const std::wstring &parent_name)
         {
-            if(!can_convert_to<ModuleObject>(parent))
+            if(!has_native_layout<ModuleObject>(parent))
             {
                 return set_not_a_package(thread, full_name, parent_name);
             }
@@ -522,7 +522,7 @@ namespace cl
             TValue<String> path_name = interned_string(thread, L"__path__");
             Value path =
                 parent.get_ptr<ModuleObject>()->get_own_property(path_name);
-            if(!can_convert_to<List>(path))
+            if(!has_native_layout<List>(path))
             {
                 return set_not_a_package(thread, full_name, parent_name);
             }
@@ -562,8 +562,8 @@ namespace cl
             Value package_path =
                 package->get_own_property(interned_string(thread, L"__path__"));
             Value package_name = package->get_name_binding();
-            if(!can_convert_to<List>(package_path) ||
-               !can_convert_to<String>(package_name))
+            if(!has_native_layout<List>(package_path) ||
+               !has_native_layout<String>(package_name))
             {
                 return Value::not_present();
             }
@@ -678,7 +678,7 @@ namespace cl
         {
             return import_hook.value();
         }
-        if(!can_convert_to<Function>(import_hook.value()))
+        if(!has_native_layout<Function>(import_hook.value()))
         {
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"object is not callable");
@@ -697,7 +697,7 @@ namespace cl
 
     Value import_from(ThreadState *thread, Value module, TValue<String> name)
     {
-        if(!can_convert_to<ModuleObject>(module))
+        if(!has_native_layout<ModuleObject>(module))
         {
             return set_cannot_import_name(thread, module, name);
         }
@@ -713,7 +713,7 @@ namespace cl
     Value import_star(ThreadState *thread, CodeObject *code_object,
                       Value module)
     {
-        if(!can_convert_to<ModuleObject>(module))
+        if(!has_native_layout<ModuleObject>(module))
         {
             return thread->set_pending_builtin_exception_string(
                 L"ImportError",
@@ -750,7 +750,7 @@ namespace cl
                     }
                     return item.value();
                 }
-                if(!can_convert_to<String>(item.value()))
+                if(!has_native_layout<String>(item.value()))
                 {
                     return set_bad_all_item(thread, module_name, item.value());
                 }
@@ -786,7 +786,7 @@ namespace cl
             thread->make_object_value<SlotDict>(source.extract()));
         for(SlotDict::EntryView entry: *source_dict.extract())
         {
-            assert(can_convert_to<String>(entry.key));
+            assert(has_native_layout<String>(entry.key));
             TValue<String> name = TValue<String>::from_value_assumed(entry.key);
             if(!string_starts_with_underscore(name))
             {
