@@ -27,7 +27,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `collections.abc` | Abstract container protocols used by typing, pathlib, importlib, libraries. | Not started / not assessed. |
 | [ ] | `abc` | Abstract base classes and metaclass behavior. | Depends on metaclass and descriptor semantics. |
 | [ ] | `functools` | Decorators, wrappers, caching, partial application. | Not started / not assessed. |
-| [ ] | `itertools` | Common efficient iteration building blocks. | Depends on iterator protocol completeness and native helpers for performance. |
+| [~] | `itertools` | Common efficient iteration building blocks. | Pure-Python lazy iterator classes implement `chain`, class-level `chain.from_iterable`, finite/infinite `repeat`, `islice`, and `starmap` through existing VM iterator/call protocols. Tests cover construction laziness, exhaustion, consumption boundaries, exception propagation/recovery, unpacking, and call conventions against CPython 3.14.5. Integer arguments use `operator.index` for supported builtin ints/bools/int subclasses with signed 64-bit platform bounds; custom `__index__` remains deferred. `from_iterable` lacks instance/classmethod binding and subclass-preserving construction. Callable instances and first-class bound methods remain outside `starmap`'s supported call surface. Inputs are limited to existing VM iterables: string iteration is unsupported, so CPython string-input cases are omitted. The self-checking tests use indexed loop cases (tuple targets are unsupported) and separate functions to stay within the per-code-object global-read-cache limit. Other itertools APIs, repr/pickling/copy/type metadata compatibility, and `repeat.__length_hint__` remain unimplemented; no native performance work is included. |
 | [~] | `contextlib` | Context-manager helpers used pervasively in tests and libraries. | Pure-Python module now covers `AbstractContextManager`, `closing`, `nullcontext`, `suppress`, and `chdir` on top of current `with` semantics. Missing generator/decorator-heavy APIs (`contextmanager`, `asynccontextmanager`, `ContextDecorator`, `ExitStack`, async helpers) pending generators, async, file/stream support, and richer decorator/protocol behavior; redirection helpers still need stream support. |
 
 ## Tier 1: Import and Package Ecosystem
@@ -133,7 +133,7 @@ source:
 | [ ] | `collections` | Start with pure-Python-compatible pieces, but core containers may need native support later. |
 | [ ] | `abc` | Needed before `collections.abc` and many framework patterns. |
 | [ ] | `functools` | `wraps`, `partial`, and cache helpers have high ecosystem payoff. |
-| [ ] | `itertools` | Start with common primitives once iterator protocol is settled. |
+| [~] | `itertools` | Initial lazy `chain`, `repeat`, `islice`, and `starmap` slice exists; remaining APIs and protocol/metadata limitations are recorded above. |
 | [~] | `contextlib` | First context-manager helper slice exists; generator/decorator/async/stack helpers remain. |
 | [~] | `os` | Path/environment/filesystem basics exist; process-heavy, fd, symlink, stat-result, and full path APIs remain. |
 | [ ] | `io` | Foundational for files, codecs, archives, and testing tools. |
