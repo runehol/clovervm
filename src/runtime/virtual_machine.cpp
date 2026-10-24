@@ -1546,7 +1546,7 @@ namespace cl
             L"abs",     L"iter",    L"next",    L"repr", L"hash",
             L"len",     L"getattr", L"hasattr", L"vars", L"dir",
             L"globals", L"locals",  L"print",   L"pow",  L"sum",
-            L"any",     L"all",     L"min",     L"max"};
+            L"any",     L"all",     L"min",     L"max",  L"sorted"};
         for(const wchar_t *name: export_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);

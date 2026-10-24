@@ -7481,10 +7481,14 @@ TEST(Interpreter, python_defined_print_builtin_propagates_str_errors)
 
 TEST(Interpreter, python_defined_min_and_max_builtins_report_empty_input)
 {
-    expect_python_error(L"min()\n", L"TypeError", L"");
-    expect_python_error(L"max()\n", L"TypeError", L"");
-    expect_python_error(L"min(())\n", L"ValueError", L"");
-    expect_python_error(L"max([])\n", L"ValueError", L"");
+    expect_python_error(L"min()\n", L"TypeError",
+                        L"min expected at least 1 argument, got 0");
+    expect_python_error(L"max()\n", L"TypeError",
+                        L"max expected at least 1 argument, got 0");
+    expect_python_error(L"min(())\n", L"ValueError",
+                        L"min() iterable argument is empty");
+    expect_python_error(L"max([])\n", L"ValueError",
+                        L"max() iterable argument is empty");
 }
 
 TEST(Interpreter, python_defined_iter_and_next_builtin_missing_method_errors)
@@ -7641,7 +7645,7 @@ TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
     for(const wchar_t *name:
         {L"list", L"tuple", L"dict", L"int", L"str", L"isinstance",
          L"TypeError", L"ValueError", L"StopIteration", L"NotImplemented",
-         L"len", L"iter", L"hasattr"})
+         L"len", L"iter", L"hasattr", L"sorted", L"min", L"max"})
     {
         EXPECT_EQ(public_module->get_own_property(interned_string(name)),
                   implementation->get_own_property(interned_string(name)));
@@ -7669,7 +7673,8 @@ TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
         {L"_clover_builtin_getattr", L"_clover_builtin_getattr_default",
          L"_clover_builtin_hasattr", L"_clover_builtin_dir",
          L"_clover_dict_allocate", L"_clover_dict_next", L"_clover_dict_new",
-         L"_clover_dict_update", L"_clover_list_eq", L"_clover_tuple_eq",
+         L"_clover_dict_update", L"_clover_min_max",
+         L"_clover_selection_keywords", L"_clover_list_eq", L"_clover_tuple_eq",
          L"_clover_iter_membership_fallback"})
     {
         EXPECT_TRUE(public_module->get_own_property(interned_string(name))
