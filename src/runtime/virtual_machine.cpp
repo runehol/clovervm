@@ -464,6 +464,12 @@ namespace cl
                         Optional<TValue<Function>>::none();
                     vm->membership_sequence_fallback_function_ =
                         Optional<TValue<Function>>::none();
+                    if(vm->exact_dict_general_shape_ != nullptr)
+                    {
+                        ThreadState::ActivationScope activation_scope(
+                            vm->get_default_thread());
+                        vm->exact_dict_general_shape_ = nullptr;
+                    }
                     vm->global_builtins_module_ = nullptr;
                     vm->builtin_implementation_module_ = nullptr;
                     vm->sys_module_ = nullptr;
@@ -496,6 +502,7 @@ namespace cl
                 Optional<TValue<Function>>::none();
             membership_sequence_fallback_function_ =
                 Optional<TValue<Function>>::none();
+            exact_dict_general_shape_ = nullptr;
             global_builtins_module_ = nullptr;
             builtin_implementation_module_ = nullptr;
             sys_module_ = nullptr;

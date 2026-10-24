@@ -1,5 +1,6 @@
 #include "test_helpers.h"
 
+#include "builtin_types/dict.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/string_iterator.h"
@@ -48,6 +49,46 @@ namespace cl
         }
 
     }  // namespace
+
+    TEST(HeapReclamation, CachedGeneralDictShapeSurvivesWithoutInstances)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        Shape *general_shape = context.vm().exact_dict_general_shape();
+        SlabAllocator *shape_slab =
+            heap.slab_for_object_unlocked(general_shape);
+
+        {
+            Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+            ASSERT_FALSE(
+                dict.value()
+                    .extract()
+                    ->set_item(thread, Value::from_smi(1), Value::None())
+                    .has_exception());
+            ASSERT_EQ(general_shape, dict.value().extract()->get_shape());
+        }
+        context.vm().run_heap_reclamation();
+
+        ASSERT_TRUE(slab_has_valid_object(shape_slab, general_shape));
+        EXPECT_NE(HeapLifecycleState::Dead, general_shape->lifecycle_state);
+        EXPECT_GT(general_shape->refcount, 0);
+        EXPECT_EQ(general_shape, thread->get_exact_dict_general_shape());
+        EXPECT_EQ(context.vm().dict_class(), general_shape->get_class());
+        EXPECT_GE(
+            general_shape->lookup_descriptor_index(
+                context.vm().get_or_create_interned_string_value(L"__class__")),
+            0);
+
+        Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+        ASSERT_FALSE(dict.value()
+                         .extract()
+                         ->set_item(thread, Value::from_smi(2), Value::None())
+                         .has_exception());
+        EXPECT_EQ(general_shape, dict.value().extract()->get_shape());
+        EXPECT_NE(HeapLifecycleState::Dead, general_shape->lifecycle_state);
+    }
 
     TEST(HeapReclamation, RootCollectionIncludesFrameSlotRoot)
     {
