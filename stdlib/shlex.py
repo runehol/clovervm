@@ -107,9 +107,11 @@ def quote(s):
         return "''"
     if not isinstance(s, str):
         raise TypeError("expected string object, got " + repr(_runtime_type(s).__name__))
+    # Inspect the payload: subclass length/index overrides can hide metacharacters.
+    length = str.__len__(s)
     idx = 0
-    while idx < len(s):
-        if s[idx] not in _safe_chars:
+    while idx < length:
+        if str.__getitem__(s, idx) not in _safe_chars:
             return "'" + s.replace("'", "'\"'\"'") + "'"
         idx += 1
     return s
