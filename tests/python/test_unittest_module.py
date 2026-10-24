@@ -1,7 +1,7 @@
 # Python test set -- unittest module
 #
 # Lifecycle scenarios adapted from CPython's
-# Lib/unittest/case.py at v3.14.5 and local CPython lifecycle probes.
+# Lib/unittest/case.py at v3.14.5 and local CPython lifecycle/call probes.
 # Copyright (c) Python Software Foundation.
 # The derived portions are licensed under the PSF License Agreement.
 # Local adaptations use explicit run() and inspect raw exception entries.
@@ -68,6 +68,66 @@ def returns():
 
 assert case.assertRaises(ValueError, raises, 7, msg='forwarded') is None
 case.assertRaises((TypeError, ValueError), raises, 7, msg='forwarded')
+
+# The callable comes from *args so its keyword names cannot collide with a
+# named callable parameter on assertRaises.
+calls = []
+
+
+def raises_with_function(*, function):
+    calls.append(function)
+    raise ValueError(function)
+
+
+assert case.assertRaises(ValueError, raises_with_function, function='value') is None
+assert calls == ['value']
+
+
+def raises_with_names(*, args, kwargs, callable_obj, msg):
+    calls.append((args, kwargs, callable_obj, msg))
+    raise ValueError('names')
+
+
+case.assertRaises(ValueError, raises_with_names,
+                  args=1, kwargs=2, callable_obj=3, msg='forwarded')
+assert calls == ['value', (1, 2, 3, 'forwarded')]
+
+# CPython's self and expected_exception are not positional-only: supplying
+# either twice is an argument binding error, before the target executes.
+for name in ('self', 'expected_exception'):
+    try:
+        case.assertRaises(ValueError, raises_with_function,
+                          function='not called', **{name: None})
+        assert False
+    except TypeError:
+        pass
+assert calls == ['value', (1, 2, 3, 'forwarded')]
+
+# Context-manager form remains outside the supported slice, including a
+# callable supplied only by keyword rather than as the first *args entry.
+for keywords in ({}, {'function': returns}):
+    try:
+        case.assertRaises(ValueError, **keywords)
+        assert False
+    except TypeError:
+        pass
+
+try:
+    case.assertRaises(ValueError, 42)
+    assert False
+except TypeError:
+    pass
+
+# Invalid expectations must be rejected before invoking the target, even if
+# it would raise an otherwise matching exception.
+for expected in (int, (ValueError, int)):
+    try:
+        case.assertRaises(expected, raises_with_function, function='not called')
+        assert False
+    except TypeError:
+        pass
+assert calls == ['value', (1, 2, 3, 'forwarded')]
+
 caught = False
 try:
     case.assertRaises(ValueError, returns)
