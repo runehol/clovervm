@@ -398,3 +398,21 @@ try:
 except TypeError:
     result = 7
 assert result == 7
+
+
+# KeyboardInterrupt is a direct BaseException subclass, not an Exception.
+assert issubclass(KeyboardInterrupt, BaseException)
+assert not issubclass(KeyboardInterrupt, Exception)
+interrupt = KeyboardInterrupt('interrupted')
+assert interrupt.args == ('interrupted',)
+assert str(interrupt) == 'interrupted'
+caught = False
+try:
+    try:
+        raise interrupt
+    except Exception:
+        assert False
+except KeyboardInterrupt as error:
+    assert error is interrupt
+    caught = True
+assert caught
