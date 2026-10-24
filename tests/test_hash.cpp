@@ -1,6 +1,9 @@
 #include "builtin_types/bigint.h"
 #include "builtin_types/hash.h"
 #include "builtin_types/str.h"
+#include "object_model/attr.h"
+#include "object_model/function.h"
+#include "object_model/shape_key.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
@@ -43,6 +46,45 @@ namespace
             cl::test::native_exception_message(exception).extract()->data);
     }
 }  // namespace
+
+TEST(Hash, NoneHashResolverGuardsReceiverAndArity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Value method = load_attr(Value::from_oop(context.vm().none_type_class()),
+                             interned_string(L"__hash__"));
+    ASSERT_TRUE(can_convert_to<Function>(method));
+    CodeObject *code = method.get_ptr<Function>()->code_object.extract();
+    ASSERT_NE(nullptr, code->trusted_handler_resolver);
+
+    ShapeKey none_key = ShapeKey::from_value(Value::None());
+    ShapeKey unused_key = ShapeKey::from_value(Value::not_present());
+    TrustedResolution resolution = code->trusted_handler_resolver(
+        &context.vm(), none_key, unused_key, TrustedHandlerOperandOrder::Normal,
+        TrustedHandlerArity::Unary);
+    ASSERT_TRUE(resolution.has_trusted_handler());
+    ASSERT_EQ(TrustedHandlerArity::Unary, resolution.arity);
+    EXPECT_EQ(Value::from_smi(4238894112),
+              resolution.unary(context.thread(), Value::None()));
+    auto metadata = context.vm().trusted_handler_metadata(
+        erase_trusted_handler_target(resolution.unary));
+    ASSERT_TRUE(metadata.has_value());
+    EXPECT_EQ(TrustedHandlerArity::Unary, metadata->arity);
+    EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+    EXPECT_EQ(TrustedHandlerSemantics::Generic, metadata->semantics);
+
+    EXPECT_FALSE(code->trusted_handler_resolver(
+                         &context.vm(),
+                         ShapeKey::from_value(Value::from_smi(0)), unused_key,
+                         TrustedHandlerOperandOrder::Normal,
+                         TrustedHandlerArity::Unary)
+                     .has_trusted_handler());
+    EXPECT_FALSE(
+        code->trusted_handler_resolver(&context.vm(), none_key, unused_key,
+                                       TrustedHandlerOperandOrder::Normal,
+                                       TrustedHandlerArity::Binary)
+            .has_trusted_handler());
+}
 
 TEST(Hash, CanonicalizeHashPreservesBoolAndSmiExceptMinusOne)
 {
