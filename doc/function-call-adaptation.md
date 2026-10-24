@@ -2,1384 +2,532 @@
 
 | Field | Value |
 |---|---|
-| Document type | Design |
-| Status | Accepted |
-| Implementation | Explicit and expanded Function, constructor, and attribute method calls implemented |
-| Scope | Python argument binding and adaptation above the managed frame convention |
-| Owning layers | Parser, codegen, function metadata, runtime call adaptation, and interpreter |
-| Validated against | `a909d10` (2026-06-25); expanded-call container helpers checked against `69269fe1` and native binding-plan representation agreed 2026-10-23 |
-| Supersedes | N/A |
+| Document type | Architecture contract |
+| Status | Implemented |
+| Scope | Python signature binding, argument expansion, defaults, collectors, and call-site caches |
+| Owning layers | Parser/AST, codegen, function metadata, runtime adaptation, and interpreter |
+| Validated against | `fc13f0ee` (2026-10-24) |
 
-This note records the implemented function-call adaptation model for Python
-keyword calls and the current design direction for caller argument expansion. It builds on
-the low-level frame mechanics documented in
-[CloverVM Function Calling Convention](function-calling-convention.md).
-Call-span lifetime, method-lookup ordering, alignment, and lazy traceback
-preservation are detailed in
-[Call Argument Temporaries And Lazy Tracebacks](call-argument-temporaries-and-lazy-tracebacks.md).
+CloverVM has separate positional, explicit-keyword, and expanded-call paths for
+Functions, eligible constructor thunks, and attribute method calls. They all
+enter the same managed frame convention. Calls without expansion keep their
+existing opcodes and avoid constructing expansion transport.
 
-The goal is to add Python's richer call binding semantics without turning the
-existing positional `CallPositional` hot path into a broad generic slow path.
+[Function Calling Convention](function-calling-convention.md) owns frame layout,
+register encoding, alignment, and entry/return. [Call Argument Temporaries and
+Lazy Tracebacks](call-argument-temporaries-and-lazy-tracebacks.md) owns call-span
+lifetime and traceback preservation. This document describes the implemented
+adaptation above those contracts.
 
-## Current State
+## Ownership by layer
 
-The implemented call path now has separate positional and keyword-aware entry
-paths:
+| Layer | Responsibility |
+|---|---|
+| Parser/AST | Signature groups and ordered positional, starred, keyword, and double-starred arguments |
+| Codegen | Evaluation order, rooted temporaries, container-building precode, call opcode selection |
+| Function metadata | Parameter layout, keyword-bindable names, default locations and values |
+| Runtime adaptation | Binding validation, native plans, defaults, varargs and keyword collectors |
+| Interpreter | Callable/method resolution, IC guards, helper entry, frame publication and dispatch |
 
-- callers lay out positional values in a contiguous temporary call argument
-  span;
-- `CallPositional`, `CallMethodAttrPositional`, and constructor thunks enter ordinary
-  `Function` objects through the same frame convention;
-- `CallKeyword` supports explicit caller keywords for ordinary functions and
-  eligible constructor thunks;
-- `Function` metadata tracks minimum and maximum positional arity, grouped
-  signature counts, keyword-bindable parameter remaps, and
-  `first_default_slot` plus `default_presence_mask`;
-- entry adaptation supports fixed arity, positional defaults, required and
-  defaulted keyword-only parameters, mixed positional/keyword-only default
-  layouts, callee `*args`, and callee `**kwargs`;
-- parser/codegen represent explicit caller positional and keyword arguments;
-- parser and codegen support positional-only parameters before `/`;
-- caller `*args` and `**kwargs` expansion use `CallExpanded` for straight
-  Function and eligible constructor calls, and `CallMethodAttrExpanded` for
-  attribute calls. Both use the native binder and plan application.
+The native binder receives an already-resolved Function. It does not perform
+attribute lookup or duplicate callable resolution. Arbitrary object `__call__`
+and descriptor dispatch beyond the existing method-call support are unsupported.
 
-The keyword-call path deliberately does not introduce the full Python callable
-protocol. Descriptor dispatch beyond existing method-call support, arbitrary
-object `__call__`, and method-lookup timing remain separate work.
+## Signature and default metadata
 
-## Python Signature Shape
-
-Function signatures should be represented in the same broad groups CPython uses:
+Parameter slots follow these groups:
 
 ```text
-arguments(
-  posonlyargs,
-  args,
-  vararg,
-  kwonlyargs,
-  kw_defaults,
-  kwarg,
-  defaults
-)
+positional-only | positional-or-keyword | *args | keyword-only | **kwargs
 ```
 
-For clovervm this does not require copying CPython's AST classes directly, but
-the parser should preserve the same semantic grouping:
+Absent collectors occupy no slot. `FunctionSignature` records the group counts,
+collector flags, `first_default_slot`, and `default_presence_mask`. `CodeObject`
+owns the signature and `FunctionKeywordRemap`; `Function` keeps a hot signature
+copy and positional arity bounds. Function code/signature is currently immutable
+from Python.
 
-- positional-only parameters before `/`;
-- positional-or-keyword parameters after `/` and before `*`;
-- optional varargs parameter, `*args`;
-- keyword-only parameters after `*args` or bare `*`;
-- optional kwargs parameter, `**kwargs`.
+`FunctionKeywordRemap` contains interned parameter names and logical parameter
+indices for positional-or-keyword and keyword-only parameters, in declaration
+order. Positional-only parameters and the `**kwargs` collector are excluded.
+An incoming keyword matching a positional-only name is therefore unmatched: it
+is collected by `**kwargs` when present, or rejected otherwise.
 
-This grouping is important because each parameter class has different binding
-rules. Codegen should not have to rediscover where `/` or `*` appeared by
-scanning a flat parameter list.
-
-Defaults may remain attached to parameter nodes if that best fits the local AST
-style, but codegen should lower positional-or-keyword defaults and keyword-only
-defaults into one runtime default table whose zero index corresponds to the
-first callee parameter slot that has a default.
-
-## Call Argument Shape
-
-Implemented calls represent positional and explicit keyword arguments with
-call-argument AST nodes distinct from signature parameters. Caller `*iterable`
-and `**mapping` expansion, including mixed and repeated sources, is not yet
-implemented.
-
-## Expanded Calls: Current Design Direction
-
-The direction agreed during discussion on 2026-10-13, with the input layout
-settled on 2026-10-17, is container-building precode followed by a container-input
-call adapter, called the **expander** here.
-This is a design sketch, not an implementation-ready contract or implementation
-plan. Ordinary calls without expansion keep their existing fast paths.
-
-```text
-evaluate callable into an ordinary register
-precode -> adjacent exact positional tuple + fresh exact keyword dict
-expander -> normalized callee parameter window -> frame entry
-```
-
-Precode owns evaluation, iterable/mapping callbacks, container construction, and
-expansion validation. The expander owns callable/signature resolution, argument
-binding, defaults, collector handling, and frame entry. A new dynamically indexed
-managed argument area is not required by this direction.
-
-### Positional precode
-
-For a single `*source`, reuse an exact tuple; otherwise consume the iterable into
-an exact tuple. Tuple subclasses go through iterable conversion so overrides of
-`__iter__` are honored. For mixed positional arguments or multiple starred
-sources, use a growing list builder, append ordinary values, extend from each
-starred iterable, and convert to an exact tuple when the final count is known.
-Tuple storage requires its size up front; arbitrary iterables do not provide
-that count in advance. With no positional sources, an empty tuple suffices.
-
-Codegen groups positional items (ordinary arguments and starred sources)
-separately from keyword items. Evaluate positional expressions before keyword
-expressions, even when a starred source is written after an explicit keyword.
-The timing of iterable conversion follows CPython's construction strategy:
-
-- If there is exactly one starred positional source and no ordinary positional
-  arguments, evaluate and root the source first, build all keywords, then emit
-  `ToExactTuple`. Keyword items do not affect eligibility for this case.
-- Otherwise, expand starred sources into the positional list builder as they
-  are encountered and convert the completed builder to a tuple before building
-  keywords. Calls with no starred sources construct their positional tuple
-  before keywords as well.
-
-For `f(*source, x=value())`, `value()` runs before iteration of `source`.
-For `f(0, *source, x=value())`, iteration runs before `value()`. The expression
-producing `source` is evaluated before `value()` in both cases. This special
-case deliberately matches observable CPython behavior; `CallExpanded` still
-receives the same adjacent exact tuple and fresh dict after precode completes.
-
-```text
-f(x, *a, y, *b)
-
-callable_reg = evaluate f
-builder = list containing evaluated x
-extend builder from evaluated a
-append evaluated y
-extend builder from evaluated b
-args_tuple = convert builder to an exact tuple
-```
-
-Iteration is outside the expander, leaving separate specialization points for
-expansion and binding. Copy element references, not the elements themselves.
-
-#### List-builder bytecodes
-
-Use the existing `CreateList` with zero items to allocate an empty exact list,
-and add these builder operations:
-
-```text
-CreateList ..., 0     -> empty exact list in accumulator
-ListAppend builder   <- append the item in accumulator
-ListExtend builder   <- extend from the iterable in accumulator
-ListToTuple builder  -> replace builder register with an exact tuple
-```
-
-`ListAppend` and `ListToTuple` require an exact list builder created by generated
-precode. They access native list storage directly, without Python method lookup
-or callbacks. `ListAppend` leaves the accumulator unchanged; its trusted
-Python intrinsic returns `None` through separate codegen. Append retains the
-stored item; tuple construction retains the
-copied element references. `ListToTuple` reads the exact list from its register
-and writes the resulting exact tuple back to that same register, replacing the
-register's list reference. It does not mutate the source list object. Codegen
-loads the tuple from that register if a subsequent operation needs it in the
-accumulator; `ListToTuple` itself has no accumulator input or result.
-Codegen keeps the builder rooted while evaluating expressions and running any
-iteration code that supplies items.
-
-`ListExtend` requires an exact destination list in `builder` and takes its source
-from the accumulator. It leaves the destination register pointing to the same
-list and writes `None` to the accumulator on every successful path. It completes
-extension before advancing to the following instruction. Source handling has
-three paths:
-
-- Exact tuple: append references directly from native tuple storage.
-- Exact list: append references directly from native list storage. Handle
-  source/destination aliasing, extending from the original source extent rather
-  than repeatedly consuming newly appended items.
-- Every other source: enter a VM-owned managed helper that iterates the source
-  and appends each yielded item with the trusted `ListAppend` intrinsic.
-
-List and tuple subclasses take the managed path so their iterator overrides
-run. Existing iterators also use the ordinary iterator protocol. The helper uses
-normal compiled Python loop control, iteration ICs, and StopIteration handling,
-following the managed-helper approach used by `ToExactTuple`; it does not run a
-recursive C++ interpreter loop. Native exact-container paths perform no Python
-method lookup or callbacks.
-
-Keep both destination and source rooted across managed callbacks, and retain
-each appended element. If iteration raises, propagate the exception without
-resuming after `ListExtend`; elements already appended remain in the builder.
-The managed helper receives `(builder, source)` in the outgoing window derived
-from `get_first_free_arg_encoded_reg()` and returns `None` through the ordinary
-managed return path. A single direct `NOINLINE` opcode handler handles native
-extension and managed entry; it is not on the hot-handler list.
-
-#### Single-source conversion: ToExactTuple
-
-`ToExactTuple value_reg` reads an iterable source from `value_reg` and writes an
-exact tuple to the accumulator, leaving the source register unchanged. It always
-writes the accumulator on success, on both fast and managed paths. An exact
-tuple is returned by identity without allocation. Every other input, including
-tuple subclasses, takes the iteration path so subclass `__iter__` overrides
-are honored.
-
-The fallback is an ordinary managed call to a VM-owned helper Function compiled
-once from trusted Python source with the other builtin implementations:
+Default expressions are evaluated when the Function is created. Its defaults
+tuple is a slot-indexed suffix beginning at `first_default_slot`:
 
 ```python
-def _clover_iterable_to_exact_tuple(source):
-    builder = []
-    for item in source:
-        __clover_list_append__(builder, item)
-    return __clover_list_to_tuple__(builder)
+def f(a, b=5, *args, c=6, d=7): ...
 ```
-
-The two `__clover_*` spellings are proposed trusted compiler intrinsics, lowered
-directly to `ListAppend` and `ListToTuple`, not runtime function calls. The list
-literal uses existing list allocation. Ordinary loop compilation supplies the
-iterator protocol calls and their ICs, loop control, and StopIteration handling;
-the loop and exception tables are not hand-emitted in C++.
-
-The VM retains the resulting Function and the opcode enters it directly, without
-public builtin lookup. Its CodeObject owns the normal iteration ICs, shared by
-fallback calls. Exact-tuple reuse remains in the opcode; the helper only collects
-an iterable. A future tuple constructor can reuse this conversion machinery.
-
-A general iterator does not supply a reliable final element count. Collection
-therefore uses growable list storage before allocating the fixed-size tuple and
-copying element references. An exact-list-to-tuple fast path could avoid the
-intermediate builder later; it is not required by this slice.
-
-The exact-container guards compare the pointer tag and shape against the tuple
-or list root shape cached on `ThreadState`, following the string-shape cache.
-The opcode's exact-tuple guard advances directly on a hit. Otherwise it
-tail-dispatches to a slow handler, which places the source in a one-argument
-outgoing window at `code_object->get_first_free_arg_encoded_reg()`, beyond
-the caller's live temporaries, and enters the helper through
-existing managed frame-entry machinery. The saved return PC points immediately
-after `ToExactTuple`. The helper returns normally with the tuple in the
-accumulator. Codegen emits `Star` when it needs to store the result. There is no
-conversion-specific finish instruction, accumulator preservation prefix, or
-change to the ordinary managed return convention:
 
 ```text
-ToExactTuple source_reg
-Star containers_reg
+parameter slots:       a, b, args, c, d
+first_default_slot:    1
+defaults tuple:        (5, None, 6, 7)
+default_presence_mask: 0b1101    # Bit zero describes the first tuple entry.
 ```
 
-The source parameter, builder local, and iterator state use normal managed
-rooting. Iterator callbacks make normal managed calls; failures propagate
-through existing exception unwinding instead of resuming after the conversion.
-No recursive C++ interpreter invocation or separate continuation-state
-structure is introduced. Detailed scratch-window placement and expansion-error
-context must be resolved before implementation.
+`None` placeholders keep ordinary tuples free of VM sentinels. The mask
+separates placeholders from real defaults, including an actual `None` default.
+Default values are copied by reference from the current Function; caches do not
+freeze them.
 
-#### List normalization: ToExactList
+## Positional and explicit-keyword calls
 
-`ToExactList value_reg` reads a source from `value_reg` and writes an exact list
-to the accumulator, leaving the source register unchanged. It always writes the
-accumulator on success, on both fast and managed paths. An exact list is returned
-by identity, preserving its live contents. Every other source, including list
-subclasses, takes a managed iteration path into a fresh exact list:
+Calls without expansion use `CallPositional` or `CallKeyword`, with fused
+attribute-method counterparts. Positional values are staged in an aligned
+outgoing argument span. Explicit keyword values occupy a separate temporary
+span so reordering cannot overwrite unread values. Names are a constant tuple
+of interned strings fixed by the instruction.
+
+For example, this caller:
 
 ```python
-def _clover_iterable_to_exact_list(source):
-    builder = []
-    for item in source:
-        __clover_list_append__(builder, item)
-    return builder
+def caller(f):
+    return f(10, c=30, b=20)
 ```
 
-The trusted append intrinsic lowers to `ListAppend`. The VM owns the helper
-Function and enters it using the same managed-call and return pattern as
-`ToExactTuple`, returning the result in the accumulator with normal iteration
-ICs, rooting, and exception propagation.
-The exact-list guard is in the opcode; the fallback helper does not repeat it.
-No final list-to-tuple conversion is needed. Managed helper scratch placement
-remains part of the runtime implementation sketch.
-
-Mapping merge helpers apply `ToExactList` to the result of `source.keys()` via a
-trusted compiler intrinsic, then traverse the resulting list normally.
-
-### Keyword precode and error context
-
-Explicit keyword runs and repeated `**mapping` sources build one fresh exact
-transport dict. Merge operations reject duplicate names rather than overwriting
-them. A mapping source must support mapping-style key enumeration and value
-lookup; arbitrary iterables of pairs are not accepted. String-key validation is
-deferred to `CallExpanded`, after keyword construction and before binding.
-
-For the first `**source`, when no keyword destination has been built yet, an
-exact dict can use a direct native copy into a fresh exact dict. Its keys are
-already unique, so that copy needs no duplicate checking. It preserves even
-non-string keys for later call-entry validation. A generic mapping can repeat
-keys even within the first source,
-so its fallback must still reject duplicates before fetching the repeated key's
-value.
-Other mappings, including dict subclasses, use the general mapping merge path.
-Never reuse the caller's mutable dictionary as transport. Precode always
-provides a fresh exact dict, including a fresh empty dict for `f(*args)` when
-there are no keyword sources.
-
-Here "exact dict" means the builtin dict class, not a restriction to its
-string-keyed storage shape. Keyword keys may be string subclasses and must be
-preserved as the original objects, without conversion to exact strings. CPython
-3.14.5 preserves key identity and subclass attributes when the callee captures
-the key in `**kwparams`. A key consumed by a named parameter does not appear in
-that collector.
-
-Exact builtin string keys use string-keyed storage. A string-subclass key uses
-general dict storage, promoting the destination when needed and honoring its
-hash/equality protocols. Non-string keys also use general storage temporarily;
-`CallExpanded` rejects them with `TypeError`. Both keyword builder
-operations and `CallExpanded` must support either dict storage shape; neither
-may assume that an exact dict has only exact string keys. General binding must
-also preserve the original key objects when packing leftover keywords into a
-callee's `**kwargs` dict.
-
-The callable is evaluated first and remains rooted in an ordinary register while
-arguments are constructed. Normalization and merge operations receive that
-register where needed for call-specific errors. They do not need the signature
-merely to name the callable in an expansion error.
-
-#### Keyword builder, merge, and insertion bytecodes
-
-The two mapping operations take their source mapping from the accumulator and have
-an explicit callable-context register and destination register:
+generates the following body (`p0` is `f`):
 
 ```text
-BuildCallKeywords callable_reg, dict_reg
-MergeCallKeywords callable_reg, dict_reg
-AddCallKeyword callable_reg, dict_reg, name_const, value_reg
+Mov r0, p0
+LdaSmi 10
+Star r4
+LdaSmi 30
+Star r1
+LdaSmi 20
+Star r2
+CallKeyword r0, {r4:1}, kw_values={r1..r2}, kw=("c", "b"), keyword_call_ic[0]
+Return
 ```
 
-`BuildCallKeywords` creates a fresh exact dict in `dict_reg`, using the native
-copy fast path for an exact dict source. `MergeCallKeywords` extends the existing
-exact, call-owned dict in `dict_reg`, rejecting duplicate keys instead of
-replacing values. Both operations accept either source/destination dict storage
-shape, preserving string-subclass keys and promoting the destination as needed.
-The destination is stable across operations; no `Star` is
-needed between building the dictionary and subsequent merges. The accumulator
-is the source operand, not the dictionary result interface. All three keyword
-construction opcodes write `None` to the accumulator on successful completion,
-including managed fallback returns.
+Here `r4` starts the positional span; `r1` and `r2` hold the keyword values.
+The target signature determines where `c` and `b` are written. For a call with
+only positional arguments, codegen stages the outgoing values and emits
+`CallPositional`, with no keyword span or names tuple.
 
-`AddCallKeyword` inserts one explicit `name=value` argument into the existing
-exact, call-owned dict in `dict_reg`. `value_reg` holds the evaluated value;
-`name_const` identifies the exact builtin string name in the constant pool.
-It rejects an existing equal key instead of replacing its value, using
-`callable_reg` for duplicate-keyword error context. It supports both destination
-storage shapes; general storage must honor string-subclass keys' hash/equality
-protocols during duplicate detection. Successful insertion appends the new entry
-in keyword order. The destination remains in its register, without a subsequent
-`Star`.
+These examples are taken from the bytecode printer, with offsets and unused
+epilogues omitted, compact `StarN` moves written as `Star rN`, and string
+constants shown by value where helpful. Register numbers include alignment
+padding and can differ with surrounding expressions.
 
-Codegen evaluates every value in a consecutive explicit keyword run into
-temporary registers, in order, before emitting that run's `AddCallKeyword`
-operations in the same order. The values remain rooted through evaluation and
-insertion, including hash/equality callbacks. No accumulator reload is needed
-for insertion. An initial explicit run uses a fresh empty destination dict.
-Explicit runs and `MergeCallKeywords` operations alternate in keyword order.
+`FunctionCallAdaptation` selects the ordinary entry work:
 
-For `f(**d, a=first(), b=second(), **later())`, both `first()` and `second()` run
-before either explicit keyword is inserted. If inserting `a` detects a duplicate,
-the call fails before evaluating `later()`. These operations build transport
-only; parameter matching and positional-versus-keyword conflicts remain the
-binder's responsibility.
+| Tier | Work after successful validation |
+|---|---|
+| `FixedArity` | Enter with prepared positional arguments |
+| `Defaultable` | Fill missing defaults before entry |
+| `Full` | Fill defaults and initialize `*args` and/or `**kwargs` |
 
-The callable register supplies context for duplicate-keyword and invalid-mapping
-errors during construction. Signature resolution is not needed for these errors.
-The exact-dict merge fast path reads native entries but must check for collisions
-with the destination before inserting them.
+A `**kwargs` collector never absorbs excess positional arguments. Positional
+calls to such a signature allocate a fresh empty keyword dict. The full path
+packs extra positional arguments into a tuple.
 
-Exact-dict merge reuses stored source hashes and records the initial source
-entry count. Fetch each key, value, and hash into rooted managed registers before
-any destination equality callbacks; retain no native entry pointers across
-callbacks. Propagate callback exceptions or duplicate-keyword errors first.
-After each successful insertion, compare the source's current entry count with
-the initial count and raise `RuntimeError("dict mutated during update")` if it
-differs. Traverse current native entries by index, without snapshotting them.
-Value replacements and mutations that restore the original entry count before
-the check are accepted; later traversal may observe their effects. Do not use
-source table-generation changes as an additional rejection condition. This
-matches CPython 3.14.5's exact-dict merge size check; destination probe generation
-checks remain necessary for safe equality callbacks.
+`FunctionCallInlineCache` guards callable identity, positional count, and any
+constructor lookup validity dependency. It stores the resolved Function,
+CodeObject, and adaptation tier.
 
-General-storage insertion uses a dedicated VM-owned generated Function,
-`insert_if_absent_known_hash(destination, key, value, hash)`, returning whether it
-inserted. It shares only the restartable probe-loop emission with the existing
-dict method generators; its setup and found/missing actions are explicit.
-`DictNextEntry source_reg, index_reg, entry_reg` skips deleted entries, advances
-the index, writes key/value/stored hash into three adjacent managed registers,
-and reports entry availability in the accumulator. Merge helpers keep this
-state in ordinary managed frames. Non-string duplicate-key formatting calls
-`__str__` through managed special-method dispatch before native exception
-construction; string keys are formatted from their stored text directly.
+`KeywordCallInlineCache` adds an encoded destination for each explicit keyword,
+`default_fill_start_slot`, and keyword count. Names are fixed by the call-site
+constant, so there is no dynamic keyword-name guard. Encoded destination zero
+means insert into the keyword collector; real destinations cannot be zero
+because `fp[0]` is frame-header storage.
 
-Checkpoint 2b replaces the initial exact-dict-only implementation with the
-generic mapping protocol below. Expanded-call syntax stayed disabled through
-the container-building stages; checkpoint 3c enables straight expanded calls.
+On a keyword miss, the runtime validates a local candidate before replacing the
+live cache. It rejects excess positional arguments, resolves names through the
+remap, rejects duplicate formal fills and unexpected keywords without a
+collector, then checks required/defaulted slots. Entry copies the accepted
+contiguous default suffix, initializes collectors, and places keyword values.
+Placeholder defaults are overwritten before the callee can observe its frame.
 
-Generic sources, including dict subclasses, use a managed helper receiving
-`(callable, destination, source)`. Build starts with a fresh empty destination;
-merge supplies the existing one. The helper calls `source.keys()` and normalizes
-the result to an exact list: reuse an exact list unchanged; materialize every
-other iterable, including list subclasses, into a fresh exact list. Materialization
-finishes before any `source[key]` lookup or insertion from this source. If it
-raises, no values from this source have been fetched or inserted.
+## Expanded-call transport
 
-Call `source.keys()` directly and translate `AttributeError` around that call
-into a callable-context `TypeError` saying the source must be a mapping. This
-includes `AttributeError` from the `keys()` body and avoids requiring first-class
-bound methods or a separate method-lookup opcode. Materialization happens
-outside this exception boundary. Exceptions from materialization, hashing,
-equality, and `source[key]` propagate unchanged, including `AttributeError` and
-`KeyError`. This deliberately differs from CPython's broader exception
-translation around the entire merge.
-
-The merge uses an ordinary list iterator over that live list, checks each key
-for a duplicate before fetching `source[key]`, and inserts the value. Do not
-snapshot an exact list into a copy or tuple, or capture its initial length.
-The iterator advances by index using the current list contents and length:
-appended keys are visited, clearing or truncating the list can end traversal,
-and removing entries can skip keys shifted behind the iterator. Replacing a
-later entry changes the key subsequently fetched. Inserting before the current
-position can cause a key to be visited again and rejected as a duplicate. These
-behaviors match the CPython 3.14.5 mutation probes. The list, iterator, current
-key, and source remain rooted across callbacks. Key-list normalization uses
-`ToExactList` as specified above.
-
-The helper does not reject non-string keys. Build and merge accept arbitrary
-keys while constructing transport, so later keyword sources still run; a later
-mapping failure or duplicate-key error can win over a non-string-key error.
-`AddCallKeyword` supplies an exact string name by construction. An iterable of
-pairs without a mapping interface is not accepted. Calls and iteration use
-normal managed ICs.
-
-The destination must remain rooted in its register while callbacks run. Managed
-fallback entry/return must preserve the direct destination-register contract;
-it must not rely on a caller-emitted `Star` after the operation. A build fallback
-can establish the empty destination before entering the shared merge helper.
-Build and Merge enter the same VM-owned Python mapping helper through ordinary
-managed frame entry with three arguments at the first-free argument anchor.
-Build installs its fresh empty destination before entry. Normal helper return
-produces `None`; failure unwinds without executing the following instruction,
-with any already inserted entries retained. No special continuation or result
-store is needed.
-
-For a first keyword mapping followed by another mapping, precode is:
+Codegen lowers mixed and repeated `*iterable`/`**mapping` sources into:
 
 ```text
-accumulator = args_source
-Star containers_reg
-accumulator = first_keyword_source
-BuildCallKeywords callable_reg, next_container_reg
-accumulator = next_keyword_source
-MergeCallKeywords callable_reg, next_container_reg
-ToExactTuple containers_reg
-Star containers_reg
-CallExpanded callable_reg, containers_reg, first_arg_reg, cache_idx
+argument expressions and expansion callbacks
+    -> exact positional tuple + fresh exact keyword dict
+    -> native binding plan or cached plan
+    -> normalized parameter window
+    -> ordinary frame entry
 ```
 
-Here `next_container_reg` denotes the next logical register after
-`containers_reg`. Explicit keywords use `AddCallKeyword` with the same destination
-and uniqueness rule. With no keyword sources, precode creates a fresh empty dict
-in that register.
+Both containers are always present, including a fresh empty keyword dict for
+`f(*args)`. Exact dict means the builtin dict type; either string-keyed or general
+storage is valid. String-subclass key objects are preserved, and non-string
+keys survive construction until call-entry validation.
 
-Mixed sources use builder/merge precode before the same call opcode. Codegen
-reserves two adjacent logical
-registers: `containers_reg` holds the exact positional tuple and the next logical
-register holds the fresh exact keyword dict. Only the first register is encoded;
-there are no separate tuple and keyword-register operands.
+Two adjacent logical registers hold the tuple and dict. With the current
+register encoding they are `fp[containers_reg]` and `fp[containers_reg - 1]`.
+The callable/receiver and both inputs stay outside the outgoing window. The
+expanded-call instructions encode the first register of the pair and a separate
+outgoing anchor; runtime container sizes provide the argument counts. The call
+result returns in the accumulator.
 
-`first_arg_reg` is a separate outgoing parameter-window anchor, following the
-existing managed call convention. Keep the callable and input pair outside that
-window so parameter binding cannot overwrite inputs it still needs to read.
-`cache_idx` identifies the expanded-call cache; the result returns through the
-accumulator. Runtime container sizes supply argument counts.
+### Evaluation and positional construction
 
-There is one expanded-call opcode and one input layout. Both containers are
-always present. There is no tuple-only variant, absent-keyword flag, or None
-sentinel for the keyword input. Ordinary calls without expansion retain their
-existing opcodes.
+For a straight call, codegen evaluates and roots the callable before arguments.
+For an attribute call it evaluates and roots the receiver; the fused opcode
+performs lookup after argument construction. This accepted late lookup also
+applies to ordinary method calls and differs from CPython.
 
-Duplicate keywords across sources are detected during container merging, before
-insertion loses the duplicate information. This allows CPython's early error
-boundaries, including stopping before later keyword-source expressions and,
-for generic mappings, before fetching a duplicate key's value. Positional versus
-keyword parameter conflicts are detected later by signature binding. Earlier
-discussion allowed best-effort early duplicate timing for register-span
-transport; that latitude is recorded under alternatives rather than used to
-justify overwriting duplicates in dictionary transport.
+Positional expressions, including starred sources, are evaluated before keyword
+expressions even when a starred argument appears textually after a keyword.
+Scope analysis follows that same order. Conversion timing has two paths:
 
-### Expander and two call-site IC modes
+- **Exactly one starred positional source and no ordinary positional values:**
+  evaluate/root the source, construct all keywords, then convert it to a tuple.
+- **Other expanded calls:** append ordinary positional values and extend starred
+  sources into a list builder, then convert it to a tuple before keywords. With
+  no positional sources, create an empty tuple instead.
 
-Inputs are the callable and the adjacent exact positional tuple/fresh exact
-keyword dict pair. Both containers are always present. All user iterable/mapping
-expansion protocols have already run. The keyword dict may have either
-string-keyed or general storage. Resolve the
-callable through existing function/constructor-thunk machinery, then select:
+Thus `f(*source, x=value())` runs `value()` before iterating `source`, whereas
+`f(0, *source, x=value())` iterates first. The source expression runs before
+`value()` in both cases.
 
-- **Pure collector:** the signature is exactly `(*args, **kwargs)`, with no named
-  positional or keyword-only parameters. Validate every keyword key is a string,
-  accepting subclasses, then install the exact tuple and fresh dict
-  directly into the two parameter slots, including the fresh empty dict built
-  by precode when no keywords were supplied. No positional repacking or second
-  dict is needed.
-- **General binding:** bind native tuple elements and dict entries into the
-  signature's parameter slots, validate arity and positional/keyword conflicts,
-  supply defaults, and pack collector leftovers. Enter only after successful
-  normalization. See [Expanded Call Binding](#expanded-call-binding).
+#### Lone positional expansion with keywords
 
-`ExpandedCallInlineCache` guards callable identity and constructor lookup validity
-and stores the resolved Function and pure-collector/general adapter mode. It
-also owns an optional out-of-line exact-string binding-plan entry. Positional,
-keyword, and expanded calls share callable resolution in the interpreter; the native binder
-takes only the already-resolved Function. Mode selection does not depend on
-keyword names.
-General binding still validates dynamic tuple length and keyword contents unless
-those facts are separately guarded. Transport remains intact: when the callee
-has `**kwargs`, the plan selects direct transport reuse if no incoming keywords
-matched named parameters, or construction of a fresh leftovers dict otherwise.
+```python
+def caller(f, args, kwargs):
+    return f(*args, **kwargs)
+```
 
-### General-binding plan cache (stage 4)
+```text
+Mov r0, p0                       # f
+Mov r1, p1                       # Save args without iterating yet.
+Ldar p2                          # kwargs
+BuildCallKeywords r0, r2         # Install a fresh keyword dict in r2.
+ToExactTuple r1                  # Reuse an exact tuple, otherwise iterate.
+Star r1                          # Conversion returns in the accumulator.
+CallExpanded r0, containers=r1, first_arg=r4, expanded_call_cache[0]
+Return
+```
 
-General binding first tries its guarded cached plan. On a miss it constructs a
-temporary plan, validates it, then applies it. Plan construction first validates
-every incoming keyword key is a string,
-accepting subclasses and raising `TypeError` for any non-string key before any
-parameter matching. This happens inside `CallExpanded`, after keyword
-construction and callable resolution. The pure collector path performs the same
-validation even though it does not need a binding plan.
+`r1` and `r2` are the adjacent transport pair; `r4` is a separate aligned
+outgoing anchor. Keyword construction precedes tuple conversion. For
+`f(*args)` without keywords, the `Ldar`/`BuildCallKeywords` pair is replaced by
+`CreateDict {r2:0}` and `Star r2`; a fresh empty dict is still supplied.
 
-`CallExpanded` plan construction enforces binding-error precedence in this order:
+#### Mixed positional and keyword construction
 
-1. Validate all keyword keys are strings.
-2. Match incoming keywords in order, rejecting unexpected names or duplicate
-   parameter assignments and propagating comparison failures.
-3. Reject excess positional arguments if there is no `*args` collector.
-4. Resolve defaults and reject missing required arguments.
+```python
+def caller(f, items, value, extra):
+    return f(1, *items, flag=value, **extra)
+```
 
-Plan construction can mark positional parameter slots filled before keyword
-matching, but must defer the excess-positional error until step 3. Any failure
-aborts construction and propagates the exception; an erroneous plan is never
-applied or installed in the cache. Only a fully validated plan reaches the
-application path.
+```text
+Mov r0, p0
+CreateList {r1:0}
+Star r1
+LdaSmi 1
+ListAppend r1                    # Append the accumulator value.
+Ldar p1                          # items
+ListExtend r1
+ListToTuple r1                   # Replace the builder register in place.
+Mov r3, p2                       # Evaluate the explicit keyword value.
+CreateDict {r2:0}
+Star r2
+AddCallKeyword r0, r2, "flag", r3
+Ldar p3                          # extra
+MergeCallKeywords r0, r2
+CallExpanded r0, containers=r1, first_arg=r4, expanded_call_cache[0]
+Return
+```
 
-The temporary plan is a native C++ value containing only indices and flags:
+Here iteration and list-to-tuple conversion finish before keyword construction.
+`AddCallKeyword` and `MergeCallKeywords` write directly into `r2`; their `None`
+accumulator result does not need storing. A duplicate `flag` in `extra` fails
+during the merge, before call entry.
+
+`ListToTuple` copies element references without mutating the source list.
+`ToExactTuple` reuses an exact tuple by identity; `ToExactList` reuses an exact
+list by identity. Their guards use root shapes cached on `ThreadState`.
+Every other input, including container subclasses, goes through managed
+iteration so iterator overrides run. Tuple conversion collects through a list
+builder before allocating the fixed-size tuple.
+
+`ListExtend` has native exact-tuple/list paths. Self-extension uses the original
+list extent. Other sources enter the VM-owned `_clover_list_extend` helper.
+Iteration failures propagate with already appended elements retained.
+The conversion helpers are `_clover_iterable_to_exact_tuple` and
+`_clover_iterable_to_exact_list`, compiled from trusted Python source. Their
+append/conversion intrinsics lower directly to bytecode.
+
+### Keyword construction
+
+All keyword construction maintains one fresh, call-owned exact dict. The first
+mapping uses `BuildCallKeywords`; later mappings use `MergeCallKeywords`.
+Explicit values use `AddCallKeyword`. Build and Merge read their source from
+the accumulator; Add reads its value from a register. They leave the destination
+dict in its register and return `None` in the accumulator.
+
+Merges and additions reject an equal existing key without overwriting its value.
+The context register supplies duplicate-keyword and mapping-error context
+without signature resolution. In expanded method precode this is the receiver,
+because lookup has not happened yet.
+
+#### Multiple mappings and an explicit keyword run
+
+```python
+def caller(f, first, left, right, last):
+    return f(**first, a=left(), b=right(), **last)
+```
+
+The generated body evaluates both explicit values before inserting either:
+
+```text
+Mov r0, p0
+CreateTuple {r1:0}
+Star r1
+Ldar p1                          # first
+BuildCallKeywords r0, r2
+Mov r5, p2                       # left
+CallPositional r5, {r6:0}, call_ic[0]
+Star r3
+Mov r5, p3                       # right
+CallPositional r5, {r6:0}, call_ic[1]
+Star r4
+AddCallKeyword r0, r2, "a", r3
+AddCallKeyword r0, r2, "b", r4
+Ldar p4                          # last
+MergeCallKeywords r0, r2
+CallExpanded r0, containers=r1, first_arg=r4, expanded_call_cache[0]
+Return
+```
+
+If `first` already contains `a`, both `left()` and `right()` have run when the
+first Add fails; `last` has not been processed. The final outgoing anchor can
+reuse `r4` because the explicit value stored there is dead after insertion.
+The callable and transport pair remain outside that window. Positional-versus-
+keyword parameter conflicts are detected later by binding.
+
+**Exact dict sources.** The first mapping uses `Dict::copy()`, preserving key
+identity, order, values, and stored hashes without callbacks. String-subclass
+and non-string keys use general dict storage. A later exact-dict merge uses
+native string-keyed uniqueness operations when possible; general storage uses
+managed known-hash insertion with rich equality and restartable probes.
+
+General-storage merge retains the current key/value/hash in managed registers
+and traverses native entries by numeric index, never holding an entry pointer
+across callbacks. After each successful insertion it compares the source entry
+count with its initial count and raises
+`RuntimeError("dict mutated during update")` on a change. Callback or duplicate
+errors take precedence. Value replacement and same-size mutations are accepted;
+source generation changes are not an extra rejection condition. Destination
+probe-generation checks restart invalidated probes.
+
+**Generic mappings, including dict subclasses.** The managed
+`_clover_merge_call_keyword_mapping` helper:
+
+1. Calls `source.keys()`, translating `AttributeError` around that call,
+   including its body, into a contextual mapping `TypeError`.
+2. Applies `ToExactList` before fetching any values. An exact list is reused;
+   other iterables are fully materialized into a fresh list.
+3. Uses an ordinary iterator over the live list. For each key, checks for a
+   duplicate before fetching `source[key]`, then inserts the value.
+
+Materialization, value lookup, hashing, and equality are outside the
+`AttributeError` translation boundary; their exceptions propagate unchanged.
+List replacement, growth, shrinkage, and shifted-entry behavior remain visible
+to its ordinary iterator. An iterable of pairs without a mapping interface is
+not accepted.
+
+Non-string keys are not rejected during construction. Later keyword sources
+still execute, and their duplicate/mapping errors can precede the eventual
+non-string-key error at call entry. Partially constructed containers retain
+successfully appended/inserted entries until normal lifetime cleanup.
+
+## Expanded binding and collectors
+
+`build_expanded_call_binding_plan(thread, function, positional_count, keywords)`
+returns a fallible native plan. It operates on an already-resolved Function and
+rooted inputs, with no writes to the outgoing parameter window:
+
+1. Validate every keyword key is a string, accepting subclasses, before any
+   comparison callback can run.
+2. Mark positional formal slots filled. Process incoming keywords in insertion
+   order, scanning keyword-bindable parameters in declaration order. Reject
+   duplicate formal fills and unmatched names without a collector.
+3. Reject excess positional arguments unless `*args` is present.
+4. Record defaults for unfilled slots; reject missing required arguments.
+
+This gives keyword errors precedence over excess positional arguments, then
+missing arguments. Construction errors in precode occur before all these
+checks. An invalid plan is neither applied nor installed.
+
+Exact-string keys use native `string_eq`. Subclass keys use
+`ThreadState::test_equal`, including reflected rich comparison, truth conversion,
+and exception propagation. This uncommon path permits C++-to-managed interpreter
+reentry. Matching does not hash keys or probe once per formal parameter.
+The builder's filled-slot scratch uses `absl::InlinedVector<bool, 16>`.
 
 ```cpp
-enum class KwargsAction {
-    None,
-    ReuseTransport,
-    BuildLeftovers,
-};
-
 struct ExpandedCallBindingPlan {
     static constexpr uint32_t UnmatchedKeyword = UINT32_MAX;
-
     std::vector<uint32_t> keyword_destinations;
     std::vector<uint32_t> default_slots;
-    KwargsAction kwargs_action = KwargsAction::None;
+    KwargsAction kwargs_action;
 };
 ```
 
-`keyword_destinations` has one entry per incoming keyword in insertion order.
-Each entry is a logical parameter index, or `UnmatchedKeyword` for an entry that
-goes to the keyword collector. `default_slots` identifies unfilled parameters
-whose current default values application must read from the Function. Neither
-vector contains encoded registers or Python values. `kwargs_action` is `None`
-without a keyword collector, `ReuseTransport` if no keyword matched a named
-parameter, or `BuildLeftovers` otherwise. Positional copying and varargs packing
-use the input tuple length and resolved signature supplied to application.
+The plan contains logical parameter indices and flags, no Python references.
+Each keyword destination corresponds to an incoming dict entry; unmatched
+entries use `UnmatchedKeyword`. Default slots identify values to read from the
+Function's current defaults tuple.
 
-The caller keeps the Function and input containers rooted across binding and
-application. Formal names remain in the target CodeObject's
-`FunctionKeywordRemap`; incoming keys remain in the transport dict. The temporary
-plan owns no Python references and is built locally, not directly into a live
-IC. An exception discards it without applying or installing it.
+`apply_expanded_call_binding_plan` constructs and roots collectors before
+writing outgoing parameters, so nested callbacks cannot overwrite partially
+prepared arguments. It then copies positional and keyword values, current
+defaults, and collectors into the target's parameter slots.
 
-The same `ExpandedCallBindingPlan` type serves temporary and cached plans.
-Stage 4 adds one optional out-of-line `ExpandedCallCachedPlan`, owned through a
-`std::unique_ptr` in `ExpandedCallInlineCache`. The entry contains total
-positional count (including implicit self), a
-`std::vector<Owned<TValue<String>>>` of ordered keyword names, and the existing
-reference-free plan. The existing target and validity guards in the IC also
-guard the entry; replacing the target clears its plan. Function code/signature
-is currently immutable from Python, so no signature-version mechanism is added.
-The large entry is allocated only when installing a cacheable plan, and stored
-plan vectors do not gain inline storage.
+| Collector action | Behavior |
+|---|---|
+| `None` | No `**kwargs` parameter; unmatched keywords were rejected |
+| `ReuseTransport` | No keyword matched a named parameter; hand over the fresh transport dict |
+| `BuildLeftovers` | Some keywords matched named parameters; allocate a second fresh dict containing only unmatched entries |
 
-Build and apply a temporary plan successfully before moving it into a new
-entry. Application takes a const plan reference plus the resolved Function and
-input containers, independent of whether the plan came from local storage or a
-cache. Callable/signature resolution and adapter-mode caching remain independent
-of keyword binding-plan eligibility. The pure-collector fast path remains
-unchanged. Stage 3 implements uncached binding; stage 4 adds guarded reuse in
-the shared expanded function/method frame-entry path.
+Transport is never consumed or pruned. Leftovers retain original key objects
+and relative order; all-matched keywords still produce a fresh empty collector.
+If a `*args` collector is present, application reuses the input tuple when it is
+exactly the required suffix, otherwise packs a new tuple of the remaining
+positional values.
 
-The native entry retains names through `Owned`, following
-`CodeObject::constant_table`'s native-container ownership pattern. Replacement,
-cache clearing, and destruction release the entry. IC copies deep-copy it using
-explicit copy construction/assignment, following `KeywordCallInlineCache`,
-because `BytecodeDecoder` copies the tables. Keep the current C++20 facilities
-and do not introduce a general deep-copy pointer wrapper. Exact-string hits can
-borrow the entry through application because guards and application do not
-invoke Python callbacks. Callback-capable uncached calls keep local plans and
-never borrow cache storage across callbacks.
+A signature exactly `(*args, **kwargs)` with no implicit receiver prefix takes
+the pure-collector path: validate keys and install both original containers
+directly, without a binding plan or another dict.
 
-Only calls whose incoming keyword keys are all exact builtin strings are
-eligible to construct or hit a cached binding plan. Calls containing a
-string-subclass key run the ordered binder afresh, including rich comparisons
-and their side effects, then apply the temporary plan without installing it.
-They bypass the binding-plan cache without evicting an existing exact-string
-plan. Key identity or subclass-shape guards cannot justify skipping comparisons:
-even the same key object may have changing comparison results or observable
-effects on each call. Retain installed name references through the native cache
-entry's owned handles.
+## Expanded-call IC
 
-A plan hit requires exact-string incoming keys, the callable and valid lookup
-dependencies, the same positional and keyword counts, and `string_eq` for each
-corresponding incoming and cached name. Values are irrelevant. Reordered names
-may miss despite binding identically. Exact-string names need not be interned:
-existing `string_eq`
-accepts pointer identity, rejects distinct interned strings, and otherwise
-compares contents. These native comparisons are only sufficient for exact-string
-names; subclass names require the uncached rich-comparison binder.
-The current explicit-keyword cache assumes constant names and cannot be reused
-without this additional guard.
+`ExpandedCallInlineCache` stores callable identity, the resolved Function,
+constructor lookup validity dependency where applicable, adapter mode, and a
+`unique_ptr` to one optional out-of-line entry:
 
-Non-string keys naturally fail the exact-string cache guard and reach plan
-construction, where full string-key validation rejects them. A successful guard
-has already proved key validity; it need not run a second validation pass.
-
-On a hit, use cached destinations instead of repeating name resolution and
-conflict/required-parameter validation. Read defaults from current function
-storage rather than freezing default values. The tuple/dict must remain intact
-for all guard and source reads. Applying the plan does not mutate transport.
-
-The comparison is guard plus plan application versus cold plan construction
-plus the same application. With K keywords and P keyword-bindable parameters,
-an ordered-name guard uses K comparisons; search-based construction may use
-K*P parameter comparisons plus K*(K-1)/2 duplicate comparisons for a source
-representation that retains duplicates, and required/default checks. Dictionary
-transport has already rejected keyword-source duplicates. Stable names are a
-promising cache case, not a measured guarantee. Measure reused key objects,
-new equal strings, and changing names: changing names pay a failed guard before
-binding. Collector allocation/packing is common work, not eliminated by the
-cache. The additional plan cache is the agreed stage 4 work within general mode.
-
-### Runtime implementation direction
-
-Managed helper fallback calls use the ordinary outgoing window at
-`code_object->get_first_free_arg_encoded_reg()`, as operator calls do. No
-additional argument-window operand is encoded in the helper opcodes. Slow opcode
-handlers enter VM-owned helper Functions through existing
-managed frame-entry machinery, saving the return PC immediately after the
-operation. `ToExactTuple` and `ToExactList` return in the accumulator using the
-ordinary managed return convention; their exact-container fast paths write the
-accumulator too. Codegen emits `Star` when the result needs storing. No special
-return plumbing or conversion continuation is needed. Build/Merge helpers mutate the
-dict already rooted in the destination register; their return value is not used
-to install that destination. Exact scratch sizes and placement are resolved per
-opcode during its implementation review, following existing alignment and
-argument-window conventions.
-
-Source, builder, callable, and destination remain rooted in managed registers
-or helper locals across Python execution. Use ordinary return and exception
-unwinding rather than a separate continuation-state mechanism. On call failure,
-partially built transport containers are discarded through normal lifetime
-handling; builder operations do not roll back already appended items.
-
-The uncached binder runs in C++ in the runtime call-adaptation layer and takes an
-already-resolved Function, positional count, and exact keyword transport dict.
-Callable resolution remains in the existing call machinery outside the binder.
-Exact-string keys use native string comparisons. Only string-subclass keys cross
-the existing C++-to-managed call bridge for rich equality and truth conversion;
-use the existing `ThreadState::test_equal` path rather than implementing those protocols
-again. This deliberately permits interpreter re-entry for the uncommon subclass
-case. No binder-specific comparison IC is required, and subclass calls always
-rebuild the plan. The existing equality helper may use its own IC internally.
-There is no VM-owned Python binder, managed tuple plan, or managed continuation
-for native plan construction. Keep Python references rooted across callbacks,
-retain no raw dict-entry pointers across them, and propagate pending exceptions
-through the native builder's fallible return type.
-
-`CallExpanded` keeps the callable and adjacent tuple/dict input pair outside the
-outgoing parameter window. Before callback-capable native work, its handler
-publishes the caller's live frame frontier using the existing native-call
-convention. It retains the resolved Function across callbacks, independently of
-the live call-site cache, because nested expanded calls may replace that cache.
-Native plan application constructs and roots collectors before writing any
-outgoing parameters. Exact pure-collector calls validate keys and install the
-original tuple and dict directly. Expanded calls currently resume in the
-interpreter from JIT code; no specialized JIT call lowering is added. After plan
-validation, application fills that window,
-including defaults and collectors, then enters the target using the existing
-prepared-argument frame-entry convention. Tuple-suffix packing and collector
-construction belong to plan application. Callback failures during application
-propagate without entering the callee.
-
-Follow existing register, constant-index, and cache-index operand encoding
-conventions. Settle concrete operand widths alongside each bytecode declaration
-and codegen implementation, without introducing a separate encoding scheme.
-
-Expanded method calls supply an `ExpandedCallPositionalArguments` view: an exact
-tuple and an implicit receiver prefix, with `not_present` denoting no prefix.
-This preserves `None` as a valid receiver. The binder receives the total
-positional count and remains unaware of method lookup. Application reads the
-view without making a prepended transport tuple. It can reuse the original
-tuple as the varargs suffix when only self was consumed; collecting self itself
-requires packing a new tuple. Pure-collector handoff of the original tuple is
-used only without a prefix. The resolved Function and prefix remain rooted
-across binding and collector callbacks, even if those callbacks replace method
-slots or the live call-site cache.
-
-### JIT boundary
-
-Tuples and dicts are ordinary values; indexed accesses operate on native
-container memory rather than logical bytecode registers. The IC-guarded target
-signature identifies destination parameter slots. Pure collection has two clear
-assignments; general binding may initially be a guarded adapter operation with
-explicit parameter-window effects instead of a fully static move sequence.
-
-Treat callback-capable operations as call boundaries with visible register and
-memory effects and normal exception exits. Initially use existing interpreter
-fallback support where adding JIT lowering would expand the implementation
-slice. Inspect the fallback contract for each new operation; no new JIT
-continuation mechanism is implied. More specialized lowering is later work.
-
-### Expanded-call implementation stages
-
-Track checkpoint completion in the
-[expanded-call implementation plan](expanded-call-implementation-plan.md).
-Implementation changes remain uncommitted for user review unless explicitly
-requested otherwise.
-
-Each stage gets focused semantic tests and the required full debug checks.
-Interpreter frame changes also get the release opcode-frame checks. Keep
-unsupported syntax explicit until its complete execution path is available.
-
-1. **List primitives and conversions.** Implement `ListAppend`, `ListExtend`,
-   `ListToTuple`, `ToExactTuple`, and `ToExactList`, including trusted intrinsics
-   and managed fallbacks. Test exact-container identity, subclass iteration,
-   aliasing, partial extension, and failures during iteration.
-2. **Keyword construction.** Implement `BuildCallKeywords`, `MergeCallKeywords`,
-   and `AddCallKeyword`, plus mapping helpers. Test duplicate handling, explicit
-   keyword-run evaluation, key-list normalization and live iteration, both dict
-   storage shapes, and deferred string-key validation. Use helper/opcode tests
-   until expanded-call syntax is enabled end to end.
-3. **Expanded call entry.** Implement the agreed native binding-plan representation,
-   then implement uncached planning, collectors, parameter-window application,
-   and end-to-end parser/codegen support. Test late lone-star conversion,
-   keyword order, error precedence, defaults, collectors, subclass comparisons,
-   callable resolution, and exception unwinding. Cache callable resolution and
-   adapter mode independently; keyword binding-plan caching is not required.
-   Parser/precode checkpoint 3c initially enables straight Function and eligible
-   constructor calls. Checkpoint 3d then adds expanded method calls with a
-   separate method-call opcode, reusing existing lookup and receiver-binding
-   machinery. Its readiness review settles operand encoding, lookup timing,
-   and implicit receiver handling; these do not belong in the native binder.
-4. **Binding-plan cache.** Measurements justified proceeding with out-of-line
-   exact-string plan reuse. Test guarded
-   hits, changing names/counts, callable invalidation, current defaults, and
-   subclass-key bypass without evicting an existing eligible plan.
-
-## Alternatives Considered and Tradeoffs
-
-### Managed argument area
-
-Expand positional values and parallel keyword-name/value spans into an
-addressable managed area, then bind using runtime counts. Its main attraction
-is avoiding transport container allocation for mixed calls into named
-signatures. Exact tuples can copy references directly; other sources iterate.
-Collectors then pack positional leftovers and unmatched keywords into containers.
-
-The area must be outside the logical bytecode register file. The JIT tracks
-statically identified slots as individual SSA values; forcing indexed registers
-onto the stack does not resolve which values an indexed store replaces. Ordinary
-registers would hold an area handle/descriptor, counts, and expansion operands;
-area accesses would be explicit memory operations.
-
-Its representation remains unclear: the logical spans do not require three
-adjacent physical arrays. Allocation/growth, live extent, stack capacity,
-ownership/rooting, nested callbacks, cleanup, JIT memory effects, side exits,
-and transfer into the callee window need a new contract. Managed-stack storage
-is possible, not settled. Operator calls might share the area for arguments and
-continuation state, but their fixed scratch prefix is only an existing pattern
-for comparison, not proof that a dynamic area already exists. Unification is
-an option, not a required migration.
-
-A register-span binder could retain duplicate keyword entries until final
-binding. Early duplicate detection was accepted as best effort for that option:
-final-adapter detection may allow later callbacks or another error first, but
-must still reject duplicates before callee entry. Any implemented timing
-deviation would need documentation and tests. This latitude does not relax
-general argument evaluation or expansion sequencing.
-
-### Hybrid forwarding containers and mixed-source area
-
-Normalize exactly `f(*args, **kwargs)` into an exact tuple and fresh dict, but
-use the managed area for mixed sources. This preserves pure collector handoff
-while avoiding some allocations for mixed ordinary-signature calls. It requires
-two binding input forms plus the managed-area contract. They might share
-signature validation, destination plans, and parameter placement, but that
-sharing has not been designed. Container-input general binding reads native
-storage without repeating user iteration.
-
-### Uniform heap transport: accepted tradeoff of the current sketch
-
-Container precode uses existing ownership, rooting, and addressable storage,
-removes the managed-area subsystem, and gives every expanded call one adapter
-boundary. Exact tuple reuse and fresh-dict collector handoff favor forwarding
-chains. Mixed positional calls may allocate both a list builder and a final
-tuple; named signatures then copy contents into parameter slots, and keyword
-transport may allocate even when no kwargs collector is needed.
-
-The tradeoff is allocation, reference copying, and temporary garbage against
-storage/lifetime/JIT complexity. Compare regular-signature calls, mixed
-expansions, and forwarding chains before considering another storage form.
-Precode remains separate from binding, so using containers does not force one
-large opcode to perform all expansion and call work.
-
-## Keyword Call Bytecode
-
-The implemented bytecode shape keeps value ranges as values only. Keyword names
-are carried out-of-band as a constant tuple of interned strings:
-
-```text
-CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
-            kw_names_const, call_ic
+```cpp
+struct ExpandedCallCachedPlan {
+    uint32_t positional_count;
+    std::vector<Owned<TValue<String>>> keyword_names;
+    ExpandedCallBindingPlan plan;
+};
 ```
 
-The positional range is staged in an ABI-aligned temporary call argument span
-because those values are already in the right place for the eventual frame
-entry:
+A target-guard miss resolves the target again and clears the subordinate plan,
+including after constructor lookup invalidation. The ordered keyword names
+retain their own references; keyword values and default values are never cached.
+Function code/signature immutability means no separate signature-version
+mechanism is needed.
 
-```text
-call_arg[0] = positional value 0
-call_arg[1] = positional value 1
-```
+For general binding:
 
-The keyword range is staged separately in ordinary temporary registers:
+1. A hit requires matching total positional count, keyword count, and ordered
+   exact-string key contents. `string_eq` accepts equal noninterned names, not
+   just identical objects. A successful guard also proves key validity.
+2. On a hit, apply the stored plan directly. Guarding and application for these
+   exact-string inputs do not invoke Python callbacks.
+3. On a miss, build and apply a local plan. After success,
+   `convert_to_expanded_call_cache_entry` checks eligibility, retains names, and
+   moves the existing plan into a new entry. It does not bind again.
+4. Any subclass key prevents both a hit and installation. Such calls run their
+   comparison protocols every time and do not evict an existing plan for the
+   same target. Non-string keys fall through to normal validation and fail.
 
-```text
-r1 = keyword value 0
-r2 = keyword value 1
-```
+Replacement, cache clearing, and CodeObject destruction release the native entry
+and its names. IC copies deep-copy entries because `BytecodeDecoder` snapshots
+the tables; moves transfer ownership. Retained names follow the same native
+`Owned`-container pattern as `CodeObject::constant_table`.
 
-`kw_names_const` names the keyword values starting at `first_kw_value`. The
-keyword binder copies those values into the mapped parameter slots. Keeping
-keyword sources outside the positional call argument span avoids source/destination
-overlap when keyword order differs from parameter order. For example:
+## Methods, constructors, and runtime boundaries
+
+Fused method opcodes combine attribute lookup/binding with call entry. The
+attribute lookup IC and call IC are separate. Lookup produces the callable plus
+an optional implicit receiver; instance-held Functions and module attributes do
+not acquire a receiver merely because they are callable.
+
+For an expanded attribute call:
 
 ```python
-f(10, c=30, b=20)
+def caller(obj, args, kwargs):
+    return obj.m(*args, **kwargs)
 ```
 
-can be represented as:
+codegen emits the same transport construction as the combined expansion example,
+with `obj` in `r0`, and ends with:
 
 ```text
-positional values = [10]
-keyword values    = [30, 20]
-kw_names          = ("c", "b")
+CallMethodAttrExpanded r0, "m", lookup_cache[0], expanded_call_cache[0], containers=r1, first_arg=r4
+Return
 ```
 
-The names tuple is a stable call-site shape. It avoids interleaving metadata
-with values and gives `KeywordCallInlineCache` a compact guard key.
-
-## Expanded Call Binding
-
-Expanded calls consume the normalized `args_tuple` and fresh exact kwargs dict
-from the adjacent register pair. The dict may use string-keyed or general
-storage, retaining string-subclass key identity. Both are always present. They
-should share the same callee signature semantics as ordinary
-keyword calls, but they cannot reuse the existing keyword-call cache structure
-directly because the keyword set is runtime data rather than a static names
-tuple.
-
-The positional phase copies values from `args_tuple` into positional formal
-slots until either the tuple or the positional parameter range is exhausted.
-Remaining tuple items are an error unless the callee has `*args`, but that error
-is deferred until keyword matching succeeds. With `*args`, the callee receives
-a tuple containing the remaining positional suffix.
-For the pure collector case `def f(*args, **kwargs)`, the normalized
-`args_tuple` can be installed directly as the callee `*args` value.
-
-Default handling follows the same slot-indexed default metadata used by
-ordinary keyword calls. A positional or keyword value wins over a default. A
-slot that is not filled by the positional phase and is not filled by the keyword
-phase is satisfied from the default table if the corresponding
-`default_presence_mask` bit is present; otherwise the missing argument is an
-error. This applies to both positional-or-keyword parameters and keyword-only
-parameters. Defaults are copied as references to the stored Python values, not
-deep-copied.
-
-The keyword phase visits incoming entries in insertion order, rather than
-probing the transport dict once per parameter. Positional assignment first marks
-its destination slots filled:
-
-```text
-for each (key, value) in incoming keyword insertion order:
-  scan keyword-bindable parameters in declaration order for the first match
-  if a parameter matches:
-    if its slot is already filled:
-      raise duplicate-value TypeError
-    copy value into its slot
-    mark the slot filled
-  else:
-    if the callee has no **kwargs collector:
-      raise unexpected-keyword TypeError
-    retain the original key and value as an unmatched keyword
-
-after all keywords have been processed:
-  reject excess positional arguments if there is no *args collector
-  fill defaults into unfilled parameter slots
-  reject remaining missing required parameters
-```
-
-Exact builtin string keys can use native string comparison against parameter
-names. String-subclass keys require normal rich equality, including subclass
-dispatch, truth conversion, and exception propagation. Parameter matching does
-not use the incoming key's hash. Distinct keys that coexist in the transport
-dict can match the same parameter; the filled-slot check must reject the second
-match. Comparison callbacks run in incoming keyword order and, within each
-keyword, parameter declaration order. Missing-parameter checks happen only
-after this keyword pass, not during parameter matching.
-
-Only positional-or-keyword and keyword-only parameters are keyword targets.
-Positional-only names do not participate in matching. An incoming keyword with
-such a name is collected by `**kwargs` like any other unmatched keyword, or
-rejected if there is no collector.
-
-Unmatched entries retain their original key objects and relative insertion
-order in the callee's `**kwargs` dict. After successful planning, application
-uses the collector action selected during planning:
-
-- `ReuseTransport`: no incoming keyword matched a named parameter. Install the
-  fresh transport dict directly as `**kwargs`, including when parameters were
-  supplied positionally or satisfied by defaults.
-- `BuildLeftovers`: at least one incoming keyword matched a named parameter.
-  Allocate a second fresh dict and insert only unmatched entries, in incoming
-  order. If all incoming keywords matched, this is a fresh empty collector.
-
-Transport remains intact in both cases. Cached plans may retain the collector
-action along with keyword destinations. Callees without `**kwargs` need neither
-action; unmatched keywords are rejected during planning.
-
-This intentionally differs from CPython's collector callback behavior. CPython
-3.14.5 rehashes unmatched string-subclass keys while constructing a collector,
-interleaved with keyword matching, even for a pure `def f(**kwargs)` call.
-Clover does not reproduce those extra hash/equality calls or their timing:
-transport reuse skips reinsertion, and leftovers construction happens only
-after successful planning. Differences in callback side effects and which
-exception wins are accepted for collector construction. Named-parameter matching
-still runs subclass rich equality in incoming keyword order on every uncached
-call; it must not be replaced with ordinary dict lookup.
-
-When an expanded call has no keyword sources, precode supplies a fresh empty
-transport dict. A callee `**kwargs` collector can receive that dict directly;
-frame entry needs no absent-keyword case or additional empty-dict allocation.
-The keyword input must never be `None` or a shared mutable object.
-
-The first useful fast path is the pure collector signature:
-
-```python
-def f(*args, **kwargs):
-    ...
-```
-
-For that shape, expanded entry can install the normalized positional tuple and
-the fresh kwargs transport dict directly. Precode has already allocated the
-fresh dict even when the caller supplied no keyword sources; the adapter does
-not allocate another one.
-
-## Runtime Scope
-
-The ordinary call runtime supports:
-
-- ordinary `Function` objects;
-- eligible `ClassObject` calls that resolve to constructor thunks;
-- attribute method calls through the existing positional and keyword
-  method-call opcodes.
-
-`CallExpanded` currently supports Functions and eligible constructor thunks.
-Checkpoint 3c enables their source syntax; checkpoint 3d adds the fused
-`CallMethodAttrExpanded` opcode for attribute calls. It reuses existing method
-lookup and binding helpers after argument expansion. This late lookup is an
-accepted mismatch shared with ordinary method calls; correcting it across all
-argument forms is separate work. No early `LoadMethod` opcode is introduced.
-
-It does not attempt to support:
-
-- arbitrary object `__call__`;
-- descriptor execution beyond existing method-call support.
-
-Unsupported callable shapes should remain explicit instead of being partially
-simulated inside the keyword binder.
-
-## Signature Keyword Layout
-
-`CodeObject` owns compact signature metadata for keyword binding. It is closer
-to a shape descriptor than to a Python `dict`:
-
-```text
-SignatureKeywordLayout:
-  names:       [interned String value]
-  param_slots: [parameter index or encoded frame offset]
-```
-
-Only keyword-bindable parameters belong in this layout:
-
-- positional-or-keyword parameters;
-- keyword-only parameters.
-
-The `**kwargs` parameter is not keyword-bindable and must not appear in this
-layout. It is the collector slot initialized by frame entry. An incoming
-`kwargs=value` keyword is treated like any other explicit keyword: it binds a
-real keyword-bindable parameter named `kwargs` if such a parameter exists, is
-collected into `**kwargs` if no such parameter exists and the callee has
-`**kwargs`, or is rejected otherwise.
-
-Positional-only names should remain visible to diagnostics, but they are not
-valid keyword targets and must not appear in the keyword remap. A keyword that
-names a positional-only parameter is treated like any other unmatched keyword:
-it is collected into `**kwargs` if the callee has a kwargs parameter, and is
-otherwise rejected.
-
-The cold binder linearly scans `names`. Parameter counts and keyword counts are
-normally small, and interned names make comparison pointer/raw-value equality.
-This avoids carrying a hash table for every function signature before evidence
-says it is needed.
-
-If large signatures become important, better function-global accelerators can be
-added later, such as sorted arrays or a small custom open-addressed table.
-Those should be implementation details behind the same signature metadata
-contract.
-
-## Default Slot Layout
-
-The runtime stores defaults as a slot-indexed suffix that begins at the first
-callee parameter slot with a default, instead of using separate positional and
-keyword-only default containers. The common no-default case is represented by no
-defaults tuple.
-
-The representation needs:
-
-```text
-first_default_slot
-default_values tuple
-default_presence_mask
-```
-
-`first_default_slot` is the lowest callee parameter slot that has any default.
-`default_values[0]` corresponds to that slot, and `default_values[i]`
-corresponds to callee slot `first_default_slot + i`. Bit `i` of
-`default_presence_mask` says whether that tuple entry is a real default.
-
-`first_default_slot` belongs in the function signature metadata because it is a
-property of the callee's formal parameter layout. The default values tuple
-belongs on the `Function`, because default expressions are evaluated when the
-function object is created.
-
-The tuple must contain ordinary Python-visible values only. Placeholder entries
-should use `None`, not VM sentinels such as `not_present`, because tuples are
-normal heap objects and sentinel values would violate tuple storage invariants.
-The mask, not the placeholder value, determines whether an entry can satisfy a
-missing parameter during IC setup. Frame entry still copies the default tuple
-blindly; keyword values and `*args` overwrite any placeholders that should not
-survive. This matters because `None` is also a valid user default.
-
-For example:
-
-```python
-def f(a, b=5, *args, c=6, d=7):
-    ...
-```
-
-with callee slots:
-
-```text
-slot 0: a
-slot 1: b
-slot 2: *args
-slot 3: c
-slot 4: d
-```
-
-can lower to:
-
-```text
-first_default_slot = 1
-default_values     = (5, None, 6, 7)
-default_presence_mask = 1011
-```
-
-The `None` at tuple offset 1 is a placeholder for the `*args` slot. If a user
-writes `b=None`, that entry is also `None`, but its mask bit is set and the
-default can satisfy a missing argument.
-
-Constructor thunks rebuild default metadata when removing initializer slot 0
-(`self`). Each present initializer default shifts from `init_slot` to
-`init_slot - 1`; defaults that belong to `self` are dropped. The thunk then
-normalizes its own `first_default_slot`, defaults tuple, and presence mask from
-the surviving defaults.
-
-This keeps default validation and initialization uniform:
-
-```text
-if slot is missing and default_presence_mask has no corresponding bit:
-  reject the call while building the IC
-
-frame_slot[default_copy_start_slot + i] =
-  default_values[(default_copy_start_slot - first_default_slot) + i]
-```
-
-The mask is cold-path validation metadata. Hot frame entry does not consult it:
-after IC setup has accepted the call shape, frame entry copies a contiguous
-suffix of the default tuple, stores `*args` if present, stores `**kwargs` if
-present, then copies keyword arguments to their encoded destination registers or
-inserts them into the `**kwargs` dictionary. Defaults that should not survive
-are naturally overwritten.
-
-## Call Adaptation Tiers
-
-`FunctionCallAdaptation` should stay a compact path selector, not a matrix of
-every possible signature feature combination. The intended tiers are:
-
-```text
-FixedArity
-Defaultable
-Full
-```
-
-`FixedArity` means frame entry can commit directly after arity/cache validation.
-`Defaultable` means only default-value initialization may be needed before
-entry.
-`Full` means the callee may require default initialization, `*args` tuple
-construction, and/or `**kwargs` dictionary construction.
-
-The tiers are ordered by entry path complexity, not by exact signature contents.
-A function with `**kwargs` but no defaults and no `*args` still uses `Full`,
-because it needs a fresh dictionary in the kwargs slot. This avoids a growing
-enum for combinations such as defaults-plus-kwargs or varargs-plus-kwargs. The
-`Full` path checks the function signature to decide which work is actually
-needed.
-
-For positional calls, `**kwargs` never absorbs extra positional arguments.
-Positional arity remains governed by the positional parameter count and `*args`.
-If the callee has `**kwargs`, `CallPositional` initializes that slot with a
-fresh empty dictionary after ordinary arity validation and before entering the
-callee frame.
-
-The `Full` path initializes `*args` and `**kwargs` late. It is acceptable for an
-earlier default-copy step to write placeholder values into those slots because
-the full adaptation step overwrites them before Python code can observe the
-callee frame.
-
-## Binding Algorithm
-
-For a keyword-call cache miss in the implemented runtime subset, extended with
-the accepted callee-`**kwargs` design:
-
-1. Compute the callee frame pointer from the target code object's physical
-   parameter slot count, as positional calls already do.
-2. Build a local candidate `KeywordCallInlineCache` plan; do not mutate the
-   live inline cache before validation succeeds.
-3. Mark positional-or-keyword formal parameters supplied by position as filled.
-4. Reject too many positional values unless the callee has `*args`.
-5. For each supplied keyword name/value pair:
-   - find a matching positional-or-keyword parameter by scanning the code
-     object's keyword remap;
-   - if a matching keyword-bindable parameter is found, reject if that formal
-     slot was already filled by position or keyword, mark the formal slot
-     filled, and store the encoded destination frame register in the candidate
-     plan;
-   - if no matching keyword-bindable parameter is found and the callee has
-     `**kwargs`, store the kwargs-dictionary sentinel in the candidate plan;
-   - if no matching keyword-bindable parameter is found and the callee does not
-     have `**kwargs`, reject the unexpected keyword.
-6. Reject any remaining required parameter whose default-presence bit is clear.
-   The `*args` and `**kwargs` slots are initialized by frame entry and are not
-   user-supplied required parameters.
-7. Compute `default_fill_start_slot = max(n_filled_by_position,
-   first_default_slot)`.
-8. Commit the candidate plan to the live cache.
-9. Apply the plan: copy the accepted default tuple suffix, store `*args` if
-   present, store a fresh `**kwargs` dictionary if present, copy keyword values
-   to their encoded destination registers or insert them into the kwargs
-   dictionary, and enter the target function frame using the ordinary frame
-   header and return machinery.
-
-The parser already rejects duplicate explicit keyword names. Caller `*args` and
-caller `**kwargs` are still deferred. Callee `**kwargs` only consumes unmatched
-explicit `name=value` keywords in the existing call-site order. Those names are
-the existing explicit keyword names, so the kwargs dictionary is string-only;
-support for non-string key validation belongs to later caller `**mapping`
-expansion.
-
-## Keyword Call Inline Cache
-
-`KeywordCallInlineCache` specializes a call site on both the callee and the
-keyword-name tuple:
-
-```text
-guard:
-  callee identity, or class plus constructor validity cell
-  kw_names tuple identity
-  n_pos_args
-
-plan:
-  keyword value index -> encoded destination frame register, or kwargs sentinel
-  default_fill_start_slot
-  FunctionCallAdaptation
-  target code object
-```
-
-The cold path performs binding checks into a local candidate plan and only
-commits it to the live cache after validation succeeds. Bad calls therefore do
-not evict a previously valid cache entry.
-
-The keyword destination vector stays compact as an `int8_t` array. Destination
-value `0` is reserved as the kwargs-dictionary sentinel for this vector. Real
-entries are callee-frame-relative encoded parameter destinations; `fp[0]` is
-the previous-frame-pointer header slot, not a writable parameter destination.
-Cache construction should assert that real keyword destination registers never
-equal the sentinel, and frame entry must branch on the sentinel before writing
-through the destination value.
-
-The warm path avoids name lookup and semantic rediscovery. Positional values are
-already in the temporary call argument span. The plan fills defaults from
-`default_fill_start_slot` when the adaptation requires defaults, initializes
-`*args` and/or `**kwargs` on the `Full` path, copies keyword values to
-precomputed encoded frame registers, and inserts sentinel-routed keyword values
-into the fresh kwargs dictionary. The sentinel-aware loop should only run on the
-`Full` path; ordinary fixed/default-only keyword calls keep the direct copy loop.
-
-## Constructor Thunks
-
-Constructor thunks continue to mirror the selected `__init__` or `__new__`
-signature with `self` or `cls` removed, including `**kwargs` metadata. Keyword
-adaptation happens at the public class-call boundary before entering the thunk.
-The public thunk signature preserves `HasKwArgs`; keyword remap entries are
-copied with parameter indexes shifted down by one, while the kwargs collector
-itself remains excluded from the remap.
-
-The thunk body does not become a second keyword binder. It receives a prepared,
-normalized frame and then enters the known initializer code object through the
-existing internal `CallCodeObject` mechanism. The inner call is a prepared
-positional-only forwarding call: the thunk has already normalized the public
-call into the target parameter layout, including defaults, `*args`, and
-`**kwargs`.
-
-This matches the current constructor-thunk design: the ordinary class hot path
-gets signature-aware specialization, while unusual construction remains a
-future generic protocol path.
-
-## Implementation Status
-
-This is the implementation status for the keyword-call work. Completed stages
-keep the VM in a coherent state and avoid silently implementing the deferred
-starred-call or generic callable protocol work.
-
-- [x] **Parser and AST signature grouping**
-
-  The parser uses an explicit signature shape that preserves the CPython-style
-  groups:
-  positional-only, positional-or-keyword, optional `*args`, keyword-only, and
-  optional `**kwargs`.
-
-  It parses `/`, bare `*`, `*args`, keyword-only parameters, and `**kwargs`
-  into distinct AST structure. Defaults remain attached to parameter nodes for
-  now.
-
-- [x] **Codegen and function signature metadata**
-
-  `CodeObject` and `Function` metadata now go beyond
-  `n_positional_parameters` plus `HasVarArgs`. The metadata describes grouped
-  parameter counts, varargs/kwargs flags, `first_default_slot`,
-  `default_presence_mask`, and the compact keyword-bindable layout. `Function`
-  keeps the hot call signature copy, while keyword remap metadata stays on
-  `CodeObject`.
-
-  Constructor-thunk generation mirrors the public constructor signature with
-  `self` removed for the currently supported runtime subset.
-
-- [x] **Call argument AST and keyword-call bytecode**
-
-  Calls use explicit call-argument AST nodes for positional and keyword
-  arguments. Caller `*args` and `**kwargs` are rejected until their separate
-  runtime slice is designed.
-
-  Keyword calls lower to:
-
-  ```text
-  CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
-              kw_names_const, call_ic
-  ```
-
-  Codegen continues to emit `CallPositional` for calls with no keywords. For calls
-  with explicit keywords, it evaluates argument values left to right while
-  staging positional values into an aligned temporary call argument span and
-  keyword values into a separate contiguous temporary-register span. Keyword
-  names are stored as a
-  constant tuple of interned strings and used as the call-site shape key.
-
-  Method-call lowering needs a parallel keyword-aware form or a clearly shared
-  helper so direct method calls can bind `self` and then run the same keyword
-  adaptation policy.
-
-  Open design point: the current `CallMethodAttrPositional` opcode deliberately fuses
-  attribute lookup, method binding, and `CallPositional`-style frame entry for the
-  common `obj.method(...)` shape. Keyword calls could either add a matching
-  fused method-keyword opcode, or split method lookup/binding from call entry so
-  the same `CallKeyword` machinery can be reused. Splitting reduces opcode
-  combinations, but the fused method call is a common hot shape. This should be
-  decided with the interpreter hot path and call-cache shape in view.
-
-- [x] **Runtime binder for ordinary functions and constructor thunks**
-
-  The cold keyword-call path is implemented for ordinary `Function` objects and
-  eligible constructor thunks. Direct method keyword calls are still rejected in
-  codegen pending a method-call opcode/cache design.
-
-  The binder builds a local candidate IC plan while validating, resolves each
-  keyword by scanning the signature keyword layout, rejects duplicate formal
-  fills, reports missing required parameters, and only commits the live cache
-  entry after validation succeeds. Error messages are intentionally generic for
-  now. For callees with `**kwargs`, unexpected explicit keywords are
-  sentinel-routed kwargs-dictionary insertions.
-
-- [x] **Keyword call inline-cache plan**
-
-  `KeywordCallInlineCache` is a sibling cache state that specializes on callee
-  identity, constructor validity where relevant, keyword-name tuple identity,
-  and positional argument count.
-
-  The cached plan stores encoded destination frame registers or the kwargs
-  sentinel for each keyword value, `default_fill_start_slot`, and
-  `FunctionCallAdaptation`. Cache misses build a local candidate plan and only
-  commit it after validation succeeds.
-
-- [x] **Semantics, regression tests, and benchmarks**
-
-  Interpreter tests cover keyword calls to ordinary functions and eligible
-  constructors, positional plus keyword mixing, keyword reordering, defaults,
-  missing required arguments, unexpected keywords, duplicate formal fills, and
-  varargs initialization. Parser tests cover repeated explicit keyword names.
-
-  Codegen/disassembly tests pin down that `CallPositional` remains the no-keyword
-  path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
-  all-keyword, mixed positional/keyword, and default-using keyword calls.
-
-  Method keyword calls, caller `*args`, caller `**kwargs`, generic `__call__`,
-  and descriptor-heavy callable behavior remain unsupported.
-
-## Deferred Work
-
-The following require separate design/implementation slices:
-
-- keyword method calls, including whether to add a fused method-keyword opcode
-  or split method lookup/binding from keyword call entry;
-- caller `*args` expansion, including iterable protocol details and error
-  ordering;
-- caller `**kwargs` expansion, including mapping protocol details, duplicate
-  detection, and merge order;
-- arbitrary object `__call__`;
-- descriptor-driven callables and bound method objects;
-- richer TypeError wording compatible with CPython;
-- native-to-managed keyword-call APIs;
-- native variadic and keyword-aware intrinsic conventions.
-
-Unsupported edges should remain explicit rather than adding partial fallback
-machinery that obscures later semantics.
+This instruction performs lookup and receiver binding after expansion; no early
+method lookup is emitted.
+
+Expanded methods pass an `ExpandedCallPositionalArguments` view containing the
+tuple and optional self prefix. `not_present` means no prefix, keeping `None` a
+valid receiver. The binder sees the total count, including self; application
+indexes the view without allocating a prepended tuple. If only self is consumed,
+the original tuple can become the varargs suffix. If the collector includes
+self, application packs a new tuple. Pure-collector direct handoff is restricted
+to calls without a prefix.
+
+Eligible class calls resolve to constructor thunks through the shared callable
+resolver. Thunks mirror the selected `__init__` or `__new__` signature with
+`self`/`cls` removed, shifting keyword remaps and rebuilding default metadata.
+Binding happens at the public class-call boundary. The thunk receives normalized
+parameters and forwards through prepared `CallCodeObject` entry rather than
+binding keywords again. See [Constructor Thunks](constructor-thunks.md) for
+allocation and constructor-selection policy.
+
+Managed expansion helpers enter through the normal outgoing window at
+`code_object->get_first_free_arg_encoded_reg()`. No extra window operand or
+special continuation instruction is required. Helpers return through the
+ordinary accumulator convention or propagate exceptions through normal
+unwinding. Sources, builders, destinations, and iterator state remain rooted
+in managed registers/helper locals across callbacks.
+
+Before callback-capable native binding, expanded handlers publish the caller's
+live frame frontier. The resolved Function and optional receiver are retained
+independently of the live cache: recursive calls can replace it. Uncached plans
+stay local across callbacks; cache hits borrow a plan only on the callback-free
+exact-string path. Failures during collector construction do not enter the
+callee. Pending-exception propagation is explicit in the native helper return
+types.
+
+Expanded calls currently resume in the interpreter from JIT code. Bytecode
+metadata describes transport inputs and accumulator results for safe fallback;
+there is no specialized expanded-call JIT lowering or separate continuation
+protocol.
+
+## Compatibility boundaries
+
+These are existing behavior boundaries, not unfinished expanded-call stages:
+
+- Method lookup happens after argument evaluation/construction for fused method
+  calls. Correcting it requires work shared across all argument forms.
+- Collector construction does not reproduce CPython's additional subclass-key
+  hash/equality callbacks or their interleaving with binding. Transport reuse
+  can skip reinsertion entirely; leftovers are built only after successful
+  planning. Named-parameter matching still runs rich comparison on subclass
+  keys every call.
+- Generic mapping error translation is limited to the direct `source.keys()`
+  call. Later callback exceptions retain their original types.
+- Binding `TypeError` messages remain generic in several paths.
+- Arbitrary object `__call__`, descriptor-driven callable behavior beyond the
+  existing method support, and native-to-managed keyword-call APIs require
+  separate work.
+
+## Implementation map
+
+| Area | Source |
+|---|---|
+| Signature/argument syntax and evaluation | [parser.cpp](../src/compiler/parser.cpp), [codegen.cpp](../src/compiler/codegen.cpp) |
+| Signature and IC representation | [code_object.h](../src/bytecode/code_object.h), [function.h](../src/object_model/function.h) |
+| Native expanded binder, cache guards, application | [expanded_call.h](../src/runtime/expanded_call.h), [expanded_call.cpp](../src/runtime/expanded_call.cpp) |
+| Call/helper dispatch and explicit-keyword binding | [interpreter.cpp](../src/runtime/interpreter.cpp) |
+| Managed iteration/mapping helpers | [builtin_implementations.py](../src/bootstrap/builtin_implementations.py) |
+| Dict merge and known-hash helper generation | [dict.cpp](../src/builtin_types/dict.cpp) |
+| Constructor forwarding | [constructor_thunk.cpp](../src/object_model/constructor_thunk.cpp) |
+
+Interpreter, parser, codegen, and JIT fallback tests cover these paths, including
+callback mutation, error precedence, key identity, method binding, cache
+ownership/invalidation, and reentrant calls. The `expanded_call_*.py` benchmarks
+cover direct comparisons, positional/keyword/combined expansion, mixed
+construction, collector reuse/leftovers, and expanded methods.

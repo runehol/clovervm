@@ -7,7 +7,7 @@
 | Implementation | Partial; this map distinguishes implemented runtime and JIT infrastructure from remaining work |
 | Scope | Repository-wide runtime, interpreter, object-model, memory, and JIT architecture |
 | Owning layers | All runtime and compiler layers; focused documents own their detailed contracts |
-| Validated against | `57c093f2` (2026-08-07) |
+| Validated against | `57c093f2` (2026-08-07); call adaptation checked against `fc13f0ee` (2026-10-24) |
 | Supersedes | N/A |
 
 This document is the introductory map for clovervm's architecture. It explains
@@ -93,6 +93,13 @@ Function calls use a defined frame/register convention. Native functions,
 constructor thunks, and managed code-object entry need to preserve the same
 high-level calling contract so the interpreter and compiled entries can
 share call paths and frame metadata.
+
+Argument adaptation has separate positional, explicit-keyword, and expanded-call
+paths, with matching fused attribute-method opcodes. Expanded calls build an
+exact positional tuple and fresh keyword dict before native binding. Stable
+exact-string keyword sequences reuse an out-of-line binding plan; string-subclass
+keys retain their comparison callbacks through uncached binding. All paths use
+the same parameter layout and managed frame-entry convention.
 
 The Clover stack is managed frame storage, not a general native call stack. The
 interpreter and native C++ functions execute on the native machine stack while
