@@ -635,6 +635,99 @@ namespace cl::jit
         }
     }
 
+    TEST(JitCoreBytecodeTranslator, MixedFloatOrderingKeepsTrustedHandlerCall)
+    {
+        struct Method
+        {
+            Bytecode opcode;
+            const wchar_t *name;
+            const wchar_t *reflected_name;
+        };
+        const Method methods[] = {
+            {Bytecode::TestLess, L"__lt__", L"__gt__"},
+            {Bytecode::TestLessEqual, L"__le__", L"__ge__"},
+            {Bytecode::TestGreater, L"__gt__", L"__lt__"},
+            {Bytecode::TestGreaterEqual, L"__ge__", L"__le__"},
+        };
+        for(const Method &method: methods)
+        {
+            for(bool reflected: {false, true})
+            {
+                for(int integer_kind: {0, 1, 2})
+                {
+                    TranslatorFixture fixture;
+                    {
+                        CodeObjectBuilder::TemporaryReg temporary(
+                            fixture.code_builder, 1);
+                        fixture.code_builder.emit_lda_smi(0, 0).value();
+                        fixture.code_builder.emit_star(0, temporary).value();
+                        fixture.code_builder
+                            .emit_operator_reg(
+                                0, method.opcode, temporary,
+                                OperatorBytecodeFormat::
+                                    WithCacheAndNotImplementedCheck)
+                            .value();
+                        fixture.code_builder.emit_return(0).value();
+                    }
+                    CodeObject *code = fixture.code_builder.finalize().value();
+                    ShapeKey float_key =
+                        ShapeKey::from_shape(fixture.context.vm()
+                                                 .float_class()
+                                                 ->get_instance_root_shape());
+                    ShapeKey integer_key =
+                        integer_kind == 2
+                            ? ShapeKey::from_shape(
+                                  fixture.context.vm()
+                                      .int_class()
+                                      ->get_instance_root_shape())
+                            : ShapeKey::from_value(integer_kind == 1
+                                                       ? Value::True()
+                                                       : Value::from_smi(0));
+                    ShapeKey left = reflected ? integer_key : float_key;
+                    ShapeKey right = reflected ? float_key : integer_key;
+                    Value method_value =
+                        fixture.context.vm().float_class()->get_own_property(
+                            interned_string(reflected ? method.reflected_name
+                                                      : method.name));
+                    auto resolver = method_value.get_ptr<Function>()
+                                        ->code_object.extract()
+                                        ->trusted_handler_resolver;
+                    auto resolution = resolver(
+                        &fixture.context.vm(), left, right,
+                        reflected ? TrustedHandlerOperandOrder::Reflected
+                                  : TrustedHandlerOperandOrder::Normal,
+                        TrustedHandlerArity::Binary);
+                    ASSERT_TRUE(resolution.has_trusted_handler());
+                    code->inline_caches.operator_caches[0] =
+                        OperatorInlineCache::trusted_handler_call(
+                            left, right, resolution, nullptr, nullptr);
+                    CoreBytecodeTranslator translator(
+                        fixture.context.vm(), *code, fixture.graph_builder);
+                    Block *entry = translator.translate()->normal_entry_block();
+                    EXPECT_EQ(1u,
+                              instructions_of_kind(
+                                  entry, InstructionKind::TrustedHandlerCall)
+                                  .size());
+                    EXPECT_TRUE(
+                        instructions_of_kind(entry, InstructionKind::UnboxF64)
+                            .empty());
+                    EXPECT_TRUE(
+                        instructions_of_kind(entry, InstructionKind::LessF64)
+                            .empty());
+                    EXPECT_TRUE(instructions_of_kind(
+                                    entry, InstructionKind::LessEqualF64)
+                                    .empty());
+                    EXPECT_TRUE(
+                        instructions_of_kind(entry, InstructionKind::GreaterF64)
+                            .empty());
+                    EXPECT_TRUE(instructions_of_kind(
+                                    entry, InstructionKind::GreaterEqualF64)
+                                    .empty());
+                }
+            }
+        }
+    }
+
     TEST(JitCoreBytecodeTranslator, SpecializesExactFloatUnaryNegation)
     {
         TranslatorFixture fixture;

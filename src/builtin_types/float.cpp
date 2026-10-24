@@ -9,11 +9,13 @@
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
 #include "object_model/shape_key.h"
+#include "runtime/ordering_op.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
 #include <array>
 #include <cmath>
+#include <compare>
 #include <cstdint>
 #include <fmt/format.h>
 #include <iterator>
@@ -343,6 +345,75 @@ namespace cl
                    integer_view, ConstBigIntView{index, 1, digits.data()}) == 0;
     }
 
+    // Caller validates the payload. Views borrow stack or integer storage and
+    // never escape; comparing cannot allocate, raise, or invoke Python methods.
+    static std::partial_ordering compare_float_intlike(double number,
+                                                       Value integer)
+    {
+        assert(is_intlike_value(integer));
+        if(std::isnan(number))
+            return std::partial_ordering::unordered;
+        if(std::isinf(number))
+            return number < 0 ? std::partial_ordering::less
+                              : std::partial_ordering::greater;
+
+        SmiViewStorage integer_storage;
+        ConstBigIntView view =
+            intlike_value_bigint_view(integer, &integer_storage);
+        signum_t sign = number == 0.0 ? 0 : (number < 0.0 ? -1 : 1);
+        if(sign != view.signum)
+            return sign <=> view.signum;
+        if(sign == 0)
+            return std::partial_ordering::equivalent;
+
+        static_assert(std::numeric_limits<double>::radix == 2);
+        static_assert(std::numeric_limits<double>::digits == 53);
+        static_assert(std::numeric_limits<double>::max_exponent == 1024);
+        double magnitude = std::fabs(number);
+        int exponent;
+        double fraction = std::frexp(magnitude, &exponent);
+        size_t integer_bits = bigint_abs_bit_length(view);
+        int comparison;
+        if(exponent <= 0 || size_t(exponent) < integer_bits)
+            comparison = -1;
+        else if(size_t(exponent) > integer_bits)
+            comparison = 1;
+        else if(exponent <= 53)
+        {
+            // The truncated magnitude fits exactly; a fractional remainder
+            // breaks a tie with the integer toward the larger magnitude.
+            int64_t truncated = static_cast<int64_t>(magnitude);
+            SmiViewStorage number_storage;
+            comparison = compare_bigint_abs(
+                smi_bigint_view(truncated, &number_storage), view);
+            if(comparison == 0 && magnitude != double(truncated))
+                comparison = 1;
+        }
+        else
+        {
+            // Binary64 has no fractional bits here. Expand at most 1024 bits,
+            // including low zero digits, without converting the integer.
+            std::array<digit_t, 1024 / kDigitBits> digits{};
+            uint64_t significand =
+                static_cast<uint64_t>(std::ldexp(fraction, 53));
+            unsigned shift = unsigned(exponent - 53);
+            size_t index = shift / kDigitBits;
+            unsigned offset = shift % kDigitBits;
+            digits[index++] = static_cast<digit_t>(significand << offset);
+            significand >>= kDigitBits - offset;
+            while(significand != 0)
+            {
+                digits[index++] = static_cast<digit_t>(significand);
+                significand >>= kDigitBits;
+            }
+            comparison = compare_bigint_abs(
+                ConstBigIntView{index, 1, digits.data()}, view);
+        }
+        if(sign < 0)
+            comparison = -comparison;
+        return comparison <=> 0;
+    }
+
     static Value float_add(ThreadState *thread, double left, double right)
     {
         return thread->make_object_value<Float>(left + right).raw_value();
@@ -476,32 +547,6 @@ namespace cl
                                       double right)
     {
         return float_modulo_result(thread, right, left);
-    }
-
-    static Value float_less(ThreadState *thread, double left, double right)
-    {
-        (void)thread;
-        return left < right ? Value::True() : Value::False();
-    }
-
-    static Value float_less_equal(ThreadState *thread, double left,
-                                  double right)
-    {
-        (void)thread;
-        return left <= right ? Value::True() : Value::False();
-    }
-
-    static Value float_greater(ThreadState *thread, double left, double right)
-    {
-        (void)thread;
-        return left > right ? Value::True() : Value::False();
-    }
-
-    static Value float_greater_equal(ThreadState *thread, double left,
-                                     double right)
-    {
-        (void)thread;
-        return left >= right ? Value::True() : Value::False();
     }
 
     static Value float_negate(ThreadState *thread, double value)
@@ -911,18 +956,93 @@ namespace cl
     using FloatRModResolver =
         FloatBinaryResolver<FloatRModHandlers, FloatModHandlers>;
 
+    template <OrderingOp Operation>
+    static Value float_order_result(std::partial_ordering comparison)
+    {
+        bool result;
+        if constexpr(Operation == OrderingOp::Less)
+            result = comparison < 0;
+        else if constexpr(Operation == OrderingOp::LessEqual)
+            result = comparison <= 0;
+        else if constexpr(Operation == OrderingOp::Greater)
+            result = comparison > 0;
+        else
+            result = comparison >= 0;
+        return result ? Value::True() : Value::False();
+    }
+
+    template <OrderingOp Operation, FloatBinaryAdaptation Adaptation>
+    static Value trusted_float_ordering(ThreadState *thread, Value left,
+                                        Value right)
+    {
+        (void)thread;
+        if constexpr(Adaptation == FloatBinaryAdaptation::FloatFloat)
+            return float_order_result<Operation>(
+                left.get_ptr<Float>()->value() <=>
+                right.get_ptr<Float>()->value());
+        else if constexpr(Adaptation == FloatBinaryAdaptation::FloatIntlike)
+            return float_order_result<Operation>(
+                compare_float_intlike(left.get_ptr<Float>()->value(), right));
+        else
+            return float_order_result<Operation>(
+                0 <=>
+                compare_float_intlike(right.get_ptr<Float>()->value(), left));
+    }
+
+    template <OrderingOp Operation, FixedWideString ReceiverError>
+    struct FloatOrderingOperation
+    {
+        [[nodiscard]] static Value native(ThreadState *thread, Value self,
+                                          Value other)
+        {
+            if(!has_native_layout<Float>(self))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", ReceiverError.c_str());
+            double number = self.get_ptr<Float>()->value();
+            if(has_native_layout<Float>(other))
+                return float_order_result<Operation>(
+                    number <=> other.get_ptr<Float>()->value());
+            if(is_intlike_value(other))
+            {
+                // As for equality, builtin methods compare subclass payloads.
+                // Only ordinary operator dispatch invokes user overrides.
+                return float_order_result<Operation>(
+                    compare_float_intlike(number, other));
+            }
+            return Value::NotImplemented();
+        }
+
+        template <TrustedHandlerEffects Effects,
+                  TrustedHandlerSemantics Semantics>
+        struct Handlers
+        {
+            using FloatFloat = TrustedHandlerDefinition<
+                trusted_float_ordering<Operation,
+                                       FloatBinaryAdaptation::FloatFloat>,
+                Effects, Semantics>;
+            using FloatIntlike = TrustedHandlerDefinition<
+                trusted_float_ordering<Operation,
+                                       FloatBinaryAdaptation::FloatIntlike>,
+                Effects, Semantics>;
+            using IntlikeFloat = TrustedHandlerDefinition<
+                trusted_float_ordering<Operation,
+                                       FloatBinaryAdaptation::IntlikeFloat>,
+                Effects, Semantics>;
+        };
+    };
+
     using FloatLtOperation =
-        FloatBinaryOperation<float_less,
-                             L"float.__lt__ expects a float receiver">;
+        FloatOrderingOperation<OrderingOp::Less,
+                               L"float.__lt__ expects a float receiver">;
     using FloatLeOperation =
-        FloatBinaryOperation<float_less_equal,
-                             L"float.__le__ expects a float receiver">;
+        FloatOrderingOperation<OrderingOp::LessEqual,
+                               L"float.__le__ expects a float receiver">;
     using FloatGtOperation =
-        FloatBinaryOperation<float_greater,
-                             L"float.__gt__ expects a float receiver">;
+        FloatOrderingOperation<OrderingOp::Greater,
+                               L"float.__gt__ expects a float receiver">;
     using FloatGeOperation =
-        FloatBinaryOperation<float_greater_equal,
-                             L"float.__ge__ expects a float receiver">;
+        FloatOrderingOperation<OrderingOp::GreaterEqual,
+                               L"float.__ge__ expects a float receiver">;
     using FloatLtHandlers =
         FloatLtOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::Less>;
@@ -936,13 +1056,13 @@ namespace cl
         FloatGeOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::GreaterEqual>;
     using FloatLtResolver =
-        FloatBinaryResolver<FloatLtHandlers, FloatGtHandlers>;
+        FloatBinaryResolver<FloatLtHandlers, FloatGtHandlers, true>;
     using FloatLeResolver =
-        FloatBinaryResolver<FloatLeHandlers, FloatGeHandlers>;
+        FloatBinaryResolver<FloatLeHandlers, FloatGeHandlers, true>;
     using FloatGtResolver =
-        FloatBinaryResolver<FloatGtHandlers, FloatLtHandlers>;
+        FloatBinaryResolver<FloatGtHandlers, FloatLtHandlers, true>;
     using FloatGeResolver =
-        FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers>;
+        FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers, true>;
 
     using FloatAbsOperation =
         FloatUnaryOperation<float_abs,
