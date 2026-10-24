@@ -402,7 +402,8 @@ target_link_libraries(clovervm PRIVATE cxxopts::cxxopts)
 target_link_libraries(clovervm PRIVATE libclovervm)
 target_include_directories(clovervm PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_include_directories(clovervm PRIVATE "${CMAKE_SOURCE_DIR}/include")
-add_dependencies(clovervm clovervm_native_module__math
+add_dependencies(clovervm clovervm_native_module__json
+                          clovervm_native_module__math
                           clovervm_native_module__time)
 
 target_link_libraries(clovervm-jit-dump PRIVATE ${CMAKE_THREAD_LIBS_INIT})
@@ -410,7 +411,8 @@ target_link_libraries(
     clovervm-jit-dump PRIVATE project_options project_warnings)
 target_link_libraries(clovervm-jit-dump PRIVATE cxxopts::cxxopts)
 target_link_libraries(clovervm-jit-dump PRIVATE libclovervm_objects)
-add_dependencies(clovervm-jit-dump clovervm_native_module__math
+add_dependencies(clovervm-jit-dump clovervm_native_module__json
+                                   clovervm_native_module__math
                                    clovervm_native_module__time)
 
 install(TARGETS clovervm DESTINATION bin)

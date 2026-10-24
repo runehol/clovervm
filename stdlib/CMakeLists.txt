@@ -13,3 +13,7 @@ clovervm_add_native_module(_math
 clovervm_add_native_module(_errno
     SOURCES
         native_modules/errno_module.c)
+
+clovervm_add_native_module(_json
+    SOURCES
+        native_modules/json_module.c)
