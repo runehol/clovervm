@@ -6174,9 +6174,27 @@ TEST(Interpreter, int_new_reports_class_errors_like_cpython)
     expect_python_error(L"class I(int): pass\nI('bad')\n", L"ValueError",
                         L"invalid literal for int()");
     expect_python_error(
-        L"class I(int): pass\nI(1.5)\n", L"TypeError",
+        L"class I(int): pass\nI(None)\n", L"TypeError",
         L"int() argument must be a string, a bytes-like object or a real "
-        L"number, not 'float'");
+        L"number, not 'NoneType'");
+}
+
+TEST(Interpreter, int_float_conversion_uses_payload_despite_subclass_overrides)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+class F(float):
+    def __int__(self): raise AssertionError
+    def __index__(self): raise AssertionError
+class I(int): pass
+value = F(-3.75)
+assert int(value) == -3
+assert int.__new__(int, value) == -3
+assert float.__int__(value) == -3
+assert I(value) == -3
+assert I(value).__class__ is I
+)");
+    ASSERT_FALSE(result.is_exception_marker());
 }
 
 TEST(Interpreter, int_subclass_new_invalidation_and_combined_boundary)

@@ -205,6 +205,17 @@ underscore validation; integer base arguments and other conversion protocols
 remain separate work. Constructor type errors stay in `int.cpp`; invalid-text
 ValueError is raised by the shared integer parser.
 
+Float-to-integer conversion and `float.__int__` share `int_value_from_double`.
+Values in the half-open signed 64-bit range are cast with truncation toward zero
+and passed to `int_value_from_int64`, which immediately returns an SMI when it
+fits. Larger finite values are decomposed into their exact signed significand
+and binary exponent, then built with the existing BigInt left shift from a
+stack-backed view. NaN raises ValueError; infinity raises OverflowError.
+`int` currently reads float subclass payloads directly and ignores overridden
+`__int__` methods. This is an accepted incompatibility while general `__int__` /
+`__index__` conversion protocol dispatch remains deferred. Direct `float.__int__`
+also reads the stored value, as the builtin method should.
+
 Float string/bytes conversion and source literals share `try_parse_float` in
 `builtin_types/num_parse`. Private helpers are templated on character type;
 public overloads accept wide string views and byte string views. It first parses

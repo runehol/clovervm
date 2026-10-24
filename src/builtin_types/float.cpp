@@ -187,6 +187,17 @@ namespace cl
         return box_float(thread, value);
     }
 
+    [[nodiscard]] static Value native_float_int(ThreadState *thread, Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__int__ expects a float receiver");
+        }
+        return CL_TRY(
+            int_value_from_double(thread, self.get_ptr<Float>()->value()));
+    }
+
     static Value float_equal(ThreadState *thread, double left, double right)
     {
         (void)thread;
@@ -955,6 +966,8 @@ namespace cl
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_float_repr,
                                      L"Return repr(self)."),
+            builtin_intrinsic_method(L"__int__", native_float_int,
+                                     L"Truncate self toward zero."),
             with_trusted_handler_resolver<FloatEqResolver>(
                 vm,
                 builtin_intrinsic_method(L"__eq__", FloatEqOperation::native,

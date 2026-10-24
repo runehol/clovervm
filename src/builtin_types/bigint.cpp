@@ -398,6 +398,47 @@ namespace cl
                             digits});
     }
 
+    [[nodiscard]] NOINLINE static Expected<Value>
+    int_value_from_double_slow(ThreadState *thread, double value)
+    {
+        if(std::isnan(value))
+        {
+            return Expected<Value>::raise_exception(
+                L"ValueError", L"cannot convert float NaN to integer");
+        }
+        if(std::isinf(value))
+        {
+            return Expected<Value>::raise_exception(
+                L"OverflowError", L"cannot convert float infinity to integer");
+        }
+
+        static_assert(DBL_MANT_DIG == 53);
+        static_assert(DBL_MAX_EXP == 1024);
+        static_assert(value_smi_max >= (int64_t{1} << DBL_MANT_DIG) - 1);
+        int exponent;
+        double fraction = std::frexp(value, &exponent);
+        int64_t significand =
+            static_cast<int64_t>(std::ldexp(fraction, DBL_MANT_DIG));
+        // Outside int64 range, a finite binary64 value has no fractional bits.
+        // Its signed significand fits in an SMI; shift a stack-backed view
+        // rather than allocating an intermediate integer.
+        assert(exponent > DBL_MANT_DIG);
+        SmiViewStorage storage;
+        return bigint_lshift(thread, smi_bigint_view(significand, &storage),
+                             static_cast<uint64_t>(exponent - DBL_MANT_DIG));
+    }
+
+    Expected<Value> int_value_from_double(ThreadState *thread, double value)
+    {
+        // INT64_MAX rounds up to 2^63 as a double. Keep the upper bound
+        // exclusive so the cast is defined; the cast itself truncates.
+        if(value >= -0x1p63 && value < 0x1p63)
+        {
+            return int_value_from_int64(thread, static_cast<int64_t>(value));
+        }
+        return int_value_from_double_slow(thread, value);
+    }
+
     Expected<int64_t> bigint_to_int64(ConstBigIntView view)
     {
         assert(is_normalized_bigint_view(view));

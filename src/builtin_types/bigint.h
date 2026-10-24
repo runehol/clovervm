@@ -146,6 +146,10 @@ namespace cl
                                                        int64_t value);
     [[nodiscard]] Expected<Value> int_value_from_uint64(ThreadState *thread,
                                                         uint64_t value);
+    // Truncate toward zero, returning an SMI when possible. NaN raises
+    // ValueError and infinity raises OverflowError.
+    [[nodiscard]] Expected<Value> int_value_from_double(ThreadState *thread,
+                                                        double value);
     [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
     [[nodiscard]] Expected<uint64_t> bigint_to_uint64(ConstBigIntView view);
     [[nodiscard]] Expected<double> bigint_to_double(ConstBigIntView view);

@@ -194,6 +194,11 @@ namespace cl
             return CL_TRY(finalize_bigint(thread, integer->view()));
         }
 
+        if(can_convert_to<Float>(obj))
+        {
+            return CL_TRY(
+                int_value_from_double(thread, obj.get_ptr<Float>()->value()));
+        }
         if(can_convert_to<String>(obj))
         {
             return parse_int_string(thread,

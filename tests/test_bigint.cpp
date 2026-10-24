@@ -269,6 +269,116 @@ TEST(BigInt, BigIntToInt64ConvertsSignedBoundaryValues)
     EXPECT_EQ(std::numeric_limits<int64_t>::min(), min.value());
 }
 
+TEST(BigInt, IntValueFromDoubleTruncatesToSMI)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    struct Sample
+    {
+        double input;
+        int64_t expected;
+    };
+    const Sample samples[] = {
+        {0.0, 0},
+        {-0.0, 0},
+        {std::numeric_limits<double>::denorm_min(), 0},
+        {-std::numeric_limits<double>::denorm_min(), 0},
+        {0.9999999999999999, 0},
+        {-0.9999999999999999, 0},
+        {1.9999999999999998, 1},
+        {-1.9999999999999998, -1},
+        {0x1p53, int64_t{1} << 53},
+        {0x1.fffffffffffffp57, value_smi_max - 31},
+        {-0x1p58, value_smi_min},
+    };
+    for(const Sample &sample: samples)
+    {
+        SCOPED_TRACE(sample.input);
+        auto result = int_value_from_double(context.thread(), sample.input);
+        ASSERT_FALSE(result.has_exception());
+        ASSERT_TRUE(result.value().is_smi());
+        EXPECT_EQ(Value::from_smi(sample.expected), result.value());
+    }
+}
+
+TEST(BigInt, IntValueFromDoubleBuildsExactLargeIntegers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    struct Sample
+    {
+        double input;
+        const wchar_t *expected;
+    };
+    const Sample samples[] = {
+        {0x1p58, L"288230376151711744"},
+        {-0x1.0000000000001p58, L"-288230376151711808"},
+        {0x1.fffffffffffffp62, L"9223372036854774784"},
+        {-0x1p63, L"-9223372036854775808"},
+        {0x1p63, L"9223372036854775808"},
+        {-0x1.0000000000001p63, L"-9223372036854777856"},
+        {0x1.0000000000001p64, L"18446744073709555712"},
+        {1e20, L"100000000000000000000"},
+        {1e100, L"1000000000000000015902891109759918046836080856394528138978132"
+                L"7557747838772170381060813469985856815104"},
+    };
+    for(const Sample &sample: samples)
+    {
+        SCOPED_TRACE(sample.input);
+        auto result = int_value_from_double(context.thread(), sample.input);
+        ASSERT_FALSE(result.has_exception());
+        ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+        Owned<Value> value(result.value());
+        EXPECT_EQ(std::wstring(sample.expected),
+                  int_value_decimal(value.value()));
+    }
+}
+
+TEST(BigInt, IntValueFromDoubleHandlesLargestFiniteValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    for(double input: {std::numeric_limits<double>::max(),
+                       -std::numeric_limits<double>::max()})
+    {
+        auto result = int_value_from_double(context.thread(), input);
+        ASSERT_FALSE(result.has_exception());
+        ASSERT_TRUE(can_convert_to<BigInt>(result.value()));
+        Owned<Value> value(result.value());
+        ConstBigIntView view = value.value().get_ptr<BigInt>()->view();
+        EXPECT_TRUE(is_normalized_bigint_view(view));
+        ASSERT_EQ(32u, view.n_digits);
+        EXPECT_EQ(input < 0 ? -1 : 1, view.signum);
+        for(size_t idx = 0; idx < 30; ++idx)
+        {
+            EXPECT_EQ(0u, view.digits[idx]);
+        }
+        EXPECT_EQ(0xfffff800u, view.digits[30]);
+        EXPECT_EQ(0xffffffffu, view.digits[31]);
+    }
+}
+
+TEST(BigInt, IntValueFromDoubleRejectsNonFiniteValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    auto nan = int_value_from_double(context.thread(),
+                                     std::numeric_limits<double>::quiet_NaN());
+    EXPECT_TRUE(nan.has_exception());
+    expect_pending_exception(context.thread(), L"ValueError",
+                             L"cannot convert float NaN to integer");
+    context.thread()->clear_pending_exception();
+    for(double input: {std::numeric_limits<double>::infinity(),
+                       -std::numeric_limits<double>::infinity()})
+    {
+        auto result = int_value_from_double(context.thread(), input);
+        EXPECT_TRUE(result.has_exception());
+        expect_pending_exception(context.thread(), L"OverflowError",
+                                 L"cannot convert float infinity to integer");
+        context.thread()->clear_pending_exception();
+    }
+}
+
 TEST(BigInt, BigIntToInt64RejectsOverflow)
 {
     test::VmTestContext context;
