@@ -495,7 +495,7 @@ namespace cl
     {
         thread->publish_safepoint_scan_record(
             lowest_live_stack_slot_for_current_frame(fp, code_object),
-            Value::not_present());
+            Value::not_present(), Value::from_oop(code_object));
         thread->handle_safepoint(accumulator, fp, pc, code_object);
 
         START(0);
@@ -507,7 +507,7 @@ namespace cl
     {
         thread->publish_safepoint_scan_record(
             lowest_live_stack_slot_for_current_frame(fp, code_object),
-            accumulator);
+            accumulator, Value::from_oop(code_object));
         thread->handle_safepoint(accumulator, fp, pc, code_object);
 
         START(0);

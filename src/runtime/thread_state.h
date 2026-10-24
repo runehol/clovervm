@@ -64,6 +64,7 @@ namespace cl
     {
         Value *lowest_live_stack_slot = nullptr;
         Value accumulator_or_not_present = Value::not_present();
+        Value active_code_object_or_not_present = Value::not_present();
     };
 
     class ThreadState
@@ -200,8 +201,9 @@ namespace cl
         {
             return *safepoint_requested_ptr;
         }
-        void publish_safepoint_scan_record(Value *lowest_live_stack_slot,
-                                           Value accumulator_or_not_present);
+        void publish_safepoint_scan_record(
+            Value *lowest_live_stack_slot, Value accumulator_or_not_present,
+            Value active_code_object_or_not_present = Value::not_present());
         void handle_safepoint(Value accumulator, Value *fp, const uint8_t *pc,
                               CodeObject *code_object);
         const SafepointScanRecord &safepoint_scan_record() const

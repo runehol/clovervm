@@ -202,6 +202,25 @@ The current implementation is conservative:
 - leave keyword adaptation to the outer keyword-call opcode, so the thunk body
   can still enter a fully prepared initializer frame.
 
+## Tuple allocation
+
+Tuple construction installs a generated `tuple.__new__(cls, iterable=(), /)`
+function after the trusted iterable-conversion helpers are available. The
+existing new-only constructor thunk supplies the requested class. The function
+validates tuple subclass membership and native layout before iterating the
+source, then uses `ToExactTuple` to normalize it. An exact tuple source retains
+identity when constructing `tuple`; source subclasses use their iteration
+protocol. Constructing a subclass allocates a fresh variable-size `Tuple` with
+that class's root shape and retains each normalized payload element. It uses
+the existing tuple size and tracing descriptors, without additional inline
+slots or a new layout.
+
+Plain tuple subclasses and custom `__new__` without `__init__` use the existing
+constructor lookup and invalidation rules. Tuple subclasses with custom
+`__init__` remain unsupported by class calls: the existing combined
+`__new__`/`__init__` eligibility restriction still applies. An explicit
+`tuple.__new__(Subclass, iterable)` allocates without invoking initialization.
+
 ## Generic Fallback
 
 Beyond tier 1, do not try to copy the normalized-call trick.

@@ -228,6 +228,7 @@ namespace cl
         }
 
         roots.add_conservative_value(record.accumulator_or_not_present);
+        roots.add_conservative_value(record.active_code_object_or_not_present);
     }
 
     ReclamationRootSet

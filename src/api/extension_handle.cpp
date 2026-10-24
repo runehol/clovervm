@@ -33,6 +33,9 @@ namespace cl
               thread->safepoint_scan_record().lowest_live_stack_slot),
           previous_accumulator_or_not_present(
               thread->safepoint_scan_record().accumulator_or_not_present),
+          previous_active_code_object_or_not_present(
+              thread->safepoint_scan_record()
+                  .active_code_object_or_not_present),
           begin(nullptr), end(nullptr)
     {
         assert(thread != nullptr);
@@ -48,7 +51,8 @@ namespace cl
             }
             thread->set_clover_frame_frontier(begin);
             thread->publish_safepoint_scan_record(
-                begin, previous_accumulator_or_not_present);
+                begin, previous_accumulator_or_not_present,
+                previous_active_code_object_or_not_present);
         }
     }
 
@@ -59,7 +63,8 @@ namespace cl
             thread->set_clover_frame_frontier(previous_frontier);
             thread->publish_safepoint_scan_record(
                 previous_lowest_live_stack_slot,
-                previous_accumulator_or_not_present);
+                previous_accumulator_or_not_present,
+                previous_active_code_object_or_not_present);
         }
     }
 }  // namespace cl

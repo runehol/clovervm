@@ -121,15 +121,17 @@ namespace cl
         }
     }
 
-    void
-    ThreadState::publish_safepoint_scan_record(Value *lowest_live_stack_slot,
-                                               Value accumulator_or_not_present)
+    void ThreadState::publish_safepoint_scan_record(
+        Value *lowest_live_stack_slot, Value accumulator_or_not_present,
+        Value active_code_object_or_not_present)
     {
         assert(lowest_live_stack_slot >= stack.data());
         assert(lowest_live_stack_slot <= clover_frame_sentinel_ptr);
         safepoint_scan_record_.lowest_live_stack_slot = lowest_live_stack_slot;
         safepoint_scan_record_.accumulator_or_not_present =
             accumulator_or_not_present;
+        safepoint_scan_record_.active_code_object_or_not_present =
+            active_code_object_or_not_present;
     }
 
     void ThreadState::handle_safepoint(Value accumulator, Value *fp,

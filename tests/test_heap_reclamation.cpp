@@ -121,6 +121,27 @@ namespace cl
         EXPECT_TRUE(roots.contains(string));
     }
 
+    TEST(HeapReclamation, RootCollectionIncludesActiveCodeObjectRoot)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        TValue<String> name =
+            context.vm().get_or_create_interned_string_value(L"<active-code>");
+        ModuleObject *module = context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value());
+        CodeObject *code = thread->make_object_raw<CodeObject>(
+            nullptr, TValue<ModuleObject>::from_oop(module), nullptr, name);
+        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
+                                              Value::not_present(),
+                                              Value::from_oop(code));
+
+        ReclamationRootSet roots;
+        collect_reclamation_roots_from_thread(roots, *thread);
+
+        EXPECT_TRUE(roots.contains(code));
+    }
+
     TEST(HeapReclamation, RootCollectionDoesNotDereferenceJunk)
     {
         test::VmTestContext context;

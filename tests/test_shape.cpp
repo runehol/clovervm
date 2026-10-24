@@ -392,9 +392,12 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
-    for(ClassObject *base: {context.vm().tuple_class()})
     {
-        auto candidate = make_storage_selection_class(context, {base});
+        // A native layout without an inherited builtin __new__ must still
+        // reject generic instance allocation. Tuple subclasses now inherit
+        // tuple.__new__, so use a raw storage fixture rooted at object here.
+        auto candidate = make_storage_selection_class(
+            context, {context.vm().object_class()}, NativeLayoutId::Tuple, 0);
         ASSERT_FALSE(candidate.has_exception());
         Owned<TValue<ClassObject>> cls(candidate.value());
         auto thunk = cls.extract()->get_or_create_constructor_thunk();
@@ -415,6 +418,25 @@ TEST(ConstructorAllocatorSelection, RejectsUnsupportedLayoutBeforeCachingThunk)
     auto thunk = cls.extract()->get_or_create_constructor_thunk();
     ASSERT_FALSE(thunk.has_exception());
     EXPECT_TRUE(thunk.value().is_found());
+}
+
+TEST(ConstructorAllocatorSelection, TupleUsesInheritedAllocator)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto candidate =
+        make_storage_selection_class(context, {context.vm().tuple_class()});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    auto thunk = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(thunk.has_exception());
+    ASSERT_TRUE(thunk.value().is_found());
+    EXPECT_EQ(thunk.value().thunk, cls.extract()->current_constructor_thunk());
+    Owned<Value> result(context.thread()->call_clovervm_function(
+        TValue<Function>::from_oop(thunk.value().thunk)));
+    ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
+    EXPECT_EQ(cls.extract(),
+              native_cast<Tuple>(result.value())->get_shape()->get_class());
 }
 
 TEST(ConstructorAllocatorSelection, ListUsesDedicatedOpcode)

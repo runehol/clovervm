@@ -4,6 +4,8 @@
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple_iterator.h"
+#include "bytecode/code_object_builder.h"
+#include "compiler/scope.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/native_function.h"
@@ -364,6 +366,92 @@ namespace cl
             "installing intrinsic methods");
     }
 
+    [[nodiscard]] static Value validate_tuple_new_class(ThreadState *thread,
+                                                        Value cls_value)
+    {
+        ClassObject *cls = try_native_cast<ClassObject>(cls_value);
+        if(cls == nullptr ||
+           !is_subclass_of(cls, thread->get_machine()->tuple_class()) ||
+           cls->instance_native_layout_id() != NativeLayoutId::Tuple)
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple.__new__ expects a tuple subclass");
+        }
+        return cls_value;
+    }
+
+    [[nodiscard]] static Value allocate_tuple_from_exact(ThreadState *thread,
+                                                         Value cls_value,
+                                                         Value items_value)
+    {
+        // The generated __new__ validates cls before iteration. ToExactTuple
+        // supplies an exact, fully initialized tuple, retained in its frame.
+        ClassObject *cls = native_cast<ClassObject>(cls_value);
+        Tuple *items = native_cast<Tuple>(items_value);
+        assert(cls->instance_native_layout_id() == NativeLayoutId::Tuple);
+        assert(items->get_shape()->get_class() ==
+               thread->get_machine()->tuple_class());
+        if(cls == thread->get_machine()->tuple_class())
+            return items_value;
+
+        Owned<TValue<Tuple>> result(
+            thread->make_internal_value<Tuple>(cls, items->size()));
+        for(size_t idx = 0; idx < items->size(); ++idx)
+            result.extract()->initialize_item_unchecked(
+                idx, items->item_unchecked(idx));
+        return result.raw_value();
+    }
+
+    static Expected<TValue<Function>>
+    make_tuple_new_function(VirtualMachine *vm)
+    {
+        Scope *scope = vm->make_immortal_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder code(
+            vm, nullptr, vm->global_builtins_module(), scope,
+            vm->get_or_create_interned_string_value(L"tuple.__new__"));
+        code.configure_positional_function(2);  // cls, iterable
+        code.function_signature().n_posonly_parameters = 2;
+        code.function_signature().n_pos_or_kw_parameters = 0;
+        code.function_signature().first_default_slot = 1;
+        code.function_signature().default_presence_mask = 1;
+
+        TValue<Function> validator =
+            CL_TRY(make_intrinsic_function(vm, validate_tuple_new_class));
+        uint8_t validator_idx =
+            CL_TRY(code.allocate_constant(validator.raw_value()));
+        NativeFunctionTarget allocator;
+        allocator.fixed2 = allocate_tuple_from_exact;
+        uint8_t allocator_idx =
+            CL_TRY(code.add_native_function_target(allocator));
+        {
+            CodeObjectBuilder::TemporaryReg callable(code);
+            CL_TRY(code.emit_lda_constant(0, validator_idx));
+            CL_TRY(code.emit_star(0, callable));
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 1, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_mov(0, args, 0));
+                // Ordinary call/return propagation raises validation errors
+                // before any source callbacks can run.
+                CL_TRY(code.emit_call_positional(0, callable, args, 1));
+            }
+            CL_TRY(code.emit_to_exact_tuple(0, 1));
+            CL_TRY(code.emit_star(0, 1));
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2,
+                                            allocator_idx));
+            CL_TRY(code.emit_return_or_raise_exception(0));
+        }
+        TValue<CodeObject> object =
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize()));
+        TValue<Tuple> defaults = vm->make_immortal_object_value<Tuple>(1);
+        defaults.extract()->initialize_item_unchecked(
+            0, vm->make_immortal_object_value<Tuple>(0).raw_value());
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(
+                object, Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::some(defaults)));
+    }
+
     void install_tuple_python_methods(VirtualMachine *vm,
                                       ModuleObject *implementation_module)
     {
@@ -375,6 +463,13 @@ namespace cl
             L"_clover_tuple_index"};
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
+        TValue<Function> new_function = unwrap_bootstrap_expected(
+            vm, make_tuple_new_function(vm), "creating tuple.__new__");
+        bool new_stored = cls->define_own_property(
+            vm->get_or_create_interned_string_value(L"__new__"),
+            new_function.raw_value(), flags);
+        assert(new_stored);
+        (void)new_stored;
         for(size_t idx = 0; idx < std::size(method_names); ++idx)
         {
             TValue<String> helper_name =
