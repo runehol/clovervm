@@ -1,5 +1,7 @@
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
+#include "memory/native_layout_descriptor.h"
+#include "object_model/function.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
@@ -58,6 +60,98 @@ TEST(Tuple, ObjectAllocationUsesTupleClass)
     ASSERT_NE(nullptr, context.vm().tuple_class());
     EXPECT_EQ(context.vm().tuple_class(), tuple->get_shape()->get_class());
     EXPECT_EQ(2u, tuple->size());
+}
+
+TEST(Tuple, CustomInitRemainsUnsupportedAndDoesNotRunSourceCallbacks)
+{
+    test::FileRunner runner(LR"PY(
+events = []
+class Source:
+    def __iter__(self):
+        events.append("iter")
+        return iter([1])
+class T(tuple):
+    def __init__(self, source):
+        events.append("init")
+try:
+    T(Source())
+except TypeError:
+    pass
+else:
+    assert False
+assert events == []
+# Explicit allocation still works without running the deferred initializer.
+allocated = tuple.__new__(T, Source())
+assert allocated.__class__ is T
+assert allocated == (1,)
+assert events == ["iter"]
+del T.__init__
+assert T([2]) == (2,)
+)PY");
+    EXPECT_FALSE(runner.return_value.is_exception_marker());
+}
+
+TEST(Tuple, SubclassConstructionRetainsPayloadAndReleasesFailedBuilder)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<Value> functions(context.run_file(LR"PY(
+class T(tuple):
+    pass
+class Broken:
+    def __init__(self, source):
+        self.source = source
+        self.index = 0
+    def __iter__(self):
+        return self
+    def __next__(self):
+        if self.index == 0:
+            self.index = 1
+            return self.source[0]
+        raise ValueError("failed after yielding")
+def build(source):
+    return T(source)
+def fail(source):
+    return T(Broken(source))
+(build, fail)
+)PY"));
+    ASSERT_TRUE(has_native_layout<Tuple>(functions.value()));
+    Tuple *pair = native_cast<Tuple>(functions.value());
+    TValue<Function> build =
+        TValue<Function>::from_value_assumed(pair->item_unchecked(0));
+    TValue<Function> fail =
+        TValue<Function>::from_value_assumed(pair->item_unchecked(1));
+
+    Owned<TValue<String>> child(
+        thread->make_object_value<String>(L"owned payload"));
+    Owned<Value> result(Value::None());
+    {
+        Owned<TValue<Tuple>> source(thread->make_object_value<Tuple>(1));
+        source.extract()->initialize_item_unchecked(0, child.raw_value());
+        result = thread->call_clovervm_function(build, source.raw_value());
+        ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
+        Tuple *tuple = native_cast<Tuple>(result.value());
+        EXPECT_NE(context.vm().tuple_class(), tuple->get_shape()->get_class());
+        EXPECT_EQ(Tuple::size_for(1), object_size_in_bytes(tuple));
+        EXPECT_EQ(child.raw_value(), tuple->item_unchecked(0));
+        EXPECT_EQ(3, child.extract()->refcount);
+
+        EXPECT_TRUE(thread->call_clovervm_function(fail, source.raw_value())
+                        .is_exception_marker());
+        thread->clear_pending_exception();
+        // The epoch scan can enqueue a builder's backing storage after the
+        // zero-count-table phase; the following pass releases that storage.
+        context.vm().run_heap_reclamation();
+        context.vm().run_heap_reclamation();
+        EXPECT_EQ(3, child.extract()->refcount);
+    }
+    // Dropping an Owned handle enqueues its tuple; reclamation releases items.
+    context.vm().run_heap_reclamation();
+    EXPECT_EQ(2, child.extract()->refcount);
+    result = Value::None();
+    context.vm().run_heap_reclamation();
+    EXPECT_EQ(1, child.extract()->refcount);
 }
 
 TEST(Tuple, EmptyTupleHasNoItems)

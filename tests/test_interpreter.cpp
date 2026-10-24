@@ -5620,17 +5620,15 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
                         L"KeyError", L"");
 }
 
-TEST(Interpreter,
-     native_allocator_selection_precedes_constructor_argument_binding)
+TEST(Interpreter, tuple_constructor_rejects_noniterable_and_custom_init)
 {
     expect_python_error(L"class C(tuple): pass\nC(1)\n", L"TypeError",
-                        L"native instance layout requires a builtin allocator");
+                        L"object is not iterable");
     expect_python_error(L"class C(tuple):\n"
                         L"    def __init__(self, *, required):\n"
                         L"        raise AssertionError\n"
                         L"C()\n",
-                        L"TypeError",
-                        L"native instance layout requires a builtin allocator");
+                        L"TypeError", L"object is not callable");
 }
 
 TEST(Interpreter, exception_default_allocation_preserves_native_storage)
@@ -6620,10 +6618,13 @@ assert value == 0.0
     ASSERT_FALSE(result.is_exception_marker());
 }
 
-TEST(Interpreter, native_subclass_storage_rejects_generic_allocation)
+TEST(Interpreter, native_subclass_storage_uses_compatible_builtin_allocator)
 {
-    expect_python_error(L"class C(tuple): pass\nC()\n", L"TypeError",
-                        L"native instance layout requires a builtin allocator");
+    test::FileRunner runner(L"class C(tuple): pass\n"
+                            L"value = C()\n"
+                            L"assert value.__class__ is C\n"
+                            L"assert value == ()\n");
+    ASSERT_FALSE(runner.return_value.is_exception_marker());
     expect_python_error(L"class C(list, dict): pass\n", L"TypeError",
                         L"incompatible native instance layouts");
 }
