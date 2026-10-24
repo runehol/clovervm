@@ -213,7 +213,8 @@ namespace cl
     // Keep ordinary SMI text on the original allocation-free digit loop.
     // A miss defers validation, normalization, and wider values to the
     // fallback.
-    static Value try_parse_smi_string(std::wstring_view text)
+    template <typename Char>
+    static Value try_parse_smi_string(std::basic_string_view<Char> text)
     {
         if(text.empty())
         {
@@ -221,9 +222,9 @@ namespace cl
         }
         size_t digit_begin = 0;
         bool negative = false;
-        if(text.front() == L'+' || text.front() == L'-')
+        if(text.front() == '+' || text.front() == '-')
         {
-            negative = text.front() == L'-';
+            negative = text.front() == '-';
             digit_begin = 1;
         }
 
@@ -235,12 +236,12 @@ namespace cl
         bool saw_digit = false;
         for(size_t idx = digit_begin; idx < text.size(); ++idx)
         {
-            wchar_t ch = text[idx];
-            if(ch < L'0' || ch > L'9')
+            Char ch = text[idx];
+            if(ch < '0' || ch > '9')
             {
                 return Value::not_present();
             }
-            uint64_t digit = static_cast<uint64_t>(ch - L'0');
+            uint64_t digit = static_cast<uint64_t>(ch - '0');
             if(parsed > (limit - digit) / 10)
             {
                 return Value::not_present();
@@ -269,19 +270,20 @@ namespace cl
         int64_t value = 0;
     };
 
-    static Int64ParseResult parse_int_string_direct(std::wstring_view text,
-                                                    int base = 10)
+    template <typename Char>
+    static Int64ParseResult
+    parse_int_string_direct(std::basic_string_view<Char> text, int base = 10)
     {
         if(text.empty())
         {
             return {Int64ParseStatus::Invalid};
         }
         int64_t value;
-        const wchar_t *end = text.data() + text.size();
+        const Char *end = text.data() + text.size();
         auto result = fast_float::from_chars_advanced(
             text.data(), end, value,
-            fast_float::parse_options_t<wchar_t>(
-                fast_float::chars_format::allow_leading_plus, L'.', base));
+            fast_float::parse_options_t<Char>(
+                fast_float::chars_format::allow_leading_plus, '.', base));
         if(result.ptr != end)
         {
             return {Int64ParseStatus::Invalid};
@@ -297,32 +299,33 @@ namespace cl
         return {Int64ParseStatus::Invalid};
     }
 
-    static int ascii_int_digit_value(wchar_t ch)
+    static int ascii_int_digit_value(uint32_t ch)
     {
-        if(ch >= L'0' && ch <= L'9')
+        if(ch >= '0' && ch <= '9')
         {
-            return ch - L'0';
+            return ch - '0';
         }
-        if(ch >= L'a' && ch <= L'z')
+        if(ch >= 'a' && ch <= 'z')
         {
-            return ch - L'a' + 10;
+            return ch - 'a' + 10;
         }
-        if(ch >= L'A' && ch <= L'Z')
+        if(ch >= 'A' && ch <= 'Z')
         {
-            return ch - L'A' + 10;
+            return ch - 'A' + 10;
         }
         return -1;
     }
 
     // The direct parser has proved that text is an optional ASCII sign followed
     // by valid digits in base, with a value outside int64 range.
+    template <typename Char>
     [[nodiscard]] static Expected<Value>
-    build_bigint_from_text(ThreadState *thread, std::wstring_view text,
-                           int base = 10)
+    build_bigint_from_text(ThreadState *thread,
+                           std::basic_string_view<Char> text, int base = 10)
     {
         assert(!text.empty());
-        bool negative = text.front() == L'-';
-        if(text.front() == L'+' || negative)
+        bool negative = text.front() == '-';
+        if(text.front() == '+' || negative)
         {
             text.remove_prefix(1);
         }
@@ -334,7 +337,7 @@ namespace cl
         MutableBigIntView initial = scratch0.mutable_view();
         ConstBigIntView current{0, 0, initial.digits};
         bool use_first_scratch = false;
-        for(wchar_t ch: text)
+        for(Char ch: text)
         {
             int digit = ascii_int_digit_value(ch);
             assert(digit >= 0 && digit < base);
@@ -354,13 +357,15 @@ namespace cl
         return finalize_bigint(thread, current);
     }
 
+    template <typename Char>
     [[nodiscard]] NOINLINE static Expected<Value>
-    parse_normalized_int_string(ThreadState *thread, std::wstring_view text)
+    parse_normalized_int_string(ThreadState *thread,
+                                std::basic_string_view<Char> text)
     {
         auto normalized = normalize_number_text(text);
         if(normalized)
         {
-            std::wstring_view normalized_text = normalized->text();
+            std::basic_string_view<Char> normalized_text = normalized->text();
             Int64ParseResult result = parse_int_string_direct(normalized_text);
             if(result.status == Int64ParseStatus::Parsed)
             {
@@ -375,8 +380,10 @@ namespace cl
                                                 L"invalid literal for int()");
     }
 
+    template <typename Char>
     [[nodiscard]] NOINLINE static Expected<Value>
-    parse_int_string_with_library(ThreadState *thread, std::wstring_view text)
+    parse_int_string_with_library(ThreadState *thread,
+                                  std::basic_string_view<Char> text)
     {
         Int64ParseResult result = parse_int_string_direct(text);
         if(result.status == Int64ParseStatus::Parsed)
@@ -390,8 +397,10 @@ namespace cl
         return parse_normalized_int_string(thread, text);
     }
 
-    Expected<Value> parse_int_string_view(ThreadState *thread,
-                                          std::wstring_view text)
+    template <typename Char>
+    static Expected<Value>
+    parse_int_string_view_impl(ThreadState *thread,
+                               std::basic_string_view<Char> text)
     {
         Value smi = try_parse_smi_string(text);
         if(!smi.is_not_present())
@@ -403,21 +412,20 @@ namespace cl
 
     // Explicit-base grammar is separate from float/decimal normalization:
     // letters can be digits, and a single underscore may follow a prefix.
-    static std::optional<NormalizedNumberText<wchar_t>>
-    normalize_based_int_text(std::wstring_view text, int &base)
+    template <typename Char>
+    static std::optional<NormalizedNumberText<Char>>
+    normalize_based_int_text(std::basic_string_view<Char> text, int &base)
     {
-        while(!text.empty() &&
-              is_numeric_whitespace(static_cast<uint32_t>(text.front())))
+        while(!text.empty() && is_numeric_whitespace(text.front()))
         {
             text.remove_prefix(1);
         }
-        while(!text.empty() &&
-              is_numeric_whitespace(static_cast<uint32_t>(text.back())))
+        while(!text.empty() && is_numeric_whitespace(text.back()))
         {
             text.remove_suffix(1);
         }
         size_t position = 0;
-        if(!text.empty() && (text.front() == L'+' || text.front() == L'-'))
+        if(!text.empty() && (text.front() == '+' || text.front() == '-'))
         {
             ++position;
         }
@@ -438,16 +446,16 @@ namespace cl
         {
             switch(text[after_first])
             {
-                case L'b':
-                case L'B':
+                case 'b':
+                case 'B':
                     prefix_base = 2;
                     break;
-                case L'o':
-                case L'O':
+                case 'o':
+                case 'O':
                     prefix_base = 8;
                     break;
-                case L'x':
-                case L'X':
+                case 'x':
+                case 'X':
                     prefix_base = 16;
                     break;
                 default:
@@ -461,14 +469,14 @@ namespace cl
         {
             base = has_prefix ? prefix_base : 10;
         }
-        std::wstring normalized;
+        std::basic_string<Char> normalized;
         bool rewritten = has_prefix;
         if(has_prefix)
         {
             normalized.reserve(text.size());
             normalized.append(text.substr(0, sign_length));
             position = after_first + 1;
-            if(position < text.size() && text[position] == L'_')
+            if(position < text.size() && text[position] == '_')
             {
                 ++position;
             }
@@ -482,11 +490,9 @@ namespace cl
             {
                 return std::nullopt;
             }
-            bool underscore = *codepoint == L'_';
-            int digit =
-                *codepoint < 0x80
-                    ? ascii_int_digit_value(static_cast<wchar_t>(*codepoint))
-                    : decimal_digit_value(*codepoint);
+            bool underscore = *codepoint == '_';
+            int digit = *codepoint < 0x80 ? ascii_int_digit_value(*codepoint)
+                                          : decimal_digit_value(*codepoint);
             if(underscore)
             {
                 if(!previous_was_digit)
@@ -512,24 +518,26 @@ namespace cl
             if(rewritten && !underscore)
             {
                 normalized.push_back(*codepoint < 0x80
-                                         ? static_cast<wchar_t>(*codepoint)
-                                         : static_cast<wchar_t>(L'0' + digit));
+                                         ? static_cast<Char>(*codepoint)
+                                         : static_cast<Char>('0' + digit));
             }
         }
         if(!previous_was_digit)
         {
             return std::nullopt;
         }
-        return NormalizedNumberText<wchar_t>{text, std::move(normalized)};
+        return NormalizedNumberText<Char>{text, std::move(normalized)};
     }
 
-    Expected<Value> parse_int_string_view(ThreadState *thread,
-                                          std::wstring_view text, int base)
+    template <typename Char>
+    static Expected<Value>
+    parse_int_string_view_impl(ThreadState *thread,
+                               std::basic_string_view<Char> text, int base)
     {
         assert(base == 0 || (base >= 2 && base <= 36));
         if(base == 10)
         {
-            return parse_int_string_view(thread, text);
+            return parse_int_string_view_impl(thread, text);
         }
         if(base != 0)
         {
@@ -546,7 +554,7 @@ namespace cl
         auto normalized = normalize_based_int_text(text, base);
         if(normalized)
         {
-            std::wstring_view digits = normalized->text();
+            std::basic_string_view<Char> digits = normalized->text();
             Int64ParseResult result = parse_int_string_direct(digits, base);
             if(result.status == Int64ParseStatus::Parsed)
             {
@@ -559,6 +567,30 @@ namespace cl
         }
         return Expected<Value>::raise_exception(L"ValueError",
                                                 L"invalid literal for int()");
+    }
+
+    Expected<Value> parse_int_string_view(ThreadState *thread,
+                                          std::wstring_view text)
+    {
+        return parse_int_string_view_impl(thread, text);
+    }
+
+    Expected<Value> parse_int_string_view(ThreadState *thread,
+                                          std::string_view text)
+    {
+        return parse_int_string_view_impl(thread, text);
+    }
+
+    Expected<Value> parse_int_string_view(ThreadState *thread,
+                                          std::wstring_view text, int base)
+    {
+        return parse_int_string_view_impl(thread, text, base);
+    }
+
+    Expected<Value> parse_int_string_view(ThreadState *thread,
+                                          std::string_view text, int base)
+    {
+        return parse_int_string_view_impl(thread, text, base);
     }
 
     template <typename Char>

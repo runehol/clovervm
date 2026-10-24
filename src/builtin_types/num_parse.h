@@ -22,6 +22,14 @@ namespace cl
                                                         std::wstring_view text,
                                                         int base);
 
+    // Byte-storage counterparts use ASCII digits/whitespace only, without
+    // decoding or widening. Keep decimal SMI parsing separate from base
+    // parsing.
+    [[nodiscard]] Expected<Value> parse_int_string_view(ThreadState *thread,
+                                                        std::string_view text);
+    [[nodiscard]] Expected<Value>
+    parse_int_string_view(ThreadState *thread, std::string_view text, int base);
+
     // Parse Python float text, including surrounding numeric whitespace,
     // digit separators, and Unicode decimal digits. Ordinary input is parsed
     // directly; normalization is attempted only after direct parsing fails.

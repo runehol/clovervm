@@ -4,6 +4,7 @@
 #include "object_model/owned.h"
 #include "test_helpers.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -375,9 +376,14 @@ namespace cl
         for(std::wstring_view text: samples)
         {
             SCOPED_TRACE(base);
-            auto parsed = parse_int_string_view(context.thread(), text, base++);
+            auto parsed = parse_int_string_view(context.thread(), text, base);
             ASSERT_FALSE(parsed.has_exception());
             EXPECT_EQ(Value::from_smi(123456789), parsed.value());
+            std::string bytes(text.begin(), text.end());
+            auto parsed_bytes = parse_int_string_view(
+                context.thread(), std::string_view(bytes), base++);
+            ASSERT_FALSE(parsed_bytes.has_exception());
+            EXPECT_EQ(Value::from_smi(123456789), parsed_bytes.value());
         }
     }
 
@@ -445,6 +451,21 @@ namespace cl
                     : bigint_to_decimal_string(
                           value.value().get_ptr<BigInt>()->view());
             EXPECT_EQ(sample.expected, decimal);
+            if(std::all_of(sample.text.begin(), sample.text.end(),
+                           [](wchar_t ch) { return ch < 0x80; }))
+            {
+                std::string bytes(sample.text.begin(), sample.text.end());
+                auto parsed_bytes = parse_int_string_view(
+                    context.thread(), std::string_view(bytes), sample.base);
+                ASSERT_FALSE(parsed_bytes.has_exception());
+                Owned<Value> byte_value(parsed_bytes.value());
+                std::wstring byte_decimal =
+                    byte_value.value().is_smi()
+                        ? std::to_wstring(byte_value.value().get_smi())
+                        : bigint_to_decimal_string(
+                              byte_value.value().get_ptr<BigInt>()->view());
+                EXPECT_EQ(sample.expected, byte_decimal);
+            }
         }
     }
 
@@ -499,6 +520,116 @@ namespace cl
             SCOPED_TRACE(sample.base);
             auto parsed = parse_int_string_view(context.thread(), sample.text,
                                                 sample.base);
+            EXPECT_TRUE(parsed.has_exception());
+            EXPECT_TRUE(context.thread()->has_pending_exception());
+            context.thread()->clear_pending_exception();
+            if(std::all_of(sample.text.begin(), sample.text.end(),
+                           [](wchar_t ch) { return ch < 0x80; }))
+            {
+                std::string bytes(sample.text.begin(), sample.text.end());
+                auto parsed_bytes = parse_int_string_view(
+                    context.thread(), std::string_view(bytes), sample.base);
+                EXPECT_TRUE(parsed_bytes.has_exception());
+                EXPECT_TRUE(context.thread()->has_pending_exception());
+                context.thread()->clear_pending_exception();
+            }
+        }
+    }
+
+    TEST(IntParse, ByteDecimalTextPreservesSMIAndBigIntBoundaries)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        const std::string_view samples[] = {
+            "0",
+            "-0",
+            "+12345",
+            " \t\n\r\v\f+1_234_567 ",
+            "288230376151711743",
+            "288230376151711744",
+            "-288230376151711744",
+            "-288230376151711745",
+            "9223372036854775807",
+            "-9223372036854775808",
+            "9223372036854775808",
+            "-9223372036854775809",
+            "18446744073709551615",
+            "18446744073709551616",
+            " \t-123_456_789_012_345_678_901_234_567_890 \n",
+        };
+        for(std::string_view text: samples)
+        {
+            SCOPED_TRACE(std::string(text));
+            std::wstring wide(text.begin(), text.end());
+            auto expected = parse_int_string_view(context.thread(),
+                                                  std::wstring_view(wide));
+            ASSERT_FALSE(expected.has_exception());
+            Owned<Value> expected_value(expected.value());
+            auto parsed = parse_int_string_view(context.thread(), text);
+            ASSERT_FALSE(parsed.has_exception());
+            Owned<Value> value(parsed.value());
+            EXPECT_EQ(expected_value.value().is_smi(), value.value().is_smi());
+            if(value.value().is_smi())
+            {
+                EXPECT_EQ(expected_value.value(), value.value());
+            }
+            else
+            {
+                EXPECT_EQ(bigint_to_decimal_string(
+                              expected_value.value().get_ptr<BigInt>()->view()),
+                          bigint_to_decimal_string(
+                              value.value().get_ptr<BigInt>()->view()));
+            }
+        }
+        const char buffer[] = {'1', '2', '3', '4', '5', 'x'};
+        auto bounded = parse_int_string_view(context.thread(),
+                                             std::string_view(buffer, 5));
+        ASSERT_FALSE(bounded.has_exception());
+        EXPECT_EQ(Value::from_smi(12345), bounded.value());
+    }
+
+    TEST(IntParse, ByteTextRejectsNonASCIIAndInvalidDecimalText)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        for(unsigned int byte = 0x80; byte <= 0xff; ++byte)
+        {
+            SCOPED_TRACE(byte);
+            char ch = static_cast<char>(byte);
+            for(const std::string &text:
+                {std::string(1, ch) + "12", "12" + std::string(1, ch),
+                 "1_" + std::string(1, ch), "0" + std::string(1, ch) + "f"})
+            {
+                auto parsed = parse_int_string_view(context.thread(),
+                                                    std::string_view(text));
+                EXPECT_TRUE(parsed.has_exception());
+                context.thread()->clear_pending_exception();
+                for(int base: {0, 16, 36})
+                {
+                    auto based = parse_int_string_view(
+                        context.thread(), std::string_view(text), base);
+                    EXPECT_TRUE(based.has_exception());
+                    context.thread()->clear_pending_exception();
+                }
+            }
+        }
+        const std::string_view invalid[] = {std::string_view{},
+                                            std::string_view("1\0", 2),
+                                            "+",
+                                            "_1",
+                                            "1_",
+                                            "1__0",
+                                            "1.0",
+                                            "1e2",
+                                            "0xff",
+                                            "1 2",
+                                            "\x1c"
+                                            "12",
+                                            "12\x1f"};
+        for(std::string_view text: invalid)
+        {
+            SCOPED_TRACE(std::string(text));
+            auto parsed = parse_int_string_view(context.thread(), text);
             EXPECT_TRUE(parsed.has_exception());
             EXPECT_TRUE(context.thread()->has_pending_exception());
             context.thread()->clear_pending_exception();
