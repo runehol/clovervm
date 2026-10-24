@@ -1,13 +1,16 @@
 #include "builtin_types/slice.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/native_function.h"
 #include "object_model/shape.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <cassert>
 #include <cstddef>
 
 namespace cl
@@ -169,6 +172,31 @@ namespace cl
             install_builtin_intrinsic_methods(vm, vm->slice_class(), methods,
                                               std::size(methods)),
             "installing intrinsic methods");
+    }
+
+    void install_slice_python_methods(VirtualMachine *vm,
+                                      ModuleObject *implementation_module)
+    {
+        const wchar_t *method_names[] = {L"__eq__", L"__ne__"};
+        const wchar_t *helper_names[] = {L"_clover_slice_eq",
+                                         L"_clover_slice_ne"};
+        DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
+                                descriptor_flag(DescriptorFlag::StableSlot);
+        for(size_t idx = 0; idx < std::size(method_names); ++idx)
+        {
+            Value function = implementation_module->get_own_property(
+                vm->get_or_create_interned_string_value(helper_names[idx]));
+            if(!can_convert_to<Function>(function))
+            {
+                fatal("trusted builtin_implementations.py did not define slice "
+                      "method");
+            }
+            bool stored = vm->slice_class()->define_own_property(
+                vm->get_or_create_interned_string_value(method_names[idx]),
+                function, flags);
+            assert(stored);
+            (void)stored;
+        }
     }
 
 }  // namespace cl

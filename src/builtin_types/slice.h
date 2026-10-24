@@ -13,6 +13,7 @@
 
 namespace cl
 {
+    class ModuleObject;
     class ThreadState;
     class VirtualMachine;
 
@@ -164,6 +165,8 @@ namespace cl
 
     BuiltinClassDefinition make_slice_class(VirtualMachine *vm);
     void install_slice_class_methods(VirtualMachine *vm);
+    void install_slice_python_methods(VirtualMachine *vm,
+                                      ModuleObject *implementation_module);
 
 }  // namespace cl
 

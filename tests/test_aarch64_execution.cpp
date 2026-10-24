@@ -254,6 +254,52 @@ namespace cl::jit
 
     }  // namespace
 
+    TEST(AArch64Execution, SliceEqualityCallbacksAndInvalidation)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(LR"(
+class Truth:
+    def __bool__(self):
+        return True
+class Field:
+    def __eq__(self, other):
+        return Truth()
+a = slice(Field(), 5, None)
+b = slice(Field(), 5, None)
+def eq():
+    return a == b
+def ne():
+    return a != b
+def false_truth(self):
+    return False
+def replace_truth():
+    Truth.__bool__ = false_truth
+def delete_truth():
+    del Truth.__bool__
+def delete_equality():
+    del Field.__eq__
+)");
+        ASSERT_FALSE(fixture.thread()->has_pending_exception());
+        EXPECT_EQ(Value::True(), fixture.call(L"eq"));
+        EXPECT_EQ(Value::False(), fixture.call(L"ne"));
+        ASSERT_TRUE(fixture.jit_compile(L"eq"));
+        ASSERT_TRUE(fixture.jit_compile(L"ne"));
+        EXPECT_TRUE(fixture.is_jit_compiled(L"eq"));
+        EXPECT_TRUE(fixture.is_jit_compiled(L"ne"));
+        EXPECT_EQ(Value::True(), fixture.call(L"eq"));
+        EXPECT_EQ(Value::False(), fixture.call(L"ne"));
+        EXPECT_EQ(Value::None(), fixture.call(L"replace_truth"));
+        EXPECT_EQ(Value::False(), fixture.call(L"eq"));
+        EXPECT_EQ(Value::True(), fixture.call(L"ne"));
+        EXPECT_EQ(Value::None(), fixture.call(L"delete_truth"));
+        EXPECT_EQ(Value::True(), fixture.call(L"eq"));
+        EXPECT_EQ(Value::False(), fixture.call(L"ne"));
+        EXPECT_EQ(Value::None(), fixture.call(L"delete_equality"));
+        EXPECT_EQ(Value::False(), fixture.call(L"eq"));
+        EXPECT_EQ(Value::True(), fixture.call(L"ne"));
+        EXPECT_FALSE(fixture.thread()->has_pending_exception());
+    }
+
     TEST(AArch64Execution, OmitsUnconditionalBranchToFallthroughBlock)
     {
         CompilationSession session{test::compiler_thread()};
