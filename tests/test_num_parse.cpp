@@ -198,6 +198,106 @@ namespace cl
         }
     }
 
+    TEST(FloatParse, ByteTextMatchesWideASCIIGrammarAndRounding)
+    {
+        const std::string_view samples[] = {
+            "0",
+            "-0",
+            "+1.25",
+            "-.5",
+            "5.",
+            "00012.5",
+            "9007199254740993",
+            "1.00000000000000011102230246251565404236316680908203125",
+            "1.00000000000000011102230246251565404236316680908203126",
+            "1.7976931348623157e308",
+            "2.2250738585072014e-308",
+            "4.9406564584124654e-324",
+            "-4.9406564584124654e-324",
+            "1e9999",
+            "-1e9999",
+            "-1e-9999",
+            "1e-9999999999999999999999",
+            "INF",
+            "-infinity",
+            "nan",
+            "+NaN",
+            "-NAN",
+            " \t\n\r\v\f+1_000.2_5e-1 \t",
+            "1e1_0",
+            " \t-NaN ",
+            "",
+            " ",
+            "+",
+            "-",
+            ".",
+            "1e",
+            "1e+",
+            "1.2x",
+            "1,000",
+            "1 000",
+            "0x1.8p+1",
+            "nan()",
+            "nan(payload)",
+            "-NaN(foo)",
+            "+nan(123)",
+            "infinite",
+            "_1",
+            "1_",
+            "1__0",
+            "1_.0",
+            "1._0",
+            "1e_2",
+            "1e+_2",
+            "na_n",
+            "in_f",
+            "1_ 2",
+            "1 _2",
+            "\x1c"
+            "1.5",
+            "1.5\x1f",
+            " \tnan(foo) "};
+        for(std::string_view text: samples)
+        {
+            SCOPED_TRACE(std::string(text));
+            auto parsed = try_parse_float(text);
+            std::wstring wide(text.begin(), text.end());
+            auto expected = try_parse_float(std::wstring_view(wide));
+            ASSERT_EQ(expected.has_value(), parsed.has_value());
+            if(expected)
+            {
+                EXPECT_EQ(std::bit_cast<uint64_t>(*expected),
+                          std::bit_cast<uint64_t>(*parsed));
+            }
+        }
+    }
+
+    TEST(FloatParse, ByteTextRejectsEveryNonASCIIByte)
+    {
+        for(unsigned int byte = 0x80; byte <= 0xff; ++byte)
+        {
+            SCOPED_TRACE(byte);
+            char ch = static_cast<char>(byte);
+            for(const std::string &text:
+                {std::string(1, ch) + "1.5", "1.5" + std::string(1, ch),
+                 "1_" + std::string(1, ch), " " + std::string(1, ch) + " "})
+            {
+                EXPECT_FALSE(
+                    try_parse_float(std::string_view(text)).has_value());
+            }
+        }
+    }
+
+    TEST(FloatParse, ByteTextRespectsBoundsAndRejectsEmbeddedNulls)
+    {
+        const char buffer[] = {'1', '.', '2', '5', 'x'};
+        EXPECT_EQ(1.25, try_parse_float(std::string_view(buffer, 4)));
+        EXPECT_FALSE(try_parse_float(std::string_view(buffer, 5)).has_value());
+        EXPECT_FALSE(try_parse_float(std::string_view{}).has_value());
+        EXPECT_FALSE(
+            try_parse_float(std::string_view("1.5\0junk", 8)).has_value());
+    }
+
     TEST(IntParse, NormalizedResultsSurviveInputDestruction)
     {
         test::VmTestContext context;

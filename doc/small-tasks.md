@@ -47,7 +47,7 @@ than being an immediately ready constructor change.
   bytes-input shortcut does not honor this yet. Keep this separate from native
   subclass allocation.
 - **Numeric conversion coverage:** user-defined `__float__` / `__index__`
-  conversion and float bytes input remain deferred. Int conversion protocols
+  conversion remains deferred. Int conversion protocols
   and additional constructor forms need their own semantic sketches too.
 - **Correct `sys.maxsize`:** expose INT64_MAX rather than the SMI maximum on the
   current 64-bit targets and audit consumers such as sequence search defaults.

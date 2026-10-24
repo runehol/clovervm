@@ -201,17 +201,20 @@ underscore validation; integer base arguments and other conversion protocols
 remain separate work. Constructor type errors stay in `int.cpp`; invalid-text
 ValueError is raised by the shared integer parser.
 
-Float string conversion and source literals share `try_parse_float` in
-`builtin_types/num_parse`. It first parses the existing wide-character storage
-directly with fast_float. Only failure enters normalization for surrounding numeric
-whitespace, underscores between decimal digits, and Unicode decimal digits.
+Float string/bytes conversion and source literals share `try_parse_float` in
+`builtin_types/num_parse`. Private helpers are templated on character type;
+public overloads accept wide string views and byte string views. It first parses
+the existing storage directly with fast_float. Only failure enters normalization
+for surrounding numeric whitespace, underscores between decimal digits, and
+Unicode decimal digits.
 Trimming alone uses a view; character changes use a temporary buffer. Numeric
 Unicode tables are generated from Unicode 16.0 by
 `tools/generate_numeric_unicode_tables.py` (`--check` verifies the checked-in
 output). Complete consumption is required, NaN payload syntax is rejected, and
 range errors produce signed infinity or zero. Invalid constructor text raises
-ValueError. Generic `__float__`/`__index__` dispatch and bytes input remain
-deferred; string subclasses are parsed from their stored contents.
+ValueError. Byte input accepts ASCII numeric text and ASCII whitespace only,
+without decoding or widening. Generic `__float__`/`__index__` dispatch remains
+deferred; string and bytes subclasses are parsed from their stored contents.
 
 The omitted bytes source defaults to an empty bytes object; explicit None is
 rejected for exact and subclass targets.

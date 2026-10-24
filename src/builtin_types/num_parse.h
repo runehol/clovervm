@@ -27,6 +27,10 @@ namespace cl
     // directly; normalization is attempted only after direct parsing fails.
     // Overflow and underflow produce infinity and signed zero respectively.
     [[nodiscard]] std::optional<double> try_parse_float(std::wstring_view text);
+
+    // Parse ASCII float text directly from byte storage. The same grammar
+    // applies, but non-ASCII digits and whitespace are rejected.
+    [[nodiscard]] std::optional<double> try_parse_float(std::string_view text);
 }  // namespace cl
 
 #endif  // CL_NUM_PARSE_H

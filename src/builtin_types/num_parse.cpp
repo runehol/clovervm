@@ -11,6 +11,7 @@
 #include <iterator>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 namespace cl
@@ -22,28 +23,30 @@ namespace cl
         // original is a borrowed, trimmed view. rewritten owns any changed
         // text; no stored view points into that buffer, so moves preserve its
         // validity.
-        struct NormalizedNumberText
+        template <typename Char> struct NormalizedNumberText
         {
-            std::wstring_view original;
-            std::wstring rewritten;
+            std::basic_string_view<Char> original;
+            std::basic_string<Char> rewritten;
 
-            std::wstring_view text() const
+            std::basic_string_view<Char> text() const
             {
-                return rewritten.empty() ? original
-                                         : std::wstring_view(rewritten);
+                return rewritten.empty()
+                           ? original
+                           : std::basic_string_view<Char>(rewritten);
             }
         };
     }  // namespace
 
+    template <typename Char>
     static std::optional<double>
-    try_parse_float_direct(std::wstring_view text) noexcept
+    try_parse_float_direct(std::basic_string_view<Char> text) noexcept
     {
         if(text.empty())
         {
             return std::nullopt;
         }
         double value;
-        const wchar_t *end = text.data() + text.size();
+        const Char *end = text.data() + text.size();
         auto result = fast_float::from_chars(
             text.data(), end, value,
             fast_float::chars_format::general |
@@ -56,7 +59,7 @@ namespace cl
         // fast_float also accepts C-style nan(payload) spellings.
         if(std::isnan(value))
         {
-            size_t sign_length = text.front() == L'+' || text.front() == L'-';
+            size_t sign_length = text.front() == '+' || text.front() == '-';
             if(text.size() != sign_length + 3)
             {
                 return std::nullopt;
@@ -65,12 +68,17 @@ namespace cl
         return value;
     }
 
-    static bool is_numeric_whitespace(uint32_t codepoint)
+    template <typename Char> static bool is_numeric_whitespace(Char character)
     {
+        uint32_t codepoint = static_cast<uint32_t>(character);
         if(codepoint < 0x80)
         {
             return codepoint == 0x20 ||
                    (codepoint >= 0x09 && codepoint <= 0x0d);
+        }
+        if constexpr(std::is_same_v<Char, char>)
+        {
+            return false;
         }
         return std::binary_search(std::begin(numeric_whitespace_codepoints),
                                   std::end(numeric_whitespace_codepoints),
@@ -96,11 +104,20 @@ namespace cl
         return digit < 10 ? static_cast<int>(digit) : -1;
     }
 
-    static std::optional<uint32_t> next_codepoint(std::wstring_view text,
-                                                  size_t &position)
+    template <typename Char>
+    static std::optional<uint32_t>
+    next_codepoint(std::basic_string_view<Char> text, size_t &position)
     {
         uint32_t codepoint = static_cast<uint32_t>(text[position++]);
-        if constexpr(sizeof(wchar_t) == 2)
+        if constexpr(std::is_same_v<Char, char>)
+        {
+            if(codepoint >= 0x80)
+            {
+                return std::nullopt;
+            }
+            return codepoint;
+        }
+        if constexpr(sizeof(Char) == 2)
         {
             if(codepoint >= 0xd800 && codepoint <= 0xdbff)
             {
@@ -124,23 +141,22 @@ namespace cl
         return codepoint;
     }
 
-    static std::optional<NormalizedNumberText>
-    normalize_number_text(std::wstring_view text)
+    template <typename Char>
+    static std::optional<NormalizedNumberText<Char>>
+    normalize_number_text(std::basic_string_view<Char> text)
     {
-        while(!text.empty() &&
-              is_numeric_whitespace(static_cast<uint32_t>(text.front())))
+        while(!text.empty() && is_numeric_whitespace(text.front()))
         {
             text.remove_prefix(1);
         }
-        while(!text.empty() &&
-              is_numeric_whitespace(static_cast<uint32_t>(text.back())))
+        while(!text.empty() && is_numeric_whitespace(text.back()))
         {
             text.remove_suffix(1);
         }
 
         // Allocate only when normalization changes characters. Trimming alone
         // can use the original storage.
-        std::wstring normalized;
+        std::basic_string<Char> normalized;
         bool rewritten = false;
         bool previous_was_digit = false;
         bool underscore_pending = false;
@@ -183,15 +199,15 @@ namespace cl
             if(rewritten && !underscore)
             {
                 normalized.push_back(digit >= 0
-                                         ? static_cast<wchar_t>('0' + digit)
-                                         : static_cast<wchar_t>(*codepoint));
+                                         ? static_cast<Char>('0' + digit)
+                                         : static_cast<Char>(*codepoint));
             }
         }
         if(underscore_pending)
         {
             return std::nullopt;
         }
-        return NormalizedNumberText{text, std::move(normalized)};
+        return NormalizedNumberText<Char>{text, std::move(normalized)};
     }
 
     // Keep ordinary SMI text on the original allocation-free digit loop.
@@ -387,7 +403,7 @@ namespace cl
 
     // Explicit-base grammar is separate from float/decimal normalization:
     // letters can be digits, and a single underscore may follow a prefix.
-    static std::optional<NormalizedNumberText>
+    static std::optional<NormalizedNumberText<wchar_t>>
     normalize_based_int_text(std::wstring_view text, int &base)
     {
         while(!text.empty() &&
@@ -504,7 +520,7 @@ namespace cl
         {
             return std::nullopt;
         }
-        return NormalizedNumberText{text, std::move(normalized)};
+        return NormalizedNumberText<wchar_t>{text, std::move(normalized)};
     }
 
     Expected<Value> parse_int_string_view(ThreadState *thread,
@@ -545,7 +561,9 @@ namespace cl
                                                 L"invalid literal for int()");
     }
 
-    std::optional<double> try_parse_float(std::wstring_view text)
+    template <typename Char>
+    static std::optional<double>
+    try_parse_float_impl(std::basic_string_view<Char> text)
     {
         if(auto value = try_parse_float_direct(text))
         {
@@ -554,5 +572,15 @@ namespace cl
         auto normalized = normalize_number_text(text);
         return normalized ? try_parse_float_direct(normalized->text())
                           : std::nullopt;
+    }
+
+    std::optional<double> try_parse_float(std::wstring_view text)
+    {
+        return try_parse_float_impl(text);
+    }
+
+    std::optional<double> try_parse_float(std::string_view text)
+    {
+        return try_parse_float_impl(text);
     }
 }  // namespace cl

@@ -1,5 +1,6 @@
 #include "builtin_types/float.h"
 
+#include "builtin_types/bytes.h"
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/num_parse.h"
@@ -108,20 +109,31 @@ namespace cl
         {
             return bigint_to_double(input.get_ptr<BigInt>()->view());
         }
+        std::optional<double> parsed;
         if(can_convert_to<String>(input))
         {
-            auto parsed = try_parse_float(
+            parsed = try_parse_float(
                 string_view(TValue<String>::from_value_assumed(input)));
-            if(!parsed)
-            {
-                return Expected<double>::raise_exception(
-                    L"ValueError", L"could not convert string to float");
-            }
-            return Expected<double>::ok(*parsed);
         }
-        return Expected<double>::raise_exception(
-            L"TypeError", L"float conversion is only implemented for float, "
-                          L"int, bool and str");
+        else if(can_convert_to<Bytes>(input))
+        {
+            auto bytes = bytes_view(TValue<Bytes>::from_value_assumed(input));
+            parsed = try_parse_float(std::string_view(
+                reinterpret_cast<const char *>(bytes.data()), bytes.size()));
+        }
+        else
+        {
+            return Expected<double>::raise_exception(
+                L"TypeError",
+                L"float conversion is only implemented for float, "
+                L"int, bool, str and bytes");
+        }
+        if(!parsed)
+        {
+            return Expected<double>::raise_exception(
+                L"ValueError", L"could not convert string to float");
+        }
+        return Expected<double>::ok(*parsed);
     }
 
     [[nodiscard]] NOINLINE static Value
