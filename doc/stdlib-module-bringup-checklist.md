@@ -91,7 +91,7 @@ edge cases, platform behavior, or APIs are still missing.
 
 | Status | Module | Why it matters | Not handled / notes |
 | --- | --- | --- | --- |
-| [ ] | `unittest` | Enables many upstream-style tests. | Not started / not assessed. |
+| [~] | `unittest` | Enables many upstream-style tests. | Pure-Python explicit `TestCase(methodName).run(result=None)` and nested `TestSuite.run(result)`, setup/teardown, basic assertions and callable `assertRaises` (ordinary functions, args/kwargs; exception classes or flat tuples). `TestResult` counts runs and stores successes plus `(case, exception)` failures/errors; no traceback strings. Setup failure skips test/teardown, teardown follows test failure, both outcomes retained; `KeyboardInterrupt` propagates (exception type added; OS signal delivery is outside this slice). Named tests invoke ordinary Python methods with an explicit receiver because attribute reads yield unbound functions; bound-method callbacks to `assertRaises` are unsupported. Explicit method name required; no callable case/suite instances (VM limitation), discovery/CLI/text runners, skips/decorators, cleanups, subtests, warning assertions, context-manager raises, rich diagnostics or specialized equality. Suite retains tests for reuse; no CPython suite cleanup or result stop/failfast protocol. Assertion messages are minimal; result constructor takes no runner arguments. |
 | [ ] | `traceback` | Human-readable exception reports. | Depends on frame/code metadata and exception chaining fidelity. |
 | [ ] | `warnings` | Deprecation and runtime warning machinery. | Not started / not assessed. |
 | [ ] | `inspect` | Function/class/module introspection used by tooling and decorators. | Depends on rich code objects, signatures, frames, and attributes. |
