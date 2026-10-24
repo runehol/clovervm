@@ -139,3 +139,38 @@ else:
     assert False
 assert len(rows) == 2
 assert json.dumps({"still": "works"}) == '{"still": "works"}'
+
+# Exact tuple rows always exercise production validation in the VM. Adversarial
+# tuple subclasses are covered separately by tests/host/test_json_tuple_rows.py
+# until VM tuple-subclass allocation is supported; there is no conditional skip.
+for sorting in (False, True):
+    for malformed in ((), ("a",), ("a", 1, 2), ["a", 1], "ab"):
+        rows = [malformed]
+        try:
+            json.dumps(Mapping({"real": 1}), sort_keys=sorting)
+        except ValueError as error:
+            assert str(error) == "items must return 2-tuples"
+        else:
+            assert False
+
+# Validate each row only when reached, after callbacks on earlier rows.
+row_calls = []
+
+
+def before_bad_row(value):
+    row_calls.append("default")
+    return 1
+
+
+for sorting in (False, True):
+    row_calls = []
+    rows = [("a", obj), ("z",)]
+    try:
+        json.dumps(Mapping({"real": 1}), default=before_bad_row,
+                   sort_keys=sorting)
+    except ValueError as error:
+        assert str(error) == "items must return 2-tuples"
+    else:
+        assert False
+    assert row_calls == ["default"]
+assert json.dumps({"still": "works"}) == '{"still": "works"}'

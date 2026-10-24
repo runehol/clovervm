@@ -449,9 +449,13 @@ class _Encoder:
                     if self.sort_keys:
                         list.sort(items)
                     for item in items:
-                        if not isinstance(item, tuple) or len(item) != 2:
+                        # Read stored tuple rows, bypassing subclass hooks.
+                        if (not isinstance(item, tuple)
+                                or tuple.__len__(item) != 2):
                             raise ValueError("items must return 2-tuples")
-                        self._pair(item[0], item[1], ancestors, depth, first)
+                        self._pair(tuple.__getitem__(item, 0),
+                                   tuple.__getitem__(item, 1),
+                                   ancestors, depth, first)
                         first = False
                 self.chunks.append("}")
             else:
