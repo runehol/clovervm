@@ -239,6 +239,47 @@ def test_islice():
     raises(TypeError, islice, 42, 0)
 
 
+class ReentrantSource:
+    def __init__(self):
+        self.position = 0
+        self.target = None
+        self.nested_exhaustions = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        position = self.position
+        self.position += 1
+        if position == 0:
+            try:
+                next(self.target)
+            except StopIteration:
+                self.nested_exhaustions += 1
+        if position >= 2:
+            raise StopIteration
+        return position
+
+
+def test_islice_reentrancy():
+    # Cross-checked against CPython 3.14.5: nested exhaustion must not make
+    # the outer skip loop read the slice's cleared iterator reference.
+    # start=2 reaches the selected-item read; start=4 continues skipping.
+    for start in (2, 4):
+        for stop in (None, 5):
+            source = ReentrantSource()
+            sliced = islice(source, start, stop)
+            source.target = sliced
+            for attempt in (0, 1, 2):
+                try:
+                    next(sliced)
+                    assert False
+                except StopIteration as caught:
+                    assert caught.args == ()
+                assert source.position == 4
+                assert source.nested_exhaustions == 1
+
+
 def test_starmap():
     assert list(starmap(add, [])) == []
     assert list(starmap(add, [(1, 2), [3, 4], iter([5, 6])])) == [3, 7, 11]
@@ -366,6 +407,7 @@ test_chain()
 test_chain_exhaustion()
 test_repeat()
 test_islice()
+test_islice_reentrancy()
 test_starmap()
 test_exceptions()
 test_calls()

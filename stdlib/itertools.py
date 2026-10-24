@@ -131,15 +131,17 @@ class islice:
         return self
 
     def __next__(self):
-        if self._iterator is None:
+        iterator = self._iterator
+        if iterator is None:
             raise StopIteration
         try:
             while self._position < self._next_index:
-                next(self._iterator)
+                # Input callbacks can reenter and clear self._iterator.
+                next(iterator)
                 self._position += 1
             if self._stop is not None and self._position >= self._stop:
                 raise StopIteration
-            value = next(self._iterator)
+            value = next(iterator)
         except:
             # Unlike chain's active iterator, islice closes on any input error.
             self._iterator = None
