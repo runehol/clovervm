@@ -366,6 +366,8 @@ namespace cl
 
     void install_list_class_methods(VirtualMachine *vm)
     {
+        Owned<TValue<Tuple>> pop_defaults(
+            list_default_single(vm, Value::from_smi(-1)));
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"__str__", native_list_repr,
                                      L"Return str(self)."),
@@ -401,32 +403,14 @@ namespace cl
                                      L"Insert object before index."),
             builtin_intrinsic_method(L"reverse", native_list_reverse,
                                      L"Reverse list in place."),
+            with_defaults(builtin_intrinsic_method(L"pop", native_list_pop),
+                          pop_defaults.value()),
         };
         unwrap_bootstrap_expected(
             vm,
             install_builtin_intrinsic_methods(vm, vm->list_class(), methods,
                                               std::size(methods)),
             "installing intrinsic methods");
-
-        ClassObject *cls = vm->list_class();
-        DescriptorFlags method_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot);
-        auto install = [&](const wchar_t *name, auto function,
-                           Optional<TValue<Tuple>> defaults) {
-            bool stored = cls->define_own_property(
-                vm->get_or_create_interned_string_value(name),
-                unwrap_bootstrap_expected(
-                    vm, make_intrinsic_function(vm, function, defaults),
-                    "creating intrinsic function")
-                    .raw_value(),
-                method_flags);
-            assert(stored);
-            (void)stored;
-        };
-        install(L"pop", native_list_pop,
-                Optional<TValue<Tuple>>::some(
-                    list_default_single(vm, Value::from_smi(-1))));
     }
 
     void install_list_python_methods(VirtualMachine *vm,

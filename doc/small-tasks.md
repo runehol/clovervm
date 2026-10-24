@@ -12,21 +12,6 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Ready
 
-### Simplify builtin native method installation
-
-- **Dict native methods:** replace the local `install` lambda in
-  `src/builtin_types/dict.cpp` with entries in its existing
-  `BuiltinIntrinsicMethod` table. `with_defaults` and
-  `install_builtin_intrinsic_methods` already support defaults; the TODO claiming
-  otherwise is stale. Preserve the separate generated dict Functions and their
-  trusted resolvers; this is not a rewrite of those generators.
-- **List `pop`:** remove the equivalent bespoke registration lambda in
-  `src/builtin_types/list.cpp` and express its `-1` default through
-  `with_defaults` in the existing table.
-
-Use the existing descriptor flags and native-function metadata. These can land
-as separate focused refactors with no Python-visible behavior change.
-
 ### Use ordinary inline flags in the explicit-keyword binder
 
 `build_and_populate_keyword_call_cache` in `src/runtime/interpreter.cpp` still

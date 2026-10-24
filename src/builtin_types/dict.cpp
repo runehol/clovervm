@@ -1356,6 +1356,10 @@ namespace cl
     void install_dict_class_methods(VirtualMachine *vm,
                                     ClassObject *type_error_class)
     {
+        Owned<TValue<Tuple>> update_defaults(
+            make_single_default(vm, Value::None()));
+        Owned<TValue<Tuple>> fromkeys_defaults(
+            make_single_default(vm, Value::None()));
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"__new__", native_dict_new,
                                      L"Create a dict object."),
@@ -1365,6 +1369,18 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_dict_len,
                                      L"Return len(self)."),
+            builtin_intrinsic_method(L"clear", native_dict_clear),
+            builtin_intrinsic_method(L"copy", native_dict_copy),
+            builtin_intrinsic_method(L"keys", native_dict_keys),
+            builtin_intrinsic_method(L"values", native_dict_values),
+            builtin_intrinsic_method(L"items", native_dict_items),
+            builtin_intrinsic_method(L"popitem", native_dict_popitem),
+            with_defaults(
+                builtin_intrinsic_method(L"update", native_dict_update),
+                update_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(L"fromkeys", native_dict_fromkeys),
+                fromkeys_defaults.value()),
         };
         unwrap_bootstrap_expected(
             vm,
@@ -1372,28 +1388,10 @@ namespace cl
                                               std::size(methods)),
             "installing intrinsic methods");
 
-        // TODO: Move this back to install_builtin_intrinsic_methods when it
-        // supports default parameters directly.
         ClassObject *cls = vm->dict_class();
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
-        auto install = [&](const wchar_t *name, auto function,
-                           Optional<TValue<Tuple>> defaults =
-                               Optional<TValue<Tuple>>::none()) {
-            bool stored = cls->define_own_property(
-                vm->get_or_create_interned_string_value(name),
-                unwrap_bootstrap_expected(
-                    vm, make_intrinsic_function(vm, function, defaults),
-                    "creating intrinsic function")
-                    .raw_value(),
-                method_flags);
-            assert(stored);
-            (void)stored;
-        };
-        install(L"clear", native_dict_clear);
-        install(L"copy", native_dict_copy);
-
         auto install_generated = [&](const wchar_t *name, DictReadKind kind,
                                      TrustedHandlerResolver resolver =
                                          nullptr) {
@@ -1446,9 +1444,6 @@ namespace cl
         install_generated(L"__contains__", DictReadKind::Contains,
                           resolve_trusted_dict_contains_handler);
         install_generated(L"get", DictReadKind::Get);
-        install(L"keys", native_dict_keys);
-        install(L"values", native_dict_values);
-        install(L"items", native_dict_items);
         TValue<Tuple> pop_missing_sentinel =
             vm->make_immortal_object_value<Tuple>(0);
         {
@@ -1465,14 +1460,7 @@ namespace cl
             assert(stored);
             (void)stored;
         }
-        install(L"popitem", native_dict_popitem);
         install_generated_insert(L"setdefault", DictInsertKind::SetDefault);
-        install(L"update", native_dict_update,
-                Optional<TValue<Tuple>>::some(
-                    make_single_default(vm, Value::None())));
-        install(L"fromkeys", native_dict_fromkeys,
-                Optional<TValue<Tuple>>::some(
-                    make_single_default(vm, Value::None())));
     }
 
     void install_dict_python_methods(VirtualMachine *vm,
