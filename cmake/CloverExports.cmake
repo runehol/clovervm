@@ -26,6 +26,7 @@ set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
     clover_module_add_value)
 
 set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
+    clover_bool_from_bool
     clover_dict_check
     clover_dict_check_exact
     clover_dict_clear
@@ -47,6 +48,7 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_dict_set_item_string
     clover_dict_size
     clover_dict_values
+    clover_false
     clover_float_as_double
     clover_float_from_double
     clover_int_from_int64
@@ -60,6 +62,7 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_raise_value_error
     clover_string_as_utf8
     clover_string_from_utf8
+    clover_true
     clover_tuple_from_pair
     clover_tuple_from_array
     clover_tuple_get_item

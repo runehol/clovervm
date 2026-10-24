@@ -6,6 +6,25 @@ static clover_handle answer_func(clover_context *ctx)
     return clover_int_from_int64(ctx, 42);
 }
 
+static clover_handle true_func(clover_context *ctx) { return clover_true(ctx); }
+
+static clover_handle false_func(clover_context *ctx)
+{
+    return clover_false(ctx);
+}
+
+static clover_handle boolean_pair_func(clover_context *ctx)
+{
+    clover_handle items[] = {clover_bool_from_bool(ctx, true),
+                             clover_bool_from_bool(ctx, false)};
+    /* Keep the original handles live across handle-chunk growth. */
+    for(int idx = 0; idx < 70; ++idx)
+    {
+        (void)clover_bool_from_bool(ctx, idx % 2 != 0);
+    }
+    return clover_tuple_from_array(ctx, items, 2);
+}
+
 static clover_handle identity_func(clover_context *ctx, clover_handle value)
 {
     (void)ctx;
@@ -490,6 +509,20 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     }
     if(clover_module_add_value(builder, "nothing", clover_none(ctx)) !=
        CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_value(builder, "true_value", clover_true(ctx)) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_value(builder, "false_value", clover_false(ctx)) !=
+           CLOVER_STATUS_OK ||
+       clover_module_add_function_0(builder, "true_func", true_func,
+                                    "Return True.") != CLOVER_STATUS_OK ||
+       clover_module_add_function_0(builder, "false_func", false_func,
+                                    "Return False.") != CLOVER_STATUS_OK ||
+       clover_module_add_function_0(builder, "boolean_pair", boolean_pair_func,
+                                    "Return (True, False).") !=
+           CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }

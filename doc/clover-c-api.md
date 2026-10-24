@@ -230,6 +230,9 @@ Implemented runtime APIs:
 ```c
 clover_handle clover_propagate_error(clover_context *ctx);
 clover_handle clover_none(clover_context *ctx);
+clover_handle clover_bool_from_bool(clover_context *ctx, bool value);
+clover_handle clover_true(clover_context *ctx);
+clover_handle clover_false(clover_context *ctx);
 clover_handle clover_int_from_int64(clover_context *ctx, int64_t value);
 clover_handle clover_int_from_uint64(clover_context *ctx, uint64_t value);
 clover_handle clover_float_from_double(clover_context *ctx, double value);
@@ -259,6 +262,14 @@ clover_handle clover_raise_overflow_error(clover_context *ctx,
 clover_handle clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
 ```
+
+`clover_bool_from_bool` converts a C `bool` to the Python `True` or `False`
+singleton. `clover_true` and `clover_false` return those singletons explicitly.
+All three allocate context-scoped handles using the same ownership and lifetime
+conventions as `clover_none`. The managed values have exact type `bool` and
+preserve Python `is True` / `is False` identity; handle storage addresses need
+not match. These factories do not extract booleans from Python values or perform
+Python truth testing.
 
 Integer constructors preserve the full signed or unsigned 64-bit range, returning
 a tagged small integer when possible and a heap BigInt otherwise.

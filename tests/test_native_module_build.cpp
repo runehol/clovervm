@@ -274,6 +274,30 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     EXPECT_EQ(imported, sys_modules_get(context, name));
 }
 
+TEST(NativeModuleBuild, BooleanFactoriesReturnExactSingletons)
+{
+    test::VmTestContext context;
+
+    EXPECT_EQ(Value::True(),
+              context.run_file(
+                  L"from _test_native import true_value, false_value, "
+                  L"true_func, false_func, boolean_pair\n"
+                  L"assert true_value is True\n"
+                  L"assert false_value is False\n"
+                  L"assert true_value.__class__ is bool\n"
+                  L"assert false_value.__class__ is bool\n"
+                  L"for i in range(3):\n"
+                  L"    pair = boolean_pair()\n"
+                  L"    t = pair[0]\n"
+                  L"    f = pair[1]\n"
+                  L"    assert t is True and f is False\n"
+                  L"    assert t.__class__ is bool and f.__class__ is bool\n"
+                  L"    assert true_func() is t\n"
+                  L"    assert false_func() is f\n"
+                  L"    assert t is true_value and f is false_value\n"
+                  L"True\n"));
+}
+
 TEST(NativeModuleBuild, ExtensionCallCanOverflowIndirectHandleStorage)
 {
     if constexpr(!native_handle_detail::cl_indirect_handles)
