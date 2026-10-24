@@ -43,7 +43,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [~] | `posix` / platform backend | Low-level OS primitives backing `os`. | Private `_os` native module backs the first POSIX syscall slice for `os`; no public `posix` module yet. |
 | [x] | `errno` | Stable OS error constants. | Complete for supported host platforms. |
 | [~] | `stat` | File mode constants and helpers. | Pure-Python module now covers POSIX `os.stat` tuple indexes, mode constants, `S_IMODE`, `S_IFMT`, `S_IS*` predicates, and `filemode`; `os.path.isdir`/`isfile` now use these helpers. Missing platform-specific file flag constants, named stat result integration, and broader `os`/filesystem semantics. |
-| [ ] | `pathlib` | Modern path abstraction used by tooling and tests. | Not started / not assessed. |
+| [ ] | `pathlib` | Modern path abstraction used by tooling and tests. | Deferred: the bounded POSIX `Path` slice needs read-only properties (`name`, `parent`, `suffix`, `suffixes`, `stem`), but builtin `property` and interpreter execution of descriptor `__get__` are not supported yet. Revisit after descriptor/property support; do not substitute writable attributes or an eager parent chain. Existing filesystem limits also include string-only inputs, absent `os.fspath`, plain stat tuples, and `ValueError` for OS failures. |
 
 ## Tier 2: Data Formats and Text Handling
 
@@ -139,7 +139,7 @@ source:
 | [ ] | `io` | Foundational for files, codecs, archives, and testing tools. |
 | [x] | `errno` | Complete for supported host platforms. |
 | [~] | `stat` | POSIX mode constants/helpers and `filemode` exist; platform flags and named stat integration remain. |
-| [ ] | `pathlib` | Depends on enough `os`/`stat` support to be meaningful. |
+| [ ] | `pathlib` | Deferred pending descriptor/property support for read-only path attributes; writable attributes and an eager parent chain are excluded. Existing `os`/`stat` support still lacks path-like input handling and CPython-compatible stat results and OS exceptions. |
 | [ ] | `re` | Large but unlocks a lot of parsers and stdlib modules. |
 | [ ] | `enum` | Useful for modern Python APIs; depends on class semantics. |
 | [ ] | `dataclasses` | High payoff after annotations/class mutation behavior is ready. |
