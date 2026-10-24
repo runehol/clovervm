@@ -5,6 +5,7 @@
 #include "jit/control_flow_graph.h"
 #include "jit/core_ir_optimization.h"
 #include "jit/instruction.h"
+#include "object_model/function.h"
 #include "object_model/validity_cell.h"
 #include "runtime/operator_walk.h"
 #include "test_helpers.h"
@@ -557,6 +558,80 @@ namespace cl::jit
                 test_case.boxes_result ? boxes.front() : operations.front();
             EXPECT_EQ(expected_result.id(),
                       return_instruction.return_value().instruction_id());
+        }
+    }
+
+    TEST(JitCoreBytecodeTranslator, MixedFloatEqualityKeepsTrustedHandlerCall)
+    {
+        for(bool not_equal: {false, true})
+        {
+            for(bool reflected: {false, true})
+            {
+                for(bool heap_integer: {false, true})
+                {
+                    TranslatorFixture fixture;
+                    {
+                        CodeObjectBuilder::TemporaryReg temporary(
+                            fixture.code_builder, 1);
+                        fixture.code_builder.emit_lda_smi(0, 0).value();
+                        fixture.code_builder.emit_star(0, temporary).value();
+                        fixture.code_builder
+                            .emit_operator_reg(
+                                0,
+                                not_equal ? Bytecode::TestNotEqual
+                                          : Bytecode::TestEqual,
+                                temporary,
+                                OperatorBytecodeFormat::
+                                    WithCacheAndNotImplementedCheck)
+                            .value();
+                        fixture.code_builder.emit_return(0).value();
+                    }
+                    CodeObject *code = fixture.code_builder.finalize().value();
+                    ShapeKey float_key =
+                        ShapeKey::from_shape(fixture.context.vm()
+                                                 .float_class()
+                                                 ->get_instance_root_shape());
+                    ShapeKey integer_key =
+                        heap_integer ? ShapeKey::from_shape(
+                                           fixture.context.vm()
+                                               .int_class()
+                                               ->get_instance_root_shape())
+                                     : ShapeKey::from_value(Value::from_smi(0));
+                    ShapeKey left = reflected ? integer_key : float_key;
+                    ShapeKey right = reflected ? float_key : integer_key;
+                    Value method =
+                        fixture.context.vm().float_class()->get_own_property(
+                            interned_string(not_equal ? L"__ne__" : L"__eq__"));
+                    auto resolver = method.get_ptr<Function>()
+                                        ->code_object.extract()
+                                        ->trusted_handler_resolver;
+                    auto resolution = resolver(
+                        &fixture.context.vm(), left, right,
+                        reflected ? TrustedHandlerOperandOrder::Reflected
+                                  : TrustedHandlerOperandOrder::Normal,
+                        TrustedHandlerArity::Binary);
+                    ASSERT_TRUE(resolution.has_trusted_handler());
+                    code->inline_caches.operator_caches[0] =
+                        OperatorInlineCache::trusted_handler_call(
+                            left, right, resolution, nullptr, nullptr);
+                    CoreBytecodeTranslator translator(
+                        fixture.context.vm(), *code, fixture.graph_builder);
+                    Block *entry = translator.translate()->normal_entry_block();
+                    EXPECT_EQ(1u,
+                              instructions_of_kind(
+                                  entry, InstructionKind::TrustedHandlerCall)
+                                  .size());
+                    EXPECT_TRUE(
+                        instructions_of_kind(entry, InstructionKind::UnboxF64)
+                            .empty());
+                    EXPECT_TRUE(
+                        instructions_of_kind(entry, InstructionKind::EqualF64)
+                            .empty());
+                    EXPECT_TRUE(instructions_of_kind(
+                                    entry, InstructionKind::NotEqualF64)
+                                    .empty());
+                }
+            }
         }
     }
 
