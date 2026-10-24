@@ -89,7 +89,7 @@ class _Parser:
             self.pos += 1
 
     def _hex4(self, pos):
-        if pos + 4 > self.end:
+        if pos + 4 >= self.end:
             self._error("Invalid \\uXXXX escape", pos - 1)
         result = 0
         idx = pos
