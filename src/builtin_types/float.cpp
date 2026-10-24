@@ -234,6 +234,23 @@ namespace cl
             thread, std::ceil(self.get_ptr<Float>()->value())));
     }
 
+    [[nodiscard]] static Value native_float_conjugate(ThreadState *thread,
+                                                      Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.conjugate expects a float receiver");
+        }
+        Float *number = self.get_ptr<Float>();
+        if(number->get_shape()->get_class() ==
+           thread->get_machine()->float_class())
+        {
+            return self;
+        }
+        return box_float(thread, number->value());
+    }
+
     [[nodiscard]] static Value native_float_is_integer(ThreadState *thread,
                                                        Value self)
     {
@@ -1027,6 +1044,8 @@ namespace cl
             builtin_intrinsic_method(
                 L"is_integer", native_float_is_integer,
                 L"Return whether self is a finite integer."),
+            builtin_intrinsic_method(L"conjugate", native_float_conjugate,
+                                     L"Return self as an exact float."),
             with_trusted_handler_resolver<FloatEqResolver>(
                 vm,
                 builtin_intrinsic_method(L"__eq__", FloatEqOperation::native,

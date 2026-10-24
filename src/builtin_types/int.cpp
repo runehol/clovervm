@@ -323,6 +323,17 @@ namespace cl
         return convert_to_exact_int(thread, self);
     }
 
+    [[nodiscard]] static Value native_int_conjugate(ThreadState *thread,
+                                                    Value self)
+    {
+        if(!is_intlike_value(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.conjugate expects an int receiver");
+        }
+        return convert_to_exact_int(thread, self);
+    }
+
     [[nodiscard]] static Value native_int_is_integer(ThreadState *thread,
                                                      Value self)
     {
@@ -2047,6 +2058,8 @@ namespace cl
                                      L"Return self as an exact int."),
             builtin_intrinsic_method(L"is_integer", native_int_is_integer,
                                      L"Return True for integers."),
+            builtin_intrinsic_method(L"conjugate", native_int_conjugate,
+                                     L"Return self as an exact int."),
             builtin_intrinsic_method(L"bit_length", native_int_bit_length,
                                      L"Return the bit length of abs(self)."),
             builtin_intrinsic_method(
