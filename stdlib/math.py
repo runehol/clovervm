@@ -225,38 +225,155 @@ def prod(iterable, start=1):
     return result
 
 
-def fsum(seq):
-    total = 0.0
+# The partials summation and compensated vector norm below are adapted from
+# CPython v3.14.5, Modules/mathmodule.c (math_fsum and vector_norm).
+# Copyright (c) Python Software Foundation.
+# The derived portions are licensed under the PSF License Agreement.
+# They assume binary64 operations with round-to-nearest, ties-to-even.
+
+
+def _as_real(value):
+    # float() also accepts strings/bytes, unlike math's numeric conversion.
+    # Custom __float__/__index__ dispatch is not supported by the VM yet.
+    if not isinstance(value, int) and not isinstance(value, float):
+        raise TypeError("must be a real number")
+    return float(value)
+
+
+def fsum(seq, /):
+    partials = []
+    special_sum = 0.0
+    inf_sum = 0.0
     for item in seq:
-        total = total + item
-    return total
+        x = _as_real(item)
+        saved = x
+        remaining = []
+        for y in partials:
+            if _abs(x) < _abs(y):
+                temporary = x
+                x = y
+                y = temporary
+            hi = x + y
+            yr = hi - x
+            lo = y - yr
+            if lo != 0.0:
+                remaining.append(lo)
+            x = hi
+        partials = remaining
+        if x != 0.0:
+            if not isfinite(x):
+                if isfinite(saved):
+                    raise OverflowError("intermediate overflow in fsum")
+                if isinf(saved):
+                    inf_sum = inf_sum + saved
+                special_sum = special_sum + saved
+                partials = []
+            else:
+                partials.append(x)
+
+    if special_sum != 0.0:
+        if isnan(inf_sum):
+            raise ValueError("-inf + inf in fsum")
+        return special_sum
+
+    hi = 0.0
+    lo = 0.0
+    if len(partials) > 0:
+        hi = partials.pop()
+        while len(partials) > 0:
+            x = hi
+            y = partials.pop()
+            hi = x + y
+            yr = hi - x
+            lo = y - yr
+            if lo != 0.0:
+                break
+        # Resolve a halfway result using the sign of the remaining tail.
+        if len(partials) > 0:
+            tail = partials[-1]
+            if (lo < 0.0 and tail < 0.0) or (lo > 0.0 and tail > 0.0):
+                y = lo * 2.0
+                x = hi + y
+                yr = x - hi
+                if y == yr:
+                    hi = x
+    return hi
+
+
+def _vector_norm(coordinates):
+    maximum = 0.0
+    found_nan = False
+    for x in coordinates:
+        if isnan(x):
+            found_nan = True
+        x = _abs(x)
+        if x > maximum:
+            maximum = x
+    if isinf(maximum):
+        return maximum
+    if found_nan:
+        return nan
+    if maximum == 0.0 or len(coordinates) <= 1:
+        return maximum
+
+    exponent = frexp(maximum)[1]
+    if exponent < -1023:
+        # Scaling by 2**-exponent would overflow for tiny subnormals.
+        normal_min = 2.2250738585072014e-308
+        normalized = []
+        for x in coordinates:
+            normalized.append(x / normal_min)
+        return normal_min * _vector_norm(normalized)
+
+    scale = ldexp(1.0, -exponent)
+    csum = 1.0
+    frac1 = 0.0
+    frac2 = 0.0
+    for x in coordinates:
+        x = x * scale
+        product = x * x
+        product_lo = fma(x, x, -product)
+        total = csum + product
+        total_lo = (csum - total) + product
+        csum = total
+        frac1 = frac1 + product_lo
+        frac2 = frac2 + total_lo
+
+    h = sqrt(csum - 1.0 + (frac1 + frac2))
+    # Correct the rounded square root using the residual of its square.
+    product = -h * h
+    product_lo = fma(-h, h, -product)
+    total = csum + product
+    total_lo = (csum - total) + product
+    csum = total
+    frac1 = frac1 + product_lo
+    frac2 = frac2 + total_lo
+    residual = csum - 1.0 + (frac1 + frac2)
+    h = h + residual / (2.0 * h)
+    # True norm overflow returns infinity, rather than a libm range error.
+    return h / scale
 
 
 def hypot(*coordinates):
-    total = 0.0
+    converted = []
     for coordinate in coordinates:
-        total = total + coordinate * coordinate
-    return sqrt(total)
+        converted.append(_as_real(coordinate))
+    return _vector_norm(converted)
 
 
-def dist(p, q):
-    pit = iter(p)
-    qit = iter(q)
-    sentinel = []
-    total = 0.0
-    while True:
-        px = next(pit, sentinel)
-        qx = next(qit, sentinel)
-        if px is sentinel:
-            if qx is sentinel:
-                return sqrt(total)
-            raise ValueError
-        if qx is sentinel:
-            if px is sentinel:
-                return sqrt(total)
-            raise ValueError
-        delta = px - qx
-        total = total + delta * delta
+def dist(p, q, /):
+    # Materialize both iterables before checking dimensions or converting.
+    # list(iterable) is supported; tuple(iterable) is not yet supported.
+    p = list(p)
+    q = list(q)
+    if len(p) != len(q):
+        raise ValueError("both points must have the same number of dimensions")
+    differences = []
+    for i in range(len(p)):
+        px = _as_real(p[i])
+        qx = _as_real(q[i])
+        differences.append(px - qx)
+    return _vector_norm(differences)
 
 
 def sumprod(p, q):
