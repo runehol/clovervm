@@ -25,6 +25,10 @@ def and_(a, b):
     return a & b
 
 
+def call(obj, /, *args, **kwargs):
+    return obj(*args, **kwargs)
+
+
 def concat(a, b):
     return a + b
 
@@ -289,6 +293,7 @@ def methodcaller(name, *args):
 __abs__ = abs
 __add__ = add
 __and__ = and_
+__call__ = call
 __concat__ = concat
 __contains__ = contains
 __delitem__ = delitem
@@ -338,6 +343,7 @@ __all__ = (
     "add",
     "and_",
     "attrgetter",
+    "call",
     "concat",
     "contains",
     "countOf",

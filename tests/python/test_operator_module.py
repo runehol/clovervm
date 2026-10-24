@@ -160,7 +160,7 @@ for value in (2.0, "2", None, NeverEqual()):
 
 assert operator.__all__[0] == "abs"
 assert operator.__all__[2] == "and_"
-assert operator.__all__[18] == "imatmul"
+assert operator.__all__[19] == "imatmul"
 
 
 class LeftMatmul:

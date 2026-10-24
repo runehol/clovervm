@@ -10,14 +10,6 @@ the implementation follows existing repository patterns, and the work can
 reasonably land as one focused change. Remove tasks when they are completed or
 when they grow into design work; this is a work queue, not a feature history.
 
-## Ready
-
-### Add `operator.call`
-
-`operator.call` is absent from `stdlib/operator.py`. Expanded argument forwarding
-now supports a direct forwarding wrapper. Add it with focused stdlib tests,
-retaining the VM's existing callable limitations.
-
 ## Bounded, But Larger
 
 ### Tuple construction and subclassing
