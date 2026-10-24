@@ -286,6 +286,26 @@ def _clover_list_init(self, iterable=(), /):
         list.append(self, item)
 
 
+def _clover_list_sort_less(left, right):
+    # Normal ordering dispatch owns reflected/subclass behavior and the result
+    # is tested through the normal Python truth protocol.
+    return True if left < right else False
+
+
+def _clover_list_sort_key(key, item):
+    return key(item)
+
+
+def _clover_list_sort(self, /, *, key=None, reverse=False):
+    """Sort the list in place, stably, and return None."""
+    if not isinstance(self, list):
+        raise TypeError("list.sort expects a list receiver")
+    reverse = True if reverse else False
+    return _clover_list_sort_impl(
+        self, key, _clover_list_sort_key, _clover_list_sort_less, reverse
+    )
+
+
 def _clover_list_eq(self, other, /):
     if not isinstance(self, list):
         raise TypeError("list.__eq__ expects a list receiver")

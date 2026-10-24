@@ -613,3 +613,165 @@ assert len(builder) == 3 and builder[2] == 7
         << string_as_wchar_t(test::native_exception_message(
                context.thread()->pending_exception_object()));
 }
+
+TEST(List, SortRetainsDetachedStorageAndKeysAcrossReclamation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+source = []
+key_calls = []
+comparisons = []
+fail_comparison = False
+class Payload:
+    def __init__(self, value):
+        self.value = value
+        self.text = 'payload-' + str(value)
+class Key:
+    def __init__(self, value):
+        self.value = value
+        self.text = 'key-' + str(value)
+    def __lt__(self, other):
+        assert source == []
+        comparisons.append(1)
+        garbage = []
+        for i in range(20):
+            garbage.append(Payload(i))
+        garbage.clear()
+        assert self.text == 'key-' + str(self.value)
+        assert other.text == 'key-' + str(other.value)
+        if fail_comparison:
+            source.append(Payload(99))
+            source.clear()
+            raise failure
+        return self.value < other.value
+
+def key(item):
+    assert source == []
+    key_calls.append(item.value)
+    garbage = []
+    for i in range(20):
+        garbage.append(Payload(i))
+    garbage.clear()
+    assert item.text == 'payload-' + str(item.value)
+    return Key(item.value)
+
+for reverse in (False, True):
+    source = [Payload(3), Payload(1), Payload(2), Payload(1)]
+    key_calls.clear()
+    source.sort(key=key, reverse=reverse)
+    assert key_calls == [3, 1, 2, 1]
+    expected = [3, 2, 1, 1] if reverse else [1, 1, 2, 3]
+    for i in range(4):
+        assert source[i].value == expected[i]
+        assert source[i].text == 'payload-' + str(expected[i])
+assert len(comparisons) > 0
+
+# Reclamation during failure must preserve original values and previously
+# evaluated keys until the native restoration path releases them.
+failure = RuntimeError('key failure')
+def bad_key(item):
+    result = key(item)
+    if item.value == 1:
+        source.append(Payload(99))
+        source.clear()
+        raise failure
+    return result
+source = [Payload(3), Payload(1), Payload(2)]
+try:
+    source.sort(key=bad_key)
+except RuntimeError as caught:
+    assert caught is failure
+else:
+    raise AssertionError('expected key failure')
+assert source[0].value == 3
+assert source[1].value == 1
+assert source[2].value == 2
+source.sort(key=key)
+assert source[0].value == 1
+assert source[1].value == 2
+assert source[2].value == 3
+
+fail_comparison = True
+source = [Payload(3), Payload(1), Payload(2)]
+try:
+    source.sort(key=key)
+except RuntimeError as caught:
+    assert caught is failure
+else:
+    raise AssertionError('expected comparison failure')
+assert source[0].value == 3
+assert source[1].value == 1
+assert source[2].value == 2
+fail_comparison = False
+source.sort(key=key)
+assert source[0].value == 1
+assert source[1].value == 2
+assert source[2].value == 3
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(List, SortReleasesTemporaryKeyOwnership)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> keys(context.run_file(LR"(
+keys = []
+class Key:
+    def __init__(self, value):
+        self.value = value
+    def __lt__(self, other):
+        return self.value < other.value
+
+def key(value):
+    result = Key(value)
+    keys.append(result)
+    return result
+[3, 1, 2].sort(key=key)
+def failing_key(value):
+    result = key(value)
+    if value == 1:
+        raise RuntimeError('key failed')
+    return result
+values = [3, 1, 2]
+try:
+    values.sort(key=failing_key)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError('expected key failure')
+assert values == [3, 1, 2]
+keys
+)"));
+    ASSERT_TRUE(can_convert_to<List>(keys.value()));
+    context.vm().run_heap_reclamation();
+    List *observed = keys.value().get_ptr<List>();
+    ASSERT_EQ(5u, observed->size());
+    for(size_t index = 0; index < observed->size(); ++index)
+        EXPECT_EQ(1, observed->item_unchecked(index).get_ptr()->refcount);
+}
+
+TEST(List, SortPreservesExistingCallableLimitations)
+{
+    test::VmTestContext context;
+    ASSERT_FALSE(context
+                     .run_file(LR"(
+class Callable:
+    def __call__(self, item):
+        raise AssertionError('sort must not add callable instance support')
+
+values = [2, 1]
+try:
+    values.sort(key=Callable())
+except TypeError:
+    pass
+else:
+    raise AssertionError('expected existing callable instance limitation')
+assert values == [2, 1]
+)")
+                     .is_exception_marker());
+}

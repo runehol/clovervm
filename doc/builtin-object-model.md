@@ -275,12 +275,50 @@ cached reflectable binary dispatch prepare the native-call frame frontier before
 invoking a trusted handler, keeping reentrant helper frames below live caller
 slots.
 
-In JSON PR #35, `_sort_items` can replace
-`_item_less(right[j], left[i])` with `right[j] < left[i]` and delete `_item_less`
-once this change is available. This applies to tuple/list item rows, including
-nested containers and malformed rows that are compared before validation.
-This preserves the value tie-break when keys compare equal. Replacing it with
-key-only comparison would change that behavior. JSON integration is separate;
-this change does not add `list.sort` or `sorted`. Tuple subclass construction
-remains an existing limitation, as does calling `tuple()` itself; tests use
-tuple literals and reflected element comparisons without changing allocation.
+Tuple subclass construction remains an existing limitation, as does calling
+`tuple()` itself; tests use tuple literals and reflected element comparisons
+without changing allocation.
+
+## List Sorting
+
+`list.sort(self, /, *, key=None, reverse=False)` sorts the native List payload
+in place and returns None. The trusted bootstrap wrapper owns argument binding,
+reverse truth conversion, key calls, and comparison truth conversion through
+ordinary Python protocols. It preserves existing callable support; callable
+instances and first-class bound-method keys retain their existing limitations.
+Normal operator dispatch supplies scalar and container comparisons, subclass
+reflection, and `NotImplemented` handling. Sorting does not add a separate
+lexicographic comparator or general callable dispatcher.
+
+List owns temporary sort state. It swaps its ValueArray into a temporary
+`Owned<TValue<List>>`, leaving the receiver empty during key and comparison
+callbacks. Another owned List retains keys, evaluated once in original order.
+The ValueArray swap transfers size, capacity, and backing ownership without
+copying elements or exposing unrooted backing storage across callbacks.
+
+An exception-aware bottom-up merge sort orders indices while leaving the
+detached items untouched. It makes O(n log n) comparisons and uses O(n) temporary
+space. All loops have bounds independent of comparison results, including
+inconsistent comparisons. Reverse sorting reverses indices before and after
+ascending sorting, preserving source order among equal keys. Only after all
+comparisons succeed are permutation cycles applied without Python callbacks.
+Key or comparison failures restore original order; this is a valid permutation,
+but need not match CPython's post-failure partial ordering. Comparison sequences,
+adaptive Timsort behavior, and ordering for inconsistent comparators are not
+promised to match CPython. `sorted` remains unimplemented.
+
+Successful List writes set a local mutation flag even when append/pop or
+append/clear leaves the final length unchanged. Empty clear/reverse/extend and
+failed index writes do not count as changes. Each sort saves and restores the
+enclosing flag, so nested sorts of the temporarily empty list succeed without
+erasing earlier callback mutations. On every Python exit path the original
+storage is restored and callback-created contents are discarded. An existing
+key/comparison exception takes precedence over mutation; otherwise mutation
+raises `ValueError("list modified during sort")` after restoring sorted items.
+
+JSON integration remains separate. In PR #35's `stdlib/json.py`, replace
+`_sort_items_in_place(items)` in `_Encoder._value` with `items.sort()` and delete
+both `_sort_items_in_place` and `_sort_items`. Keep the exact-list sharing and
+materialization logic before the call. Sorting complete tuple rows preserves
+the value tie-break for duplicate keys, including nested containers and malformed
+rows compared before validation. A key-only sort would change that behavior.

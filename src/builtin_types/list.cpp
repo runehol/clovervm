@@ -18,7 +18,9 @@
 #include <algorithm>
 #include <cassert>
 #include <iterator>
+#include <numeric>
 #include <utility>
+#include <vector>
 
 namespace cl
 {
@@ -436,6 +438,19 @@ namespace cl
         return Value::None();
     }
 
+    static Value native_list_sort(ThreadState *thread, Value self, Value key,
+                                  Value call_key, Value less, Value reverse)
+    {
+        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"sort"));
+        assert(can_convert_to<Function>(call_key));
+        assert(can_convert_to<Function>(less));
+        assert(reverse.is_bool());
+        return self.get_ptr<List>()->sort(
+            thread, key, TValue<Function>::from_value_assumed(call_key),
+            TValue<Function>::from_value_assumed(less),
+            reverse == Value::True());
+    }
+
     static Value native_list_add(ThreadState *thread, Value left, Value right)
     {
         if(!can_convert_to<List>(left) || !can_convert_to<List>(right))
@@ -551,11 +566,25 @@ namespace cl
     {
         ClassObject *cls = vm->list_class();
         const wchar_t *method_names[] = {L"__init__", L"__eq__", L"__ne__",
-                                         L"count",    L"index",  L"remove"};
+                                         L"count",    L"index",  L"remove",
+                                         L"sort"};
         const wchar_t *helper_names[] = {
             L"_clover_list_init",  L"_clover_list_eq",
             L"_clover_list_ne",    L"_clover_list_count",
-            L"_clover_list_index", L"_clover_list_remove"};
+            L"_clover_list_index", L"_clover_list_remove",
+            L"_clover_list_sort"};
+        bool installed = unwrap_bootstrap_expected(
+            vm,
+            implementation_module->set_own_property(
+                vm->get_or_create_interned_string_value(
+                    L"_clover_list_sort_impl"),
+                unwrap_bootstrap_expected(
+                    vm, make_intrinsic_function(vm, native_list_sort),
+                    "installing list sort implementation")
+                    .raw_value()),
+            "installing list sort binding");
+        assert(installed);
+        (void)installed;
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
         for(size_t idx = 0; idx < std::size(method_names); ++idx)
@@ -630,6 +659,112 @@ namespace cl
         }
     }
 
+    Value List::sort(ThreadState *thread, Value key, TValue<Function> call_key,
+                     TValue<Function> less, bool reverse)
+    {
+        Owned<TValue<List>> self(TValue<List>::from_oop(this));
+        Owned<Value> key_owner(key);
+        Owned<TValue<Function>> call_key_owner(call_key);
+        Owned<TValue<Function>> less_owner(less);
+        Owned<TValue<List>> original(thread->make_object_value<List>());
+        Owned<TValue<List>> keys(thread->make_object_value<List>());
+        items.swap(original.extract()->items);
+        bool enclosing_mutated = sort_mutated_;
+        sort_mutated_ = false;
+
+        // Only indices are reordered while Python can run. Every completed
+        // merge pass is a permutation, independent of comparator consistency;
+        // an exception leaves the original storage untouched.
+        auto order_items = [&]() -> Value {
+            size_t count = original.extract()->size();
+            if(!key.is_none())
+            {
+                keys.extract()->reserve(count);
+                for(size_t index = 0; index < count; ++index)
+                {
+                    Value item_key = thread->call_clovervm_function(
+                        call_key, key,
+                        original.extract()->item_unchecked(index));
+                    CL_PROPAGATE_EXCEPTION(item_key);
+                    keys.extract()->append(item_key);
+                }
+            }
+            List *sort_keys =
+                !key.is_none() ? keys.extract() : original.extract();
+            std::vector<size_t> order(count);
+            std::vector<size_t> scratch(count);
+            std::iota(order.begin(), order.end(), size_t(0));
+            // Reverse both before and after ascending sorting to retain the
+            // source order of equal keys for reverse=True.
+            if(reverse)
+                std::reverse(order.begin(), order.end());
+            for(size_t width = 1; width < count; width *= 2)
+            {
+                for(size_t begin = 0; begin < count; begin += 2 * width)
+                {
+                    size_t middle = std::min(begin + width, count);
+                    size_t end = std::min(begin + 2 * width, count);
+                    size_t left = begin;
+                    size_t right = middle;
+                    size_t output = begin;
+                    while(left < middle && right < end)
+                    {
+                        Value result = thread->call_clovervm_function(
+                            less, sort_keys->item_unchecked(order[right]),
+                            sort_keys->item_unchecked(order[left]));
+                        CL_PROPAGATE_EXCEPTION(result);
+                        assert(result.is_bool());
+                        scratch[output++] = result == Value::True()
+                                                ? order[right++]
+                                                : order[left++];
+                    }
+                    while(left < middle)
+                        scratch[output++] = order[left++];
+                    while(right < end)
+                        scratch[output++] = order[right++];
+                }
+                order.swap(scratch);
+            }
+            if(reverse)
+                std::reverse(order.begin(), order.end());
+
+            // Apply disjoint permutation cycles with no Python callbacks.
+            for(size_t index = 0; index < count; ++index)
+            {
+                if(order[index] == index)
+                    continue;
+                Owned<Value> saved(original.extract()->item_unchecked(index));
+                size_t destination = index;
+                while(order[destination] != index)
+                {
+                    size_t source = order[destination];
+                    original.extract()->set_item_unchecked(
+                        destination,
+                        original.extract()->item_unchecked(source));
+                    order[destination] = destination;
+                    destination = source;
+                }
+                original.extract()->set_item_unchecked(destination,
+                                                       saved.value());
+                order[destination] = destination;
+            }
+            return Value::None();
+        };
+
+        Value result = order_items();
+        bool mutated = sort_mutated_;
+        // Callback-created contents are discarded, with their backing left in
+        // the temporary owned list for ordinary deferred reclamation.
+        items.swap(original.extract()->items);
+        sort_mutated_ = enclosing_mutated || mutated;
+        if(result.is_exception_marker())
+            return result;
+        if(mutated)
+            return thread->set_pending_builtin_exception_string(
+                L"ValueError", L"list modified during sort");
+        return Value::None();
+    }
+
     TValue<List> List::concat(const List *other) const
     {
         TValue<List> result = make_object_value<List>(size() + other->size());
@@ -651,6 +786,7 @@ namespace cl
     {
         assert(idx <= size());
         value.assert_not_vm_sentinel();
+        sort_mutated_ = true;
 
         size_t old_size = size();
         items.resize(old_size + 1, Value::None());
@@ -664,6 +800,7 @@ namespace cl
     Value List::pop_item_unchecked(size_t idx)
     {
         assert(idx < size());
+        sort_mutated_ = true;
 
         Value removed = items[idx];
         size_t old_size = size();
