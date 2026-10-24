@@ -234,49 +234,98 @@ def _clover_sequence_membership_fallback(container, needle):
         idx += 1
 
 
-def min(*args):
-    """With a single iterable argument, return its smallest item.
+def sorted(*args, **kwargs):
+    """Return a new, stably sorted list from the iterable.
 
-With two or more arguments, return the smallest argument."""
-    if len(args) == 0:
-        raise TypeError
-    if len(args) == 1:
-        iterable = args[0]
-    else:
-        iterable = args
+sorted(iterable, /, *, key=None, reverse=False)"""
+    if len(args) != 1:
+        raise TypeError("sorted expected 1 argument, got " + str(len(args)))
+    # Like CPython, consume the source before list.sort validates keywords.
+    result = _clover_iterable_to_exact_list(args[0])
+    options = _clover_selection_keywords(kwargs, "sort", "reverse", False)
+    _clover_list_sort(result, key=options[0], reverse=options[1])
+    return result
 
+
+def min(*args, **kwargs):
+    """Return the smallest item, retaining the first item on ties.
+
+min(iterable, /, *, key=None, default=...) or min(arg1, arg2, /, *args, key=None)"""
+    return _clover_min_max(args, kwargs, False)
+
+
+def max(*args, **kwargs):
+    """Return the largest item, retaining the first item on ties.
+
+max(iterable, /, *, key=None, default=...) or max(arg1, arg2, /, *args, key=None)"""
+    return _clover_min_max(args, kwargs, True)
+
+
+def _clover_selection_keywords(kwargs, name, second_name, second_default):
+    # Builtin keyword matching uses string payloads, unlike Python call binding.
+    # Read stored entries without invoking keyword hash/equality hooks again.
+    if len(kwargs) > 2:
+        raise TypeError(
+            name + "() takes at most 2 keyword arguments (" + str(len(kwargs)) + " given)"
+        )
+    key = None
+    has_key = False
+    second = second_default
+    has_second = False
+    invalid = False
+    entries = kwargs.items()
+    for entry in entries:
+        keyword = str.__str__(entry[0])
+        if keyword == "key" and not has_key:
+            key = entry[1]
+            has_key = True
+        elif keyword == second_name and not has_second:
+            second = entry[1]
+            has_second = True
+        else:
+            invalid = True
+    if invalid:
+        # CPython's error path uses rich comparison and str() for diagnostics.
+        # Those hooks may raise, but cannot make an unrecognized name valid.
+        for entry in entries:
+            keyword = entry[0]
+            if keyword not in ("key", second_name):
+                diagnostic = str.__str__(str(keyword))
+                raise TypeError(
+                    name + "() got an unexpected keyword argument '" + diagnostic + "'"
+                )
+        raise TypeError("invalid keyword argument for " + name + "()")
+    return (key, second, has_second)
+
+
+def _clover_min_max(args, kwargs, want_max):
+    name = "max" if want_max else "min"
+    count = len(args)
+    if count == 0:
+        raise TypeError(name + " expected at least 1 argument, got 0")
+    options = _clover_selection_keywords(kwargs, name, "default", None)
+    key = options[0]
+    default = options[1]
+    has_default = options[2]
+    if count > 1 and has_default:
+        raise TypeError(
+            "Cannot specify a default for " + name + "() with multiple positional arguments"
+        )
+    iterable = args[0] if count == 1 else args
     first = True
     for item in iterable:
+        item_key = item if key is None else key(item)
         if first:
             best = item
+            best_key = item_key
             first = False
-        elif item < best:
+        elif (item_key > best_key) if want_max else (item_key < best_key):
             best = item
+            best_key = item_key
     if first:
-        raise ValueError
-    return best
-
-
-def max(*args):
-    """With a single iterable argument, return its biggest item.
-
-With two or more arguments, return the largest argument."""
-    if len(args) == 0:
-        raise TypeError
-    if len(args) == 1:
-        iterable = args[0]
-    else:
-        iterable = args
-
-    first = True
-    for item in iterable:
-        if first:
-            best = item
-            first = False
-        elif item > best:
-            best = item
-    if first:
-        raise ValueError
+        if has_default:
+            return default
+        raise ValueError(name + "() iterable argument is empty")
     return best
 
 
