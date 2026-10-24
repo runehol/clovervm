@@ -90,3 +90,20 @@ target syntax, generic iterators, nested targets, arity failures, and store
 ordering. If the implementation needs a new iteration or cache contract beyond
 the existing special-method call pattern, move it out of this list and settle
 that design first.
+
+### Remove JSON's raw-string separator fallback after string iteration lands
+
+The JSON branch (`origin/codex/json-stdlib`, PR #35) currently special-cases
+strings without `__iter__` in `stdlib/json.py`, `_Encoder.__init__`. Once builtin
+`str.__iter__` is available, delete that raw-payload branch and run all separator
+inputs through the existing `iter(separators)` path. Keep its limit of three
+`next()` calls and the exactly-two-values check; materializing an arbitrary
+separator iterable could exhaust an unbounded iterator. Do not coerce string
+subclasses through `str.__str__`: their custom `__iter__` methods and exceptions
+must remain observable. Inherited builtin iteration reads the string payload
+without invoking subclass `__len__` or `__getitem__` methods.
+
+Validate empty/one/two/three-character strings, astral characters and lone
+surrogates, inherited and custom subclass iteration, iterator exceptions, and
+bounded consumption before removing the fallback. JSON integration stays in
+that branch; the string iterator implementation does not import its changes.

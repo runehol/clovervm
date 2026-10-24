@@ -19,6 +19,7 @@
 #include "builtin_types/not_implemented_type.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
+#include "builtin_types/string_iterator.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "builtin_types/unicode.h"
@@ -1072,6 +1073,7 @@ namespace cl
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
+        register_builtin_class(make_string_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
         register_builtin_class(make_dict_keys_view_class(this));
         register_builtin_class(make_dict_values_view_class(this));
