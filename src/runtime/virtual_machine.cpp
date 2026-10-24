@@ -1099,31 +1099,85 @@ namespace cl
         register_builtin_class(type_error_definition);
         register_builtin_class(
             make_exception_subclass(this, L"ValueError", exception));
+        BuiltinClassDefinition arithmetic_error_definition =
+            make_exception_subclass(this, L"ArithmeticError", exception);
+        ClassObject *arithmetic_error = arithmetic_error_definition.cls;
+        register_builtin_class(arithmetic_error_definition);
+        register_builtin_class(make_exception_subclass(
+            this, L"FloatingPointError", arithmetic_error));
         register_builtin_class(
-            make_exception_subclass(this, L"OverflowError", exception));
+            make_exception_subclass(this, L"OverflowError", arithmetic_error));
+        register_builtin_class(make_exception_subclass(
+            this, L"ZeroDivisionError", arithmetic_error));
+        BuiltinClassDefinition syntax_error_definition =
+            make_exception_subclass(this, L"SyntaxError", exception);
+        ClassObject *syntax_error = syntax_error_definition.cls;
+        register_builtin_class(syntax_error_definition);
+        BuiltinClassDefinition indentation_error_definition =
+            make_exception_subclass(this, L"IndentationError", syntax_error);
+        ClassObject *indentation_error = indentation_error_definition.cls;
+        register_builtin_class(indentation_error_definition);
         register_builtin_class(
-            make_exception_subclass(this, L"SyntaxError", exception));
-        register_builtin_class(
-            make_exception_subclass(this, L"IndentationError", exception));
+            make_exception_subclass(this, L"TabError", indentation_error));
         register_builtin_class(
             make_exception_subclass(this, L"SystemError", exception));
-        register_builtin_class(
-            make_exception_subclass(this, L"ZeroDivisionError", exception));
         BuiltinClassDefinition runtime_error_definition =
             make_exception_subclass(this, L"RuntimeError", exception);
         ClassObject *runtime_error = runtime_error_definition.cls;
         register_builtin_class(runtime_error_definition);
+        register_builtin_class(
+            make_exception_subclass(this, L"RecursionError", runtime_error));
+        register_builtin_class(make_exception_subclass(
+            this, L"PythonFinalizationError", runtime_error));
         register_builtin_class(make_exception_subclass(
             this, L"NotImplementedError", runtime_error));
         register_builtin_class(
             make_exception_subclass(this, L"AssertionError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"AttributeError", exception));
+        BuiltinClassDefinition lookup_error_definition =
+            make_exception_subclass(this, L"LookupError", exception);
+        ClassObject *lookup_error = lookup_error_definition.cls;
+        register_builtin_class(lookup_error_definition);
         register_builtin_class(
-            make_exception_subclass(this, L"IndexError", exception));
+            make_exception_subclass(this, L"IndexError", lookup_error));
         register_builtin_class(
-            make_exception_subclass(this, L"KeyError", exception));
+            make_exception_subclass(this, L"KeyError", lookup_error));
         register_builtin_class(make_stop_iteration_class(this, exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"BufferError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"EOFError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"MemoryError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"ReferenceError", exception));
+        BuiltinClassDefinition warning_definition =
+            make_exception_subclass(this, L"Warning", exception);
+        ClassObject *warning = warning_definition.cls;
+        register_builtin_class(warning_definition);
+        register_builtin_class(
+            make_exception_subclass(this, L"BytesWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"DeprecationWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"EncodingWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"FutureWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"ImportWarning", warning));
+        register_builtin_class(make_exception_subclass(
+            this, L"PendingDeprecationWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"ResourceWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"RuntimeWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"SyntaxWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"UnicodeWarning", warning));
+        register_builtin_class(
+            make_exception_subclass(this, L"UserWarning", warning));
 
         install_object_class_methods(this);
         install_exception_class_methods(this);

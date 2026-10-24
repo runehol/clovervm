@@ -209,3 +209,38 @@ surface without converting every integer consumer in the runtime.
 
 To close: complete the remaining integer-protocol consumers and remove SMI-only
 argument paths where Python accepts wider integers.
+
+## Exceptions
+
+### Ordinary hierarchy with generic exception behavior
+
+The ordinary builtin hierarchy is checked against CPython 3.14.5. It includes
+`ArithmeticError` (`FloatingPointError`, `OverflowError`, `ZeroDivisionError`),
+`LookupError` (`IndexError`, `KeyError`), `SyntaxError` → `IndentationError` →
+`TabError`, `BufferError`, `EOFError`, `MemoryError`, `ReferenceError`, and
+`RuntimeError` children `RecursionError` and `PythonFinalizationError`.
+`Warning` derives from `Exception`, with direct children `BytesWarning`,
+`DeprecationWarning`, `EncodingWarning`, `FutureWarning`, `ImportWarning`,
+`PendingDeprecationWarning`, `ResourceWarning`, `RuntimeWarning`, `SyntaxWarning`,
+`UnicodeWarning`, and `UserWarning`. `KeyboardInterrupt` remains a direct
+`BaseException` child, outside `Exception`.
+
+These classes reuse the existing exception allocation and positional `args`
+behavior. `KeyError` still uses generic string conversion rather than quoting a
+single argument with `repr`. The syntax-error family still uses generic
+constructors and formatting, without CPython's structured location fields or
+argument validation. Exception `args` remains read-only. Specialized constructor
+attributes for existing classes such as `ImportError`, `NameError`, and
+`AttributeError` are also incomplete.
+
+Registration does not add runtime detection or production: recursion-limit
+checks, warning emission, finalization detection, and emergency `MemoryError`
+allocation are absent. Ordinary allocation failure is not converted into the
+new `MemoryError` class.
+
+Remaining families outside this slice are `OSError` and its subclasses/aliases
+and errno translation, `UnicodeError` and its specialized subclasses,
+`SystemExit`, `GeneratorExit`, `StopAsyncIteration`, `BaseExceptionGroup`, and
+`ExceptionGroup`. Chaining, full traceback support, and signal handling remain
+separate work. Supplying these classes does not complete specialized exception
+behavior.
