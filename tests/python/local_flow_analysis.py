@@ -1,8 +1,8 @@
-def expect_name_error(fn):
+def expect_unbound_local_error(fn):
     raised = False
     try:
         fn()
-    except NameError:
+    except UnboundLocalError:
         raised = True
     assert raised
 
@@ -28,7 +28,7 @@ def local_read_before_assignment():
     value = 1
 
 
-expect_name_error(local_read_before_assignment)
+expect_unbound_local_error(local_read_before_assignment)
 
 
 def local_deleted_before_read():
@@ -37,7 +37,7 @@ def local_deleted_before_read():
     return value
 
 
-expect_name_error(local_deleted_before_read)
+expect_unbound_local_error(local_deleted_before_read)
 
 
 def initialized_accumulator_in_for_loop(n):
@@ -96,7 +96,7 @@ def for_empty_without_else_leaves_inner_assignment_missing():
     return value
 
 
-expect_name_error(for_empty_without_else_leaves_inner_assignment_missing)
+expect_unbound_local_error(for_empty_without_else_leaves_inner_assignment_missing)
 
 
 def for_break_after_delete_bypasses_else_assignment():
@@ -109,7 +109,7 @@ def for_break_after_delete_bypasses_else_assignment():
     return value
 
 
-expect_name_error(for_break_after_delete_bypasses_else_assignment)
+expect_unbound_local_error(for_break_after_delete_bypasses_else_assignment)
 
 
 def for_if_delete_branch_makes_later_read_checked(flag):
@@ -126,7 +126,7 @@ def for_if_delete_branch_true_wrapper():
     return for_if_delete_branch_makes_later_read_checked(True)
 
 
-expect_name_error(for_if_delete_branch_true_wrapper)
+expect_unbound_local_error(for_if_delete_branch_true_wrapper)
 assert for_if_delete_branch_makes_later_read_checked(False) == 2
 
 
@@ -169,7 +169,7 @@ def while_continue_after_delete_rechecks_condition():
     return 0
 
 
-expect_name_error(while_continue_after_delete_rechecks_condition)
+expect_unbound_local_error(while_continue_after_delete_rechecks_condition)
 
 
 def nested_for_break_delete_bypasses_inner_else_and_outer_breaks():
@@ -184,7 +184,7 @@ def nested_for_break_delete_bypasses_inner_else_and_outer_breaks():
     return value
 
 
-expect_name_error(nested_for_break_delete_bypasses_inner_else_and_outer_breaks)
+expect_unbound_local_error(nested_for_break_delete_bypasses_inner_else_and_outer_breaks)
 
 
 def nested_for_continue_reaches_inner_else_before_outer_break():
@@ -210,7 +210,7 @@ def loop_return_expression_before_unreachable_assignment():
     return 0
 
 
-expect_name_error(loop_return_expression_before_unreachable_assignment)
+expect_unbound_local_error(loop_return_expression_before_unreachable_assignment)
 
 
 def try_handler_sees_assignment_before_raise():
@@ -235,7 +235,7 @@ def try_handler_does_not_see_assignment_after_raise():
         return value
 
 
-expect_name_error(try_handler_does_not_see_assignment_after_raise)
+expect_unbound_local_error(try_handler_does_not_see_assignment_after_raise)
 
 
 def try_handler_reads_assignment_later_in_protected_body():
@@ -246,7 +246,7 @@ def try_handler_reads_assignment_later_in_protected_body():
         return value
 
 
-expect_name_error(try_handler_reads_assignment_later_in_protected_body)
+expect_unbound_local_error(try_handler_reads_assignment_later_in_protected_body)
 
 
 def try_handler_entry_after_loop_delete_and_later_raise():
@@ -261,7 +261,7 @@ def try_handler_entry_after_loop_delete_and_later_raise():
     return value
 
 
-expect_name_error(try_handler_entry_after_loop_delete_and_later_raise)
+expect_unbound_local_error(try_handler_entry_after_loop_delete_and_later_raise)
 
 
 def try_except_else_defines_after_no_exception():
@@ -306,7 +306,7 @@ def finally_entry_after_else_delete():
         return value
 
 
-expect_name_error(finally_entry_after_else_delete)
+expect_unbound_local_error(finally_entry_after_else_delete)
 
 
 def finally_entry_after_handler_delete():
@@ -319,7 +319,7 @@ def finally_entry_after_handler_delete():
         return value
 
 
-expect_name_error(finally_entry_after_handler_delete)
+expect_unbound_local_error(finally_entry_after_handler_delete)
 
 
 def finally_during_return_after_delete():
@@ -331,7 +331,7 @@ def finally_during_return_after_delete():
         value
 
 
-expect_name_error(finally_during_return_after_delete)
+expect_unbound_local_error(finally_during_return_after_delete)
 
 
 def after_try_finally_protected_delete_is_conservative(flag):
@@ -348,7 +348,7 @@ def after_try_finally_true_wrapper():
     return after_try_finally_protected_delete_is_conservative(True)
 
 
-expect_name_error(after_try_finally_true_wrapper)
+expect_unbound_local_error(after_try_finally_true_wrapper)
 assert after_try_finally_protected_delete_is_conservative(False) == 1
 
 
@@ -375,7 +375,7 @@ def break_through_finally_after_delete():
     return value
 
 
-expect_name_error(break_through_finally_after_delete)
+expect_unbound_local_error(break_through_finally_after_delete)
 
 
 def continue_through_finally_after_delete():
@@ -389,7 +389,7 @@ def continue_through_finally_after_delete():
     return value
 
 
-expect_name_error(continue_through_finally_after_delete)
+expect_unbound_local_error(continue_through_finally_after_delete)
 
 
 def except_as_cleanup_deletes_handler_binding():
@@ -400,7 +400,7 @@ def except_as_cleanup_deletes_handler_binding():
     return exc
 
 
-expect_name_error(except_as_cleanup_deletes_handler_binding)
+expect_unbound_local_error(except_as_cleanup_deletes_handler_binding)
 
 
 def except_as_cleanup_deletes_preexisting_binding():
@@ -412,7 +412,7 @@ def except_as_cleanup_deletes_preexisting_binding():
     return exc
 
 
-expect_name_error(except_as_cleanup_deletes_preexisting_binding)
+expect_unbound_local_error(except_as_cleanup_deletes_preexisting_binding)
 
 
 def except_as_cleanup_preserves_return_value():
@@ -434,7 +434,7 @@ def except_as_cleanup_runs_before_break():
     return exc
 
 
-expect_name_error(except_as_cleanup_runs_before_break)
+expect_unbound_local_error(except_as_cleanup_runs_before_break)
 
 
 def with_as_target_defines_local():
@@ -453,7 +453,7 @@ def with_body_delete_without_exception():
     return value
 
 
-expect_name_error(with_body_delete_without_exception)
+expect_unbound_local_error(with_body_delete_without_exception)
 
 
 def with_return_after_delete():
@@ -463,7 +463,7 @@ def with_return_after_delete():
         return value
 
 
-expect_name_error(with_return_after_delete)
+expect_unbound_local_error(with_return_after_delete)
 
 
 def with_suppressed_exception_continues_after_delete():
@@ -488,7 +488,7 @@ def with_suppressed_exception_leaves_deleted_local_missing():
     return value
 
 
-expect_name_error(with_suppressed_exception_leaves_deleted_local_missing)
+expect_unbound_local_error(with_suppressed_exception_leaves_deleted_local_missing)
 
 
 def with_suppressed_division_exception_leaves_deleted_local_missing():
@@ -500,7 +500,7 @@ def with_suppressed_division_exception_leaves_deleted_local_missing():
     return value
 
 
-expect_name_error(with_suppressed_division_exception_leaves_deleted_local_missing)
+expect_unbound_local_error(with_suppressed_division_exception_leaves_deleted_local_missing)
 
 
 def with_nested_try_except_delete():
@@ -515,7 +515,7 @@ def with_nested_try_except_delete():
     return value
 
 
-expect_name_error(with_nested_try_except_delete)
+expect_unbound_local_error(with_nested_try_except_delete)
 
 
 def try_finally_inside_loop_continue_then_else_repairs_local():
@@ -548,4 +548,4 @@ def try_except_inside_loop_break_after_delete():
     return value
 
 
-expect_name_error(try_except_inside_loop_break_after_delete)
+expect_unbound_local_error(try_except_inside_loop_break_after_delete)

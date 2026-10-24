@@ -280,18 +280,27 @@ namespace cl
         return Value::exception_marker();
     }
 
-    NOINLINE INTERP_CC Value local_name_error(PARAMS)
+    NOINLINE INTERP_CC Value unbound_local_error(PARAMS)
     {
         int8_t reg = pc[1];
         uint32_t slot_idx = code_object->decode_reg(reg);
         assert(slot_idx < code_object->local_scope.extract()->size());
-        ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
-            thread, fp, pc, code_object,
-            code_object->local_scope.extract()->get_name_by_slot_index(
-                slot_idx));
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
+        {
+            TValue<String> name =
+                code_object->local_scope.extract()->get_name_by_slot_index(
+                    slot_idx);
+            std::wstring message = L"cannot access local variable '";
+            message.append(name.extract()->data,
+                           size_t(name.extract()->count.extract()));
+            message += L"' where it is not associated with a value";
+            ExceptionalTarget target =
+                set_builtin_exception_and_resolve_frame_exit(
+                    thread, fp, pc, code_object, L"UnboundLocalError",
+                    message.c_str());
+            fp = target.fp;
+            code_object = target.code_object;
+            pc = target.interpreted_pc;
+        }
         START(0);
         COMPLETE();
     }
@@ -2898,7 +2907,7 @@ namespace cl
         accumulator = fp[reg];
         if(unlikely(accumulator.is_not_present()))
         {
-            MUSTTAIL return local_name_error(ARGS);
+            MUSTTAIL return unbound_local_error(ARGS);
         }
         COMPLETE();
     }
@@ -2936,7 +2945,7 @@ namespace cl
         int8_t reg = pc[1];
         if(unlikely(fp[reg].is_not_present()))
         {
-            MUSTTAIL return local_name_error(ARGS);
+            MUSTTAIL return unbound_local_error(ARGS);
         }
         fp[reg] = Value::not_present();
         COMPLETE();

@@ -714,7 +714,9 @@ TEST(Interpreter, del_local_variable_removes_binding)
                         L"    del value\n"
                         L"    return value\n"
                         L"clear(7)\n",
-                        L"NameError", L"name 'value' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'value' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, loop_local_read_after_delete_can_still_raise)
@@ -726,7 +728,9 @@ TEST(Interpreter, loop_local_read_after_delete_can_still_raise)
                         L"        del x\n"
                         L"    return 0\n"
                         L"f(2)\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, while_condition_after_delete_can_still_raise)
@@ -737,7 +741,9 @@ TEST(Interpreter, while_condition_after_delete_can_still_raise)
                         L"        del x\n"
                         L"    return 0\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, loop_break_after_delete_ignores_unreachable_assignment)
@@ -750,7 +756,9 @@ TEST(Interpreter, loop_break_after_delete_ignores_unreachable_assignment)
                         L"        x = 1\n"
                         L"    return x\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, loop_continue_after_delete_ignores_unreachable_assignment)
@@ -765,7 +773,9 @@ TEST(Interpreter, loop_continue_after_delete_ignores_unreachable_assignment)
                         L"        x = 1\n"
                         L"    return 0\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, try_handler_entry_accounts_for_protected_prefix_delete)
@@ -782,7 +792,9 @@ TEST(Interpreter, try_handler_entry_accounts_for_protected_prefix_delete)
                         L"        pass\n"
                         L"    return x\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, finally_entry_accounts_for_protected_prefix_delete)
@@ -798,7 +810,9 @@ TEST(Interpreter, finally_entry_accounts_for_protected_prefix_delete)
                         L"    finally:\n"
                         L"        x\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, finally_entry_accounts_for_handler_prefix_delete)
@@ -812,7 +826,9 @@ TEST(Interpreter, finally_entry_accounts_for_handler_prefix_delete)
                         L"    finally:\n"
                         L"        return x\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, with_suppressed_exception_accounts_for_body_prefix_delete)
@@ -830,7 +846,9 @@ TEST(Interpreter, with_suppressed_exception_accounts_for_body_prefix_delete)
                         L"        x = 1\n"
                         L"    return x\n"
                         L"f()\n",
-                        L"NameError", L"name 'x' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'x' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, assert_message_expression_gets_scope_analysis)
@@ -839,24 +857,30 @@ TEST(Interpreter, assert_message_expression_gets_scope_analysis)
                         L"    assert False, missing\n"
                         L"    missing = 1\n"
                         L"f()\n",
-                        L"NameError", L"name 'missing' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'missing' where it is "
+                        L"not associated with a value");
 }
 
-TEST(Interpreter, del_missing_local_raises_name_error)
+TEST(Interpreter, del_missing_local_raises_unbound_local_error)
 {
     expect_python_error(L"def clear():\n"
                         L"    del value\n"
                         L"clear()\n",
-                        L"NameError", L"name 'value' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'value' where it is not "
+                        L"associated with a value");
 }
 
-TEST(Interpreter, local_read_before_assignment_raises_name_error)
+TEST(Interpreter, local_read_before_assignment_raises_unbound_local_error)
 {
     expect_python_error(L"def read_before_write():\n"
                         L"    value\n"
                         L"    value = 7\n"
                         L"read_before_write()\n",
-                        L"NameError", L"name 'value' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'value' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
@@ -866,7 +890,9 @@ TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
                         L"        value = 7\n"
                         L"    return value\n"
                         L"maybe_write(False)\n",
-                        L"NameError", L"name 'value' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'value' where it is not "
+                        L"associated with a value");
 }
 
 TEST(Interpreter, function_wrong_arity)
@@ -7770,19 +7796,25 @@ True
                         L"    missing = 1\n"
                         L"    return result\n"
                         L"f(True)\n",
-                        L"NameError", L"name 'missing' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'missing' where it is "
+                        L"not associated with a value");
     expect_python_error(L"def f(flag):\n"
                         L"    result = 1 if flag else missing\n"
                         L"    missing = 2\n"
                         L"    return result\n"
                         L"f(False)\n",
-                        L"NameError", L"name 'missing' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'missing' where it is "
+                        L"not associated with a value");
     expect_python_error(L"def f():\n"
                         L"    result = 1 if missing else 2\n"
                         L"    missing = True\n"
                         L"    return result\n"
                         L"f()\n",
-                        L"NameError", L"name 'missing' is not defined");
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'missing' where it is "
+                        L"not associated with a value");
 }
 
 TEST(Interpreter, range_accepts_bool_arguments_in_calls_and_direct_loops)
@@ -7931,7 +7963,7 @@ TEST(Interpreter,
     ThreadState::ActivationScope activation(context.thread());
     ModuleObject *builtins = context.vm().global_builtins_module().extract();
     const wchar_t *names[] = {L"TypeError", L"AssertionError", L"NameError",
-                              L"ValueError"};
+                              L"UnboundLocalError", L"ValueError"};
     ClassObject *classes[std::size(names)];
     for(size_t idx = 0; idx < std::size(names); ++idx)
     {
@@ -7945,6 +7977,19 @@ TEST(Interpreter,
 import builtins
 assert TypeError is None
 assert builtins.AssertionError is None
+assert builtins.UnboundLocalError is None
+def missing_local_read():
+    return value
+    value = 1
+def missing_local_delete():
+    del value
+for operation in (missing_local_read, missing_local_delete):
+    try:
+        operation()
+    except OriginalUnboundLocalError as error:
+        assert error.__class__ is OriginalUnboundLocalError
+    else:
+        assert False
 try:
     int.__new__(float, 4)
 except OriginalTypeError:

@@ -1085,8 +1085,12 @@ namespace cl
         register_builtin_class(import_error_definition);
         register_builtin_class(make_exception_subclass(
             this, L"ModuleNotFoundError", import_error));
+        BuiltinClassDefinition name_error_definition =
+            make_exception_subclass(this, L"NameError", exception);
+        ClassObject *name_error = name_error_definition.cls;
+        register_builtin_class(name_error_definition);
         register_builtin_class(
-            make_exception_subclass(this, L"NameError", exception));
+            make_exception_subclass(this, L"UnboundLocalError", name_error));
         BuiltinClassDefinition type_error_definition =
             make_exception_subclass(this, L"TypeError", exception);
         ClassObject *type_error = type_error_definition.cls;
