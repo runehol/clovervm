@@ -290,47 +290,6 @@ def _hex_escape(code):
     )
 
 
-def _sort_items_in_place(items):
-    # CPython retains an exact list returned by items() and sorts that list.
-    # Comparisons see it empty. Detect writes left there during sorting.
-    original = list(items)
-    items.clear()
-    try:
-        ordered = _sort_items(original)
-    except:
-        items.clear()
-        items.extend(original)
-        raise
-    modified = len(items) != 0
-    items.clear()
-    items.extend(ordered)
-    if modified:
-        raise ValueError("list modified during sort")
-
-
-def _sort_items(items):
-    # Sort snapshotted pairs before key coercion using builtin ordering,
-    # including values when a dict subclass returns duplicate keys.
-    if len(items) < 2:
-        return items
-    mid = len(items) // 2
-    left = _sort_items(items[:mid])
-    right = _sort_items(items[mid:])
-    result = []
-    i = 0
-    j = 0
-    while i < len(left) and j < len(right):
-        if right[j] < left[i]:
-            result.append(right[j])
-            j += 1
-        else:
-            result.append(left[i])
-            i += 1
-    result.extend(left[i:])
-    result.extend(right[j:])
-    return result
-
-
 class _Encoder:
     def __init__(self, ensure_ascii, check_circular, allow_nan, separators,
                  default, sort_keys):
@@ -488,7 +447,7 @@ class _Encoder:
                     if items.__class__ is not list:
                         items = list(items)
                     if self.sort_keys:
-                        _sort_items_in_place(items)
+                        list.sort(items)
                     for item in items:
                         if not isinstance(item, tuple) or len(item) != 2:
                             raise ValueError("items must return 2-tuples")

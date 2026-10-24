@@ -84,6 +84,24 @@ assert len(rows) == 2
 assert rows[0][0] == "a"
 
 
+class TransientMutatingKey(str):
+    def __lt__(self, other):
+        rows.append(("temporary", 0))
+        rows.pop()
+        return str.__lt__(self, other)
+
+
+rows = [(TransientMutatingKey("z"), 1), (TransientMutatingKey("a"), 2)]
+try:
+    json.dumps(Mapping({"real": 1}), sort_keys=True)
+except ValueError as error:
+    assert str(error) == "list modified during sort"
+else:
+    assert False
+assert len(rows) == 2
+assert rows[0][0] == "a"
+
+
 class RaisingKey(str):
     def __lt__(self, other):
         raise KeyError("comparison")
