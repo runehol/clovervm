@@ -369,19 +369,64 @@ passed. `ninja -C build-debug all check` passed with 1,775 tests passed and one
 skipped. Release `check_opcode_frames` passed. Changes remain uncommitted for
 review; the shared late method-lookup mismatch is intentionally unchanged.
 
-## Stage 4: Optional exact-string binding-plan cache
+## Stage 4: Exact-string binding-plan cache
 
-- [ ] Measure uncached expanded calls before deciding to implement this stage.
-- [ ] If justified, install only successfully validated exact-string plans and
-  embed the existing `ExpandedCallBindingPlan` in the cache wrapper. Use the
-  same application path for temporary and cached plans.
-- [ ] Keep callable/signature guards, positional count, and owned ordered
-  exact-string keyword names in the wrapper, outside the reference-free plan.
-- [ ] Guard callable validity, counts, exact-string keys, and ordered key
-  contents. Read current defaults rather than caching default values.
-- [ ] Bypass on subclass keys without evicting a valid exact-string plan;
-  non-string keys reach ordinary validation and fail there.
-- [ ] Test misses/hits, changing names/order/counts, callable invalidation,
-  default changes, cache ownership, and subclass comparison side effects.
-- [ ] Measure before/after; run required checks and leave changes uncommitted
-  for review. Record deferral if measurements do not justify the cache.
+Measurements justify proceeding with one cached binding plan per expanded-call
+site. The release named-parameter combined-call profile attributed approximately
+38% of samples to building and destroying the uncached plan, including its
+temporary allocations. The builder's `filled` scratch storage now uses
+`absl::InlinedVector<bool, 16>` (`d21e5ad9`); stored plans retain their existing
+vector representation.
+
+Agreed representation:
+
+```cpp
+struct ExpandedCallCachedPlan {
+    uint32_t positional_count;  // Includes implicit self, when present.
+    std::vector<Owned<TValue<String>>> keyword_names;
+    ExpandedCallBindingPlan plan;
+};
+
+struct ExpandedCallInlineCache {
+    // Existing callable, resolved Function, validity, and mode fields.
+    std::unique_ptr<ExpandedCallCachedPlan> binding_plan;
+};
+```
+
+The entry is allocated only when installing a cacheable plan. Existing callable
+resolution and validity guards remain in the IC and also guard its subordinate
+plan; replacing the target clears the plan. Function code and signature are
+currently immutable from Python, so this stage needs no new signature-version
+mechanism. No opcode or reference-free binding-plan representation changes are
+required. Straight and method calls share the existing frame-entry path.
+
+- [x] Measure uncached expanded calls and agree to proceed with caching.
+- [ ] Add the optional out-of-line entry, retaining ordered keyword names with
+  `Owned<TValue<String>>`, following the native-container ownership pattern of
+  `CodeObject::constant_table`. Keep the existing plan vectors out of the IC.
+- [ ] Add explicit deep-copy construction/assignment following
+  `KeywordCallInlineCache`: `BytecodeDecoder` copies the IC tables. Keep moves
+  cheap and release entries on replacement, clearing, and destruction. Use the
+  current C++20 facilities; do not introduce a general deep-copy pointer wrapper.
+- [ ] Clear the subordinate plan whenever callable resolution selects a new
+  target, including after constructor lookup invalidation.
+- [ ] Preserve the pure-collector fast path. For general calls, guard total
+  positional count, keyword count, exact-string incoming keys, and ordered key
+  contents using `string_eq`; a successful guard also proves key validity.
+- [ ] On a hit, borrow the stored plan and use the existing application path.
+  Read current values and defaults rather than caching them. Guarding and
+  applying an exact-string plan must not invoke Python callbacks.
+- [ ] On a cacheable miss, build and apply a local plan successfully, then move
+  it into a newly allocated cache entry. Never install a failed plan or build
+  directly into live cache storage.
+- [ ] Bypass on subclass keys without evicting a valid plan for the same target.
+  Keep callback-capable plans local; do not borrow a cache entry across Python
+  callbacks. Non-string keys reach ordinary validation and fail with unchanged
+  error precedence.
+- [ ] Test hits and misses, changing values/names/order/counts, equal noninterned
+  names, implicit method receivers, target invalidation, and current defaults.
+- [ ] Test retained-name lifetime, cache clearing/replacement/copying, and
+  subclass comparison side effects including reentrant calls.
+- [ ] Run full debug checks and release `check_opcode_frames`; compare the same
+  13 expanded-call benchmark cases before/after. Leave changes uncommitted for
+  review.

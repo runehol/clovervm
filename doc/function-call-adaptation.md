@@ -532,7 +532,7 @@ those facts are separately guarded. Transport remains intact: when the callee
 has `**kwargs`, the plan selects direct transport reuse if no incoming keywords
 matched named parameters, or construction of a fresh leftovers dict otherwise.
 
-### Optional general-binding plan cache
+### General-binding plan cache (stage 4)
 
 General binding constructs a temporary per-call plan, validates it, then applies
 it. Plan construction first validates every incoming keyword key is a string,
@@ -588,16 +588,34 @@ application. Formal names remain in the target CodeObject's
 plan owns no Python references and is built locally, not directly into a live
 IC. An exception discards it without applying or installing it.
 
-The same `ExpandedCallBindingPlan` type must work as a temporary and as a member
-of a future cache wrapper. That wrapper, outside the plan, holds callable and
-signature validity guards, positional count, and owned ordered exact-string
-keyword names. Installing a successfully validated plan is optional and
-separate from applying it. Application takes a const plan reference plus the
-resolved Function and input containers, independent of whether the plan came
-from local storage or a cache. Callable/signature resolution and adapter-mode
-caching remain independent of keyword binding-plan eligibility. Stage 3a
-implements the native plan and uncached builder; cache representation and
-installation remain stage 4 work.
+The same `ExpandedCallBindingPlan` type serves temporary and cached plans.
+Stage 4 adds one optional out-of-line `ExpandedCallCachedPlan`, owned through a
+`std::unique_ptr` in `ExpandedCallInlineCache`. The entry contains total
+positional count (including implicit self), a
+`std::vector<Owned<TValue<String>>>` of ordered keyword names, and the existing
+reference-free plan. The existing target and validity guards in the IC also
+guard the entry; replacing the target clears its plan. Function code/signature
+is currently immutable from Python, so no signature-version mechanism is added.
+The large entry is allocated only when installing a cacheable plan, and stored
+plan vectors do not gain inline storage.
+
+Build and apply a temporary plan successfully before moving it into a new
+entry. Application takes a const plan reference plus the resolved Function and
+input containers, independent of whether the plan came from local storage or a
+cache. Callable/signature resolution and adapter-mode caching remain independent
+of keyword binding-plan eligibility. The pure-collector fast path remains
+unchanged. Stage 3 implements uncached binding; stage 4 caching is agreed but
+not yet implemented.
+
+The native entry retains names through `Owned`, following
+`CodeObject::constant_table`'s native-container ownership pattern. Replacement,
+cache clearing, and destruction release the entry. IC copies deep-copy it using
+explicit copy construction/assignment, following `KeywordCallInlineCache`,
+because `BytecodeDecoder` copies the tables. Keep the current C++20 facilities
+and do not introduce a general deep-copy pointer wrapper. Exact-string hits can
+borrow the entry through application because guards and application do not
+invoke Python callbacks. Callback-capable uncached calls keep local plans and
+never borrow cache storage across callbacks.
 
 Only calls whose incoming keyword keys are all exact builtin strings are
 eligible to construct or hit a cached binding plan. Calls containing a
@@ -606,8 +624,8 @@ and their side effects, then apply the temporary plan without installing it.
 They bypass the binding-plan cache without evicting an existing exact-string
 plan. Key identity or subclass-shape guards cannot justify skipping comparisons:
 even the same key object may have changing comparison results or observable
-effects on each call. Retain installed name references through the code object's
-cache ownership and tracing machinery.
+effects on each call. Retain installed name references through the native cache
+entry's owned handles.
 
 A plan hit requires exact-string incoming keys, the callable and valid lookup
 dependencies, the same positional and keyword counts, and `string_eq` for each
@@ -638,7 +656,7 @@ transport has already rejected keyword-source duplicates. Stable names are a
 promising cache case, not a measured guarantee. Measure reused key objects,
 new equal strings, and changing names: changing names pay a failed guard before
 binding. Collector allocation/packing is common work, not eliminated by the
-cache. The additional plan cache remains a design option within general mode.
+cache. The additional plan cache is the agreed stage 4 work within general mode.
 
 ### Runtime implementation direction
 
