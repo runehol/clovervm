@@ -35,7 +35,7 @@ namespace = types.SimpleNamespace()
 namespace.answer = 42
 assert namespace.answer == 42
 assert isinstance(namespace, types.SimpleNamespace)
-assert repr(namespace) == "namespace(...)"
+assert repr(namespace) == "namespace(answer=42)"
 
 
 class Base:

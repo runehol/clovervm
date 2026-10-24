@@ -53,6 +53,12 @@ namespace cl
             L"TypeError", invalid_classinfo_message);
     }
 
+    // Exact runtime identity, independent of Python attribute lookup.
+    static Value builtin_runtime_type(ThreadState *thread, Value obj)
+    {
+        return Value::from_oop(thread->class_of_value(obj));
+    }
+
     static Value builtin_isinstance(ThreadState *thread, Value obj,
                                     Value classinfo)
     {
@@ -334,6 +340,11 @@ namespace cl
     install_builtin_function_bindings(VirtualMachine *vm,
                                       ModuleObject *implementation_module)
     {
+        install_builtin_function_binding(
+            vm, vm->global_builtins_module().extract(),
+            L"__clover_runtime_type__",
+            CL_TRY(make_intrinsic_function(vm, builtin_runtime_type))
+                .raw_value());
         install_builtin_function_binding(
             vm, vm->global_builtins_module().extract(), L"isinstance",
             CL_TRY(make_intrinsic_function(vm, builtin_isinstance))
