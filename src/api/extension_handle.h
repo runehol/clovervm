@@ -174,6 +174,7 @@ namespace cl
         Value *previous_frontier;
         Value *previous_lowest_live_stack_slot;
         Value previous_accumulator_or_not_present;
+        Value previous_active_code_object_or_not_present;
         Value *begin;
         Value *end;
     };
