@@ -1025,8 +1025,8 @@ True
 
 TEST(ExpandedCallScope, AnalysisFollowsPositionalBeforeKeywordEvaluation)
 {
-    // Assignment expressions in call arguments are not parsed yet. Exercise
-    // their existing AST form directly to pin down the scope-analysis order.
+    // Exercise the AST directly to pin down scope-analysis order for reads
+    // before and after stores in interleaved arguments.
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
     CompilationUnit unit(L"");

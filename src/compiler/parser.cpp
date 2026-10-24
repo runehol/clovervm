@@ -795,8 +795,6 @@ namespace cl
         }
         // expressions
 
-        Expected<int32_t> genexp() { return expression(); }
-
         Expected<int32_t> star_expressions()
         {
             uint32_t tuple_start_pos = source_pos_for_token();
@@ -859,6 +857,12 @@ namespace cl
                     expected_token_message(Token::NAME, peek(), source_pos);
                 return Expected<int32_t>::raise_exception(L"SyntaxError",
                                                           message.c_str());
+            }
+            if(string_for_name_token(*ast.compilation_unit,
+                                     source_pos_for_token()) == L"__debug__")
+            {
+                return Expected<int32_t>::raise_exception(
+                    L"SyntaxError", L"cannot assign to __debug__");
             }
             int32_t lhs = CL_TRY(atom());  // smallest rule that just consumes a
                                            // name and makes a nice node for us
@@ -1266,7 +1270,15 @@ namespace cl
 
             if(peek() != Token::COLON)
             {
-                lower = CL_TRY(expression());
+                bool bare_assignment =
+                    peek() == Token::NAME && peek2() == Token::COLONEQUAL;
+                lower = CL_TRY(named_expression());
+                if(bare_assignment && peek() == Token::COLON)
+                {
+                    return Expected<int32_t>::raise_exception(
+                        L"SyntaxError", L"assignment expression in slice must "
+                                        L"be parenthesized");
+                }
                 if(peek() != Token::COLON)
                 {
                     if(peek() == Token::COMMA)
@@ -1368,7 +1380,7 @@ namespace cl
                             L"SyntaxError",
                             L"positional argument follows keyword argument");
                     }
-                    int32_t value = CL_TRY(expression());
+                    int32_t value = CL_TRY(named_expression());
                     ch.push_back(ast.emplace_back(
                         AstNodeKind::CALL_ARGUMENT_POSITIONAL,
                         ast.source_offsets[value], AstChildren{value}));
@@ -1475,13 +1487,13 @@ namespace cl
                                 AstChildren{}));
                         }
 
-                        int32_t result = CL_TRY(genexp());
+                        int32_t result = CL_TRY(named_expression());
                         if(peek() == Token::COMMA)
                         {
                             AstChildren children =
                                 CL_TRY(sequence_until_stop_token(
-                                    result, &Parser::expression, Token::COMMA,
-                                    Token::RPAR));
+                                    result, &Parser::named_expression,
+                                    Token::COMMA, Token::RPAR));
                             CL_TRY(consume(Token::RPAR));
                             return Expected<int32_t>::ok(
                                 ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
@@ -1497,14 +1509,14 @@ namespace cl
                         AstChildren children;
                         if(peek() != Token::RSQB)
                         {
-                            children.push_back(CL_TRY(expression()));
+                            children.push_back(CL_TRY(named_expression()));
                             while(match(Token::COMMA))
                             {
                                 if(peek() == Token::RSQB)
                                 {
                                     break;
                                 }
-                                children.push_back(CL_TRY(expression()));
+                                children.push_back(CL_TRY(named_expression()));
                             }
                         }
                         CL_TRY(consume(Token::RSQB));
@@ -2360,7 +2372,7 @@ namespace cl
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren children;
-            children.push_back(CL_TRY(named_expression()));
+            children.push_back(CL_TRY(expression()));
             if(match(Token::AS))
             {
                 int32_t target = CL_TRY(star_expression());
@@ -2420,7 +2432,7 @@ namespace cl
             CL_TRY(validate_assignment_target(target));
             children.push_back(target);
             CL_TRY(consume(Token::IN));
-            children.push_back(CL_TRY(named_expression()));
+            children.push_back(CL_TRY(expression()));
             CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
 

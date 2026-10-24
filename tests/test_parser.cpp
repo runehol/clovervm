@@ -1115,3 +1115,74 @@ TEST(Parser, expanded_call_ordering_and_duplicate_names_are_checked)
     expect_parse_error(L"f(a=1, *b, a=2)",
                        "SyntaxError: keyword argument repeated");
 }
+
+TEST(Parser, walrus_expressions_round_trip_with_required_parentheses)
+{
+    const wchar_t *sources[] = {
+        L"(x := 1)\n",
+        L"result = (x := (y := 2))\n",
+        L"f(x := 1, key=(y := 2))\n",
+        L"items = [x := 1, y := 2]\n",
+        L"items = (x := 1, y := 2)\n",
+        L"items[index := 1]\n",
+        L"items[(lower := 1):(upper := 3):(step := 1)]\n",
+        L"if x := 1 if flag else 2:\n    pass\n",
+        L"while x := read():\n    pass\n",
+        L"for x in (values := items):\n    pass\n",
+        L"with (manager := make_manager()):\n    pass\n",
+        L"def f(value=(default := 1)):\n    return (result := value)\n",
+        L"class C(base := object):\n    value = (x := 1)\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(unicode::encode_utf8(source));
+        VirtualMachine vm;
+        ThreadState::ActivationScope activation(vm.get_default_thread());
+        CompilationUnit unit(source);
+        TokenVector tokens = tokenize(unit).value();
+        auto ast = cl::parse(vm, tokens, StartRule::File);
+        ASSERT_FALSE(ast.has_exception());
+        std::string rendered = fmt::to_string(ast.value());
+        SCOPED_TRACE(rendered);
+        auto decoded = unicode::decode_utf8(rendered);
+        ASSERT_TRUE(decoded.has_value());
+        CompilationUnit round_trip_unit(decoded->c_str());
+        TokenVector round_trip_tokens = tokenize(round_trip_unit).value();
+        auto round_trip_ast = cl::parse(vm, round_trip_tokens, StartRule::File);
+        ASSERT_FALSE(round_trip_ast.has_exception());
+        EXPECT_EQ(rendered, fmt::to_string(round_trip_ast.value()));
+    }
+    EXPECT_EQ("(x := 1)\n", parse(L"(x := 1)\n"));
+}
+
+TEST(Parser, walrus_rejects_invalid_targets_and_unparenthesized_contexts)
+{
+    const wchar_t *sources[] = {
+        L"x := 1\n",
+        L"result = x := 1\n",
+        L"assert x := 1\n",
+        L"def f():\n    return x := 1\n",
+        L"f(key=x := 1)\n",
+        L"f(*x := items)\n",
+        L"f(**x := items)\n",
+        L"items[x := 1:2]\n",
+        L"items[1:x := 2]\n",
+        L"items[::x := 2]\n",
+        L"{x := 1: 2}\n",
+        L"{1: x := 2}\n",
+        L"for x in values := items:\n    pass\n",
+        L"with manager := make_manager():\n    pass\n",
+        L"(obj.attr := 1)\n",
+        L"(items[0] := 1)\n",
+        L"((x, y) := (1, 2))\n",
+        L"((x) := 1)\n",
+        L"(x := y := 1)\n",
+        L"(__debug__ := 1)\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(unicode::encode_utf8(source));
+        test::VmTestContext context;
+        test::expect_compile_python_error(context, source, L"SyntaxError");
+    }
+}

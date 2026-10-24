@@ -141,7 +141,12 @@ template <> struct fmt::formatter<cl::AstVector>
         assert(node_idx >= 0);
         cl::AstKind kind = av.kinds[node_idx];
         cl::ExpressionPrecedence self_precedence = precedence_for_kind(kind);
-        if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
+        // A slice is subscript syntax, not an expression that can be grouped.
+        bool needs_parentheses =
+            is_expression(kind.node_kind) &&
+            kind.node_kind != cl::AstNodeKind::EXPRESSION_SLICE &&
+            self_precedence <= outer_precedence;
+        if(needs_parentheses)
         {
             fmt::format_to(out, "(");
         }
@@ -171,7 +176,7 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::EXPRESSION_ASSIGN:
                 render_node(av, out, children[0], indent, self_precedence);
                 assert(kind.operator_kind == cl::AstOperatorKind::NOP);
-                fmt::format_to(out, " := ", kind.operator_kind);
+                fmt::format_to(out, " := ");
                 render_node(av, out, children[1], indent, self_precedence);
                 break;
 
@@ -790,7 +795,7 @@ template <> struct fmt::formatter<cl::AstVector>
                 break;
         }
 
-        if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
+        if(needs_parentheses)
         {
             fmt::format_to(out, ")");
         }

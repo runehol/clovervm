@@ -2370,3 +2370,51 @@ TEST(Codegen, expression_assigned_local_still_uses_direct_register_copy)
     EXPECT_NE(std::string::npos, bytecode.find("Mov r0, p0"));
     EXPECT_EQ(std::string::npos, bytecode.find("Ldar p0"));
 }
+
+TEST(Codegen, walrus_skipped_paths_require_checked_local_loads)
+{
+    const wchar_t *sources[] = {
+        L"def f(flag):\n    flag and (x := 1)\n    return x\n",
+        L"def f(flag):\n    flag or (x := 1)\n    return x\n",
+        L"def f(flag):\n    flag < 1 < (x := 2)\n    return x\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        std::string actual = bytecode_str_from_file(source);
+        EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
+    }
+}
+
+TEST(Codegen, walrus_in_defaults_and_bases_marks_enclosing_local_slots)
+{
+    const wchar_t *sources[] = {
+        L"def f(x, y):\n"
+        L"    def nested(value=(x := 1)): pass\n"
+        L"    return x + y\n",
+        L"def f(x, y):\n"
+        L"    class C(x := object): pass\n"
+        L"    return x + y\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        std::string actual = bytecode_str_from_file(source);
+        EXPECT_NE(std::string::npos, actual.find("Mov r1, p0"));
+        EXPECT_NE(std::string::npos, actual.find("Add r1,"));
+    }
+}
+
+TEST(Codegen, nested_walrus_counts_as_assignment_before_global_declaration)
+{
+    const wchar_t *sources[] = {
+        L"def f():\n    print((x := 1))\n    global x\n",
+        L"def f():\n    def nested(value=(x := 1)): pass\n    global x\n",
+        L"def f():\n    class C(x := object): pass\n    global x\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        test::VmTestContext context;
+        test::expect_compile_python_error(
+            context, source, L"SyntaxError",
+            L"name is assigned to before global declaration");
+    }
+}

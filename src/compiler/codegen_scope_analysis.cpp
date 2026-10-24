@@ -428,6 +428,13 @@ namespace cl
                                                    av.constants[node_idx]);
                         return Expected<void>::ok();
 
+                    case AstNodeKind::EXPRESSION_ASSIGN:
+                        CL_TRY(validate_global_declaration_expression(
+                            state, children[1]));
+                        mark_global_validation_assignment(
+                            state, av.constants[children[0]]);
+                        return Expected<void>::ok();
+
                     case AstNodeKind::EXPRESSION_ATTRIBUTE:
                         return validate_global_declaration_expression(
                             state, children[0]);
@@ -748,7 +755,20 @@ namespace cl
                 switch(kind.node_kind)
                 {
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                        for(int32_t param_idx:
+                            signature_parameter_nodes(av, children[0]))
+                        {
+                            for(int32_t default_idx: av.children[param_idx])
+                            {
+                                collect_code_object_bindings(analysis,
+                                                             default_idx);
+                            }
+                        }
+                        ensure_binding(analysis, av.constants[node_idx]);
+                        return;
+
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                        collect_code_object_bindings(analysis, children[0]);
                         ensure_binding(analysis, av.constants[node_idx]);
                         return;
 
@@ -955,7 +975,22 @@ namespace cl
                 switch(kind.node_kind)
                 {
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                        for(int32_t param_idx:
+                            signature_parameter_nodes(av, children[0]))
+                        {
+                            for(int32_t default_idx: av.children[param_idx])
+                            {
+                                collect_local_touches_into(
+                                    analysis, default_idx, touches);
+                            }
+                        }
+                        mark_touch_assigned(analysis, touches,
+                                            av.constants[node_idx]);
+                        return;
+
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                        collect_local_touches_into(analysis, children[0],
+                                                   touches);
                         mark_touch_assigned(analysis, touches,
                                             av.constants[node_idx]);
                         return;
@@ -1275,6 +1310,33 @@ namespace cl
                             ? *summary.fallthrough
                             : conservative_flow_state(analysis);
                 return summary;
+            }
+
+            FlowSummary analyze_shortcutting_expression(AnalysisState &analysis,
+                                                        AstChildren children,
+                                                        FlowState state)
+            {
+                analyze_child_as_expression(analysis, children[0], state);
+                FlowState rhs_state = state;
+                analyze_child_as_expression(analysis, children[1], rhs_state);
+                return fallthrough_summary(merge_flow_states(state, rhs_state));
+            }
+
+            FlowSummary analyze_comparison_expression(AnalysisState &analysis,
+                                                      AstChildren children,
+                                                      FlowState state)
+            {
+                analyze_child_as_expression(analysis, children[0], state);
+                // The first comparison always evaluates its RHS. Later
+                // comparisons run only if all preceding comparisons succeed.
+                analyze_child_as_expression(analysis, children[1], state);
+                FlowState exits = state;
+                for(size_t idx = 2; idx < children.size(); ++idx)
+                {
+                    analyze_child_as_expression(analysis, children[idx], state);
+                    exits = merge_flow_states(exits, state);
+                }
+                return fallthrough_summary(exits);
             }
 
             FlowSummary analyze_if_statement(AnalysisState &analysis,
@@ -1690,10 +1752,20 @@ namespace cl
                                 return fallthrough_summary(state);
                             }
 
-                            analyze_child_as_expression(analysis, lhs_idx,
-                                                        state);
-                            analyze_child_as_expression(analysis, children[1],
-                                                        state);
+                            if(kind.operator_kind == AstOperatorKind::NOP)
+                            {
+                                analyze_child_as_expression(analysis,
+                                                            children[1], state);
+                                analyze_child_as_expression(analysis, lhs_idx,
+                                                            state);
+                            }
+                            else
+                            {
+                                analyze_child_as_expression(analysis, lhs_idx,
+                                                            state);
+                                analyze_child_as_expression(analysis,
+                                                            children[1], state);
+                            }
                             return fallthrough_summary(state);
                         }
 
@@ -1729,9 +1801,9 @@ namespace cl
                                 annotate_write(children[0]);
                                 return fallthrough_summary(state);
                             }
-                            analyze_child_as_expression(analysis, children[0],
-                                                        state);
                             analyze_child_as_expression(analysis, children[2],
+                                                        state);
+                            analyze_child_as_expression(analysis, children[0],
                                                         state);
                         }
                         else if(!ann_assign_is_simple(node_idx))
@@ -1760,6 +1832,14 @@ namespace cl
                     case AstNodeKind::STATEMENT_SEQUENCE:
                     case AstNodeKind::STATEMENT_EXPRESSION:
                         return analyze_sequence(analysis, children, state);
+
+                    case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+                        return analyze_shortcutting_expression(analysis,
+                                                               children, state);
+
+                    case AstNodeKind::EXPRESSION_COMPARISON:
+                        return analyze_comparison_expression(analysis, children,
+                                                             state);
 
                     case AstNodeKind::EXPRESSION_IF:
                         {
