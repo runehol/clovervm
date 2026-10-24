@@ -84,6 +84,23 @@ TEST_P(PythonSourceFileTest, RunsSelfCheckingSource)
         << "self-checking Python source raised an exception";
 }
 
+TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/itertools_selection.py",
+                           "tests/python/itertools_pairwise.py",
+                           "tests/python/itertools_count.py",
+                           "tests/python/itertools_count_reentry.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker())
+            << "itertools state must stay rooted across input and callbacks";
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(SelfCheckingPythonFiles, PythonSourceFileTest,
                          testing::ValuesIn(python_source_files()),
                          source_file_test_name);
