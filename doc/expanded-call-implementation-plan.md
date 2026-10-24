@@ -2,7 +2,7 @@
 
 Implementation checklist for the accepted
 [function-call adaptation design](function-call-adaptation.md), starting from
-`3a84a6a2`. Stages 1 through 3 (including 3d) are complete; stage 4 has not started.
+`3a84a6a2`. Stages 1 through 4 (including 3d) are complete.
 
 ## Working rules
 
@@ -401,32 +401,44 @@ mechanism. No opcode or reference-free binding-plan representation changes are
 required. Straight and method calls share the existing frame-entry path.
 
 - [x] Measure uncached expanded calls and agree to proceed with caching.
-- [ ] Add the optional out-of-line entry, retaining ordered keyword names with
+- [x] Add the optional out-of-line entry, retaining ordered keyword names with
   `Owned<TValue<String>>`, following the native-container ownership pattern of
   `CodeObject::constant_table`. Keep the existing plan vectors out of the IC.
-- [ ] Add explicit deep-copy construction/assignment following
+- [x] Add explicit deep-copy construction/assignment following
   `KeywordCallInlineCache`: `BytecodeDecoder` copies the IC tables. Keep moves
   cheap and release entries on replacement, clearing, and destruction. Use the
   current C++20 facilities; do not introduce a general deep-copy pointer wrapper.
-- [ ] Clear the subordinate plan whenever callable resolution selects a new
+- [x] Clear the subordinate plan whenever callable resolution selects a new
   target, including after constructor lookup invalidation.
-- [ ] Preserve the pure-collector fast path. For general calls, guard total
+- [x] Preserve the pure-collector fast path. For general calls, guard total
   positional count, keyword count, exact-string incoming keys, and ordered key
   contents using `string_eq`; a successful guard also proves key validity.
-- [ ] On a hit, borrow the stored plan and use the existing application path.
+- [x] On a hit, borrow the stored plan and use the existing application path.
   Read current values and defaults rather than caching them. Guarding and
   applying an exact-string plan must not invoke Python callbacks.
-- [ ] On a cacheable miss, build and apply a local plan successfully, then move
+- [x] On a cacheable miss, build and apply a local plan successfully, then move
   it into a newly allocated cache entry. Never install a failed plan or build
   directly into live cache storage.
-- [ ] Bypass on subclass keys without evicting a valid plan for the same target.
+- [x] Bypass on subclass keys without evicting a valid plan for the same target.
   Keep callback-capable plans local; do not borrow a cache entry across Python
   callbacks. Non-string keys reach ordinary validation and fail with unchanged
   error precedence.
-- [ ] Test hits and misses, changing values/names/order/counts, equal noninterned
+- [x] Test hits and misses, changing values/names/order/counts, equal noninterned
   names, implicit method receivers, target invalidation, and current defaults.
-- [ ] Test retained-name lifetime, cache clearing/replacement/copying, and
+- [x] Test retained-name lifetime, cache clearing/replacement/copying, and
   subclass comparison side effects including reentrant calls.
-- [ ] Run full debug checks and release `check_opcode_frames`; compare the same
+- [x] Run full debug checks and release `check_opcode_frames`; compare the same
   13 expanded-call benchmark cases before/after. Leave changes uncommitted for
   review.
+
+
+Stage 4 verification: six new binding/execution regressions cover cache guards,
+exact keys in general dict storage, hit reuse/current defaults, deep copies and
+clearing, subclass/invalid-key bypass, and target replacement. Existing method,
+constructor-invalidation, and reentrant callback tests also pass. Full debug
+checks passed with 1,782 tests passed and one skipped; release
+`check_opcode_frames` passed. All 13 release benchmark cases completed with
+matching results, using three one-second samples per case. The final timing run
+ran without concurrent builds/tests. Compared with the saved uncached baseline,
+measurements are subject to between-run drift; direct-call cases serve as
+controls. Implementation remains uncommitted for review.

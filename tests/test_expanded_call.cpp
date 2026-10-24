@@ -107,6 +107,61 @@ def f(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q=17, r=18): pass
     expect_type_error(build(18), L"invalid keyword argument");
 }
 
+TEST_F(ExpandedCallBinding, CachedPlanGuardsCountsOrderAndExactStringContents)
+{
+    load(LR"(
+def f(a=1, b=2): return a + b
+(f, {'a': 3, 'b': 4})
+)");
+    auto result = build(0);
+    ASSERT_FALSE(result.has_exception());
+    auto cached = convert_to_expanded_call_cache_entry(
+        context.thread(), 0, keywords(), result.value());
+    ASSERT_NE(nullptr, cached);
+    EXPECT_TRUE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
+                                                  keywords()));
+    EXPECT_FALSE(expanded_call_cached_plan_matches(context.thread(), *cached, 1,
+                                                   keywords()));
+    // Releasing the original inputs must not release the cached names.
+    load(LR"(
+def f(a=1, b=2): return a + b
+# Slicing produces equal names without relying on interning or key identity.
+(f, {'xa'[1:]: 8, 'xb'[1:]: 9})
+)");
+    EXPECT_TRUE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
+                                                  keywords()));
+    load(LR"(
+def f(a=1, b=2): return a + b
+(f, {'b': 4, 'a': 3})
+)");
+    EXPECT_FALSE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
+                                                   keywords()));
+    load(LR"(
+def f(a=1, b=2): return a + b
+(f, {'a': 3})
+)");
+    EXPECT_FALSE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
+                                                   keywords()));
+}
+
+TEST_F(ExpandedCallBinding, GeneralDictWithOnlyExactKeysCanCache)
+{
+    load(LR"(
+class S(str): pass
+keys = {S('removed'): 1, 'a': 3}
+del keys['removed']
+def f(a): return a
+(f, keys)
+)");
+    auto result = build(0);
+    ASSERT_FALSE(result.has_exception());
+    auto cached = convert_to_expanded_call_cache_entry(
+        context.thread(), 0, keywords(), result.value());
+    ASSERT_NE(nullptr, cached);
+    EXPECT_TRUE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
+                                                  keywords()));
+}
+
 TEST_F(ExpandedCallBinding, ReusesTransportWhenNoKeywordsMatch)
 {
     load(LR"(
@@ -439,6 +494,15 @@ namespace
                 caller.value().value(), input(0), input(1), input(2));
         }
 
+        ExpandedCallInlineCache &cache()
+        {
+            return caller.value()
+                .value()
+                .extract()
+                ->code_object.extract()
+                ->inline_caches.expanded_call_caches[0];
+        }
+
         void check()
         {
             Owned<Value> result(call());
@@ -737,6 +801,134 @@ TEST_F(ExpandedCallExecution, BytecodeMetadataDescribesAdjacentInputsAndCache)
     }
     EXPECT_TRUE(found);
     EXPECT_NE(std::string::npos, fmt::format("{}", *code).find("CallExpanded"));
+}
+
+TEST_F(ExpandedCallExecution, PlanHitsReuseStorageAndReadCurrentDefaults)
+{
+    load(LR"(
+def f(a, b=2): return a + b
+(f, (), {'a': 3})
+)");
+    EXPECT_EQ(Value::from_smi(5), call());
+    auto *installed = cache().binding_plan.get();
+    ASSERT_NE(nullptr, installed);
+    EXPECT_EQ(Value::from_smi(5), call());
+    EXPECT_EQ(installed, cache().binding_plan.get());
+    input(2).get_ptr<Dict>()->string_keyed_insert(
+        context.vm().get_or_create_interned_string_value(L"a"),
+        Value::from_smi(7));
+    EXPECT_EQ(Value::from_smi(9), call());
+    EXPECT_EQ(installed, cache().binding_plan.get());
+    Owned<TValue<Tuple>> defaults(
+        context.thread()->make_object_value<Tuple>(1));
+    defaults.extract()->initialize_item_unchecked(0, Value::from_smi(10));
+    input(0).get_ptr<Function>()->default_parameters =
+        Optional<TValue<Tuple>>::some(defaults.value());
+    EXPECT_EQ(Value::from_smi(17), call());
+    EXPECT_EQ(installed, cache().binding_plan.get());
+}
+
+TEST_F(ExpandedCallExecution, CacheCopiesOwnIndependentPlansAndNames)
+{
+    load(LR"(
+def f(a): return a
+(f, (), {'xa'[1:]: 3})
+)");
+    EXPECT_EQ(Value::from_smi(3), call());
+    ASSERT_NE(nullptr, cache().binding_plan);
+    CodeObject *code = caller.value().value().extract()->code_object.extract();
+    InlineCacheTables copied = code->inline_caches;
+    auto &clone = copied.expanded_call_caches[0];
+    ASSERT_NE(nullptr, clone.binding_plan);
+    EXPECT_NE(cache().binding_plan.get(), clone.binding_plan.get());
+    EXPECT_EQ(cache().binding_plan->keyword_names[0].value(),
+              clone.binding_plan->keyword_names[0].value());
+    EXPECT_EQ(cache().binding_plan->plan.keyword_destinations,
+              clone.binding_plan->plan.keyword_destinations);
+    ExpandedCallInlineCache assigned;
+    assigned = clone;
+    EXPECT_NE(assigned.binding_plan.get(), clone.binding_plan.get());
+    BytecodeDecoder decoder(*code);
+    code->inline_caches.clear();
+    EXPECT_EQ(nullptr, cache().binding_plan);
+    EXPECT_TRUE(expanded_call_cached_plan_matches(
+        context.thread(), *clone.binding_plan, 0,
+        TValue<Dict>::from_value_assumed(input(2))));
+    for(const auto &block: decoder.blocks())
+    {
+        for(const auto &instruction: block.instructions())
+        {
+            if(instruction.semantic_opcode() == Bytecode::CallExpanded)
+            {
+                EXPECT_NE(nullptr,
+                          instruction.expanded_call_cache()->binding_plan);
+            }
+        }
+    }
+    assigned = ExpandedCallInlineCache{};
+    EXPECT_EQ(nullptr, assigned.binding_plan);
+    EXPECT_EQ(Value::from_smi(3), call());
+}
+
+TEST_F(ExpandedCallExecution, SubclassAndInvalidKeysPreserveTheCachedPlan)
+{
+    load(LR"(
+events = []
+class S(str):
+    def __eq__(self, other):
+        events.append('eq')
+        return str.__eq__(self, other)
+    def __hash__(self): return str.__hash__(self)
+def f(a): return a
+def count(): return len(events)
+(f, (), {'a': 3}, {S('a'): 7}, {1: 9}, count, {'wrong': 8})
+)");
+    EXPECT_EQ(Value::from_smi(3), call());
+    auto *installed = cache().binding_plan.get();
+    ASSERT_NE(nullptr, installed);
+    for(int idx = 0; idx < 2; ++idx)
+    {
+        EXPECT_EQ(Value::from_smi(7),
+                  context.thread()->call_clovervm_function(
+                      caller.value().value(), input(0), input(1), input(3)));
+        EXPECT_EQ(installed, cache().binding_plan.get());
+    }
+    EXPECT_EQ(Value::from_smi(2),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(input(5))));
+    for(size_t idx: {4u, 6u})
+    {
+        EXPECT_TRUE(context.thread()
+                        ->call_clovervm_function(caller.value().value(),
+                                                 input(0), input(1), input(idx))
+                        .is_exception_marker());
+        context.thread()->clear_pending_exception();
+        EXPECT_EQ(installed, cache().binding_plan.get());
+    }
+    EXPECT_EQ(Value::from_smi(3), call());
+    EXPECT_EQ(installed, cache().binding_plan.get());
+    cache().binding_plan.reset();
+    EXPECT_EQ(Value::from_smi(7),
+              context.thread()->call_clovervm_function(
+                  caller.value().value(), input(0), input(1), input(3)));
+    EXPECT_EQ(nullptr, cache().binding_plan);
+}
+
+TEST_F(ExpandedCallExecution, TargetReplacementDropsPlanBeforePureCollectorCall)
+{
+    load(LR"(
+def f(a): return a
+def collect(*args, **kwargs): return kwargs['a'] + 10
+(f, (), {'a': 3}, collect)
+)");
+    EXPECT_EQ(Value::from_smi(3), call());
+    ASSERT_NE(nullptr, cache().binding_plan);
+    EXPECT_EQ(Value::from_smi(13),
+              context.thread()->call_clovervm_function(
+                  caller.value().value(), input(3), input(1), input(2)));
+    EXPECT_EQ(nullptr, cache().binding_plan);
+    EXPECT_EQ(Value::from_smi(3), call());
+    EXPECT_NE(nullptr, cache().binding_plan);
 }
 
 TEST_F(ExpandedCallExecution, CachedCallableStillBindsChangingCountsAndNames)

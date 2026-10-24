@@ -2,15 +2,18 @@
 #define CL_EXPANDED_CALL_H
 
 #include "builtin_types/tuple.h"
+#include "object_model/owned.h"
 #include "object_model/typed_value.h"
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace cl
 {
     class Dict;
     class Function;
+    class String;
     class ThreadState;
     class Tuple;
 
@@ -54,6 +57,25 @@ namespace cl
         std::vector<uint32_t> default_slots;
         KwargsAction kwargs_action = KwargsAction::None;
     };
+
+    struct ExpandedCallCachedPlan
+    {
+        uint32_t positional_count = 0;
+        std::vector<Owned<TValue<String>>> keyword_names;
+        ExpandedCallBindingPlan plan;
+    };
+
+    bool expanded_call_cached_plan_matches(ThreadState *thread,
+                                           const ExpandedCallCachedPlan &cached,
+                                           uint32_t positional_count,
+                                           TValue<Dict> keywords);
+
+    // Returns null for non-exact-string keys without consuming the local plan.
+    std::unique_ptr<ExpandedCallCachedPlan>
+    convert_to_expanded_call_cache_entry(ThreadState *thread,
+                                         uint32_t positional_count,
+                                         TValue<Dict> keywords,
+                                         ExpandedCallBindingPlan &&plan);
 
     // keywords is an exact, call-owned transport dict. The caller keeps it and
     // function rooted throughout construction and subsequent plan application.

@@ -1745,6 +1745,7 @@ namespace cl
             cache.guard_value = callable;
             cache.function = target.function.extract();
             cache.validity_cell = target.validity_cell;
+            cache.binding_plan.reset();
             cache.mode = signature.has_varargs() && signature.has_kwargs() &&
                                  signature.n_positional_parameters == 0 &&
                                  signature.n_kwonly_parameters == 0
@@ -1766,6 +1767,15 @@ namespace cl
             new_fp[target_code->encode_reg(0)] = positional.tuple.raw_value();
             new_fp[target_code->encode_reg(1)] = keywords.raw_value();
         }
+        else if(cache.binding_plan != nullptr &&
+                expanded_call_cached_plan_matches(thread, *cache.binding_plan,
+                                                  uint32_t(positional.size()),
+                                                  keywords))
+        {
+            CL_TRY(apply_expanded_call_binding_plan(
+                thread, function.value(), positional, keywords,
+                cache.binding_plan->plan, new_fp));
+        }
         else
         {
             ExpandedCallBindingPlan plan =
@@ -1774,6 +1784,12 @@ namespace cl
                     keywords));
             CL_TRY(apply_expanded_call_binding_plan(
                 thread, function.value(), positional, keywords, plan, new_fp));
+            if(auto cached = convert_to_expanded_call_cache_entry(
+                   thread, uint32_t(positional.size()), keywords,
+                   std::move(plan)))
+            {
+                cache.binding_plan = std::move(cached);
+            }
         }
         jit_entry =
             invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,

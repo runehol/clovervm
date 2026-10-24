@@ -13,6 +13,54 @@
 
 namespace cl
 {
+    bool expanded_call_cached_plan_matches(ThreadState *thread,
+                                           const ExpandedCallCachedPlan &cached,
+                                           uint32_t positional_count,
+                                           TValue<Dict> keywords)
+    {
+        if(cached.positional_count != positional_count ||
+           cached.keyword_names.size() != keywords.extract()->size())
+        {
+            return false;
+        }
+        size_t idx = 0;
+        for(Dict::EntryView entry: *keywords.extract())
+        {
+            if(!is_exact_string(thread, entry.key) ||
+               !string_eq(cached.keyword_names[idx++].value(),
+                          TValue<String>::from_value_unchecked(entry.key)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::unique_ptr<ExpandedCallCachedPlan>
+    convert_to_expanded_call_cache_entry(ThreadState *thread,
+                                         uint32_t positional_count,
+                                         TValue<Dict> keywords,
+                                         ExpandedCallBindingPlan &&plan)
+    {
+        for(Dict::EntryView entry: *keywords.extract())
+        {
+            if(!is_exact_string(thread, entry.key))
+            {
+                return nullptr;
+            }
+        }
+        auto cached = std::make_unique<ExpandedCallCachedPlan>();
+        cached->positional_count = positional_count;
+        cached->keyword_names.reserve(keywords.extract()->size());
+        for(Dict::EntryView entry: *keywords.extract())
+        {
+            cached->keyword_names.emplace_back(
+                TValue<String>::from_value_unchecked(entry.key));
+        }
+        cached->plan = std::move(plan);
+        return cached;
+    }
+
     Expected<void> validate_expanded_call_keywords(TValue<Dict> keywords)
     {
         for(Dict::EntryView entry: *keywords.extract())

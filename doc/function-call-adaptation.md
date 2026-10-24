@@ -523,8 +523,8 @@ callable through existing function/constructor-thunk machinery, then select:
 
 `ExpandedCallInlineCache` guards callable identity and constructor lookup validity
 and stores the resolved Function and pure-collector/general adapter mode. It
-contains neither keyword names nor a binding plan. Positional, keyword, and
-expanded calls share callable resolution in the interpreter; the native binder
+also owns an optional out-of-line exact-string binding-plan entry. Positional,
+keyword, and expanded calls share callable resolution in the interpreter; the native binder
 takes only the already-resolved Function. Mode selection does not depend on
 keyword names.
 General binding still validates dynamic tuple length and keyword contents unless
@@ -534,8 +534,9 @@ matched named parameters, or construction of a fresh leftovers dict otherwise.
 
 ### General-binding plan cache (stage 4)
 
-General binding constructs a temporary per-call plan, validates it, then applies
-it. Plan construction first validates every incoming keyword key is a string,
+General binding first tries its guarded cached plan. On a miss it constructs a
+temporary plan, validates it, then applies it. Plan construction first validates
+every incoming keyword key is a string,
 accepting subclasses and raising `TypeError` for any non-string key before any
 parameter matching. This happens inside `CallExpanded`, after keyword
 construction and callable resolution. The pure collector path performs the same
@@ -604,8 +605,8 @@ entry. Application takes a const plan reference plus the resolved Function and
 input containers, independent of whether the plan came from local storage or a
 cache. Callable/signature resolution and adapter-mode caching remain independent
 of keyword binding-plan eligibility. The pure-collector fast path remains
-unchanged. Stage 3 implements uncached binding; stage 4 caching is agreed but
-not yet implemented.
+unchanged. Stage 3 implements uncached binding; stage 4 adds guarded reuse in
+the shared expanded function/method frame-entry path.
 
 The native entry retains names through `Owned`, following
 `CodeObject::constant_table`'s native-container ownership pattern. Replacement,
@@ -769,8 +770,8 @@ unsupported syntax explicit until its complete execution path is available.
    separate method-call opcode, reusing existing lookup and receiver-binding
    machinery. Its readiness review settles operand encoding, lookup timing,
    and implicit receiver handling; these do not belong in the native binder.
-4. **Optional binding-plan cache.** After the uncached path is correct, measure
-   whether exact-string plan reuse is worthwhile. If implemented, test guarded
+4. **Binding-plan cache.** Measurements justified proceeding with out-of-line
+   exact-string plan reuse. Test guarded
    hits, changing names/counts, callable invalidation, current defaults, and
    subclass-key bypass without evicting an existing eligible plan.
 

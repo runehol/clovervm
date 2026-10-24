@@ -3,12 +3,45 @@
 #include "object_model/class_object.h"
 #include "object_model/refcount.h"
 #include "object_model/shape.h"
+#include "runtime/expanded_call.h"
 #include "runtime/virtual_machine.h"
 
 #include <cassert>
 
 namespace cl
 {
+    ExpandedCallInlineCache::ExpandedCallInlineCache() = default;
+    ExpandedCallInlineCache::~ExpandedCallInlineCache() = default;
+    ExpandedCallInlineCache::ExpandedCallInlineCache(
+        ExpandedCallInlineCache &&) noexcept = default;
+    ExpandedCallInlineCache &ExpandedCallInlineCache::operator=(
+        ExpandedCallInlineCache &&) noexcept = default;
+
+    ExpandedCallInlineCache::ExpandedCallInlineCache(
+        const ExpandedCallInlineCache &other)
+    {
+        *this = other;
+    }
+
+    ExpandedCallInlineCache &
+    ExpandedCallInlineCache::operator=(const ExpandedCallInlineCache &other)
+    {
+        if(this == &other)
+        {
+            return *this;
+        }
+        auto cloned_plan =
+            other.binding_plan != nullptr
+                ? std::make_unique<ExpandedCallCachedPlan>(*other.binding_plan)
+                : nullptr;
+        guard_value = other.guard_value;
+        function = other.function;
+        validity_cell = other.validity_cell;
+        mode = other.mode;
+        binding_plan = std::move(cloned_plan);
+        return *this;
+    }
+
     void InlineCacheTables::clear()
     {
         for(AttributeReadInlineCache &cache: attribute_read_caches)

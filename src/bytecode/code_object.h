@@ -256,12 +256,23 @@ namespace cl
         PureCollector,
     };
 
+    struct ExpandedCallCachedPlan;
+
     struct ExpandedCallInlineCache
     {
+        ExpandedCallInlineCache();
+        ~ExpandedCallInlineCache();
+        ExpandedCallInlineCache(const ExpandedCallInlineCache &other);
+        ExpandedCallInlineCache &
+        operator=(const ExpandedCallInlineCache &other);
+        ExpandedCallInlineCache(ExpandedCallInlineCache &&) noexcept;
+        ExpandedCallInlineCache &operator=(ExpandedCallInlineCache &&) noexcept;
+
         Value guard_value = Value::not_present();
         Function *function = nullptr;
         ValidityCell *validity_cell = nullptr;
         ExpandedCallMode mode = ExpandedCallMode::General;
+        std::unique_ptr<ExpandedCallCachedPlan> binding_plan;
     };
 
     struct OperatorInlineCache
