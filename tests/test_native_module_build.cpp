@@ -821,7 +821,7 @@ TEST(NativeModuleBuild, UnsignedIntegerApiRejectsNegativeOverflowAndNonIntegers)
     Expected<Value> too_large =
         finalize_bigint(context.thread(), ConstBigIntView{3, 1, digits});
     ASSERT_TRUE(too_large.has_value());
-    Expected<Value> negative_bigint = bigint_from_int64(
+    Expected<Value> negative_bigint = int_value_from_int64(
         context.thread(), std::numeric_limits<int64_t>::min());
     ASSERT_TRUE(negative_bigint.has_value());
     const Value inputs[] = {Value::from_smi(-1), negative_bigint.value(),

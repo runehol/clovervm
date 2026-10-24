@@ -81,13 +81,13 @@ TEST(Hash, CanonicalizeHashReducesOutOfSmiBigInt)
     ThreadState::ActivationScope activation_scope(context.thread());
 
     Expected<Value> positive =
-        bigint_from_int64(context.thread(), value_smi_max + 1);
+        int_value_from_int64(context.thread(), value_smi_max + 1);
     ASSERT_TRUE(positive.has_value());
     ASSERT_TRUE(can_convert_to<BigInt>(positive.value()));
     EXPECT_EQ(1, canonicalize_hash_result(positive.value()).value().extract());
 
     Expected<Value> negative =
-        bigint_from_int64(context.thread(), -(2 * clover_hash_modulus + 1));
+        int_value_from_int64(context.thread(), -(2 * clover_hash_modulus + 1));
     ASSERT_TRUE(negative.has_value());
     ASSERT_TRUE(can_convert_to<BigInt>(negative.value()));
     EXPECT_EQ(-2, canonicalize_hash_result(negative.value()).value().extract());

@@ -355,7 +355,7 @@ namespace cl
         return Expected<Value>::ok(Value::from_oop(bigint));
     }
 
-    Expected<Value> bigint_from_int64(ThreadState *thread, int64_t value)
+    Expected<Value> int_value_from_int64(ThreadState *thread, int64_t value)
     {
         if(value >= value_smi_min && value <= value_smi_max)
         {
@@ -387,7 +387,7 @@ namespace cl
                                ConstBigIntView{n_digits, signum, digits});
     }
 
-    Expected<Value> bigint_from_uint64(ThreadState *thread, uint64_t value)
+    Expected<Value> int_value_from_uint64(ThreadState *thread, uint64_t value)
     {
         digit_t digits[] = {static_cast<digit_t>(value),
                             static_cast<digit_t>(value >> kDigitBits)};

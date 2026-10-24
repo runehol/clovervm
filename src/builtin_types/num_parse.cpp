@@ -369,7 +369,7 @@ namespace cl
             Int64ParseResult result = parse_int_string_direct(normalized_text);
             if(result.status == Int64ParseStatus::Parsed)
             {
-                return bigint_from_int64(thread, result.value);
+                return int_value_from_int64(thread, result.value);
             }
             if(result.status == Int64ParseStatus::NeedsBigInt)
             {
@@ -388,7 +388,7 @@ namespace cl
         Int64ParseResult result = parse_int_string_direct(text);
         if(result.status == Int64ParseStatus::Parsed)
         {
-            return bigint_from_int64(thread, result.value);
+            return int_value_from_int64(thread, result.value);
         }
         if(result.status == Int64ParseStatus::NeedsBigInt)
         {
@@ -544,7 +544,7 @@ namespace cl
             Int64ParseResult result = parse_int_string_direct(text, base);
             if(result.status == Int64ParseStatus::Parsed)
             {
-                return bigint_from_int64(thread, result.value);
+                return int_value_from_int64(thread, result.value);
             }
             if(result.status == Int64ParseStatus::NeedsBigInt)
             {
@@ -558,7 +558,7 @@ namespace cl
             Int64ParseResult result = parse_int_string_direct(digits, base);
             if(result.status == Int64ParseStatus::Parsed)
             {
-                return bigint_from_int64(thread, result.value);
+                return int_value_from_int64(thread, result.value);
             }
             if(result.status == Int64ParseStatus::NeedsBigInt)
             {

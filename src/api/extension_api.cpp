@@ -146,7 +146,8 @@ extern "C" CL_EXPORT clover_handle clover_none(clover_context *ctx)
 extern "C" CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
                                                          int64_t value)
 {
-    cl::Expected<cl::Value> result = cl::bigint_from_int64(ctx->thread, value);
+    cl::Expected<cl::Value> result =
+        cl::int_value_from_int64(ctx->thread, value);
     if(result.has_exception())
     {
         return clover_propagate_error(ctx);
@@ -157,7 +158,8 @@ extern "C" CL_EXPORT clover_handle clover_int_from_int64(clover_context *ctx,
 extern "C" CL_EXPORT clover_handle clover_int_from_uint64(clover_context *ctx,
                                                           uint64_t value)
 {
-    cl::Expected<cl::Value> result = cl::bigint_from_uint64(ctx->thread, value);
+    cl::Expected<cl::Value> result =
+        cl::int_value_from_uint64(ctx->thread, value);
     if(result.has_exception())
     {
         return clover_propagate_error(ctx);

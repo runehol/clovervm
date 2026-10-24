@@ -195,7 +195,7 @@ decimal and explicit-base parsing.
 Byte input uses ASCII numeric text directly without decoding or widening.
 The handwritten digit loop first handles ordinary SMI text without allocation.
 On a miss, a private fast_float helper parses the original character storage
-into int64. Successful conversion uses `bigint_from_int64`, preserving SMI
+into int64. Successful conversion uses `int_value_from_int64`, preserving SMI
 results where possible; valid decimal overflow uses the native BigInt builder
 instead of raising OverflowError. Failed direct parsing uses the private shared
 normalization helper and retries. It owns rewritten text while

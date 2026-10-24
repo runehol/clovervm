@@ -230,7 +230,8 @@ TEST(BigInt, BigIntFromInt64FinalizesToSmiWhenPossible)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<Value> value = bigint_from_int64(context.thread(), value_smi_min);
+    Expected<Value> value =
+        int_value_from_int64(context.thread(), value_smi_min);
 
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(Value::from_smi(value_smi_min), value.value());
@@ -241,7 +242,7 @@ TEST(BigInt, BigIntFromInt64CanProduceHeapBigInt)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<Value> value = bigint_from_int64(
+    Expected<Value> value = int_value_from_int64(
         context.thread(), std::numeric_limits<int64_t>::min());
 
     ASSERT_TRUE(value.has_value());
@@ -397,7 +398,7 @@ TEST(BigInt, DecimalStringFormatsInt64MinHeapBigInt)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Expected<Value> value = bigint_from_int64(
+    Expected<Value> value = int_value_from_int64(
         context.thread(), std::numeric_limits<int64_t>::min());
     ASSERT_TRUE(value.has_value());
     BigInt *bigint = assume_convert_to<BigInt>(value.value());
@@ -871,7 +872,7 @@ TEST(BigInt, BigIntFromUint64PreservesUnsignedBoundaries)
                                std::numeric_limits<uint64_t>::max()};
     for(uint64_t input: inputs)
     {
-        Expected<Value> result = bigint_from_uint64(context.thread(), input);
+        Expected<Value> result = int_value_from_uint64(context.thread(), input);
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(input <= static_cast<uint64_t>(value_smi_max),
                   result.value().is_smi());
