@@ -758,25 +758,32 @@ def _clover_zip_next(self, /):
         except StopIteration:
             if not strict:
                 raise
-            if i > 0:
-                suffix = " 1" if i == 1 else "s 1-" + str(i)
-                raise ValueError(
-                    "zip() argument " + str(i + 1) + " is shorter than argument" + suffix
-                )
-            # Input 1 ended: probe each remaining input once. A yielded item
-            # is consumed before reporting a mismatch. Other errors propagate.
-            j = 1
-            while j < count:
-                try:
-                    next(sources[j])
-                except StopIteration:
-                    j += 1
-                else:
-                    suffix = " 1" if j == 1 else "s 1-" + str(j)
-                    raise ValueError(
-                        "zip() argument " + str(j + 1) + " is longer than argument" + suffix
-                    )
-            raise StopIteration
+            break
         __clover_list_append__(row, item)
         i += 1
-    return __clover_list_to_tuple__(row)
+    if i == count:
+        return __clover_list_to_tuple__(row)
+
+    # Leave the exhaustion handler before reporting a strict mismatch or
+    # final exhaustion, so the discarded source exception is not chained.
+    if i > 0:
+        suffix = " 1" if i == 1 else "s 1-" + str(i)
+        raise ValueError(
+            "zip() argument " + str(i + 1) + " is shorter than argument" + suffix
+        )
+    # Input 1 ended: probe each remaining input once. A yielded item is
+    # consumed before reporting a mismatch. Other errors propagate unchanged.
+    j = 1
+    while j < count:
+        try:
+            next(sources[j])
+        except StopIteration:
+            j += 1
+        else:
+            break
+    if j < count:
+        suffix = " 1" if j == 1 else "s 1-" + str(j)
+        raise ValueError(
+            "zip() argument " + str(j + 1) + " is longer than argument" + suffix
+        )
+    raise StopIteration

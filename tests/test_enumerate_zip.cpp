@@ -17,7 +17,8 @@ TEST(EnumerateZip, ManagedCallbacksSurviveEverySafepointReclamation)
         {"tests/python/builtin_enumerate.py",
          "tests/python/builtin_enumerate_keywords.py",
          "tests/python/builtin_zip.py", "tests/python/builtin_zip_strict.py",
-         "tests/python/builtin_zip_callbacks.py"})
+         "tests/python/builtin_zip_callbacks.py",
+         "tests/python/builtin_zip_exception_context.py"})
     {
         SCOPED_TRACE(path);
         std::ifstream input(path);
