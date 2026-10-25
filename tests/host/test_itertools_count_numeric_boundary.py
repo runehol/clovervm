@@ -1,8 +1,8 @@
 """Check production count's numeric policy on host CPython 3.14.5.
 
-The VM currently lacks mixed heap-int/float addition. This harness supplies no
-arithmetic replacements: it loads the actual public module on the host and
-retains the CPython reference expectations for that deferred runtime boundary.
+This harness supplies no arithmetic replacements: it loads the actual public
+module on the host and cross-checks mixed arithmetic and conversion-overflow
+expectations against native itertools.count.
 """
 
 import importlib.util

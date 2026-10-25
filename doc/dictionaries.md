@@ -243,9 +243,25 @@ There is no `dict.__init__` population path.
 
 `clear`, `copy`, `keys`, `values`, `items`, `popitem`, and iteration
 operate on either shape without promoting merely to inspect stored entries.
-Iterators track dictionary size and raise `RuntimeError` when the size changes
-during iteration. Shape-only promotion does not change size and does not by
-itself invalidate an iterator.
+Key, value, and item iterators retain their source until an exhaustion attempt
+finds no further entry. They then release it and stay exhausted, even if the
+dictionary grows. A detected size mismatch raises a sticky `RuntimeError` and
+retains the source. A remaining-yield count detects an unexpected extra entry:
+that raises `RuntimeError("dictionary keys changed during iteration")` once,
+releases the source, and leaves the iterator exhausted. Same-size key changes
+are not universally rejected; clear/reinsert and deletion/replacement follow the
+current storage scan position, as in CPython's size/cursor/count algorithm.
+
+`__length_hint__` returns the remaining-yield estimate while the source size
+matches, otherwise zero. Reading a hint does not poison an iterator after a
+temporary size mismatch. Shape-only promotion preserves cursor, count, and
+validity. Updating an existing value or finding an existing `setdefault` key
+does not resize or compact entries, including through native and managed paths.
+Absent-key insertion may resize after its callback-aware lookup; recomputing the
+insertion slot after growth does not repeat equality callbacks.
+
+List, tuple, string, and range iterator lifecycle policies are separate. Iterator
+pickling and cached item-tuple reuse remain outside this implementation.
 
 ## C API
 

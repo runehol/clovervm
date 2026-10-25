@@ -74,6 +74,11 @@ namespace
     class PythonSourceFileTest : public testing::TestWithParam<PythonSourceFile>
     {
     };
+
+    class TupleSubclassReclamationTest
+        : public testing::TestWithParam<PythonSourceFile>
+    {
+    };
 }  // namespace
 
 TEST_P(PythonSourceFileTest, RunsSelfCheckingSource)
@@ -89,6 +94,7 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
     for(const char *path: {"tests/python/itertools_selection.py",
                            "tests/python/itertools_pairwise.py",
                            "tests/python/itertools_count.py",
+                           "tests/python/itertools_count_mixed_numbers.py",
                            "tests/python/itertools_count_reentry.py"})
     {
         SCOPED_TRACE(path);
@@ -100,6 +106,24 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
             << "itertools state must stay rooted across input and callbacks";
     }
 }
+
+TEST_P(TupleSubclassReclamationTest, RunsSelfCheckingSource)
+{
+    std::wstring source = read_source_file(GetParam().path);
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker())
+        << "tuple integration source raised during forced reclamation";
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TupleIntegrationFiles, TupleSubclassReclamationTest,
+    testing::Values(
+        PythonSourceFile{"tests/python/test_json_tuple_rows.py"},
+        PythonSourceFile{"tests/python/tuple_subclass_integration.py"},
+        PythonSourceFile{"tests/python/sequence_ordering_subclasses.py"}),
+    source_file_test_name);
 
 INSTANTIATE_TEST_SUITE_P(SelfCheckingPythonFiles, PythonSourceFileTest,
                          testing::ValuesIn(python_source_files()),

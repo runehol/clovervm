@@ -1,10 +1,12 @@
 #include "builtin_types/dict.h"
+#include "builtin_types/dict_view.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_print.h"
 #include "compiler/codegen.h"
+#include "memory/global_heap.h"
 #include "object_model/function.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
@@ -3511,4 +3513,141 @@ for expected in (AttributeError('next failed'), KeyError('next failed')):
     ASSERT_FALSE(result.is_exception_marker())
         << string_as_wchar_t(test::native_exception_message(
                context.thread()->pending_exception_object()));
+}
+
+namespace
+{
+    template <typename Iterator> void check_dict_iterator_source_lifetime()
+    {
+        for(int terminal_kind = 0; terminal_kind < 3; ++terminal_kind)
+        {
+            SCOPED_TRACE(testing::Message()
+                         << "layout="
+                         << static_cast<unsigned>(Iterator::native_layout)
+                         << ", terminal_kind=" << terminal_kind);
+            test::VmTestContext context;
+            ThreadState *thread = context.thread();
+            ThreadState::ActivationScope activation(thread);
+            Owned<TValue<Dict>> source(thread->make_object_value<Dict>());
+            // A large source value gives reclamation a separately observable
+            // slab, even when the dictionary shares its slab with live objects.
+            auto payload = thread->make_object_value<Tuple>(100000);
+            void *payload_address = payload.raw_value().as.ptr;
+            ASSERT_FALSE(
+                source.extract()
+                    ->set_item(thread, Value::from_smi(1), payload.raw_value())
+                    .has_exception());
+            ASSERT_FALSE(
+                source.extract()
+                    ->set_item(thread, Value::from_smi(2), Value::from_smi(20))
+                    .has_exception());
+            Owned<TValue<Iterator>> iterator(
+                thread->make_object_value<Iterator>(source.value()));
+            auto next_name =
+                context.vm().get_or_create_interned_string_value(L"__next__");
+            auto hint_name = context.vm().get_or_create_interned_string_value(
+                L"__length_hint__");
+            const int64_t owned_source_count = source.extract()->refcount;
+            ASSERT_EQ(2, owned_source_count);
+            context.vm().run_heap_reclamation();
+            ASSERT_FALSE(
+                thread->call_clovervm_method(iterator.raw_value(), next_name)
+                    .is_exception_marker());
+            // Successful yields do not detach, including the last yield below.
+            ASSERT_EQ(owned_source_count, source.extract()->refcount);
+            if(terminal_kind == 1)
+            {
+                ASSERT_FALSE(source.extract()
+                                 ->del_item(thread, Value::from_smi(1))
+                                 .has_exception());
+                ASSERT_FALSE(source.extract()
+                                 ->set_item(thread, Value::from_smi(3),
+                                            Value::from_smi(30))
+                                 .has_exception());
+            }
+            else if(terminal_kind == 2)
+            {
+                ASSERT_FALSE(source.extract()
+                                 ->set_item(thread, Value::from_smi(3),
+                                            Value::from_smi(30))
+                                 .has_exception());
+            }
+            if(terminal_kind != 2)
+            {
+                ASSERT_FALSE(
+                    thread
+                        ->call_clovervm_method(iterator.raw_value(), next_name)
+                        .is_exception_marker());
+            }
+            ASSERT_EQ(owned_source_count, source.extract()->refcount);
+            ASSERT_TRUE(
+                thread->call_clovervm_method(iterator.raw_value(), next_name)
+                    .is_exception_marker());
+            if(terminal_kind != 0)
+            {
+                expect_pending_exception(
+                    thread, L"RuntimeError",
+                    terminal_kind == 1
+                        ? L"dictionary keys changed during iteration"
+                        : L"dictionary changed size during iteration");
+            }
+            thread->clear_pending_exception();
+            EXPECT_EQ(terminal_kind == 2 ? 2 : 1, source.extract()->refcount);
+            EXPECT_EQ(Value::from_smi(0), thread->call_clovervm_method(
+                                              iterator.raw_value(), hint_name));
+            source = thread->make_object_value<Dict>();
+            context.vm().run_heap_reclamation();
+            // Discarded item tuples can be discovered in the epoch slab scan,
+            // after ZCT processing. Their newly released children are reclaimed
+            // in the next epoch; this is independent of iterator source
+            // release.
+            context.vm().run_heap_reclamation();
+            // Sticky size errors keep the original source (and its payload)
+            // alive. Exhaustion and key errors release it while i stays alive.
+            EXPECT_EQ(terminal_kind == 2,
+                      context.vm()
+                          .get_refcounted_global_heap()
+                          .has_slab_for_address_for_testing(payload_address));
+            ASSERT_TRUE(
+                thread->call_clovervm_method(iterator.raw_value(), next_name)
+                    .is_exception_marker());
+            thread->clear_pending_exception();
+        }
+    }
+}  // namespace
+
+TEST(Dict, IteratorsReleaseTerminalSourcesAndRetainSizeErrorSources)
+{
+    check_dict_iterator_source_lifetime<DictKeyIterator>();
+    check_dict_iterator_source_lifetime<DictValueIterator>();
+    check_dict_iterator_source_lifetime<DictItemIterator>();
+}
+
+TEST(Dict, IteratorLifecycleUnderEverySafepointReclamation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+import operator
+for kind in ('keys', 'values', 'items'):
+    d = {'a': [1], 'b': [2]}
+    if kind == 'keys': i = iter(d.keys())
+    elif kind == 'values': i = iter(d.values())
+    else: i = iter(d.items())
+    first = next(i)
+    d.get(42)
+    assert operator.length_hint(i) == 1
+    d['b'] = [3]
+    del d
+    rest = list(i)
+    assert len(rest) == 1
+    if kind == 'keys': assert first == 'a' and rest == ['b']
+    elif kind == 'values': assert first == [1] and rest == [[3]]
+    else: assert first == ('a', [1]) and rest == [('b', [3])]
+    assert next(i, None) is None
+    assert operator.length_hint(i) == 0
+True
+)"));
 }

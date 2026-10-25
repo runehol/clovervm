@@ -77,18 +77,21 @@ namespace cl
             NativeLayoutId::DictKeyIterator;
 
         DictKeyIterator(ClassObject *cls, TValue<Dict> _dict)
-            : Object(cls, native_layout), dict(_dict),
+            : Object(cls, native_layout),
+              dict(Optional<TValue<Dict>>::some(_dict)),
               index(TValue<SMI>::from_smi(0)),
               expected_size(TValue<SMI>::from_smi(
-                  static_cast<int64_t>(_dict.extract()->size())))
+                  static_cast<int64_t>(_dict.extract()->size()))),
+              remaining(expected_size)
         {
         }
 
-        Member<TValue<Dict>> dict;
+        Member<Optional<TValue<Dict>>> dict;
         Member<TValue<SMI>> index;
         Member<TValue<SMI>> expected_size;
+        Member<TValue<SMI>> remaining;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(DictKeyIterator, Object, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(DictKeyIterator, Object, 4);
         CL_DECLARE_STATIC_OBJECT_SIZE(DictKeyIterator);
     };
 
@@ -101,18 +104,21 @@ namespace cl
             NativeLayoutId::DictValueIterator;
 
         DictValueIterator(ClassObject *cls, TValue<Dict> _dict)
-            : Object(cls, native_layout), dict(_dict),
+            : Object(cls, native_layout),
+              dict(Optional<TValue<Dict>>::some(_dict)),
               index(TValue<SMI>::from_smi(0)),
               expected_size(TValue<SMI>::from_smi(
-                  static_cast<int64_t>(_dict.extract()->size())))
+                  static_cast<int64_t>(_dict.extract()->size()))),
+              remaining(expected_size)
         {
         }
 
-        Member<TValue<Dict>> dict;
+        Member<Optional<TValue<Dict>>> dict;
         Member<TValue<SMI>> index;
         Member<TValue<SMI>> expected_size;
+        Member<TValue<SMI>> remaining;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(DictValueIterator, Object, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(DictValueIterator, Object, 4);
         CL_DECLARE_STATIC_OBJECT_SIZE(DictValueIterator);
     };
 
@@ -125,18 +131,21 @@ namespace cl
             NativeLayoutId::DictItemIterator;
 
         DictItemIterator(ClassObject *cls, TValue<Dict> _dict)
-            : Object(cls, native_layout), dict(_dict),
+            : Object(cls, native_layout),
+              dict(Optional<TValue<Dict>>::some(_dict)),
               index(TValue<SMI>::from_smi(0)),
               expected_size(TValue<SMI>::from_smi(
-                  static_cast<int64_t>(_dict.extract()->size())))
+                  static_cast<int64_t>(_dict.extract()->size()))),
+              remaining(expected_size)
         {
         }
 
-        Member<TValue<Dict>> dict;
+        Member<Optional<TValue<Dict>>> dict;
         Member<TValue<SMI>> index;
         Member<TValue<SMI>> expected_size;
+        Member<TValue<SMI>> remaining;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(DictItemIterator, Object, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(DictItemIterator, Object, 4);
         CL_DECLARE_STATIC_OBJECT_SIZE(DictItemIterator);
     };
 

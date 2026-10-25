@@ -563,7 +563,7 @@ namespace cl
 
     template <typename Operation, TrustedHandlerEffects Effects,
               TrustedHandlerSemantics Semantics>
-    struct UniformFloatBinaryHandlers;
+    struct FloatBinaryHandlers;
 
     template <FloatBinaryFunction Function, FixedWideString ReceiverError>
     struct FloatBinaryOperation
@@ -572,7 +572,8 @@ namespace cl
 
         static constexpr auto function = Function;
 
-        static Value native(ThreadState *thread, Value self, Value other)
+        [[nodiscard]] static Value native(ThreadState *thread, Value self,
+                                          Value other)
         {
             if(!has_native_layout<Float>(self))
             {
@@ -583,14 +584,20 @@ namespace cl
             double right;
             if(!try_get_float_or_smi_or_bool(other, &right))
             {
-                return Value::NotImplemented();
+                auto *integer = try_native_cast<BigInt>(other);
+                if(integer == nullptr)
+                    return Value::NotImplemented();
+                Expected<double> converted = bigint_to_double(integer->view());
+                if(converted.has_exception())
+                    return Value::exception_marker();
+                right = converted.value();
             }
             return Function(thread, self.get_ptr<Float>()->value(), right);
         }
 
         template <TrustedHandlerEffects Effects,
                   TrustedHandlerSemantics Semantics>
-        using Handlers = UniformFloatBinaryHandlers<Self, Effects, Semantics>;
+        using Handlers = FloatBinaryHandlers<Self, Effects, Semantics>;
     };
 
     enum class FloatBinaryAdaptation
@@ -598,11 +605,14 @@ namespace cl
         FloatFloat,
         FloatIntlike,
         IntlikeFloat,
+        FloatBigInt,
+        BigIntFloat,
     };
 
     template <FloatBinaryFunction Function, FloatBinaryAdaptation Adaptation>
-    static Value trusted_adapted_float_binary_operation(ThreadState *thread,
-                                                        Value left, Value right)
+    [[nodiscard]] static Value
+    trusted_adapted_float_binary_operation(ThreadState *thread, Value left,
+                                           Value right)
     {
         if constexpr(Adaptation == FloatBinaryAdaptation::FloatFloat)
         {
@@ -614,11 +624,26 @@ namespace cl
             return Function(thread, left.get_ptr<Float>()->value(),
                             smi_or_bool_as_double(right));
         }
-        else
+        else if constexpr(Adaptation == FloatBinaryAdaptation::IntlikeFloat)
         {
-            static_assert(Adaptation == FloatBinaryAdaptation::IntlikeFloat);
             return Function(thread, smi_or_bool_as_double(left),
                             right.get_ptr<Float>()->value());
+        }
+        else
+        {
+            constexpr bool float_first =
+                Adaptation == FloatBinaryAdaptation::FloatBigInt;
+            static_assert(float_first ||
+                          Adaptation == FloatBinaryAdaptation::BigIntFloat);
+            Value integer = float_first ? right : left;
+            Value number = float_first ? left : right;
+            Expected<double> converted =
+                bigint_to_double(native_cast<BigInt>(integer)->view());
+            if(converted.has_exception())
+                return Value::exception_marker();
+            double value = native_cast<Float>(number)->value();
+            return float_first ? Function(thread, value, converted.value())
+                               : Function(thread, converted.value(), value);
         }
     }
 
@@ -633,7 +658,7 @@ namespace cl
 
     template <typename Operation, TrustedHandlerEffects Effects,
               TrustedHandlerSemantics Semantics>
-    struct UniformFloatBinaryHandlers
+    struct FloatBinaryHandlers
     {
         using FloatFloat =
             FloatBinaryHandler<Operation, FloatBinaryAdaptation::FloatFloat,
@@ -644,6 +669,14 @@ namespace cl
         using IntlikeFloat =
             FloatBinaryHandler<Operation, FloatBinaryAdaptation::IntlikeFloat,
                                Effects, Semantics>;
+        using FloatBigInt =
+            FloatBinaryHandler<Operation, FloatBinaryAdaptation::FloatBigInt,
+                               Effects | TrustedHandlerEffects::Raise,
+                               Semantics>;
+        using BigIntFloat =
+            FloatBinaryHandler<Operation, FloatBinaryAdaptation::BigIntFloat,
+                               Effects | TrustedHandlerEffects::Raise,
+                               Semantics>;
     };
 
     using FloatUnaryFunction = Value (*)(ThreadState *, double);
@@ -696,16 +729,19 @@ namespace cl
                key == ShapeKey::from_value(Value::False());
     }
 
-    template <typename NormalHandlers, typename ReflectedHandlers,
-              bool AcceptHeapInt = false>
+    template <typename NormalHandlers, typename ReflectedHandlers>
     class FloatBinaryResolver final
         : public TrustedHandlerResolverBase<
               typename NormalHandlers::FloatFloat,
               typename NormalHandlers::FloatIntlike,
               typename NormalHandlers::IntlikeFloat,
+              typename NormalHandlers::FloatBigInt,
+              typename NormalHandlers::BigIntFloat,
               typename ReflectedHandlers::FloatFloat,
               typename ReflectedHandlers::FloatIntlike,
-              typename ReflectedHandlers::IntlikeFloat>
+              typename ReflectedHandlers::IntlikeFloat,
+              typename ReflectedHandlers::FloatBigInt,
+              typename ReflectedHandlers::BigIntFloat>
     {
         template <typename Handlers>
         static TrustedResolution resolve_handlers(VirtualMachine *vm,
@@ -718,24 +754,25 @@ namespace cl
 
             ShapeKey float_key = ShapeKey::from_shape(
                 vm->float_class()->get_instance_root_shape());
-            auto is_intlike_key = [vm](ShapeKey key) {
-                return is_smi_or_bool_shape_key(key) ||
-                       (AcceptHeapInt &&
-                        key == ShapeKey::from_shape(
-                                   vm->int_class()->get_instance_root_shape()));
-            };
+            ShapeKey bigint_key = ShapeKey::from_shape(
+                vm->int_class()->get_instance_root_shape());
             if(operand0_key == float_key)
             {
                 if(operand1_key == float_key)
                 {
                     return FloatFloat::resolution();
                 }
-                if(is_intlike_key(operand1_key))
+                if(is_smi_or_bool_shape_key(operand1_key))
                 {
                     return FloatIntlike::resolution();
                 }
+                if(operand1_key == bigint_key)
+                    return Handlers::FloatBigInt::resolution();
             }
-            if(is_intlike_key(operand0_key) && operand1_key == float_key)
+            if(operand0_key == bigint_key && operand1_key == float_key)
+                return Handlers::BigIntFloat::resolution();
+            if(is_smi_or_bool_shape_key(operand0_key) &&
+               operand1_key == float_key)
             {
                 return IntlikeFloat::resolution();
             }
@@ -832,6 +869,8 @@ namespace cl
                 trusted_float_equality<NotEqual,
                                        FloatBinaryAdaptation::IntlikeFloat>,
                 Effects, Semantics>;
+            using FloatBigInt = FloatIntlike;
+            using BigIntFloat = IntlikeFloat;
         };
     };
 
@@ -841,7 +880,7 @@ namespace cl
         FloatEqOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::Equal>;
     using FloatEqResolver =
-        FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers, true>;
+        FloatBinaryResolver<FloatEqHandlers, FloatEqHandlers>;
 
     using FloatNeOperation =
         FloatEqualityOperation<true, L"float.__ne__ expects a float receiver">;
@@ -849,7 +888,7 @@ namespace cl
         FloatNeOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::NotEqual>;
     using FloatNeResolver =
-        FloatBinaryResolver<FloatNeHandlers, FloatNeHandlers, true>;
+        FloatBinaryResolver<FloatNeHandlers, FloatNeHandlers>;
 
     using FloatAddOperation =
         FloatBinaryOperation<float_add,
@@ -1028,6 +1067,8 @@ namespace cl
                 trusted_float_ordering<Operation,
                                        FloatBinaryAdaptation::IntlikeFloat>,
                 Effects, Semantics>;
+            using FloatBigInt = FloatIntlike;
+            using BigIntFloat = IntlikeFloat;
         };
     };
 
@@ -1056,13 +1097,13 @@ namespace cl
         FloatGeOperation::Handlers<TrustedHandlerEffects::None,
                                    TrustedHandlerSemantics::GreaterEqual>;
     using FloatLtResolver =
-        FloatBinaryResolver<FloatLtHandlers, FloatGtHandlers, true>;
+        FloatBinaryResolver<FloatLtHandlers, FloatGtHandlers>;
     using FloatLeResolver =
-        FloatBinaryResolver<FloatLeHandlers, FloatGeHandlers, true>;
+        FloatBinaryResolver<FloatLeHandlers, FloatGeHandlers>;
     using FloatGtResolver =
-        FloatBinaryResolver<FloatGtHandlers, FloatLtHandlers, true>;
+        FloatBinaryResolver<FloatGtHandlers, FloatLtHandlers>;
     using FloatGeResolver =
-        FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers, true>;
+        FloatBinaryResolver<FloatGeHandlers, FloatLeHandlers>;
 
     using FloatAbsOperation =
         FloatUnaryOperation<float_abs,

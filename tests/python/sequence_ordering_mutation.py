@@ -15,11 +15,8 @@ def ge(a, b):
     return a >= b
 
 
-# Exact tuple construction uses literals; tuple() allocation is unavailable too.
 def make_sequence(kind, items=()):
-    if kind is list:
-        return list(items)
-    return items
+    return kind(items)
 
 
 operations = (lt, le, gt, ge)

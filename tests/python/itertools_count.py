@@ -68,9 +68,8 @@ def test_types_and_special_floats():
     assert next(values) == 1
     nan = next(values)
     assert nan != nan
-    # Mixed heap-int/float addition is a VM arithmetic blocker, recorded in
-    # itertools_count_vm_limits.py. Host-only reference cases retain CPython's
-    # finite conversion and overflow expectations without faking that support.
+    # Mixed heap-int/float conversion and overflow are covered in
+    # itertools_count_mixed_numbers.py and the host reference checks.
 
 
 error = ValueError("addition failed")

@@ -6,7 +6,6 @@ operator.index's builtin-int/bool support; custom __index__ is not supported
 yet. Limits match the VM's current signed 64-bit platforms. count accepts
 builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
 Floating steps use repeated addition, including its rounding error.
-Mixed heap-int/float addition retains the VM's existing TypeError limitation.
 chain.from_iterable is callable on the class only: classmethod binding and
 subclass-preserving construction are deferred. starmap uses the VM's existing
 call support, as do predicate iterators; callable instances and first-class
