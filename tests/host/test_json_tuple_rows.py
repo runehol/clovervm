@@ -1,15 +1,16 @@
 """Production JSON row-policy tests on CPython 3.14.5.
 
 Run explicitly: python3.14 tests/host/test_json_tuple_rows.py
-Tuple-subclass allocation is not yet supported by CloverVM. These tests execute
-its unmodified stdlib/json.py source with real CPython tuple subclasses; they do
-not claim VM subclass coverage. The import adapter implements only exact-dict
-identity and rejects cursor access, which these dict-subclass cases never need.
+The ordinary VM harness executes the same row regressions. This host wrapper
+also checks the unmodified production stdlib/json.py source against accelerated
+CPython dumps. The import adapter implements only exact-dict identity and
+rejects cursor access, which these dict-subclass cases never need.
 Original tests, with behavior checked against CPython v3.14.5 Modules/_json.c.
 """
 import builtins
 import json
 from pathlib import Path
+import runpy
 import sys
 import types
 import unittest
@@ -37,36 +38,6 @@ def load_production_json():
     return module
 
 
-class RaisingRow(tuple):
-    def __len__(self):
-        raise AssertionError("overridden row length")
-
-    def __getitem__(self, index):
-        raise AssertionError("overridden row indexing")
-
-
-class MisleadingRow(tuple):
-    def __len__(self):
-        return 2
-
-    def __getitem__(self, index):
-        return ("wrong", 99)[index]
-
-
-class MisleadingLengthRow(tuple):
-    def __len__(self):
-        return 0
-
-
-class Mapping(dict):
-    def __init__(self, rows):
-        dict.__init__(self, real=1)  # Empty dicts bypass items().
-        self.rows = rows
-
-    def items(self):
-        return self.rows
-
-
 class TupleRowsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -77,70 +48,18 @@ class TupleRowsTest(unittest.TestCase):
             raise RuntimeError("CPython JSON accelerator must be enabled")
         cls.production = load_production_json()
 
-    def test_stored_payload_and_length(self):
-        for row_type in (RaisingRow, MisleadingRow, MisleadingLengthRow):
-            for sorting in (False, True):
-                for encoder in (json, self.production):
-                    with self.subTest(row=row_type, sorting=sorting, encoder=encoder):
-                        rows = [row_type(("z", 1)), row_type(("a", 2))]
-                        expected = ('{"a": 2, "z": 1}' if sorting
-                                    else '{"z": 1, "a": 2}')
-                        self.assertEqual(
-                            encoder.dumps(Mapping(rows), sort_keys=sorting), expected)
-                        self.assertEqual(
-                            tuple.__getitem__(rows[0], 0), "a" if sorting else "z")
-
-    def test_malformed_stored_lengths(self):
-        for row_type in (RaisingRow, MisleadingRow):
-            for payload in ((), ("a",), ("a", 1, 2)):
-                for sorting in (False, True):
-                    for encoder in (json, self.production):
-                        with self.subTest(row=row_type, payload=payload, sorting=sorting,
-                                          encoder=encoder):
-                            with self.assertRaisesRegex(
-                                    ValueError, "^items must return 2-tuples$"):
-                                encoder.dumps(Mapping([row_type(payload)]), sort_keys=sorting)
-
-    def test_shared_rows_and_callback_before_later_validation(self):
-        class Unsupported:
-            pass
-
-        for sorting in (False, True):
-            for encoder in (json, self.production):
-                calls = []
-                rows = [RaisingRow(("a", Unsupported())), RaisingRow(("z",))]
-
-                def callback(value):
-                    calls.append("default")
-                    return 1
-
-                with self.assertRaisesRegex(ValueError, "^items must return 2-tuples$"):
-                    encoder.dumps(Mapping(rows), default=callback, sort_keys=sorting)
-                self.assertEqual(calls, ["default"])
-
-                rows = [RaisingRow(("a", Unsupported())), RaisingRow(("b", 2))]
-
-                def append_row(value):
-                    rows.append(RaisingRow(("c", 3)))
-                    return 1
-
-                self.assertEqual(
-                    encoder.dumps(Mapping(rows), default=append_row,
-                                  sort_keys=sorting),
-                    '{"a": 1, "b": 2, "c": 3}')
-                self.assertEqual(len(rows), 3)
-
-    def test_sort_exception_precedes_row_validation(self):
-        class ComparisonError(Exception):
-            pass
-
-        class SortRow(RaisingRow):
-            def __lt__(self, other):
-                raise ComparisonError("sorting first")
-
-        for encoder in (json, self.production):
-            with self.assertRaisesRegex(ComparisonError, "sorting first"):
-                encoder.dumps(Mapping([SortRow(()), SortRow(())]), sort_keys=True)
+    def test_shared_vm_regressions(self):
+        source = (Path(__file__).resolve().parents[1]
+                  / "python" / "test_json_tuple_rows.py")
+        # Executing the self-checking VM source checks accelerated CPython first;
+        # then run its identical assertions against the production-source adapter.
+        checks = None
+        with self.subTest(encoder="CPython accelerator"):
+            checks = runpy.run_path(str(source))
+        if checks is None:
+            return  # Preserve the accelerator failure without a secondary error.
+        with self.subTest(encoder="production source"):
+            checks["check_tuple_rows"](self.production)
 
 
 if __name__ == "__main__":

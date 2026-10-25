@@ -140,9 +140,8 @@ else:
 assert len(rows) == 2
 assert json.dumps({"still": "works"}) == '{"still": "works"}'
 
-# Exact tuple rows always exercise production validation in the VM. Adversarial
-# tuple subclasses are covered separately by tests/host/test_json_tuple_rows.py
-# until VM tuple-subclass allocation is supported; there is no conditional skip.
+# Exact tuple rows complement the adversarial subclasses exercised by
+# test_json_tuple_rows.py in both the ordinary VM harness and the host adapter.
 for sorting in (False, True):
     for malformed in ((), ("a",), ("a", 1, 2), ["a", 1], "ab"):
         rows = [malformed]
