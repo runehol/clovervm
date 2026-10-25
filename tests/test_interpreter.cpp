@@ -9126,3 +9126,40 @@ assert obj.__class__ is Valid
 )");
     EXPECT_FALSE(runner.return_value.is_exception_marker());
 }
+
+TEST(Interpreter, functools_reduce_retains_state_across_reclamation_and_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+from functools import reduce
+class Source:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        if self.position == 12: raise StopIteration
+        value = [self.position]
+        self.position += 1
+        return value
+def add(a, b): return a + b
+def accumulate(acc, item):
+    garbage = [[1, 2, 3], [4, 5, 6]]
+    acc.append(reduce(add, [item, [99]], []))
+    return acc
+result = reduce(accumulate, Source(), [])
+assert len(result) == 12
+assert result[0] == [0, 99]
+assert result[11] == [11, 99]
+error = StopIteration('callback')
+def fail(a, b): raise error
+try:
+    reduce(fail, Source())
+    assert False
+except StopIteration as caught:
+    assert caught is error
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
