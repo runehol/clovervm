@@ -895,9 +895,9 @@ namespace cl
         uint32_t equality_reg = scratch_reg + 4;
         uint32_t first_tombstone_idx_reg = scratch_reg + 5;
         JumpTarget restart_probe(&code), probe_loop(&code), tombstone(&code),
-            record_tombstone(&code), advance_probe(&code);
+            record_tombstone(&code), advance_probe(&code), missing(&code),
+            find_empty(&code), rehashed(&code);
         CL_TRY(restart_probe.resolve());
-        CL_TRY(code.emit_dict_resize_for_insert(0, receiver_reg));
         CL_TRY(code.emit_lda_smi(0, -1));
         CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
         CL_TRY(code.emit_ldar(0, hash_reg));
@@ -908,7 +908,7 @@ namespace cl
         CL_TRY(code.emit_ldar(0, hash_reg));
         CL_TRY(code.emit_dict_probe_for_insert(0, receiver_reg, hash_idx_reg));
         CL_TRY(code.emit_jump_if_equal_smi(
-            0, TrustedDictBytecodeAccess::InsertProbeEmpty, insert_new));
+            0, TrustedDictBytecodeAccess::InsertProbeEmpty, missing));
         CL_TRY(code.emit_jump_if_equal_smi(
             0, TrustedDictBytecodeAccess::InsertProbeTombstone, tombstone));
         CL_TRY(code.emit_jump_if_equal_smi(
@@ -950,6 +950,40 @@ namespace cl
         CL_TRY(code.emit_dict_probe_advance(0, receiver_reg));
         CL_TRY(code.emit_star(0, hash_idx_reg));
         CL_TRY(code.emit_jump(0, probe_loop));
+
+        CL_TRY(missing.resolve());
+        // Only absent keys may resize/compact storage. Preserve the proved
+        // insertion slot unless growth changes the table generation.
+        CL_TRY(code.emit_ldar(0, hash_idx_reg));
+        CL_TRY(code.emit_star(0, candidate_key_reg));
+        CL_TRY(code.emit_ldar(0, generation_reg));
+        CL_TRY(code.emit_star(0, equality_reg));
+        CL_TRY(code.emit_dict_resize_for_insert(0, receiver_reg));
+        CL_TRY(code.emit_ldar(0, hash_reg));
+        CL_TRY(code.emit_dict_probe_start(0, receiver_reg, generation_reg,
+                                          hash_idx_reg));
+        CL_TRY(code.emit_ldar(0, generation_reg));
+        CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, equality_reg,
+                                      OperatorBytecodeFormat::Plain));
+        CL_TRY(code.emit_jump_if_false(0, rehashed));
+        CL_TRY(code.emit_ldar(0, candidate_key_reg));
+        CL_TRY(code.emit_star(0, hash_idx_reg));
+        CL_TRY(code.emit_jump(0, insert_new));
+
+        CL_TRY(rehashed.resolve());
+        // Growth removed tombstones. Find an empty slot using stored hashes
+        // without repeating user equality callbacks after absence was proved.
+        CL_TRY(code.emit_lda_smi(0, -1));
+        CL_TRY(code.emit_star(0, first_tombstone_idx_reg));
+        CL_TRY(find_empty.resolve());
+        CL_TRY(code.emit_ldar(0, hash_reg));
+        CL_TRY(code.emit_dict_probe_for_insert(0, receiver_reg, hash_idx_reg));
+        CL_TRY(code.emit_jump_if_equal_smi(
+            0, TrustedDictBytecodeAccess::InsertProbeEmpty, insert_new));
+        CL_TRY(code.emit_ldar(0, hash_idx_reg));
+        CL_TRY(code.emit_dict_probe_advance(0, receiver_reg));
+        CL_TRY(code.emit_star(0, hash_idx_reg));
+        CL_TRY(code.emit_jump(0, find_empty));
 
         return Expected<void>::ok();
     }
@@ -2158,6 +2192,18 @@ namespace cl
                 int32_t entry_status = hash_table[probe.hash_idx];
                 if(entry_status == not_present)
                 {
+                    if(needs_resize_for_insert())
+                    {
+                        // Absence is proved. Rehash without repeating equality
+                        // callbacks, which may themselves mutate the
+                        // dictionary.
+                        grow();
+                        probe = probe_start(hash_smi);
+                        while(hash_table[probe.hash_idx] != not_present)
+                        {
+                            probe_advance(probe);
+                        }
+                    }
                     return Expected<size_t>::ok(probe_write_slot(probe));
                 }
                 if(entry_status == tombstone)
@@ -2335,8 +2381,6 @@ namespace cl
 
         Owned<Value> live_key(key);
         Owned<Value> live_value(value);
-        resize_general_if_needed();
-
         size_t entry_slot = CL_TRY(
             find_entry_slot_for_general_insert(thread, live_key.value(), hash));
         int32_t idx = hash_table[entry_slot];
@@ -2362,8 +2406,6 @@ namespace cl
         Owned<Value> live_key(key);
         Owned<Value> live_value(value);
         TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
-
-        resize_general_if_needed();
 
         size_t entry_slot = CL_TRY(
             find_entry_slot_for_general_insert(thread, live_key.value(), hash));
@@ -2444,8 +2486,6 @@ namespace cl
         Owned<Value> live_key(key);
         Owned<Value> live_default(default_value);
         TValue<SMI> hash = CL_TRY(thread->hash_value(live_key.value()));
-
-        resize_general_if_needed();
 
         size_t entry_slot = CL_TRY(
             find_entry_slot_for_general_insert(thread, live_key.value(), hash));
@@ -2551,16 +2591,16 @@ namespace cl
     {
         value.assert_not_vm_sentinel();
 
-        if(entries.size() > hash_table.size() * max_load_nom / max_load_denom)
-        {
-            grow();
-        }
-
         TValue<SMI> hash = string_keyed_hash(key);
         int32_t *entry = find_entry_with_provided_hash(key, hash);
         int32_t idx = *entry;
         if(idx < 0)
         {
+            if(needs_resize_for_insert())
+            {
+                grow();
+                entry = find_entry_with_provided_hash(key, hash);
+            }
             idx = entries.size();
             *entry = idx;
             entries.emplace_back(key.raw_value(), value, hash);
