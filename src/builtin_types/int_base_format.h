@@ -10,7 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <string>
+#include <memory>
 #include <string_view>
 
 namespace cl::int_format_detail
@@ -100,13 +100,24 @@ namespace cl::int_format_detail
     public:
         size_t max_size() const
         {
-            return std::min(data_.max_size(), size_t(value_smi_max));
+            return std::min(size_t(std::numeric_limits<ptrdiff_t>::max()) /
+                                sizeof(wchar_t),
+                            size_t(value_smi_max));
         }
-        void resize(size_t size) { data_.resize(size); }
-        wchar_t *data() { return data_.data(); }
+        void resize(size_t size)
+        {
+            // The formatter overwrites every character before exposing a view.
+            if(size > capacity_)
+            {
+                data_ = std::make_unique_for_overwrite<wchar_t[]>(size);
+                capacity_ = size;
+            }
+        }
+        wchar_t *data() { return data_.get(); }
 
     private:
-        std::wstring data_;
+        std::unique_ptr<wchar_t[]> data_;
+        size_t capacity_ = 0;
     };
 
     template <unsigned DigitBits>

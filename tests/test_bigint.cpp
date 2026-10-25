@@ -613,6 +613,32 @@ TEST(BigInt, IntegerFormattingInputAndBufferChoicesAreIndependent)
     check.template operator()<4>();
 }
 
+TEST(BigInt, IntegerFormattingReusesGrowableStorageWithoutStaleText)
+{
+    using namespace int_format_detail;
+    GrowableBuffer output;
+    auto large = format_power_of_two<1>(SmiMagnitude(value_smi_min), output);
+    ASSERT_TRUE(large.has_value());
+    wchar_t *storage = output.data();
+    const size_t capacity = large.value().size();
+    std::fill_n(storage, capacity, L'?');
+
+    auto zero = format_power_of_two<3>(SmiMagnitude(0), output);
+    ASSERT_TRUE(zero.has_value());
+    EXPECT_EQ(storage, output.data());
+    EXPECT_EQ(std::wstring_view(L"0o0"), zero.value());
+    // Regrowing within capacity must not initialize the retained allocation.
+    output.resize(capacity);
+    EXPECT_EQ(storage, output.data());
+    for(size_t idx = 3; idx < capacity; ++idx)
+    {
+        EXPECT_EQ(L'?', output.data()[idx]);
+    }
+    auto negative = format_power_of_two<4>(SmiMagnitude(-35), output);
+    ASSERT_TRUE(negative.has_value());
+    EXPECT_EQ(std::wstring_view(L"-0x23"), negative.value());
+}
+
 TEST(BigInt, IntegerFormattingRejectsInsufficientFixedBuffer)
 {
     test::VmTestContext context;
