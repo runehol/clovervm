@@ -7,9 +7,14 @@ This repository contains clovervm, a Python VM.
 - Treat collaboration as engineering review. Challenge proposals that conflict
   with maintainability, performance evidence, Python semantics, or the codebase;
   explain the risk and what evidence would resolve uncertainty.
-- Before a nontrivial new design, use `implementation-readiness-review` to agree
-  on a compact sketch unless an equivalent sketch is already agreed. Keep sketch
-  details in that skill rather than repeating them here.
+- For human-directed parallel waves, use `clovervm-parallel-wave-coordinator` for
+  coordination and `clovervm-parallel-intent-review` for each bounded task's
+  implementation sketch and approval gate. Core bytecode, interpreter execution,
+  and core codegen changes require a separate, explicit human scope decision.
+- Before other nontrivial new designs, including deep single-thread work, use
+  `implementation-readiness-review` to agree on a compact sketch unless an
+  equivalent sketch is already agreed. Use the appropriate review rather than
+  imposing both; keep sketch details in the skills.
 - Complete agreed work autonomously, including verification and fixes caused by
   the change. Stop to discuss unresolved material decisions or deviations in
   public API, Python-visible semantics, error behavior, cache invalidation,
