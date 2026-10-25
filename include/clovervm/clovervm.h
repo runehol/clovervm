@@ -24,7 +24,22 @@ extern "C"
 
     typedef struct clover_vm clover_vm;
 
-    CL_EXPORT clover_vm *clover_vm_new(void);
+    typedef enum clover_signal_policy
+    {
+        CLOVER_SIGNALS_LEAVE_UNCHANGED = 0,
+        CLOVER_SIGNALS_INSTALL = 1,
+    } clover_signal_policy;
+
+    typedef struct clover_vm_config
+    {
+        clover_signal_policy signal_policy;
+    } clover_vm_config;
+
+    // Defaults to leaving the host's signal policy unchanged.
+    CL_EXPORT void clover_vm_config_init(clover_vm_config *config);
+    // Configuration is borrowed only for this call. Null/invalid configuration
+    // or signal setup failure returns null before constructing the VM.
+    CL_EXPORT clover_vm *clover_vm_new(const clover_vm_config *config);
     CL_EXPORT void clover_vm_destroy(clover_vm *vm);
     CL_EXPORT void clover_vm_set_trace_instructions(clover_vm *vm, int enabled);
     CL_EXPORT clover_status clover_vm_run_file(clover_vm *vm, const char *path,

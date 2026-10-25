@@ -62,8 +62,10 @@ open until process exit. No finalizer, GC hook, or resource registry is installe
   signal-handler execution is not implemented by this layer.
 - FileIO leaves the host's SIGPIPE disposition and signal mask unchanged.
   When the host ignores SIGPIPE, EPIPE becomes BrokenPipeError. Under the default
-  disposition a broken-pipe write can terminate the process. Embedding/startup
-  signal policy is separate work; there is no per-write signal protection.
+  disposition a broken-pipe write can terminate the process. The public startup
+  config can install SIGPIPE ignore, and the CLI explicitly selects that policy;
+  the embedding default leaves signals unchanged. There is no per-write signal
+  protection.
 - Descriptor validation rejects EBADF and directories, tolerating other fstat
   failures as CPython does for unusual filesystems.
 
