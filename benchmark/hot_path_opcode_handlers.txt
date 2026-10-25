@@ -99,5 +99,6 @@ op_create_list_known_class
 
 op_to_bool
 op_to_bool_not
+op_get_iterator
 op_to_exact_tuple
 op_to_exact_list
