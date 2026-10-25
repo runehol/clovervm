@@ -335,3 +335,17 @@ The native-module C API provides `clover_raise_os_error` for this translation.
 Argument-validation and allocation-error policies remain separate. Internal
 generic exception factories allocate the correct OSError storage and retain raw args without invoking public
 constructor parsing or errno-based class selection.
+
+### Native FileIO is a bounded POSIX slice with explicit cleanup
+
+`io.FileIO` / `_io.FileIO` provides native unbuffered binary I/O using one shared
+fixed-slot/native-field layout. Descriptor ownership transfers after successful
+construction. Explicit close and context-manager exit release owned descriptors;
+construction failures close descriptors opened during that attempt. Abandoned
+streams are intentionally not closed by reclamation or VM teardown.
+
+The IOBase/RawIOBase hierarchy, buffering, text I/O and builtin open remain
+unimplemented. FileIO accepts string paths and stored integer descriptors; bytes
+paths, path/index protocols, general write buffers, unbounded reads and subclass
+construction/reinitialization are deferred. See [Native FileIO](file-io.md) for
+operation, validation, attribute-introspection and platform boundaries.

@@ -1,5 +1,11 @@
 find_package(Threads)
 
+if(UNIX)
+    set(CL_FILE_IO_PLATFORM_SOURCE platform/file_io_posix.cpp)
+else()
+    message(FATAL_ERROR "FileIO currently requires a POSIX platform")
+endif()
+
 set(CL_TRUSTED_BUILTINS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bootstrap/builtin_implementations.py")
 set(CL_TRUSTED_SYS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bootstrap/sys.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -18,6 +24,7 @@ configure_file(
     @ONLY)
 
 add_library(libclovervm_objects OBJECT
+    ${CL_FILE_IO_PLATFORM_SOURCE}
     object_model/attr.cpp
     object_model/attr.h
     object_model/attribute_cache.h
@@ -78,6 +85,9 @@ add_library(libclovervm_objects OBJECT
     builtin_types/enumerate.h
     builtin_types/zip.cpp
     builtin_types/zip.h
+    builtin_types/file_io.cpp
+    builtin_types/file_io.h
+    platform/file_io.h
     builtin_types/float.cpp
     builtin_types/float.h
     builtin_types/num_parse.cpp

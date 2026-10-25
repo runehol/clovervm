@@ -17,6 +17,7 @@ namespace cl
         Dict,
         SlotDict,
         Slice,
+        FileIO,
         Float,
         Function,
         EnumerateIterator,

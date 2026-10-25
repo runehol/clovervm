@@ -114,6 +114,7 @@ namespace cl
                native_layout == NativeLayoutId::ClassObject ||
                native_layout == NativeLayoutId::Function ||
                native_layout == NativeLayoutId::Slice ||
+               native_layout == NativeLayoutId::FileIO ||
                native_layout == NativeLayoutId::ModuleObject ||
                native_layout == NativeLayoutId::ModuleLoaderObject ||
                native_layout == NativeLayoutId::ModuleSpecObject ||

@@ -9,6 +9,7 @@
 #include "builtin_types/dict_view.h"
 #include "builtin_types/ellipsis_type.h"
 #include "builtin_types/enumerate.h"
+#include "builtin_types/file_io.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
@@ -193,8 +194,9 @@ namespace cl
                              make_string_list(vm, {L""}));
         install_module_value(vm, sys_module, L"warnoptions",
                              make_string_list(vm, {}));
-        install_module_value(vm, sys_module, L"builtin_module_names",
-                             make_string_tuple(vm, {L"builtins", L"sys"}));
+        install_module_value(
+            vm, sys_module, L"builtin_module_names",
+            make_string_tuple(vm, {L"builtins", L"sys", L"_io"}));
         install_module_value(vm, sys_module, L"byteorder",
                              make_string_value(vm, sys_byteorder_name()));
         install_module_value(vm, sys_module, L"copyright",
@@ -1227,6 +1229,9 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"UserWarning", warning));
 
+        register_builtin_class(make_file_io_class(this));
+        register_builtin_class(make_unsupported_operation_class(this));
+
         install_object_class_methods(this);
         install_exception_class_methods(this);
         install_os_error_methods(this);
@@ -1258,6 +1263,7 @@ namespace cl
                 "creating keyword helper"));
         install_slotdict_class_methods(this);
         install_slice_class_methods(this);
+        install_file_io_methods(this);
         install_float_class_methods(this);
         install_module_class_methods(this);
 
