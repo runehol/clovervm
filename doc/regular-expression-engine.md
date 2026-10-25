@@ -718,16 +718,16 @@ template<typename Literal>
 class ProgramBuilder
 {
 public:
-    [[nodiscard]] Result<std::unique_ptr<CompiledProgram<Literal>>, CompileError>
+    [[nodiscard]] Result<std::unique_ptr<CompiledProgram<Literal>>, BuildError>
     freeze() &&;
 
 private:
     std::unique_ptr<CompiledProgram<Literal>> program_;
-    // Compile-only fixups and deduplication state.
+    // Compile-only pool interning and construction state.
 };
 ```
 
-This is a design sketch, not a selection of a concrete error-result API.
+Use the native `Result` type for builder construction errors.
 Instantiate the literal storage with `uint8_t` for bytes and `uint32_t` for
 Unicode. The remaining owned payloads include inclusive 32-bit range endpoint
 pairs, the shared `uint64_t` bitmap-word pool, and the `uint32_t` page
@@ -736,8 +736,8 @@ Program metadata belongs to the program; mutable compiler bookkeeping belongs
 to the builder, and execution scratch belongs to each match invocation.
 
 The friend builder creates and fills an unpublished program. Its consuming
-`freeze()` resolves fixups, finalizes pools and metadata, checks format limits,
-and runs structural verification in debug builds before
+`freeze()` requires all jump-target relocations to be resolved, finalizes pools
+and metadata, checks format limits, and runs structural verification in debug builds before
 transferring ownership of the completed object. On failure it publishes no
 program. After success, the builder retains no writable aliases into the
 program, and execution never mutates its storage. Freezing does not copy or
@@ -747,6 +747,331 @@ Native container sizes remain host-sized internally; conversions into the
 engine's 32-bit counts and indices must be checked against the agreed limits.
 The Python `Pattern` object owns the completed program, as specified below; the
 unique pointer above expresses the builder's ownership transfer.
+
+All control-flow targets occupy full 32-bit operand words. Instruction sizes
+are known when emitted: the builder appends words directly, labels bind to the
+current word index, and unresolved references record the operand word to patch.
+Binding fills those operands without inserting words or relocating later
+instructions. No layout relaxation or pending linear instruction list is
+needed. Compact/wide selection for literal, pool, capture, and simple-repeat
+operands uses values known before emitting that instruction; pool indices stay
+stable as storage grows.
+
+### Program Metadata
+
+The compiled program owns the immutable pattern definition. The Python
+`Pattern` owns the program and forwards metadata access to it, avoiding a
+second copy of flags or group definitions. The original Python pattern string
+stays on `Pattern`; the standalone C++ program contains no VM handles or managed
+source-string ownership.
+
+```cpp
+struct ProgramMetadata
+{
+    uint32_t capture_count; // Excludes whole-match group zero.
+    uint32_t global_flags;  // Final effective global flag bits.
+    SearchInfo search;
+};
+```
+
+The literal type already distinguishes bytes and Unicode programs; no extra
+category field is needed. Capture count sizes and checks marks and references.
+Final global flags include implicit Unicode mode where applicable and supply
+`Pattern.flags`. Scoped flags are lowered into instructions/classes; the
+matcher does not switch behavior using the global metadata field.
+
+Store only named captures, in capture-number order, with owned code-point
+storage:
+
+```cpp
+struct GroupName
+{
+    uint32_t group; // Zero-based capture index.
+    uint32_t name_offset;
+    uint32_t name_length;
+};
+
+// Private CompiledProgram members:
+ProgramMetadata metadata_;
+std::vector<GroupName> group_names_;
+std::vector<uint32_t> group_name_codepoints_;
+std::vector<uint32_t> group_name_lookup_order_;
+std::vector<uint32_t> prefix_overlap_;
+```
+
+Names use Unicode code points for both program categories; bytes-pattern names
+are restricted to ASCII. A separate index vector sorted by name supports
+binary search while the primary table retains capture order. These tables
+support `groupindex`, named access, `groupdict`, and `lastgroup` without storing
+metadata for each unnamed group.
+
+`SearchInfo` is specified under Search Metadata. Prefix slices reference the
+ordinary literal pool; the program owns the overlap table separately. Default
+search metadata has minimum width zero, no filter, and no anchoring
+restriction, giving builder-generated tests a correct unoptimized default.
+
+```cpp
+// ProgramBuilder<Literal> methods:
+BuildResult<void> set_capture_count(uint32_t count);
+BuildResult<void> set_global_flags(uint32_t flags);
+BuildResult<void> add_group_name(uint32_t group,
+                                 std::span<const uint32_t> name);
+BuildResult<void> set_search_info(const SearchInfo& info,
+                                  std::span<const uint32_t> prefix_overlap);
+```
+
+Supply capture count before instruction emission so capture-related methods
+can check indices. Copy names and overlap data into owned storage before
+freezing. `freeze()` completes name lookup ordering and checks metadata
+references and limits. Public program accessors expose const data only.
+
+### RAII Jump Targets
+
+Follow `CodeObjectBuilder`'s target-local relocation ownership. Each stack-scoped
+target owns its unresolved relocations and is associated with one builder.
+Explicit `resolve()` binds the current instruction-word offset and patches
+existing operand words. Destruction releases the helper's storage without
+asserting completion or automatically binding it. Do not introduce a label-ID
+table or global fixup list.
+
+```cpp
+template<typename T>
+using BuildResult = Result<T, BuildError>;
+
+template<typename Literal>
+class JumpTarget
+{
+public:
+    explicit JumpTarget(ProgramBuilder<Literal>& builder);
+    JumpTarget(const JumpTarget&) = delete;
+    JumpTarget& operator=(const JumpTarget&) = delete;
+    ~JumpTarget();
+
+    BuildResult<void> resolve();
+
+private:
+    friend class ProgramBuilder<Literal>;
+    BuildResult<void> add_relocation(uint32_t operand_word);
+
+    ProgramBuilder<Literal>* builder_;
+    std::optional<uint32_t> target_;
+    absl::InlinedVector<uint32_t, 2> unresolved_operands_;
+};
+```
+
+`ProgramBuilder<Literal>::emit_try` and `emit_jump` accept
+`JumpTarget<Literal>&`. Other target-bearing operations use the same relocation
+mechanism. Before binding, references append operand-word offsets to the
+target. `resolve()` binds once and patches them, then clears the list.
+References added after binding are patched immediately. Check that targets and
+emission refer to the same builder. No operation changes instruction size.
+
+```cpp
+JumpTarget<Literal> alternative(builder);
+JumpTarget<Literal> done(builder);
+CL_TRY(builder.emit_try(alternative));
+// Emit first branch.
+CL_TRY(builder.emit_jump(done));
+CL_TRY(alternative.resolve());
+// Emit second branch.
+CL_TRY(done.resolve());
+```
+
+Regex construction helpers have no destructor-completion assertions. Ordinary
+RAII releases helper storage and the builder's unfinished program on any return
+path; no cancellation API, cancellation state machine, or pending-exception
+inspection is required for cleanup. This applies to scoped target and
+repeat/region helpers as well as the builder itself.
+
+Keep publication checks explicit: the builder tracks outstanding relocations
+and open structured emission, and `freeze()` rejects incomplete construction,
+including references whose target was destroyed without resolution. It must
+not publish placeholder target words as valid code. These checks do not depend
+on helper lifetime assertions. Other construction errors propagate normally;
+the caller discards the unfinished builder after failure.
+
+### Structured Repeat And Region Emission
+
+Follow the scoped-helper style of `ExceptionTableRangeBuilder`, with explicit
+fallible `begin()` and `close()` operations. Helper destructors release storage
+without closing constructs or asserting completion. The builder owns an inline
+vector of open constructs, recording kind and entry word offset. Each helper
+remembers its entry offset; closing must match the innermost open construct,
+then remove it after successful emission. `freeze()` rejects any remaining open
+construct, including one whose helper has already been destroyed. This is
+compiler bookkeeping, not the executor's runtime context stack.
+
+General repeats use:
+
+```cpp
+RepeatBuilder<Literal> repeat(builder);
+CL_TRY(repeat.begin(RepeatOrder::Greedy, bounds));
+// Emit the repeated body.
+CL_TRY(repeat.close());
+```
+
+The helper owns the exit `JumpTarget`. Beginning emits `REPEAT_GREEDY` or
+`REPEAT_LAZY`, referencing that target and the supplied bounds. Closing emits
+`REPEAT_END`, resolves the exit target, then emits `REPEAT_EXIT`.
+`RepeatOrder` has greedy and lazy choices. The compiler lowers general
+possessive repetition by composing an outer atomic region with an inner greedy
+repeat.
+
+Assertions and atomic groups share a region helper:
+
+```cpp
+RegionBuilder<Literal> assertion(builder);
+CL_TRY(assertion.begin_assertion(AssertionPolarity::Positive,
+                               lookbehind_distance));
+// Emit assertion body.
+CL_TRY(assertion.close());
+
+RegionBuilder<Literal> atomic(builder);
+CL_TRY(atomic.begin_atomic());
+// Emit atomic body.
+CL_TRY(atomic.close());
+```
+
+Beginning emits `ASSERT`, `ASSERT_NOT`, or `ATOMIC_GROUP`, with a helper-owned
+continuation target. Assertion distance zero selects lookahead. Closing emits
+`REGION_END`, then resolves the continuation to the next instruction boundary.
+The compiler supplies the body and analysis-derived lookbehind distance.
+
+Simple one-character repeats are emitted in one call:
+
+```cpp
+BuildResult<void> emit_repeat_one(RepeatMode mode, RepeatBounds bounds,
+                                const CharacterTest& test);
+```
+
+`RepeatMode` includes greedy, lazy, and possessive. `CharacterTest` represents
+only the eligible side-effect-free tests, excluding captures, backreferences,
+assertions, literal runs, and arbitrary instruction sequences. Emitting the
+header and complete test together prevents callers from inserting operations
+or binding labels within the embedded operand. Select header/test compact or
+wide forms from known operands before appending words. These helpers own
+encoding, endings, relocations, and nesting; the compiler owns body lowering
+and construct selection.
+
+### Pool APIs
+
+Pool APIs copy caller input into program-owned vectors and return small typed
+references. Input spans are borrowed only for the call; returned offsets and
+indices remain stable as vectors grow and are local to the originating builder.
+
+```cpp
+struct LiteralSlice
+{
+    uint32_t offset;
+    uint32_t length;
+};
+
+struct BitmapClassId { uint32_t index; };
+struct RangeClassId { uint32_t index; };
+struct PagedClassId { uint32_t index; };
+
+struct CodePointRange
+{
+    uint32_t first;
+    uint32_t last; // Inclusive.
+};
+
+using Bitmap256 = std::array<uint64_t, 4>;
+
+// ProgramBuilder<Literal> methods:
+BuildResult<LiteralSlice> add_literals(std::span<const Literal> text);
+BuildResult<BitmapClassId> add_bitmap_class(const Bitmap256& bitmap,
+                                          ClassMetadata metadata);
+BuildResult<RangeClassId> add_range_class(std::span<const CodePointRange> ranges,
+                                        ClassMetadata metadata);
+BuildResult<PagedClassId> add_paged_class(std::span<const CodePointRange> ranges,
+                                        ClassMetadata metadata);
+```
+
+`ClassMetadata` contains the agreed outer-negation and category bits, not regex
+flags. Range input is sorted, disjoint, and merged after fixed case expansion.
+The compiler expands and normalizes membership and selects a representation
+using the agreed intrinsic-cost policy. The builder stores that representation,
+constructs page directories, deduplicates bitmap pages, and assigns offsets.
+`add_paged_class()` accepts ranges rather than requiring caller-created page
+directories or payload-pool offsets. Class factories populate storage records
+internally.
+
+Use returned class references to construct the same typed `CharacterTest` used
+for ordinary test emission and embedded simple repeats:
+
+```cpp
+auto cls = CL_TRY(builder.add_bitmap_class(bitmap, metadata));
+auto test = CharacterTest::in_bitmap(cls);
+CL_TRY(builder.emit_test(test));
+CL_TRY(builder.emit_repeat_one(mode, bounds, test));
+```
+
+Literal and range pools append. Intern identical fixed bitmaps and Unicode
+pages in the common four-`uint64_t` payload representation. Every addition
+checks arithmetic and 32-bit format limits. `freeze()` transfers owning vectors
+without rearranging their contents and discards compile-only interning tables.
+No mutable pool accessors or separate allocation per class are needed.
+`emit_literal_run(text)` may remain a convenience that adds literals and emits
+the appropriate run form.
+
+### Inspection Decoder
+
+Use a stateless decoder for debug verification, disassembly, and tests:
+
+```cpp
+struct DecodedCharacterTest
+{
+    Opcode opcode;
+    uint32_t operand; // Zero for ANY / ANY_ALL.
+};
+
+struct DecodedInstruction
+{
+    Opcode opcode; // Actual encoding, including any _WIDE form.
+    uint32_t pc;
+    uint32_t next_pc;
+    std::array<uint32_t, 3> operands;
+    std::optional<DecodedCharacterTest> repeat_test;
+};
+
+Result<DecodedInstruction, DecodeError>
+decode_instruction(std::span<const uint32_t> words, uint32_t pc);
+```
+
+The returned value owns its decoded fields and requires no allocation or
+literal-type template. Normalize compact and wide operands into ordinary
+32-bit values; retain the actual opcode so inspection identifies the encoded
+form. Shared opcode metadata supplies operand count and meaning, and unused
+operand slots are zero.
+
+| Instruction | Normalized operands |
+|---|---|
+| Literal | Character |
+| Literal run | Pool offset, length |
+| Class test | Class index |
+| `TRY`, `JUMP` | Absolute target |
+| `GROUPREF_EXISTS` | Group index, false target |
+| Assertion entry | Continuation, lookbehind distance |
+| General repeat entry | Exit target, minimum, maximum |
+| Simple repeat | Minimum, maximum, plus separate `repeat_test` |
+
+A simple repeat is one complete decoded instruction: the embedded test is
+returned in `repeat_test`, with its actual opcode and normalized operand, and
+`next_pc` skips its full encoding. Do not expose that test as another top-level
+instruction. Three operand slots suffice for the selected instruction set.
+
+Check opcode/encoding validity, available operand words, reserved bits, and
+embedded test eligibility/completeness. `DecodeError` contains a kind and
+offending word offset. Decoding does not inspect pools or build a control-flow
+graph. The whole-program verifier checks pool/capture bounds, target boundaries
+from a complete walk, and structural nesting. Disassembly resolves pool contents
+when printing. Callers walk from `pc=0` using each result's `next_pc` until the
+stream ends.
+
+The matching interpreter does not use this decoder or construct decoded
+objects. It dispatches directly on encoded words. Share opcode definitions and
+encoding constants between execution and inspection to keep them consistent.
 
 ### Construction Guarantees And Debug Verification
 
@@ -970,18 +1295,10 @@ operations rather than literal/bitmap/range/page representations:
 | Instruction | Compact | Wide |
 |---|---|---|
 | `MARK` | `0x74` | `0x78` |
-| `GROUPREF_EXISTS` | `0x75` | `0x79` |
 | `GROUPREF` | `0x84` | `0x88` |
 | `GROUPREF_ASCII_IGNORECASE` | `0x85` | `0x89` |
 | `GROUPREF_UNICODE_IGNORECASE` | `0x86` | `0x8A` |
 | `GROUPREF_LOCALE_IGNORECASE` | `0x87` | `0x8B` |
-| `TRY` | `0x94` | `0x98` |
-| `JUMP` | `0x95` | `0x99` |
-| `ASSERT` | `0xA4` | `0xA8` |
-| `ASSERT_NOT` | `0xA5` | `0xA9` |
-| `ATOMIC_GROUP` | `0xA6` | `0xAA` |
-| `REPEAT_GREEDY` | `0xB4` | `0xB8` |
-| `REPEAT_LAZY` | `0xB5` | `0xB9` |
 | `REPEAT_ONE_GREEDY` | `0xC4` | `0xC8` |
 | `REPEAT_ONE_LAZY` | `0xC5` | `0xC9` |
 | `REPEAT_ONE_POSSESSIVE` | `0xC6` | `0xCA` |
@@ -989,6 +1306,21 @@ operations rather than literal/bitmap/range/page representations:
 Every wide opcode is its compact counterpart plus `0x04`. This selects the
 form, not a universal instruction length; operand counts remain defined by
 each instruction's format. Wide names have the `_WIDE` suffix.
+
+Target-bearing operations have one fixed full-width encoding, with no
+compact or `_WIDE` variants. Their opcode form bits are `10`; former compact
+target values are reserved:
+
+| Instruction | Opcode | Words |
+|---|---|---|
+| `GROUPREF_EXISTS` | `0x79` | 3 |
+| `TRY` | `0x98` | 2 |
+| `JUMP` | `0x99` | 2 |
+| `ASSERT` | `0xA8` | 3 |
+| `ASSERT_NOT` | `0xA9` | 3 |
+| `ATOMIC_GROUP` | `0xAA` | 2 |
+| `REPEAT_GREEDY` | `0xB8` | 4 |
+| `REPEAT_LAZY` | `0xB9` | 4 |
 
 Standalone operations have no compact/wide variants. Their low bits select
 the operation without form or representation semantics:
@@ -1067,7 +1399,7 @@ Each wide form has an opcode word with upper 24 bits zero, followed by a full
 32-bit index. Use the existing one-word form when the index fits 24 bits, and
 the wide form otherwise. Behavior is identical apart from instruction length.
 `AT` and `CATEGORY` do not need wide forms for their small identifier sets.
-`GROUPREF_EXISTS_WIDE` and literal-run wide forms have two full operands and
+`GROUPREF_EXISTS` and literal-run wide forms have two full operands and
 therefore use three words, as specified in their own sections. Overflow/resource
 errors follow Error Behavior.
 
@@ -1212,17 +1544,15 @@ participated. It does not modify captures or push backtracking state.
 
 | Instruction | Encoding |
 |---|---|
-| `GROUPREF_EXISTS` | One word: opcode in bits 0-7, zero-based group index in bits 8-15, absolute false-target word index in bits 16-31 |
-| `GROUPREF_EXISTS_WIDE` | Three words: opcode word with upper 24 bits zero; 32-bit zero-based group index; 32-bit absolute false target |
+| `GROUPREF_EXISTS` | Three words: opcode word with upper 24 bits zero; 32-bit zero-based group index; 32-bit absolute false target |
 
 If the group participated, fall through after the entire encoding; otherwise
 jump to the false target. An empty capture counts as participation and must
 remain distinguishable from an unmatched group. Re-evaluate the current capture
 state whenever the instruction is reached, including after outer backtracking.
 
-The compact form covers group indices 0-255 and targets 0-65535. Use the wide
-form when either operand exceeds its compact field. Larger group-index policy
-remains tied to the overall capture/mark limits. For `(a)?(?(1)b|c)`, the
+Both operands are always full 32-bit words. Group indices remain subject to
+the overall capture/mark limits. For `(a)?(?(1)b|c)`, the
 conditional portion is:
 
 ```text
@@ -1244,25 +1574,22 @@ Capture and context restoration use the tagged undo stack described below.
 
 | Instruction | Encoding |
 |---|---|
-| `TRY`, `JUMP` | One word: opcode in bits 0-7, absolute target word index in bits 8-31 |
-| `TRY_WIDE`, `JUMP_WIDE` | Two words: opcode in bits 0-7 with upper 24 bits zero; 32-bit absolute target word index in the second word |
+| `TRY`, `JUMP` | Two words: opcode in bits 0-7 with upper 24 bits zero; 32-bit absolute target word index in the second word |
 
 Targets count 32-bit words from the start of the instruction stream and must
 identify an instruction's first word, never an operand word. Both forward and
-backward transfers use the same unsigned absolute representation. Use the
-compact form for targets through `0xFFFFFF` and the wide form otherwise.
-Internal program counters are `uint32_t`, matching the stack-record fields. The
-compiler patches targets after final instruction layout; no native pointers or
-signed relative displacements occur in these operands.
+backward transfers use the same full 32-bit unsigned absolute representation.
+Internal program counters are `uint32_t`, matching the stack-record fields.
+Forward references patch existing operand words without changing instruction
+size or moving later instructions; no native pointers or signed relative
+displacements occur in these operands.
 
 - `TRY target` saves a failure continuation and a matching-state checkpoint,
   then falls through to the next instruction. It does not immediately transfer
   control to its operand.
 - `JUMP target` transfers control without saving a continuation or checkpoint.
 
-Fallthrough after `TRY` is the next instruction after its entire encoding: one
-word for the compact form and two for the wide form. Wide and compact
-instructions otherwise have identical semantics.
+Fallthrough after `TRY` is two words after the instruction's start.
 
 On failure, the executor unwinds to an available failure continuation, restores
 its matching-state checkpoint, and resumes at its target. This resembles a call
@@ -1478,16 +1805,14 @@ and repeat contexts.
 
 ### Assertion And Atomic Regions
 
-The agreed entry instructions are `ASSERT`, `ASSERT_NOT`, and `ATOMIC_GROUP`,
-with corresponding `_WIDE` forms. All targets are absolute instruction-word
+The entry instructions are `ASSERT`, `ASSERT_NOT`, and `ATOMIC_GROUP`, each
+with one fixed encoding. All targets are absolute instruction-word
 indices identifying the instruction after the body's `REGION_END`.
 
 | Instruction | Encoding |
 |---|---|
-| `ASSERT`, `ASSERT_NOT` | Two words: opcode in bits 0-7 with 24-bit continuation target in bits 8-31; 32-bit lookbehind distance in the second word |
-| `ASSERT_WIDE`, `ASSERT_NOT_WIDE` | Three words: opcode word with upper 24 bits zero; 32-bit continuation target; 32-bit lookbehind distance |
-| `ATOMIC_GROUP` | One word: opcode in bits 0-7 with 24-bit continuation target in bits 8-31 |
-| `ATOMIC_GROUP_WIDE` | Two words: opcode word with upper 24 bits zero; 32-bit continuation target |
+| `ASSERT`, `ASSERT_NOT` | Three words: opcode word with upper 24 bits zero; 32-bit continuation target; 32-bit lookbehind distance |
+| `ATOMIC_GROUP` | Two words: opcode word with upper 24 bits zero; 32-bit continuation target |
 | `REGION_END` | One word with no payload; complete the body of the active region |
 
 The body begins immediately after the complete entry encoding. Assertion
@@ -1830,18 +2155,17 @@ The agreed general-repeat instruction family is:
 | `REPEAT_END` | Complete one successful body iteration and make the next repetition decision |
 | `REPEAT_EXIT` | Leave the repeat and restore the enclosing active-repeat selection |
 
-Compact entry instructions have three words:
+Entry instructions always have four words:
 
 ```text
-word 0: opcode in bits 0-7, absolute exit word index in bits 8-31
-word 1: uint32_t minimum
-word 2: uint32_t maximum
+word 0: opcode in bits 0-7, upper 24 bits zero
+word 1: uint32_t absolute exit word index
+word 2: uint32_t minimum
+word 3: uint32_t maximum
 body follows
 ```
 
-Use `REPEAT_GREEDY_WIDE` / `REPEAT_LAZY_WIDE` when the exit target needs more
-than 24 bits: the opcode word has upper bits zero, followed by a full 32-bit
-exit target, minimum, and maximum, for four words total. The target identifies
+There are no compact or `_WIDE` variants. The target identifies
 the corresponding `REPEAT_EXIT`, not its following tail instruction. Reserve
 maximum `0xFFFFFFFF` for unbounded repetition; finite-bound validation must
 respect the sentinel. Validate minimum/maximum ordering and representable
@@ -2060,7 +2384,8 @@ candidate iteration when its precondition cannot be proved.
 
 `Pattern` is the compiled regex object returned by `re.compile()`, analogous to
 a function owning its code object. It owns the immutable compiled regex program
-and retains the original pattern, global flags, and group-name metadata. Its
+and retains the original pattern. Global flags and group-name metadata are
+owned by and accessed through the program. Its
 methods, including `search`, `match`, and `fullmatch`, execute that program
 with private per-call matching state. Reusing a `Pattern` does not require a
 cache.
