@@ -107,6 +107,15 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
+{
+    std::wstring source = read_source_file("tests/python/int_true_division.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
 TEST_P(TupleSubclassReclamationTest, RunsSelfCheckingSource)
 {
     std::wstring source = read_source_file(GetParam().path);

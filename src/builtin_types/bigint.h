@@ -155,6 +155,10 @@ namespace cl
     [[nodiscard]] Expected<int64_t> bigint_to_int64(ConstBigIntView view);
     [[nodiscard]] Expected<uint64_t> bigint_to_uint64(ConstBigIntView view);
     [[nodiscard]] Expected<double> bigint_to_double(ConstBigIntView view);
+    // Round the exact integer ratio to binary64, including subnormals and
+    // signed zero. Raises on a zero denominator or an overflowing result.
+    [[nodiscard]] Expected<double>
+    bigint_true_divide(ConstBigIntView numerator, ConstBigIntView denominator);
     [[nodiscard]] Expected<Value> bigint_negate(ThreadState *thread,
                                                 ConstBigIntView view);
     [[nodiscard]] Expected<Value> bigint_add(ThreadState *thread,

@@ -1339,6 +1339,108 @@ namespace cl
                                     normalization_shift);
     }
 
+    Expected<double> bigint_true_divide(ConstBigIntView numerator,
+                                        ConstBigIntView denominator)
+    {
+        assert(is_normalized_bigint_view(numerator));
+        assert(is_normalized_bigint_view(denominator));
+        static_assert(DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024 &&
+                      DBL_MIN_EXP == -1021);
+        if(denominator.signum == 0)
+        {
+            return Expected<double>::raise_exception(L"ZeroDivisionError",
+                                                     L"division by zero");
+        }
+        bool negative = (numerator.signum < 0) != (denominator.signum < 0);
+        double sign = negative ? -1.0 : 1.0;
+        if(numerator.signum == 0)
+        {
+            return Expected<double>::ok(std::copysign(0.0, sign));
+        }
+
+        size_t numerator_bits = bigint_abs_bit_length(numerator);
+        size_t denominator_bits = bigint_abs_bit_length(denominator);
+        // Bound the difference before narrowing or subtracting unsigned sizes.
+        int difference;
+        if(numerator_bits >= denominator_bits)
+        {
+            size_t difference_bits = numerator_bits - denominator_bits;
+            if(difference_bits > DBL_MAX_EXP)
+            {
+                return Expected<double>::raise_exception(
+                    L"OverflowError",
+                    L"integer division result too large for a float");
+            }
+            difference = static_cast<int>(difference_bits);
+        }
+        else
+        {
+            size_t difference_bits = denominator_bits - numerator_bits;
+            if(difference_bits > DBL_MANT_DIG + 1 - DBL_MIN_EXP)
+            {
+                return Expected<double>::ok(std::copysign(0.0, sign));
+            }
+            difference = -static_cast<int>(difference_bits);
+        }
+
+        // Scaled integer quotient with two or three rounding bits. Clamping
+        // the exponent for subnormals avoids rounding twice near underflow.
+        // Algorithm follows CPython 3.14.5 Objects/longobject.c,
+        // long_true_divide (PSF License Agreement), adapted to 32-bit limbs.
+        int shift = std::max(difference, DBL_MIN_EXP) - DBL_MANT_DIG - 2;
+        ConstBigIntView numerator_abs{numerator.n_digits, 1, numerator.digits};
+        ConstBigIntView denominator_abs{denominator.n_digits, 1,
+                                        denominator.digits};
+        size_t extra_digits = shift <= 0 ? size_t(-shift) / kDigitBits + 1 : 0;
+        if(extra_digits >
+           std::numeric_limits<size_t>::max() - numerator.n_digits)
+        {
+            return Expected<double>::raise_exception(
+                L"OverflowError", L"intermediate overflow during division");
+        }
+        BigIntScratch scaled_scratch(numerator.n_digits + extra_digits);
+        MutableBigIntView scaled = scaled_scratch.mutable_view();
+        bool inexact = false;
+        if(shift <= 0)
+        {
+            bigint_shift_left_into(&scaled, numerator_abs, uint64_t(-shift));
+        }
+        else
+        {
+            bigint_shift_right_abs_into(&scaled, numerator_abs,
+                                        uint64_t(shift));
+            inexact = bigint_abs_shift_right_loses_nonzero_bits(
+                numerator_abs, uint64_t(shift));
+        }
+        BigIntScratch quotient_scratch(scaled.n_digits);
+        BigIntScratch remainder_scratch(scaled.n_digits + 1);
+        MutableBigIntView quotient = quotient_scratch.mutable_view();
+        MutableBigIntView remainder = remainder_scratch.mutable_view();
+        bigint_abs_divmod_into(&quotient, &remainder, scaled.view(),
+                               denominator_abs);
+        inexact |= remainder.signum != 0;
+        size_t quotient_bits = bigint_abs_bit_length(quotient.view());
+        assert(quotient_bits > 0 && quotient_bits <= DBL_MANT_DIG + 3);
+        int extra_bits =
+            std::max(int(quotient_bits), DBL_MIN_EXP - shift) - DBL_MANT_DIG;
+        assert(extra_bits == 2 || extra_bits == 3);
+        uint64_t bits = magnitude_to_double_digit_unchecked(quotient.view());
+        uint64_t half = uint64_t{1} << (extra_bits - 1);
+        bool round_up =
+            (bits & half) != 0 &&
+            (inexact || (bits & (half - 1)) != 0 || (bits & (half << 1)) != 0);
+        uint64_t significand = (bits >> extra_bits) + uint64_t(round_up);
+        int exponent = shift + extra_bits;
+        if(int(std::bit_width(significand)) + exponent > DBL_MAX_EXP)
+        {
+            return Expected<double>::raise_exception(
+                L"OverflowError",
+                L"integer division result too large for a float");
+        }
+        double result = std::ldexp(double(significand), exponent);
+        return Expected<double>::ok(std::copysign(result, sign));
+    }
+
     struct BigIntDivModViews
     {
         ConstBigIntView quotient;

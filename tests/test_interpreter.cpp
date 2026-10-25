@@ -18,6 +18,7 @@
 #include "compiler/token_print.h"
 #include "compiler/tokenizer.h"
 #include "import_system/module_global.h"
+#include "memory/heap_reclamation.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -29,6 +30,7 @@
 #include "object_model/value_string.h"
 #include "runtime/exception_object.h"
 #include "runtime/interpreter.h"
+#include "runtime/operator_frame.h"
 #include "runtime/operator_walk.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -8710,6 +8712,156 @@ TEST(Interpreter, to_bool_disassembly_hides_embedded_finisher)
     EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
     EXPECT_NE(std::string::npos, printed.find("    5 Return"));
     EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
+}
+
+struct ReturnContinuationSafepointCheck
+{
+    BytecodeCompoundRole role;
+    size_t observations = 0;
+    bool saw_zero_refcount_operand = false;
+};
+
+static void check_return_continuation_roots(void *opaque, ThreadState *thread,
+                                            Value accumulator, Value *fp,
+                                            CodeObject *code,
+                                            uint32_t pc_offset,
+                                            const SafepointScanRecord &record)
+{
+    auto &check = *static_cast<ReturnContinuationSafepointCheck *>(opaque);
+    if(pc_offset >= code->code.size() ||
+       bytecode_info(Bytecode(code->code[pc_offset])).compound_role !=
+           check.role)
+        return;
+
+    if((check.role == BytecodeCompoundRole::BinaryOperatorContinuation ||
+        check.role == BytecodeCompoundRole::TernaryOperatorContinuation) &&
+       !accumulator.is_not_implemented_singleton())
+        return;
+
+    EXPECT_EQ(accumulator, record.accumulator_or_not_present);
+    EXPECT_EQ(Value::from_oop(code), record.active_code_object_or_not_present);
+    Value *prefix = fp + code->get_first_free_arg_encoded_reg();
+    Value operands[3];
+    size_t count;
+    switch(check.role)
+    {
+        case BytecodeCompoundRole::BinaryOperatorContinuation:
+            EXPECT_EQ(Value::NotImplemented(), accumulator);
+            EXPECT_LE(record.lowest_live_stack_slot, prefix - 3);
+            read_binary_operator_continuation_operands(
+                fp, code->get_first_free_arg_encoded_reg(), operands[0],
+                operands[1]);
+            count = 2;
+            break;
+        case BytecodeCompoundRole::TernaryOperatorContinuation:
+            EXPECT_EQ(Value::NotImplemented(), accumulator);
+            // Surrounding pow() parameters may also root these operands;
+            // require the continuation prefix itself to remain scanned.
+            EXPECT_LE(record.lowest_live_stack_slot, prefix - 4);
+            read_ternary_operator_continuation_operands(
+                fp, code->get_first_free_arg_encoded_reg(), operands[0],
+                operands[1], operands[2]);
+            count = 3;
+            break;
+        case BytecodeCompoundRole::ConditionalTruthinessContinuation:
+            EXPECT_LE(record.lowest_live_stack_slot, prefix - 1);
+            operands[0] = prefix[-1];
+            count = 1;
+            break;
+        default:
+            FAIL() << "unexpected continuation role";
+    }
+    ReclamationRootSet roots;
+    collect_reclamation_roots_from_thread(roots, *thread);
+    for(size_t index = 0; index < count; ++index)
+    {
+        ASSERT_TRUE(operands[index].is_refcounted_ptr());
+        HeapObject *object = operands[index].as.ptr;
+        EXPECT_TRUE(roots.contains(object));
+        check.saw_zero_refcount_operand |= object->refcount == 0;
+    }
+    ++check.observations;
+}
+
+TEST(Interpreter, return_safepoints_root_pending_continuation_values)
+{
+    struct Case
+    {
+        const char *name;
+        BytecodeCompoundRole role;
+        const wchar_t *source;
+    };
+    const Case cases[] = {
+        {"native comparison", BytecodeCompoundRole::BinaryOperatorContinuation,
+         LR"(
+def compare(): return 2**60 + 1 > 1.0 * 2**60
+for repeat in range(3): assert compare()
+True
+)"},
+        {"Python reflected comparison",
+         BytecodeCompoundRole::BinaryOperatorContinuation, LR"(
+class L:
+    def __lt__(self, other): return NotImplemented
+class R:
+    def __gt__(self, other): return True
+def compare(): return L() < R()
+for repeat in range(3): assert compare()
+True
+)"},
+        {"ternary reflected pow",
+         BytecodeCompoundRole::TernaryOperatorContinuation, LR"(
+class M: pass
+class L:
+    def __pow__(self, other, mod): return NotImplemented
+class R:
+    def __rpow__(self, other, mod):
+        assert mod.__class__ is M
+        return 7
+def calculate(): return pow(L(), R(), M())
+for repeat in range(3): assert calculate() == 7
+True
+)"},
+        {"conditional true",
+         BytecodeCompoundRole::ConditionalTruthinessContinuation, LR"(
+class C:
+    def __bool__(self): return True
+def choose(): return C() or 7
+for repeat in range(3): assert choose().__class__ is C
+True
+)"},
+        {"conditional false",
+         BytecodeCompoundRole::ConditionalTruthinessContinuation, LR"(
+class C:
+    def __bool__(self): return False
+def choose(): return C() and 7
+for repeat in range(3): assert choose().__class__ is C
+True
+)"},
+        {"conditional length",
+         BytecodeCompoundRole::ConditionalTruthinessContinuation, LR"(
+class C:
+    def __len__(self): return 0
+def choose(): return C() and 7
+for repeat in range(3): assert choose().__class__ is C
+True
+)"},
+    };
+    for(const Case &test_case: cases)
+    {
+        SCOPED_TRACE(test_case.name);
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        ReturnContinuationSafepointCheck check{test_case.role};
+        context.vm().set_safepoint_callback_for_testing(
+            check_return_continuation_roots, &check);
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        // No Owned handles or Python globals retain the temporary operands.
+        EXPECT_EQ(Value::True(), context.run_file(test_case.source));
+        EXPECT_GE(check.observations, 3u);
+        EXPECT_TRUE(check.saw_zero_refcount_operand);
+        context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+    }
 }
 
 struct TruthinessSafepointCheck

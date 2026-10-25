@@ -1,13 +1,18 @@
 #include "builtin_types/bigint.h"
 
+#include "builtin_types/float.h"
 #include "builtin_types/int.h"
 #include "builtin_types/tuple.h"
+#include "object_model/function.h"
 #include "object_model/owned.h"
+#include "object_model/shape_key.h"
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
 
 #include <algorithm>
+#include <bit>
+#include <cmath>
 #include <gtest/gtest.h>
 #include <limits>
 #include <string>
@@ -1062,4 +1067,185 @@ TEST(BigInt, LengthValidationRejectsInvalidNegativeAndOverflowResults)
         context.thread()->clear_pending_exception();
     }
     EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
+TEST(BigInt, TrueDivisionRoundsTheRatioOnce)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    struct Case
+    {
+        const wchar_t *numerator;
+        const wchar_t *denominator;
+        double expected;
+    };
+    const Case cases[] = {
+        {L"148584462635267220", L"42107047668565897", 0x1.c3ad78b9588f0p+1},
+        {L"10**400", L"10**400", 1.0},
+        {L"10**400", L"10**399", 10.0},
+        {L"0", L"-(2**60)", -0.0},
+        {L"1", L"2**1074", 0x1p-1074},
+        {L"1", L"2**1075", 0.0},
+        {L"-1", L"2**1075", -0.0},
+        {L"3", L"2**1076", 0x1p-1074},
+        {L"3", L"2**1075", 0x1p-1073},
+        {L"2**53-1", L"2**1075", 0x1p-1022},
+        {L"2**53+1", L"2**1075", 0x1p-1022},
+        {L"(2**54-1)*2**970-1", L"1", 0x1.fffffffffffffp+1023},
+    };
+    for(const Case &test_case: cases)
+    {
+        SCOPED_TRACE(test_case.numerator);
+        SCOPED_TRACE(test_case.denominator);
+        Owned<Value> numerator(context.run_file(test_case.numerator));
+        Owned<Value> denominator(context.run_file(test_case.denominator));
+        SmiViewStorage numerator_storage;
+        SmiViewStorage denominator_storage;
+        auto result = bigint_true_divide(
+            intlike_value_bigint_view(numerator.value(), &numerator_storage),
+            intlike_value_bigint_view(denominator.value(),
+                                      &denominator_storage));
+        ASSERT_FALSE(result.has_exception());
+        EXPECT_EQ(std::bit_cast<uint64_t>(test_case.expected),
+                  std::bit_cast<uint64_t>(result.value()));
+    }
+    Owned<Value> huge(context.run_file(L"2**1024"));
+    SmiViewStorage storage;
+    auto overflow =
+        bigint_true_divide(native_cast<BigInt>(huge.value())->view(),
+                           smi_bigint_view(1, &storage));
+    ASSERT_TRUE(overflow.has_exception());
+    expect_pending_exception(context.thread(), L"OverflowError",
+                             L"integer division result too large for a float");
+    context.thread()->clear_pending_exception();
+    auto zero = bigint_true_divide(native_cast<BigInt>(huge.value())->view(),
+                                   smi_bigint_view(0, &storage));
+    ASSERT_TRUE(zero.has_exception());
+    expect_pending_exception(context.thread(), L"ZeroDivisionError",
+                             L"division by zero");
+}
+
+TEST(BigInt, TrueDivisionTrustedHandlersAndCacheReplay)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    struct Operand
+    {
+        const wchar_t *expression;
+        double number;
+    };
+    const Operand operands[] = {
+        {L"6", 6.0}, {L"True", 1.0}, {L"2**60", 0x1p60}, {L"2**61", 0x1p61}};
+    Owned<Value> subclass(context.run_file(L"class I(int): pass\nI(3)\n"));
+    for(bool reflected: {false, true})
+    {
+        Value method = context.vm().int_class()->get_own_property(
+            interned_string(reflected ? L"__rtruediv__" : L"__truediv__"));
+        auto resolver = method.get_ptr<Function>()
+                            ->code_object.extract()
+                            ->trusted_handler_resolver;
+        ASSERT_NE(nullptr, resolver);
+        for(auto order: {TrustedHandlerOperandOrder::Normal,
+                         TrustedHandlerOperandOrder::Reflected})
+        {
+            bool reverse =
+                reflected != (order == TrustedHandlerOperandOrder::Reflected);
+            for(const Operand &left: operands)
+            {
+                for(const Operand &right: operands)
+                {
+                    SCOPED_TRACE(left.expression);
+                    SCOPED_TRACE(right.expression);
+                    Owned<Value> a(context.run_file(left.expression));
+                    Owned<Value> b(context.run_file(right.expression));
+                    auto resolution =
+                        resolver(&context.vm(), ShapeKey::from_value(a.value()),
+                                 ShapeKey::from_value(b.value()), order,
+                                 TrustedHandlerArity::Binary);
+                    ASSERT_TRUE(resolution.has_trusted_handler());
+                    auto metadata = context.vm().trusted_handler_metadata(
+                        erase_trusted_handler_target(resolution.binary));
+                    ASSERT_TRUE(metadata.has_value());
+                    EXPECT_EQ(TrustedHandlerArity::Binary, metadata->arity);
+                    EXPECT_EQ(TrustedHandlerEffects::Allocate |
+                                  TrustedHandlerEffects::Raise,
+                              metadata->effects);
+                    EXPECT_EQ(reverse ? TrustedHandlerSemantics::RTrueDiv
+                                      : TrustedHandlerSemantics::TrueDiv,
+                              metadata->semantics);
+                    double expected = reverse ? right.number / left.number
+                                              : left.number / right.number;
+                    for(int replay = 0; replay < 3; ++replay)
+                    {
+                        Owned<Value> result(resolution.binary(
+                            context.thread(), a.value(), b.value()));
+                        ASSERT_TRUE(has_native_layout<Float>(result.value()));
+                        EXPECT_EQ(expected,
+                                  native_cast<Float>(result.value())->value());
+                    }
+                    EXPECT_FALSE(resolver(&context.vm(),
+                                          ShapeKey::from_value(a.value()),
+                                          ShapeKey::from_value(b.value()),
+                                          order, TrustedHandlerArity::Unary)
+                                     .has_trusted_handler());
+                    EXPECT_FALSE(
+                        resolver(&context.vm(), ShapeKey::from_value(a.value()),
+                                 ShapeKey::from_value(subclass.value()), order,
+                                 TrustedHandlerArity::Binary)
+                            .has_trusted_handler());
+                }
+            }
+        }
+    }
+
+    Owned<TValue<Function>> function(TValue<Function>::from_value_assumed(
+        context.run_file(L"def divide(a, b): return a / b\ndivide\n")));
+    Owned<Value> huge(context.run_file(L"10**400"));
+    Owned<Value> larger(context.run_file(L"10**800"));
+    for(const Operand &left: operands)
+    {
+        for(const Operand &right: operands)
+        {
+            Owned<Value> a(context.run_file(left.expression));
+            Owned<Value> b(context.run_file(right.expression));
+            for(int replay = 0; replay < 3; ++replay)
+            {
+                Owned<Value> result(context.thread()->call_clovervm_function(
+                    function.value(), a.value(), b.value()));
+                ASSERT_TRUE(has_native_layout<Float>(result.value()));
+                EXPECT_EQ(left.number / right.number,
+                          native_cast<Float>(result.value())->value());
+            }
+            const auto &caches = function.extract()
+                                     ->code_object.extract()
+                                     ->inline_caches.operator_caches;
+            ASSERT_EQ(1u, caches.size());
+            EXPECT_TRUE(
+                caches[0].matches_reflectable_binary(a.value(), b.value()));
+            EXPECT_FALSE(caches[0].trusted_handler.is_null());
+        }
+    }
+    // Zero and overflow errors must propagate through already-warm handlers.
+    for(int replay = 0; replay < 3; ++replay)
+    {
+        Owned<Value> success(context.thread()->call_clovervm_function(
+            function.value(), Value::from_smi(3), Value::from_smi(2)));
+        ASSERT_TRUE(has_native_layout<Float>(success.value()));
+        Value zero = context.thread()->call_clovervm_function(
+            function.value(), Value::from_smi(3), Value::from_smi(0));
+        ASSERT_TRUE(zero.is_exception_marker());
+        expect_pending_exception(context.thread(), L"ZeroDivisionError",
+                                 L"division by zero");
+        context.thread()->clear_pending_exception();
+        Owned<Value> balanced(context.thread()->call_clovervm_function(
+            function.value(), huge.value(), huge.value()));
+        ASSERT_TRUE(has_native_layout<Float>(balanced.value()));
+        Value overflow = context.thread()->call_clovervm_function(
+            function.value(), larger.value(), huge.value());
+        ASSERT_TRUE(overflow.is_exception_marker());
+        expect_pending_exception(
+            context.thread(), L"OverflowError",
+            L"integer division result too large for a float");
+        context.thread()->clear_pending_exception();
+    }
 }
