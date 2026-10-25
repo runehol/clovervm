@@ -36,6 +36,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <absl/container/inlined_vector.h>
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -483,6 +484,33 @@ namespace cl
         return fp - int32_t(n_below_frame_slots);
     }
 
+    static ALWAYSINLINE Value *
+    lowest_live_stack_slot_for_safepoint(Value *fp, const uint8_t *pc,
+                                         CodeObject *code_object)
+    {
+        Value *ordinary_bound =
+            lowest_live_stack_slot_for_current_frame(fp, code_object);
+        int32_t last_live_prefix_offset;
+        switch(bytecode_info(Bytecode(pc[0])).compound_role)
+        {
+            case BytecodeCompoundRole::BinaryOperatorContinuation:
+                last_live_prefix_offset = -3;
+                break;
+            case BytecodeCompoundRole::TernaryOperatorContinuation:
+                last_live_prefix_offset = -4;
+                break;
+            case BytecodeCompoundRole::ConditionalTruthinessContinuation:
+                last_live_prefix_offset = -1;
+                break;
+            default:
+                return ordinary_bound;
+        }
+        // A return restores the caller before reaching a safepoint. Its
+        // pending continuation still needs values below ordinary frame slots.
+        Value *prefix = fp + code_object->get_first_free_arg_encoded_reg();
+        return std::min(ordinary_bound, prefix + last_live_prefix_offset);
+    }
+
     static ALWAYSINLINE void
     set_clover_frame_frontier_for_native_call(ThreadState *thread, Value *fp,
                                               CodeObject *code_object)
@@ -494,7 +522,7 @@ namespace cl
     NOINLINE static INTERP_CC Value op_committed_safepoint_slow(PARAMS)
     {
         thread->publish_safepoint_scan_record(
-            lowest_live_stack_slot_for_current_frame(fp, code_object),
+            lowest_live_stack_slot_for_safepoint(fp, pc, code_object),
             Value::not_present(), Value::from_oop(code_object));
         thread->handle_safepoint(accumulator, fp, pc, code_object);
 
@@ -506,7 +534,7 @@ namespace cl
     op_committed_safepoint_with_accumulator_slow(PARAMS)
     {
         thread->publish_safepoint_scan_record(
-            lowest_live_stack_slot_for_current_frame(fp, code_object),
+            lowest_live_stack_slot_for_safepoint(fp, pc, code_object),
             accumulator, Value::from_oop(code_object));
         thread->handle_safepoint(accumulator, fp, pc, code_object);
 
