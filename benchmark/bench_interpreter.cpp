@@ -1436,6 +1436,34 @@ BENCHMARK_TEMPLATE(BM_PystoneArithmetic, CloverProgram)
     ->Name("BM_PystoneArithmetic")
     ->Arg(10000);
 
+// End-to-end builtin formatting, including result allocation and dispatch.
+static void BM_IntBaseFormatting(benchmark::State &state)
+{
+    const char *paths[] = {
+        "benchmark/int_base_bin_smi.py",    "benchmark/int_base_oct_smi.py",
+        "benchmark/int_base_hex_smi.py",    "benchmark/int_base_bin_bigint.py",
+        "benchmark/int_base_oct_bigint.py", "benchmark/int_base_hex_bigint.py"};
+    const int64_t lengths[] = {62, 23, 18, 1027, 344, 259};
+    const int64_t n = 10000;
+    const size_t index = static_cast<size_t>(state.range(0));
+    try
+    {
+        CloverProgram program(paths[index], n);
+        verify_benchmark_result(paths[index], n, n * lengths[index],
+                                program.run());
+        for(auto _: state)
+        {
+            benchmark::DoNotOptimize(program.run());
+        }
+        state.SetItemsProcessed(state.iterations() * n);
+    }
+    catch(const std::exception &err)
+    {
+        state.SkipWithError(err.what());
+    }
+}
+BENCHMARK(BM_IntBaseFormatting)->DenseRange(0, 5);
+
 int main(int argc, char **argv)
 {
     try

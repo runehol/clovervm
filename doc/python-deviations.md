@@ -214,6 +214,21 @@ paths are omitted. Held result tuples remain distinct and retain their elements.
 
 ## Numeric Semantics
 
+### Base-conversion builtins accept stored integer payloads only
+
+`bin(number, /)`, `oct(number, /)`, and `hex(number, /)` support tagged integers,
+arbitrary-size heap integers, booleans, and int subclasses. They format the
+stored payload without invoking subclass conversion or arithmetic overrides,
+with lowercase prefixes and a leading minus sign for negative values.
+
+Non-int objects with custom `__index__` remain unsupported: these builtins raise
+`TypeError` without invoking the hook. CPython 3.14.5 accepts such objects via
+its general index protocol. Closing this gap requires separate protocol work;
+these builtins do not add a local special-method lookup substitute. Argument
+count and keyword errors use the existing native-call binder, so their wording
+can differ from CPython. Formatting mini-language support and `int.__format__`
+are outside this slice.
+
 ### Some integer consumers still require SMI-sized tagged integers
 
 In Python, `bool` is a subclass of `int`, and arbitrary-precision integers are

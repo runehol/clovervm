@@ -188,6 +188,13 @@ namespace cl
                    : Value::False();
     }
 
+    template <unsigned DigitBits>
+    [[nodiscard]] static Value builtin_int_base(ThreadState *thread,
+                                                Value value)
+    {
+        return int_to_base_string<DigitBits>(thread, value);
+    }
+
     static Value builtin_ord(ThreadState *thread, Value obj)
     {
         if(has_native_layout<String>(obj))
@@ -370,6 +377,18 @@ namespace cl
         install_builtin_function_binding(
             vm, vm->global_builtins_module().extract(), L"callable",
             CL_TRY(make_intrinsic_function(vm, builtin_callable)).raw_value());
+        install_builtin_function_binding(
+            vm, vm->global_builtins_module().extract(), L"bin",
+            CL_TRY(make_intrinsic_function(vm, builtin_int_base<1>))
+                .raw_value());
+        install_builtin_function_binding(
+            vm, vm->global_builtins_module().extract(), L"oct",
+            CL_TRY(make_intrinsic_function(vm, builtin_int_base<3>))
+                .raw_value());
+        install_builtin_function_binding(
+            vm, vm->global_builtins_module().extract(), L"hex",
+            CL_TRY(make_intrinsic_function(vm, builtin_int_base<4>))
+                .raw_value());
         install_builtin_function_binding(
             vm, vm->global_builtins_module().extract(), L"ord",
             CL_TRY(make_intrinsic_function(vm, builtin_ord)).raw_value());

@@ -1,6 +1,7 @@
 #include "builtin_types/bigint.h"
 
 #include "builtin_types/int.h"
+#include "builtin_types/int_base_format.h"
 #include "builtin_types/tuple.h"
 #include "object_model/owned.h"
 #include "runtime/exception_object.h"
@@ -525,6 +526,103 @@ TEST(BigInt, DecimalStringFormatsLargePositiveAndNegativeValues)
               bigint_to_decimal_string(ConstBigIntView{3, 1, digits}));
     EXPECT_EQ(std::wstring(L"-18446744073709551616"),
               bigint_to_decimal_string(ConstBigIntView{3, -1, digits}));
+}
+
+TEST(BigInt, PowerOfTwoStringsFormatNormalizedPayloads)
+{
+    digit_t digits[] = {0x89abcdefu, 0x01234567u, 1};
+    struct Case
+    {
+        size_t n_digits;
+        signum_t signum;
+        const wchar_t *expected[3];
+    };
+    const Case cases[] = {
+        {0, 0, {L"0b0", L"0o0", L"0x0"}},
+        {1,
+         1,
+         {L"0b10001001101010111100110111101111", L"0o21152746757",
+          L"0x89abcdef"}},
+        {1,
+         -1,
+         {L"-0b10001001101010111100110111101111", L"-0o21152746757",
+          L"-0x89abcdef"}},
+        {2,
+         1,
+         {L"0b100100011010001010110011110001001101010111100110111101111",
+          L"0o4432126361152746757", L"0x123456789abcdef"}},
+        {2,
+         -1,
+         {L"-0b100100011010001010110011110001001101010111100110111101111",
+          L"-0o4432126361152746757", L"-0x123456789abcdef"}},
+        {3,
+         1,
+         {L"0b1000000010010001101000101011001111000100110101011110011011110111"
+          L"1",
+          L"0o2004432126361152746757", L"0x10123456789abcdef"}},
+        {3,
+         -1,
+         {L"-0b1000000010010001101000101011001111000100110101011110011011110111"
+          L"1",
+          L"-0o2004432126361152746757", L"-0x10123456789abcdef"}},
+    };
+    for(const Case &entry: cases)
+    {
+        auto check = [&]<unsigned DigitBits>(size_t index) {
+            int_format_detail::GrowableBuffer output;
+            auto text = int_format_detail::format_power_of_two<DigitBits>(
+                int_format_detail::BigIntMagnitude(
+                    ConstBigIntView{entry.n_digits, entry.signum, digits}),
+                output);
+            ASSERT_TRUE(text.has_value());
+            EXPECT_EQ(std::wstring_view(entry.expected[index]), text.value());
+        };
+        check.template operator()<1>(0);
+        check.template operator()<3>(1);
+        check.template operator()<4>(2);
+    }
+}
+
+TEST(BigInt, IntegerFormattingInputAndBufferChoicesAreIndependent)
+{
+    using namespace int_format_detail;
+    auto check = []<unsigned DigitBits>() {
+        // Exercise the asymmetric SMI endpoint and the full fixed capacity.
+        SmiMagnitude smi(value_smi_min);
+        SmiViewStorage storage;
+        BigIntMagnitude bigint(smi_bigint_view(value_smi_min, &storage));
+        FixedBuffer<max_smi_result_chars<DigitBits>> fixed_smi;
+        FixedBuffer<max_smi_result_chars<DigitBits>> fixed_bigint;
+        GrowableBuffer growable_smi;
+        GrowableBuffer growable_bigint;
+        auto a = format_power_of_two<DigitBits>(smi, fixed_smi);
+        auto b = format_power_of_two<DigitBits>(bigint, fixed_bigint);
+        auto c = format_power_of_two<DigitBits>(smi, growable_smi);
+        auto d = format_power_of_two<DigitBits>(bigint, growable_bigint);
+        ASSERT_TRUE(a.has_value());
+        ASSERT_TRUE(b.has_value());
+        ASSERT_TRUE(c.has_value());
+        ASSERT_TRUE(d.has_value());
+        EXPECT_EQ(a.value(), b.value());
+        EXPECT_EQ(a.value(), c.value());
+        EXPECT_EQ(a.value(), d.value());
+        EXPECT_EQ(max_smi_result_chars<DigitBits>, a.value().size());
+    };
+    check.template operator()<1>();
+    check.template operator()<3>();
+    check.template operator()<4>();
+}
+
+TEST(BigInt, IntegerFormattingRejectsInsufficientFixedBuffer)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    int_format_detail::FixedBuffer<2> output;
+    auto text = int_format_detail::format_power_of_two<1>(
+        int_format_detail::SmiMagnitude(0), output);
+    EXPECT_TRUE(text.has_exception());
+    expect_pending_exception(context.thread(), L"OverflowError",
+                             L"int too large to format");
 }
 
 TEST(BigInt, AbsMulAddU32WritesNormalizedMagnitude)

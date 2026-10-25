@@ -19,6 +19,9 @@ namespace cl
     };
 
     bool is_intlike_value(Value value);
+    // Stored integer/bool payloads only; custom __index__ is unsupported.
+    template <unsigned DigitBits>
+    [[nodiscard]] Value int_to_base_string(ThreadState *thread, Value value);
     // Validate an integer length payload against signed platform-size bounds,
     // without Python calls or SMI narrowing. Custom __index__ is unsupported.
     [[nodiscard]] Expected<int64_t> validate_length_result(Value value);
