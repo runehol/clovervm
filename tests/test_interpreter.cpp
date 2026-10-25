@@ -4323,6 +4323,65 @@ TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
             g_every_safepoint_reclamation_target_address)));
 }
 
+TEST(Interpreter, dict_literal_retains_builder_across_reclamation_callbacks)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    // Self-checking callback order and failure semantics also match CPython
+    // 3.14.5. Reclamation exercises the unpublished literal's native owner.
+    CodeObject *code = context.compile_file(LR"PY(
+events = []
+fail_hash = False
+fail_equal = False
+expected = ValueError("callback failure")
+class Key:
+    def __init__(self, name):
+        self.name = name
+    def __hash__(self):
+        events.append("hash " + self.name)
+        garbage = []
+        for i in range(12):
+            garbage.append([i])
+        if fail_hash and self.name == "b":
+            raise expected
+        return 37
+    def __eq__(self, other):
+        events.append("eq " + self.name + " " + other.name)
+        garbage = []
+        for i in range(12):
+            garbage.append([i])
+        if fail_equal:
+            raise expected
+        return self.name == other.name
+first = Key("a")
+second = Key("b")
+result = {first: [1], second: [2]}
+assert events == ["hash a", "hash b", "eq a b"]
+assert len(result) == 2
+assert result[first] == [1] and result[second] == [2]
+for mode in ("hash", "equal"):
+    fail_hash = mode == "hash"
+    fail_equal = mode == "equal"
+    result = "unchanged"
+    try:
+        result = {first: [3], second: [4]}
+    except ValueError as caught:
+        assert caught is expected
+    else:
+        raise AssertionError("expected callback failure")
+    assert result == "unchanged"
+fail_hash = False
+fail_equal = False
+result = {first: [5], second: [6]}
+assert len(result) == 2
+assert result[first] == [5] and result[second] == [6]
+)PY");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, intrinsic_function_thunk_uses_return_or_raise_adapter)
 {
     test::VmTestContext test_context;
