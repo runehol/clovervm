@@ -2320,8 +2320,11 @@ Store a small `SearchInfo` record in the compiled program, with larger tables
 in its owned vectors. Search metadata selects candidate starting positions for
 `re.search`; the matcher executes the same program from each candidate.
 `re.match` tries only at `pos`, while `re.fullmatch` also requires completion
-at `endpos`. These entry points can still use the minimum-width rejection
-check.
+at `endpos`. Preserve their method-specific handling of inverted bounds: with
+`pos > endpos`, search has no candidates and fullmatch cannot complete, but
+match still attempts the pattern at `pos` and can return an empty match. Do
+not share an unconditional inverted-bounds or remaining-width rejection across
+these entry points.
 
 ```cpp
 enum class SearchFilter : uint8_t
@@ -2349,8 +2352,12 @@ second word is zero. The builder derives and validates this metadata before
 publication. No execution-time mutation is needed.
 
 `minimum_width` is a conservative lower bound on consumed subject elements.
-Reject candidates when fewer elements remain. Nested repeat bounds can produce
-widths larger than 32 bits, so compute with checked, capped 64-bit arithmetic:
+Reject search candidates when fewer elements remain. A shared minimum-width
+precheck is applicable when `pos <= endpos`; for match with inverted bounds,
+preserve reference execution behavior instead of treating the negative
+remaining length as an automatic failure or normalizing it to empty input.
+Nested repeat bounds can produce widths larger than 32 bits, so compute with
+checked, capped 64-bit arithmetic:
 cap at `uint64_t{INT64_MAX} + 1`, meaning no supported subject can be long
 enough. This cap applies only to derived width analysis, not dynamic repeat
 counters. Assertions consume zero; where a useful bound cannot be proved,
@@ -2638,7 +2645,13 @@ Process native position converters in signature order: `pos` before `endpos`,
 both before subject validation. Propagate numeric-conversion exceptions before
 examining later arguments. After validating the subject, independently clamp
 positions into `[0, subject_length]`; negative positions mean zero, not indexing
-from the end. A resulting `pos > endpos` means no match. Overflow is checked
+from the end. Preserve method-specific behavior when the resulting
+`pos > endpos`: `search`, `finditer`, and `findall` have no candidate positions,
+and `fullmatch` cannot finish at the earlier end, but `match` still attempts
+the pattern at `pos`. An empty pattern or some zero-width assertions can
+succeed there, retaining the independently clamped `pos` and `endpos` on the
+result. Do not reject inverted bounds globally or replace them with an ordinary
+empty range; opcode-specific behavior still matters. Overflow is checked
 before clamping, so an unrepresentably large integer is not silently clipped.
 Keep counts signed until their zero/positive/negative meaning has been applied.
 
@@ -2775,6 +2788,28 @@ execution cases:
 - Atomic groups discard internal alternatives while retaining captures that an
   outer failure must still undo.
 - Empty repetitions terminate while preserving capture behavior.
+
+Bounds regressions must distinguish the entry points, including empty patterns
+and assertions. The distinction follows the reference [match entry point](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre.c)
+and [search's explicit inverted-bounds guard](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre_lib.h#L1580).
+
+Local CPython 3.14.5 probes on subject `"abc"`, `pos=2`, `endpos=1` give:
+
+| Pattern | `match` span | `search` / `fullmatch` | `finditer` spans / `findall` |
+|---|---|---|---|
+| Empty pattern | `(2, 2)` | `None` | `[]` |
+| `(?=)` | `(2, 2)` | `None` | `[]` |
+| `(?!x)` | `(2, 2)` | `None` | `[]` |
+| `(?=c)` | `None` | `None` | `[]` |
+| `(?<=b)` | `None` | `None` | `[]` |
+| `a*` | `None` | `None` | `[]` |
+
+Successful results retain `pos=2` and `endpos=1`; do not infer that every
+zero-minimum-width pattern succeeds. Repeat these cases for bytes patterns and
+subjects, and compare with equal bounds (`pos=endpos=1`) and independent
+clamping (`pos=99`, `endpos=1` gives an empty-pattern match at `(3, 3)`, with
+result bounds `3, 1`). Add these to engine/binding differential tests when
+those implementations land; this remains a design-only document.
 
 Cover bytes and Unicode category errors, all available subject widths, captures
 across failed alternatives, empty repetitions, assertions, atomicity, case
