@@ -5354,15 +5354,7 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
     };
 
     constexpr ExpectedBuiltin expected_builtins[] = {
-        {L"iter",
-         L"iter(iterable) -> iterator\n"
-         L"iter(callable, sentinel) -> iterator\n"
-         L"\n"
-         L"Get an iterator from an object.  In the first form, the argument "
-         L"must\n"
-         L"supply its own iterator, or be a sequence.\n"
-         L"In the second form, the callable is called until it returns the "
-         L"sentinel."},
+        {L"iter", L"Return an iterator over an iterable or a legacy sequence."},
         {L"next",
          L"next(iterator[, default])\n"
          L"\n"
@@ -5623,7 +5615,7 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
 TEST(Interpreter, tuple_constructor_rejects_noniterable_and_custom_init)
 {
     expect_python_error(L"class C(tuple): pass\nC(1)\n", L"TypeError",
-                        L"object is not iterable");
+                        L"'int' object is not iterable");
     expect_python_error(L"class C(tuple):\n"
                         L"    def __init__(self, *, required):\n"
                         L"        raise AssertionError\n"
@@ -7494,7 +7486,8 @@ TEST(Interpreter, python_defined_min_and_max_builtins_report_empty_input)
 
 TEST(Interpreter, python_defined_iter_and_next_builtin_missing_method_errors)
 {
-    expect_python_error(L"iter(1)\n", L"TypeError", L"object is not iterable");
+    expect_python_error(L"iter(1)\n", L"TypeError",
+                        L"'int' object is not iterable");
     expect_python_error(L"next(1)\n", L"TypeError",
                         L"object is not an iterator");
 }
@@ -7503,7 +7496,7 @@ TEST(Interpreter, for_loop_rejects_non_iterable)
 {
     expect_python_error(L"for x in 1:\n"
                         L"    x\n",
-                        L"TypeError", L"object is not iterable");
+                        L"TypeError", L"'int' object is not iterable");
 }
 
 TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
@@ -7513,7 +7506,7 @@ TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
                         L"        x\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"TypeError", L"object is not iterable");
+                        L"TypeError", L"'int' object is not iterable");
 }
 
 TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)

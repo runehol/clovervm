@@ -345,6 +345,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::ListAppend:
             case cl::Bytecode::ListExtend:
             case cl::Bytecode::ListToTuple:
+            case cl::Bytecode::GetIterator:
             case cl::Bytecode::ToExactTuple:
             case cl::Bytecode::ToExactList:
                 fmt::format_to(out, " ");

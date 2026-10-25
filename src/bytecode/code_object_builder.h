@@ -378,6 +378,8 @@ namespace cl
                                             uint32_t builder_reg);
         Expected<uint32_t> emit_list_to_tuple(uint32_t source_offset,
                                               uint32_t builder_reg);
+        Expected<uint32_t> emit_get_iterator(uint32_t source_offset,
+                                             uint32_t source_reg);
         Expected<uint32_t> emit_to_exact_tuple(uint32_t source_offset,
                                                uint32_t source_reg);
         Expected<uint32_t> emit_to_exact_list(uint32_t source_offset,

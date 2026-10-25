@@ -5,16 +5,36 @@ def abs(obj):
     )
 
 
-def iter(obj):
-    """iter(iterable) -> iterator
-iter(callable, sentinel) -> iterator
+def iter(obj, /):
+    """Return an iterator over an iterable or a legacy sequence."""
+    return __clover_get_iterator__(obj)
 
-Get an iterator from an object.  In the first form, the argument must
-supply its own iterator, or be a sequence.
-In the second form, the callable is called until it returns the sentinel."""
-    return __clover_call_special__(
-        obj, "__iter__", TypeError, "object is not iterable"
-    )
+
+def _clover_get_iterator(obj):
+    if _clover_iter_kind(obj):
+        result = __clover_call_special__(
+            obj, "__iter__", TypeError, "object is not iterable"
+        )
+        return _clover_validate_iterator(result)
+    return _clover_sequence_new(obj)
+
+
+def _clover_sequence_iterator_next(self, /):
+    source = _clover_sequence_source(self)
+    index = _clover_sequence_index(self)
+    try:
+        result = __clover_call_special__(
+            source, "__getitem__", TypeError, "object is not subscriptable", index
+        )
+    except IndexError:
+        _clover_sequence_clear(self)
+    except StopIteration:
+        _clover_sequence_clear(self)
+    else:
+        _clover_sequence_advance(self)
+        return result
+    # Raise outside the handler so exhaustion does not retain its exception.
+    raise StopIteration
 
 
 def next(obj, *default):

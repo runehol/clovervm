@@ -13,6 +13,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/module_spec_object.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/sequence_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/str.h"
 #include "builtin_types/string_iterator.h"
@@ -39,6 +40,7 @@
     V(RangeIterator);                                                          \
     V(StringIterator);                                                         \
     V(TupleIterator);                                                          \
+    V(SequenceIterator);                                                       \
     V(ListIterator);                                                           \
     V(DictKeysView);                                                           \
     V(DictValuesView);                                                         \

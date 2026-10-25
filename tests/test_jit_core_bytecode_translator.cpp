@@ -1559,4 +1559,45 @@ namespace cl::jit
         ASSERT_EQ(1u, constants.size());
     }
 
+    TEST(JitCoreBytecodeTranslator, GetIteratorResumesWithItsSourceRooted)
+    {
+        TranslatorFixture fixture;
+        uint32_t source_constant =
+            fixture.code_builder.allocate_constant(fixture.name).value();
+        uint32_t acquisition_pc;
+        {
+            CodeObjectBuilder::TemporaryReg source(fixture.code_builder);
+            fixture.code_builder.emit_lda_constant(0, uint8_t(source_constant))
+                .value();
+            fixture.code_builder.emit_star(0, source).value();
+            // The accumulator must not incidentally keep the source alive.
+            fixture.code_builder.emit_lda_none(0).value();
+            acquisition_pc =
+                fixture.code_builder.emit_get_iterator(0, source).value();
+            fixture.code_builder.emit_return(0).value();
+        }
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->normal_entry_block();
+        auto snapshots = instructions_of_kind(entry, InstructionKind::Snapshot);
+        auto resumes =
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
+        auto constants = instructions_of_kind(entry, InstructionKind::Const);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, resumes.size());
+        ASSERT_EQ(2u, constants.size());
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        EXPECT_EQ(acquisition_pc, snapshot.resume_pc_offset());
+        EXPECT_EQ(bytecode_state_size(*graph),
+                  snapshot.captured_values().size());
+        bool source_rooted = false;
+        for(size_t index = 0; index < snapshot.captured_values().size();
+            ++index)
+            source_rooted |=
+                snapshot.captured_values()[index].instruction_id() ==
+                constants.front().id();
+        EXPECT_TRUE(source_rooted);
+        EXPECT_TRUE(resumes.front().is_block_terminator());
+    }
+
 }  // namespace cl::jit

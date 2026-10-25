@@ -664,6 +664,14 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_get_iterator(uint32_t source_offset,
+                                         uint32_t source_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::GetIterator,
+                               source_reg);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_to_exact_tuple(uint32_t source_offset,
                                            uint32_t source_reg)
     {

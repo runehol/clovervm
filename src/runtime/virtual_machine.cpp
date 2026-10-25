@@ -18,6 +18,7 @@
 #include "builtin_types/none_type.h"
 #include "builtin_types/not_implemented_type.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/sequence_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_iterator.h"
 #include "builtin_types/tuple.h"
@@ -1085,6 +1086,7 @@ namespace cl
         register_builtin_class(make_tuple_iterator_class(this));
         register_builtin_class(make_string_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
+        register_builtin_class(make_sequence_iterator_class(this));
         register_builtin_class(make_dict_keys_view_class(this));
         register_builtin_class(make_dict_values_view_class(this));
         register_builtin_class(make_dict_items_view_class(this));
@@ -1484,6 +1486,8 @@ namespace cl
             get_or_create_interned_string_value(L"sys"),
             sys_module().raw_value());
 
+        install_sequence_iterator_bindings(this, implementation_module);
+
         Expected<CodeObject *> builtins_code = thread->compile_in_module(
             trusted_builtin_source, StartRule::File, implementation_module,
             LanguageMode::TrustedCloverExtensions);
@@ -1498,6 +1502,14 @@ namespace cl
             fatal_bootstrap_python_exception(
                 thread, "initializing trusted builtin_implementations.py");
         }
+
+        Value get_iterator = implementation_module->get_own_property(
+            interned_string(L"_clover_get_iterator"));
+        if(!has_native_layout<Function>(get_iterator))
+            fatal("missing get-iterator helper");
+        get_iterator_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(get_iterator));
+        install_sequence_iterator_python_methods(this, implementation_module);
 
         Value to_exact_tuple = implementation_module->get_own_property(
             get_or_create_interned_string_value(

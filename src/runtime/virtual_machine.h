@@ -129,6 +129,11 @@ namespace cl
         TValue<Function> hash_value_helper_function() const;
         TValue<Function> test_equal_helper_function() const;
         TValue<Function> ordering_helper_function(OrderingOp operation) const;
+        TValue<Function> get_iterator_function() const
+        {
+            assert(get_iterator_function_.value().has_value());
+            return get_iterator_function_.value().value();
+        }
         TValue<Function> iterable_to_exact_tuple_function() const;
         TValue<Function> iterable_to_exact_list_function() const;
         TValue<Function> dict_insert_if_absent_known_hash_function() const;
@@ -480,6 +485,7 @@ namespace cl
         Owned<Optional<TValue<Function>>> test_equal_helper_function_;
         std::array<Owned<Optional<TValue<Function>>>, 4>
             ordering_helper_functions_;
+        Owned<Optional<TValue<Function>>> get_iterator_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_tuple_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_list_function_;
         Owned<Optional<TValue<Function>>>

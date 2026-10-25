@@ -233,6 +233,7 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::GetIterator:
             case Bytecode::ToExactTuple:
             case Bytecode::ToExactList:
                 effects.source_register(0);

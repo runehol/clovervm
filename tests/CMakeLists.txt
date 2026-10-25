@@ -76,6 +76,7 @@ target_sources(test_clovervm PRIVATE
 	test_typed_value.cpp
 	test_unicode.cpp
 	test_tuple.cpp
+	test_sequence_iterator.cpp
 	)
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)

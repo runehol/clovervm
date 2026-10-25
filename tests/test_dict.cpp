@@ -1488,7 +1488,8 @@ TEST(Dict, PublicUpdateRejectsInvalidInputs)
         L"{}.update([['only-one']])\n", L"{}.update([['one', 2, 'three']])\n"};
     const wchar_t *exception_names[] = {L"TypeError", L"TypeError",
                                         L"ValueError", L"ValueError"};
-    const wchar_t *messages[] = {L"object is not iterable", L"", L"", L""};
+    const wchar_t *messages[] = {L"'NoneType' object is not iterable", L"", L"",
+                                 L""};
 
     for(size_t idx = 0; idx < std::size(expressions); ++idx)
     {
@@ -1503,7 +1504,7 @@ TEST(Dict, PublicUpdateRejectsInvalidInputs)
 TEST(Dict, PublicDictConstructorRejectsInvalidInputs)
 {
     const wchar_t *expressions[] = {L"dict(None)\n", L"dict([], [])\n"};
-    const wchar_t *messages[] = {L"object is not iterable", L""};
+    const wchar_t *messages[] = {L"'NoneType' object is not iterable", L""};
 
     for(size_t idx = 0; idx < std::size(expressions); ++idx)
     {

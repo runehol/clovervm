@@ -251,6 +251,8 @@ add_library(libclovervm_objects OBJECT
     builtin_types/list.h
     builtin_types/list_iterator.cpp
     builtin_types/list_iterator.h
+    builtin_types/sequence_iterator.cpp
+    builtin_types/sequence_iterator.h
     builtin_types/module_object.cpp
     builtin_types/module_object.h
     builtin_types/module_loader_object.cpp

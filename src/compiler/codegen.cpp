@@ -870,6 +870,7 @@ namespace cl
             MergeCallKeywords,
             AddCallKeyword,
             ListToTuple,
+            GetIterator,
             ToExactTuple,
             ToExactList,
         };
@@ -947,6 +948,10 @@ namespace cl
                 return Expected<TrustedCloverCall>::ok(
                     TrustedCloverCall::ListToTuple);
             }
+            if(name_value ==
+               interned_string(L"__clover_get_iterator__").raw_value())
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::GetIterator);
             if(name_value ==
                interned_string(L"__clover_to_exact_tuple__").raw_value())
             {
@@ -1365,6 +1370,25 @@ namespace cl
         }
 
         Expected<void>
+        codegen_trusted_clover_get_iterator(uint32_t source_offset,
+                                            AstChildren args)
+        {
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_get_iterator__"));
+            if(args.size() != 1)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_get_iterator__ expects exactly 1 argument");
+            }
+            TemporaryReg source(*code_obj);
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), source));
+            CL_TRY(code_obj->emit_get_iterator(source_offset, source));
+            return Expected<void>::ok();
+        }
+
+        Expected<void>
         codegen_trusted_clover_to_exact_tuple(uint32_t source_offset,
                                               AstChildren args)
         {
@@ -1411,6 +1435,10 @@ namespace cl
             TrustedCloverCall kind = CL_TRY(trusted_clover_call_kind(node_idx));
             switch(kind)
             {
+                case TrustedCloverCall::GetIterator:
+                    CL_TRY(codegen_trusted_clover_get_iterator(source_offset,
+                                                               args));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::ToExactTuple:
                     CL_TRY(codegen_trusted_clover_to_exact_tuple(source_offset,
                                                                  args));
@@ -2946,23 +2974,8 @@ namespace cl
                 CL_TRY(code_obj->emit_call_positional(source_offset, range_regs,
                                                       call_args, n_args));
             }
-            uint8_t iter_constant_idx = CL_TRY(
-                code_obj->allocate_constant(interned_string(L"__iter__")));
-            uint8_t not_iterable_type_constant_idx =
-                CL_TRY(code_obj->allocate_constant(Value::from_oop(
-                    active_thread()->class_for_builtin_name(L"TypeError"))));
-            uint8_t not_iterable_message_constant_idx =
-                CL_TRY(code_obj->allocate_constant(
-                    interned_string(L"object is not iterable")));
-            {
-                TemporaryReg call_args(*code_obj, 1,
-                                       RegisterAlignment::CallFrame);
-                CL_TRY(code_obj->emit_star(source_offset, call_args));
-                CL_TRY(code_obj->emit_call_special_method(
-                    source_offset, call_args, iter_constant_idx, 0,
-                    not_iterable_type_constant_idx,
-                    not_iterable_message_constant_idx));
-            }
+            CL_TRY(code_obj->emit_star(source_offset, iterator_reg));
+            CL_TRY(code_obj->emit_get_iterator(source_offset, iterator_reg));
             CL_TRY(code_obj->emit_star(source_offset, iterator_reg));
             CL_TRY(codegen_iterator_driven_for_loop(source_offset, target_idx,
                                                     body_idx, iterator_reg,
@@ -3561,26 +3574,10 @@ namespace cl
                         JumpTarget else_target(code_obj);
                         JumpTarget break_target(code_obj);
 
-                        uint8_t iter_constant_idx =
-                            CL_TRY(code_obj->allocate_constant(
-                                interned_string(L"__iter__")));
-                        uint8_t not_iterable_type_constant_idx =
-                            CL_TRY(code_obj->allocate_constant(Value::from_oop(
-                                active_thread()->class_for_builtin_name(
-                                    L"TypeError"))));
-                        uint8_t not_iterable_message_constant_idx =
-                            CL_TRY(code_obj->allocate_constant(
-                                interned_string(L"object is not iterable")));
-                        {
-                            TemporaryReg call_args(
-                                *code_obj, 1, RegisterAlignment::CallFrame);
-                            CL_TRY(codegen_node_into_specific_register(
-                                iterable_idx, call_args));
-                            CL_TRY(code_obj->emit_call_special_method(
-                                source_offset, call_args, iter_constant_idx, 0,
-                                not_iterable_type_constant_idx,
-                                not_iterable_message_constant_idx));
-                        }
+                        CL_TRY(codegen_node_into_specific_register(
+                            iterable_idx, iterator_reg));
+                        CL_TRY(code_obj->emit_get_iterator(source_offset,
+                                                           iterator_reg));
                         CL_TRY(
                             code_obj->emit_star(source_offset, iterator_reg));
                         CL_TRY(codegen_iterator_driven_for_loop(

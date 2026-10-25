@@ -23,6 +23,7 @@ namespace cl
         TupleIterator,
         StringIterator,
         ListIterator,
+        SequenceIterator,
         DictKeysView,
         DictValuesView,
         DictItemsView,

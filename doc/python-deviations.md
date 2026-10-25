@@ -166,6 +166,20 @@ keeps this behavior intentionally; it is not a pending protocol implementation.
 
 ## Builtins And Iteration
 
+### Iterator special methods retain descriptor dispatch limits
+
+One-argument `iter(obj, /)` validates type-level `__next__` support and uses
+legacy indexed `__getitem__` iteration when type/MRO `__iter__` is absent.
+Generic loops use the same acquisition path. Explicit `__iter__ = None` blocks
+the sequence fallback. The internal sequence iterator releases its source and
+stays exhausted after `IndexError` or `StopIteration`.
+
+Custom descriptors requiring interpreter-driven `__get__` still raise the
+existing descriptor-dispatch `TypeError` when called through the special-method
+dispatcher. Iterator validation only inspects `__next__` presence and does not
+invoke descriptors. Two-argument callable/sentinel `iter`, sequence-iterator
+length hints, and pickling methods are not implemented.
+
 ### `range()` returns a range iterator
 
 Python's `range()` returns an immutable reusable range object. `iter(range(...))`

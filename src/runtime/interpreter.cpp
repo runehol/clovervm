@@ -4891,6 +4891,28 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_get_iterator(PARAMS)
+    {
+        int8_t source_reg = pc[1];
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = fp[source_reg];
+        TValue<Function> function =
+            thread->get_machine()->get_iterator_function();
+        DispatchTableEntry target = enter_function_frame_from_positional_args(
+            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 1,
+            2, FunctionCallAdaptation::FixedArity);
+        if(target != nullptr)
+        {
+            MUSTTAIL return target(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_to_exact_tuple_slow(PARAMS)
     {
         int8_t source_reg = pc[1];
@@ -6866,6 +6888,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::AddCallKeyword, op_add_call_keyword);
         SET_TABLE_ENTRY(Bytecode::ListExtend, op_list_extend);
         SET_TABLE_ENTRY(Bytecode::ListToTuple, op_list_to_tuple);
+        SET_TABLE_ENTRY(Bytecode::GetIterator, op_get_iterator);
         SET_TABLE_ENTRY(Bytecode::ToExactTuple, op_to_exact_tuple);
         SET_TABLE_ENTRY(Bytecode::ToExactList, op_to_exact_list);
         SET_TABLE_ENTRY(Bytecode::CreateBinarySlice, op_create_binary_slice);

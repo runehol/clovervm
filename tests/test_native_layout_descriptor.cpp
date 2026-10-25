@@ -6,6 +6,7 @@
 #include "builtin_types/list_iterator.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/sequence_iterator.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
@@ -234,6 +235,7 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<RangeIterator>();
     expect_static_native_layout_descriptor<TupleIterator>();
     expect_static_native_layout_descriptor<ListIterator>();
+    expect_static_native_layout_descriptor<SequenceIterator>();
     expect_static_native_layout_descriptor<ExceptionObject>();
     expect_static_native_layout_descriptor<StopIterationObject>();
     expect_static_native_layout_descriptor<Function>();

@@ -866,3 +866,39 @@ Key tests for the transition:
 - Public `StopIteration` from `__next__` is cleared before loop exit.
 - Other exceptions from `__next__` propagate.
 - Re-entrant calls use separate frame-local plan state.
+
+### Shared ordinary iterator acquisition
+
+Ordinary `for` lowering and the generic fallback for direct `range` calls use
+`GetIterator`, also emitted for the trusted `__clover_get_iterator__` intrinsic
+used by public `iter(obj, /)`. The opcode enters the VM-rooted managed
+`_clover_get_iterator` helper through the ordinary interpreter function-frame
+entry path. It does not resolve the public `builtins.iter` binding. Existing
+exact list/tuple conversion and list extension helpers inherit this behavior
+through their ordinary loops. Direct guarded range iteration stays specialized.
+
+The managed helper calls type/MRO `__iter__` through `CallSpecialMethod0` and
+validates type-level `__next__` presence without invoking or binding it. Explicit
+`__iter__ = None` blocks fallback. Only absent `__iter__` allows the legacy
+sequence path, which requires type/MRO `__getitem__` presence. Instance attributes
+are ignored. Non-callable `__next__` attributes still pass validation, matching
+CPython; advancement reports their call error. General descriptor invocation
+remains limited by the existing special-method dispatcher.
+
+The internal non-subclassable `SequenceIterator` (Python name `iterator`) owns a
+traced `Member<Value>` source and a signed-size bounded scalar index. Its managed
+`__next__` calls `__getitem__` with the current integer index. Native state helpers
+never run Python callbacks. A successful callback increments current state,
+including changes made by reentry; transient errors preserve state. `IndexError`
+or `StopIteration` (including subclasses) clears the source and permanently
+exhausts the iterator. Construction does not fetch an item or query length.
+Index overflow raises before invoking the source. GC metadata scans the source
+but never treats the scalar index as a handle.
+
+This supersedes the earlier acquisition sketches that directly call `__iter__`
+or use ordinary attribute lookup. Advancement continues to use explicit
+`CallSpecialMethod0` with its existing caches, MRO validity guards, and synthetic
+`StopIteration` handler. `GetIterator` initially uses generic JIT
+resume-in-interpreter handling. Callable/sentinel iteration, length hints,
+pickling, descriptor expansion, and lifecycle changes to other iterator types
+remain separate work.

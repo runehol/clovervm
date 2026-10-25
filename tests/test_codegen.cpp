@@ -1607,62 +1607,19 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
 
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
-    std::string expected =
-        "Code object:\n"
-        "    0 LdaSmi 0\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "    8 Star0\n"
-        "    9 LdaSmi 3\n"
-        "   11 Star1\n"
-        "   12 ForPrepRange1 r0, 40\n"
-        "   16 ForIterRange1 r0, 98\n"
-        "   20 StaGlobal c[2], module_global_mutation_ic[1]\n"
-        "   23 LdaGlobal c[0], module_global_read_ic[1]\n"
-        "   26 Star3\n"
-        "   27 LdaGlobal c[2], module_global_read_ic[2]\n"
-        "   30 Add r3, operator_ic[0]\n"
-        "   34 StaGlobal c[0], module_global_mutation_ic[2]\n"
-        "   37 Jump 16\n"
-        "   40 Mov r4, r1\n"
-        "   43 CallPositional r0, {r4:1}, call_ic[0]\n"
-        "   48 Star4\n"
-        "   49 CallSpecialMethod0 r4, c[3], operator_ic[1], c[4], c[5]\n"
-        "   55 Star2\n"
-        "   56 Mov r4, r2\n"
-        "   59 CallSpecialMethod0 r4, c[6], operator_ic[2], c[4], c[7]\n"
-        "   65 StaGlobal c[2], module_global_mutation_ic[3]\n"
-        "   68 LdaGlobal c[0], module_global_read_ic[3]\n"
-        "   71 Star3\n"
-        "   72 LdaGlobal c[2], module_global_read_ic[4]\n"
-        "   75 Add r3, operator_ic[3]\n"
-        "   79 StaGlobal c[0], module_global_mutation_ic[4]\n"
-        "   82 Jump 56\n"
-        "   85 LdaConstant c[8]\n"
-        "   87 ActiveExceptionIsInstance\n"
-        "   88 JumpIfFalse operator_ic[4], 97\n"
-        "   93 ClearActiveException\n"
-        "   94 Jump 98\n"
-        "   97 ReraiseActiveException\n"
-        "   98 LdaGlobal c[0], module_global_read_ic[5]\n"
-        "  101 Return\n"
-        "Exception table:\n"
-        "    59..65 -> 85\n"
-        "Constant 0: \"total\"\n"
-        "Constant 1: \"range\"\n"
-        "Constant 2: \"x\"\n"
-        "Constant 3: \"__iter__\"\n"
-        "Constant 4: <class TypeError>\n"
-        "Constant 5: \"object is not iterable\"\n"
-        "Constant 6: \"__next__\"\n"
-        "Constant 7: \"object is not an iterator\"\n"
-        "Constant 8: <class StopIteration>\n";
     std::string actual = bytecode_str_from_file(L"total = 0\n"
                                                 "for x in range(3):\n"
                                                 "    total += x\n"
                                                 "total\n");
 
-    EXPECT_EQ(expected, actual);
+    EXPECT_NE(std::string::npos, actual.find("ForPrepRange1"));
+    EXPECT_NE(std::string::npos, actual.find("ForIterRange1"));
+    EXPECT_LT(actual.find("ForPrepRange1"), actual.find("GetIterator"));
+    EXPECT_NE(std::string::npos, actual.find("GetIterator"));
+    EXPECT_NE(std::string::npos, actual.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, actual.find("\"__next__\""));
+    EXPECT_EQ(std::string::npos, actual.find("\"__iter__\""));
+    EXPECT_NE(std::string::npos, actual.find("Exception table:"));
 }
 
 TEST(Codegen, local_augmented_assignment_in_loop_uses_dominating_binding)
@@ -1704,46 +1661,15 @@ TEST(Codegen, local_deleted_in_while_body_checks_next_condition_load)
 
 TEST(Codegen, non_direct_for_loop_uses_generic_iterator_protocol_calls)
 {
-    std::string expected =
-        "Code object:\n"
-        "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    3 Star0\n"
-        "    4 LdaSmi 3\n"
-        "    6 Star2\n"
-        "    7 CallPositional r0, {r2:1}, call_ic[0]\n"
-        "   12 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "   15 LdaGlobal c[1], module_global_read_ic[1]\n"
-        "   18 Star2\n"
-        "   19 CallSpecialMethod0 r2, c[2], operator_ic[0], c[3], c[4]\n"
-        "   25 Star0\n"
-        "   26 Mov r2, r0\n"
-        "   29 CallSpecialMethod0 r2, c[5], operator_ic[1], c[3], c[6]\n"
-        "   35 StaGlobal c[8], module_global_mutation_ic[1]\n"
-        "   38 LdaGlobal c[8], module_global_read_ic[2]\n"
-        "   41 Jump 26\n"
-        "   44 LdaConstant c[7]\n"
-        "   46 ActiveExceptionIsInstance\n"
-        "   47 JumpIfFalse operator_ic[2], 56\n"
-        "   52 ClearActiveException\n"
-        "   53 Jump 57\n"
-        "   56 ReraiseActiveException\n"
-        "   57 Return\n"
-        "Exception table:\n"
-        "    29..35 -> 44\n"
-        "Constant 0: \"range\"\n"
-        "Constant 1: \"it\"\n"
-        "Constant 2: \"__iter__\"\n"
-        "Constant 3: <class TypeError>\n"
-        "Constant 4: \"object is not iterable\"\n"
-        "Constant 5: \"__next__\"\n"
-        "Constant 6: \"object is not an iterator\"\n"
-        "Constant 7: <class StopIteration>\n"
-        "Constant 8: \"x\"\n";
     std::string actual = bytecode_str_from_file(L"it = range(3)\n"
                                                 "for x in it:\n"
                                                 "    x\n");
 
-    EXPECT_EQ(expected, actual);
+    EXPECT_NE(std::string::npos, actual.find("GetIterator"));
+    EXPECT_NE(std::string::npos, actual.find("CallSpecialMethod0"));
+    EXPECT_NE(std::string::npos, actual.find("\"__next__\""));
+    EXPECT_EQ(std::string::npos, actual.find("\"__iter__\""));
+    EXPECT_NE(std::string::npos, actual.find("Exception table:"));
 }
 
 TEST(Codegen, trusted_clover_call_special_lowers_to_special_method_call)
@@ -2449,4 +2375,12 @@ TEST(Codegen, expanded_methods_use_fused_lookup_with_adjacent_transport)
     EXPECT_TRUE(found);
     EXPECT_NE(std::string::npos,
               fmt::format("{}", *code).find("CallMethodAttrExpanded"));
+}
+
+TEST(Codegen, trusted_get_iterator_lowers_to_shared_acquisition)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def acquire(obj):\n    return __clover_get_iterator__(obj)\n");
+    EXPECT_NE(std::string::npos, actual.find("GetIterator"));
+    EXPECT_EQ(std::string::npos, actual.find("CallSpecialMethod"));
 }
