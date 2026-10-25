@@ -1,7 +1,8 @@
-"""Bounded Base64 encoding and decoding for bytes and ASCII strings.
+"""Bounded Base16, Base32, and Base64 conversion for bytes and ASCII strings.
 
-Uses stored payloads; subclass encode/translate overrides and general buffers
-are outside this slice.
+Uses stored payloads; subclass length, indexing, and transformation overrides
+are outside this slice, except explicit altchars/map01 length assertions.
+General buffers are unsupported.
 """
 # Wrappers and decoder state machine adapted from CPython v3.14.5,
 # Lib/base64.py and Modules/binascii.c.
@@ -11,7 +12,9 @@ are outside this slice.
 import binascii
 
 __all__ = ["b64encode", "b64decode", "standard_b64encode",
-           "standard_b64decode", "urlsafe_b64encode", "urlsafe_b64decode"]
+           "standard_b64decode", "urlsafe_b64encode", "urlsafe_b64decode",
+           "b16encode", "b16decode", "b32encode", "b32decode",
+           "b32hexencode", "b32hexdecode"]
 
 _alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _decode_table = []
@@ -157,3 +160,132 @@ def urlsafe_b64decode(s):
     """Decode URL-safe or standard Base64 from bytes or ASCII text."""
     s = _encode_input(_bytes_from_decode_data(s))
     return b64decode(_translate(s, b"-_", b"+/"))
+
+
+_b16alphabet = b"0123456789ABCDEF"
+_b32alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+_b32hexalphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUV"
+_b32_decode_table = []
+_b32hex_decode_table = []
+for _i in range(256):
+    _b32_decode_table.append(-1)
+    _b32hex_decode_table.append(-1)
+for _i in range(32):
+    _b32_decode_table[_b32alphabet[_i]] = _i
+    _b32hex_decode_table[_b32hexalphabet[_i]] = _i
+
+
+def _fold_ascii(s):
+    result = []
+    for i in range(len(s)):
+        ch = s[i]
+        result.append(ch - 32 if 97 <= ch <= 122 else ch)
+    return bytes(result)
+
+
+def b16encode(s):
+    """Encode stored bytes using the uppercase Base16 alphabet."""
+    s = _encode_input(s)
+    result = []
+    for i in range(len(s)):
+        ch = s[i]
+        result.append(_b16alphabet[ch >> 4])
+        result.append(_b16alphabet[ch & 15])
+    return bytes(result)
+
+
+def b16decode(s, casefold=False):
+    """Decode Base16 bytes or ASCII text, optionally allowing lowercase."""
+    s = _encode_input(_bytes_from_decode_data(s))
+    if casefold:
+        s = _fold_ascii(s)
+    digits = []
+    for i in range(len(s)):
+        ch = s[i]
+        if 48 <= ch <= 57:
+            digits.append(ch - 48)
+        elif 65 <= ch <= 70:
+            digits.append(ch - 55)
+        else:
+            raise binascii.Error("Non-base16 digit found")
+    if len(s) % 2:
+        raise binascii.Error("Odd-length string")
+    result = []
+    for i in range(0, len(digits), 2):
+        result.append((digits[i] << 4) | digits[i + 1])
+    return bytes(result)
+
+
+def _b32encode(alphabet, s):
+    s = _encode_input(s)
+    result = []
+    acc = 0
+    bits = 0
+    for i in range(len(s)):
+        ch = s[i]
+        acc = (acc << 8) | ch
+        bits += 8
+        while bits >= 5:
+            bits -= 5
+            result.append(alphabet[(acc >> bits) & 31])
+        # Keep only the partial symbol, independent of input length.
+        acc &= (1 << bits) - 1
+    if bits:
+        result.append(alphabet[acc << (5 - bits)])
+    while len(result) % 8:
+        result.append(61)
+    return bytes(result)
+
+
+def _b32decode(table, s, casefold=False, map01=None):
+    s = _encode_input(_bytes_from_decode_data(s))
+    if len(s) % 8:
+        raise binascii.Error("Incorrect padding")
+    if map01 is not None:
+        map01 = _bytes_from_decode_data(map01)
+        assert len(map01) == 1, repr(map01)
+        # The assertion sees subclass hooks; translation checks stored length.
+        s = _translate(s, b"01", b"O" + _encode_input(map01))
+    if casefold:
+        s = _fold_ascii(s)
+    end = len(s)
+    while end and s[end - 1] == 61:
+        end -= 1
+    pads = len(s) - end
+    result = []
+    acc = 0
+    bits = 0
+    for i in range(end):
+        digit = table[s[i]]
+        if digit < 0:
+            raise binascii.Error("Non-base32 digit found")
+        acc = (acc << 5) | digit
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            result.append((acc >> bits) & 255)
+        acc &= (1 << bits) - 1
+    # Validate after alphabet errors, and accept unused nonzero bits like CPython.
+    if pads not in (0, 1, 3, 4, 6):
+        raise binascii.Error("Incorrect padding")
+    return bytes(result)
+
+
+def b32encode(s):
+    """Encode stored bytes using the standard padded Base32 alphabet."""
+    return _b32encode(_b32alphabet, s)
+
+
+def b32decode(s, casefold=False, map01=None):
+    """Decode Base32, optionally folding case and mapping digits 0 and 1."""
+    return _b32decode(_b32_decode_table, s, casefold, map01)
+
+
+def b32hexencode(s):
+    """Encode stored bytes using the extended hexadecimal Base32 alphabet."""
+    return _b32encode(_b32hexalphabet, s)
+
+
+def b32hexdecode(s, casefold=False):
+    """Decode extended hexadecimal Base32, optionally folding lowercase."""
+    return _b32decode(_b32hex_decode_table, s, casefold)
