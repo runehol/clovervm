@@ -1,5 +1,7 @@
 #include "builtin_types/int.h"
 
+#include "builtin_types/int_base_format.h"
+
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
@@ -278,6 +280,44 @@ namespace cl
         }
         return int_new_subclass_slow(thread, cls_value, obj);
     }
+
+    template <unsigned DigitBits, typename Integer, typename Buffer>
+    [[nodiscard]] static Value make_int_base_string(ThreadState *thread,
+                                                    const Integer &input)
+    {
+        Buffer output;
+        std::wstring_view text = CL_TRY(
+            int_format_detail::format_power_of_two<DigitBits>(input, output));
+        return thread->make_object_value<String>(text).raw_value();
+    }
+
+    template <unsigned DigitBits>
+    Value int_to_base_string(ThreadState *thread, Value value)
+    {
+        using namespace int_format_detail;
+        if(is_smi_or_bool_value(value))
+        {
+            return make_int_base_string<
+                DigitBits, SmiMagnitude,
+                FixedBuffer<max_smi_result_chars<DigitBits>>>(
+                thread, SmiMagnitude(smi_or_bool_as_int(value)));
+        }
+        if(has_native_layout<BigInt>(value))
+        {
+            return make_int_base_string<DigitBits, BigIntMagnitude,
+                                        GrowableBuffer>(
+                thread, BigIntMagnitude(native_cast<BigInt>(value)->view()));
+        }
+        std::wstring message = L"'";
+        message.append(string_view(thread->class_of_value(value)->get_name()));
+        message += L"' object cannot be interpreted as an integer";
+        return thread->set_pending_builtin_exception_string(L"TypeError",
+                                                            message.c_str());
+    }
+
+    template Value int_to_base_string<1>(ThreadState *, Value);
+    template Value int_to_base_string<3>(ThreadState *, Value);
+    template Value int_to_base_string<4>(ThreadState *, Value);
 
     static Value native_int_str(ThreadState *thread, Value self)
     {

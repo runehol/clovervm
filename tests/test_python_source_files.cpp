@@ -89,6 +89,15 @@ TEST_P(PythonSourceFileTest, RunsSelfCheckingSource)
         << "self-checking Python source raised an exception";
 }
 
+TEST(PythonSourceFiles, IntegerBaseFormattingSurvivesEverySafepointReclamation)
+{
+    std::wstring source = read_source_file("tests/python/builtin_int_bases.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
 TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/itertools_selection.py",

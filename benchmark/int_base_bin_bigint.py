@@ -1,0 +1,8 @@
+# Fixed input isolates formatting from integer arithmetic.
+def run(n):
+    value = (1 << 1024) + 7
+    acc = 0
+    for i in range(n):
+        text = bin(value)
+        acc += len(text)
+    return acc
