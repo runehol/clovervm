@@ -212,15 +212,72 @@ alone does not establish compatibility.
 
 Use a full typed regex AST, separate from the Python language AST. The parser
 owns syntax, source spans, effective scoped flags, and group definitions and
-references. Analysis derives widths and search metadata; the compiler expands
-classes, forms literal runs, and selects instructions through the program
-builder. Freeze finalizes and publishes the program, then compilation discards
-the tree. Do not emit matching bytecode directly from the parser or introduce a
-second lowered tree initially.
+references. An explicit normalization pass rewrites that AST before width
+and search analysis; codegen then expands fixed-rule class membership, forms
+literal runs, and selects instructions through the program builder. Freeze
+finalizes and publishes the program, then compilation discards the tree. Use
+the existing node arena rather than a second lowered tree or a reference stream
+that represents equivalent rewrites indirectly.
 
 Parse literals individually so quantifiers bind to the correct atom. Preserve
 unexpanded class elements until compilation. Group-reference validation and
 lookbehind checks preserve Python's diagnostic numbering and error precedence.
+
+### AST Normalization
+
+Normalize the existing AST explicitly before analysis and codegen. This owns
+both reference-compatible locale canonicalization and the single-character
+alternation normalization previously assigned to codegen recognition. Rewrite
+node payloads and sequence/branch child lists in the existing arena; retain
+source spans, capture numbering, and the provenance needed for diagnostics and
+locale semantics. There is no read-only normalization stream or alternative
+planning representation hiding those transformations.
+
+Locale normalization follows CPython's order: source-class singleton
+classification, flattening transparent noncapturing groups, common-prefix
+extraction, then eligible single-character class union. Preserve explicit
+scoped-flag groups as barriers, source literal/range/category distinctions,
+and reference residual-branch structure where it affects enclosing
+normalization. Do not replace a true locale class by a singleton merely
+because later membership merging produces one byte. The exact in-place rewrite
+shapes and comparison rules remain the next AR-03 design item.
+
+For fixed ASCII/Unicode matching, normalize capture-free one-character
+alternatives into a class before repeat selection. Look through noncapturing
+groups and one-child sequences while preserving effective flags; require
+literal or positive-class arms with the same character mode and ignorecase
+behavior. Union explicit members and category predicates and remove duplicates.
+A positive class here has no outer negation; negative category predicates remain
+ordinary union terms. Codegen subsequently applies the existing fixed-rule
+case expansion, range merging, and representation-selection policy.
+
+Eligible arms each consume one character and have no capture/assertion effects,
+so overlap does not make their ordering observable. Nullable arms, multiple
+operations, captures, assertions, backreferences, differing matching modes,
+and unions requiring outer-negated classes retain alternatives. Common-prefix
+factoring such as `ab|ac` to `a[bc]` is optional for fixed-rule matching;
+locale compatibility can require reference factoring even without a speed gain.
+
+| Source | Normalization and subsequent lowering |
+|---|---|
+| `(?:a|b)*`, `(?:(?:a)|(?:b))*` | Class `[ab]`; simple repeat |
+| `(?:a|b|a)*` | Deduplicated class `[ab]`; simple repeat |
+| `(?:[ab]|c)*` | Class `[abc]`; simple repeat |
+| `(?:a|)*` | Nullable alternative retained; general repeat |
+| `(?:(?=a)a|b)*` | Assertion-bearing alternative retained; general repeat |
+| `(?:(a)|b)*` | Capture-bearing alternative retained; general repeat |
+| `(?:(?i:a)|b)*` | Differing case rules retained initially; general repeat |
+
+A surrounding capture remains: `(a|b)*` can normalize its inner alternative
+to a class, but codegen still emits opening/closing marks and general repetition.
+Codegen's simple-repeat eligibility check now inspects the normalized body;
+it does not combine branches or simulate a rewritten tree. Literal-run
+formation and final class storage selection remain codegen responsibilities.
+
+An ineligible subtree stays unchanged; allocation/normalization failures
+propagate as errors. Add AST-shape and semantic tests for greedy/lazy/possessive
+selection, wrappers, duplicates/overlap, scoped flags, locale provenance, and
+excluded side-effecting/nullable cases. No runtime opcode is added by this pass.
 
 ### AST Nodes And Storage
 
@@ -263,7 +320,7 @@ reserved `UINT32_MAX` capture-index value.
 | `ClassNode` | Outer negation and inline vector of class elements |
 | `AnyNode` | No payload; `DOTALL` comes from effective flags |
 | `AnchorNode` | Anchor kind |
-| `GroupNode` | Body node and capture index, or `NoCapture` |
+| `GroupNode` | Body, capture index or `NoCapture`, and `bool has_scoped_flag_header` |
 | `RepeatNode` | Body, minimum, maximum, greedy/lazy/possessive mode |
 | `AssertionNode` | Body, ahead/behind, positive/negative |
 | `AtomicNode` | Body node |
@@ -271,8 +328,12 @@ reserved `UINT32_MAX` capture-index value.
 | `ConditionalNode` | Capture index, yes branch, no branch |
 
 An empty sequence represents an empty match, including an omitted conditional
-else branch. Alternative branches are sequence nodes. Keep noncapturing groups
-as `GroupNode` to retain source spans and scoped structure. A repeat stores its
+else branch. Alternative branches are sequence nodes. Parsing retains
+noncapturing groups as `GroupNode`; normalization can flatten transparent ones.
+Preserve explicit
+scoped-flag declarations with `has_scoped_flag_header`, even when their
+effective flags equal the enclosing flags: locale normalization distinguishes
+`(?:a)` from a redundant `(?i:a)` in an already-insensitive context. A repeat stores its
 bounds as `uint32_t` with the agreed unbounded-maximum sentinel; simple versus
 general repeat is a compiler choice, not an AST distinction. Anchor kinds
 distinguish source semantics such as `^` versus `\A`; lowering uses effective
@@ -1559,8 +1620,8 @@ where practical. Numeric assignments follow.
 ### Opcode Numbers
 
 These are the numeric assignments for the agreed program-construction slice.
-Future additions, including unresolved locale singleton forms, use reserved
-values and require coordinated emission/decoding/verification updates. This
+Future additions use reserved values and require coordinated
+emission/decoding/verification updates. This
 internal format has no public bytecode compatibility commitment.
 
 Reserve `0x00` as invalid. Matching families preserve the family/form/
@@ -1575,8 +1636,10 @@ representation fields above:
 | `IN_PAGES` | `0x17` | `0x1B` |
 | `LITERAL_RUN_ASCII_IGNORECASE` | `0x24` | `0x28` |
 | `IN_LOCALE_BITMAP` | `0x35` | `0x39` |
+| `LITERAL_LOCALE_IGNORECASE` | `0x40` | None |
 | `IN_LOCALE_IGNORECASE_BITMAP` | `0x45` | `0x49` |
 | `NOT_LITERAL` | `0x50` | None |
+| `NOT_LITERAL_LOCALE_IGNORECASE` | `0xD0` | None |
 
 Other compact/wide families retain operand-form bits 3-2; bits 1-0 distinguish
 operations rather than literal/bitmap/range/page representations:
@@ -1626,7 +1689,7 @@ the operation without form or representation semantics:
 | `REPEAT_END_LAZY` | `0x68` |
 
 Values `0x66` and `0xB9` are reserved. All unassigned combinations are
-reserved, including operation families `0xD`-`0xF`.
+reserved, including the rest of family `0xD` and families `0xE`-`0xF`.
 
 ### Indexed Wide Forms And Engine Field Widths
 
@@ -1806,7 +1869,8 @@ bits 0-7 and a zero-based group index in bits 8-31:
 
 Select the mode from the scoped flags at the reference, not the flags that were
 active while capturing the group. Read the group's current start/end marks;
-fail if it did not participate or the remaining subject is too short. Compare
+use the [current participation predicate](#group-participation-conditional),
+failing if it is false or the remaining subject is too short. Compare
 the captured substring with the current subject, advancing by its length on
 success. An empty participating capture succeeds without consuming input. These
 instructions do not write captures or push backtracking state.
@@ -1833,10 +1897,34 @@ participated. It does not modify captures or push backtracking state.
 |---|---|
 | `GROUPREF_EXISTS` | Three words: opcode word with upper 24 bits zero; 32-bit zero-based group index; 32-bit absolute false target |
 
-If the group participated, fall through after the entire encoding; otherwise
-jump to the false target. An empty capture counts as participation and must
-remain distinguishable from an unmatched group. Re-evaluate the current capture
-state whenever the instruction is reached, including after outer backtracking.
+Participation uses the current ordered mark pair, not a historical matched bit
+or an assumption that an open group is absent. With a checked zero-based group
+index, the shared predicate for conditionals and backreferences is:
+
+```cpp
+uint32_t start_slot = 2 * group;
+uint32_t end_slot = start_slot + 1;
+if (end_slot >= captures.valid_mark_count)
+    return false;
+
+int64_t start = marks[start_slot];
+int64_t end = marks[end_slot];
+return start >= 0 && end >= start;
+```
+
+Both slots must be within the valid prefix and contain nonnegative positions;
+the end must not precede the start. Equality counts as an empty participating
+capture, even if the group is currently open. Reopening a group overwrites its
+start without necessarily clearing its old end, so slot validity alone is
+insufficient.
+
+When the predicate is true, fall through after the entire encoding; otherwise
+jump to the false target. Re-evaluate it whenever the instruction is reached,
+including after outer backtracking. On CPython 3.14.5,
+`fullmatch(r"((?(1)a|b))+", "ba")` succeeds: the reopened start equals the old
+end. `fullmatch(r"(?:((?(1)a|b))x)+", "bxbx")` also succeeds, but the same
+pattern on `bxax` fails: the second start is 2 and old end is 1, so the group
+is absent at that conditional. Preserve all three cases as regressions.
 
 Both operands are always full 32-bit words. Group indices remain subject to
 the overall capture/mark limits. For `(a)?(?(1)b|c)`, the
@@ -2148,7 +2236,7 @@ the invocation rather than entering these ordinary result transitions.
 | `AfterGreedyRepeatTail` | Restore this repeat as active; forward success | Restore this repeat as active and its `previous_count`; fail outward without another capture restoration |
 | `AfterLazyRepeatTail` | Restore this repeat as active; discard save; forward success | Restore this repeat as active; restore/consume capture save. At maximum or blocked progress, restore `previous_count` and fail; otherwise prepare another body at `AfterLazyRepeatBody`. |
 | `AfterLazyRepeatBody` | Restore previous progress guard; forward success | Restore previous progress guard and `previous_count`; fail outward without another capture restoration |
-| `AfterGreedyOneTail` | Discard save; forward success | Restore captures. Above minimum, decrement count and endpoint and retry, retaining the save; otherwise discard save and fail. |
+| `AfterGreedyOneTail` | Discard save; forward success | Restore captures. Above minimum, shorten the endpoint and apply literal-tail rejection before another child call, retaining the save; otherwise discard save and fail. |
 | `AfterLazyOneTail` | Discard save; forward success | Restore captures. If another matching character is permitted, consume it, increment count, and retry retaining the save; otherwise discard save and fail. |
 | `AfterPositiveAssertion` | Retain captures; continue at assertion continuation with original position | Fail outward |
 | `AfterNegativeAssertion` | Discard save; fail outward | Restore/consume capture save; continue at assertion continuation with original position |
@@ -2559,10 +2647,13 @@ compiled class records serve every Unicode subject width.
 
 ### Locale-Sensitive Bytes Classes
 
-The agreed locale-sensitive class instructions are:
+The bytes-only locale-sensitive instruction set includes two singleton tests
+and the existing bitmap class tests:
 
 | Instruction | Encoding and behavior |
 |---|---|
+| `LITERAL_LOCALE_IGNORECASE` | `0x40`; one word: opcode in bits 0-7, literal byte in bits 8-15, upper 16 bits zero |
+| `NOT_LITERAL_LOCALE_IGNORECASE` | `0xD0`; same encoding, negating the complete singleton relation |
 | `IN_LOCALE_BITMAP` | One word: opcode in bits 0-7, class index in bits 8-31; test membership using match-time locale predicates |
 | `IN_LOCALE_IGNORECASE_BITMAP` | Same encoding; test membership using match-time locale case mappings and predicates |
 
@@ -2598,13 +2689,49 @@ CPython 3.14.5 behavior is surprising even in the C locale: `[^a!]` and
 Preserve the behavior rather than claiming parity for a different complement
 rule. See the reference [class helper](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre_lib.h#L166).
 
-Locale-ignorecase literal and negated-literal operations must retain their
-distinct exact-equality-first comparison, with negation applied to that entire
-singleton relation. They cannot unconditionally lower to the general class
-operation. Reference lowering can make source form observable: in the C locale,
-`[^a]` and `[^aa]` reject `a`, while `[^a-a]` accepts it under these flags.
-Keep enough AST provenance to reproduce the reference choice; normalizing
-equivalent member sets must not silently merge these semantics.
+Singleton matching uses the reference exact-equality-first relation:
+
+```cpp
+bool matches = ch == literal
+    || locale_lower(ch) == literal
+    || locale_upper(ch) == literal;
+```
+
+The positive opcode accepts this relation; the negative opcode negates it as a
+whole. Both require an available subject byte before testing, so negation does
+not match at end of input. Under bytes `IGNORECASE | LOCALE`, emit these for
+all singleton bytes, without compile-time case expansion or classification of
+supposedly unaffected characters. Neither has a wide form. Initially emit
+individual singleton operations without a locale literal-run instruction.
+
+Choose source-shape semantics before normalizing class membership:
+
+| Source form | Locale-ignorecase lowering |
+|---|---|
+| Literal byte | Locale positive singleton |
+| Class with one distinct literal after exact literal-token deduplication | Positive/negative singleton according to outer negation |
+| Class containing a range or category | Locale class operation, even if normalization later leaves one byte |
+
+Thus `[a]` and `[aa]` use singleton semantics; `[a-a]` stays a class. In the C
+locale, `[^a]` and `[^aa]` reject `a`, while `[^a-a]` accepts it under these
+flags. Once selected, class semantics must survive merging ranges and bitmap
+construction. Source class element kinds and explicit flag-header provenance
+must not be lost.
+
+Locale alternation normalization is also semantic. Reproduce the reference
+ordering of transparent-group flattening, common-prefix extraction, then
+eligible single-character class union through the explicit AST normalization
+pass. Do not apply the fixed-rule pass's more permissive transformations here.
+Explicit scoped-flag groups remain barriers even when effective flags are
+unchanged. Preserve source spans and required provenance on rewritten nodes. On macOS `en_US.UTF-8`, under bytes `IGNORECASE | LOCALE`,
+`b"\xff|z"` does not match `b"\xff"`, while
+`b"(?i:\xff)|(?i:z)"` does. The former becomes a class; the latter retains
+singleton branches. `b"\xffa|\xffb"` matches `b"\xffa"` after extracting a
+singleton common prefix. These outcomes were checked on CPython 3.14.5.
+
+A bitmap covering all 256 bytes is not automatically `ANY_ALL` in this mode:
+map results can lie outside the byte domain. Preserve the complete class test
+rather than simplifying from byte-domain membership alone.
 
 On macOS with `en_US.UTF-8`, literal byte `0xff` matches itself while the class
 `[\xffz]` does not, because locale conversion can yield `WEOF`. Do not narrow
@@ -2612,14 +2739,13 @@ mapping results into bytes before testing them. Preserve the reference
 platform's mapping behavior and category checks, including out-of-byte mapped
 values. See the reference [literal helper](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre.c#L210).
 
-The exact encoding for distinct locale singleton tests and source-sensitive
-lowering remains open (AR-03 below). Do not implement the superseded blanket
-literal-to-class lowering while that decision is pending. Both general locale
-class instructions are eligible one-character tests for simple repeats;
-eligibility of the eventual singleton encoding must be specified with it.
-Fixed members without locale-dependent predicates or ignorecase needs can still
-use ordinary `IN_BITMAP`. `GROUPREF_LOCALE_IGNORECASE` supplies the separate
-runtime backreference comparison.
+Both singleton opcodes and both locale bitmap forms (including wide class
+indices) are eligible `CharacterTest` operands for simple repeats. The
+builder/decoder/verifier reject singleton payloads above 255, nonzero unused
+bits, and locale operations in Unicode programs. Fixed members without
+locale-dependent predicates or ignorecase needs can use ordinary `IN_BITMAP`.
+`GROUPREF_LOCALE_IGNORECASE` keeps its separate lowercase-on-both-sides
+relation; it must not reuse the singleton helper.
 
 Compiled class records remain immutable. Evaluate dynamic rules directly in the
 initial design. A bitmap materialized using the matching-time locale is a
@@ -2748,9 +2874,11 @@ pinned reference
 
 Use `REPEAT_ONE_GREEDY`, `REPEAT_ONE_LAZY`, and `REPEAT_ONE_POSSESSIVE` to
 repeat one side-effect-free character-test instruction. Eligible tests are
-`LITERAL`, `NOT_LITERAL`, `ANY`, `ANY_ALL`, `IN_BITMAP`, `IN_RANGES`,
+`LITERAL`, `NOT_LITERAL`, `LITERAL_LOCALE_IGNORECASE`,
+`NOT_LITERAL_LOCALE_IGNORECASE`, `ANY`, `ANY_ALL`, `IN_BITMAP`, `IN_RANGES`,
 `IN_PAGES`, `IN_LOCALE_BITMAP`, `IN_LOCALE_IGNORECASE_BITMAP`, and `CATEGORY`,
-including the two-word wide forms of these class tests. Bodies with captures,
+including the two-word wide forms of these class tests. Inspect the body after
+[AST normalization](#ast-normalization). Bodies still containing captures,
 assertions, alternatives, or multiple operations use general repetition. In
 particular, `(a)+` must preserve its capture writes rather than simply repeat
 the literal test.
@@ -2797,7 +2925,7 @@ made eligible merely because their encoding has the same length.
 
 | Mode | Initial execution | Retry after tail failure |
 |---|---|---|
-| Greedy | Consume the longest permitted matching run; require the minimum | Shorten by one character and retry the tail |
+| Greedy | Consume the longest permitted matching run; require the minimum | Try shorter endpoints in order, skipping those rejected by the literal-tail check |
 | Lazy | Consume only the required minimum | Test/consume one additional character and retry the tail |
 | Possessive | Consume the longest permitted matching run; require the minimum | No repeat retry |
 
@@ -2814,6 +2942,44 @@ minimum, then tries successively shorter endpoints. Lazy execution consumes
 only the minimum initially; after a failed tail attempt, test/consume one more
 character if permitted before retrying. Never pre-scan the whole potential run
 for lazy execution. All endpoint arithmetic respects the 64-bit subject bounds.
+
+For greedy simple repeats, apply a rejection-only literal check before each
+tail child call. Inspect only the immediate tail instruction, after the complete
+repeat header and embedded test:
+
+| Immediate tail instruction | Required character |
+|---|---|
+| `LITERAL` | Its inline code point |
+| Nonempty `LITERAL_RUN` or `LITERAL_RUN_WIDE` | First literal-pool element |
+
+Other tail entries use ordinary execution. Do not scan past marks, anchors,
+assertions, or other instructions, and do not prefilter ignorecase runs or
+class tests initially. An empty literal run supplies no filter. Read pool
+slices only after the program's existing validation and widen subject elements
+for comparison; never truncate a Unicode literal to the subject's storage width.
+
+At a candidate endpoint, reject inline if it is at or beyond `endpos`, without
+reading the subject. Otherwise compare that subject element with the required
+character. On mismatch, move to the next shorter endpoint without creating a
+child. On a pass, call the tail at its original entry; do not consume the
+literal, skip its instruction, or assume the rest of a literal run matches.
+
+Keep the existing capture save around the retry loop. Inline rejection changes
+no captures. After a real child failure, restore capture metadata/prefix before
+checking more endpoints. Before shortening, test whether count equals the
+minimum: if so, discard the save and fail; otherwise decrement count and
+position and repeat. Do not underflow the unsigned count or step before the
+repeat's start. Endpoint order remains longest to shortest, with each child
+inheriting normal acceptance checks. Errors propagate unchanged.
+
+For `a*b` on `aaaa`, endpoint 4 is rejected by the bound and endpoints 3 through
+0 by character mismatch; no tail child is created. This removes child-call
+overhead while preserving O(N) work. It needs no new opcode, metadata, context
+field, or resume state. Recover the filter from encoded instructions on entry
+and resume using the existing saved program position. Verify minimum-zero and
+bounded cases, truncated `endpos`, compact/wide literal runs, and capture
+restoration inside enclosing repeats against the ordinary path. See the pinned
+reference [literal-tail skip](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre_lib.h#L859).
 
 Simple possessive execution scans the longest permitted run, verifies the
 minimum, and continues directly into the tail. It retains no repeat retry.
@@ -3416,6 +3582,11 @@ The verification baseline is:
 - Valid branch chains and local possessive bodies; mutated malformed chains,
   wrong endings, inconsistent tails, and prohibited cross-scope transfers.
   Distinguish root and local `SUCCESS` without simulating runtime contexts.
+- Distinct physical endings for nested constructs. Reject an assertion at
+  word 0 and atomic entry at word 3 both continuing at 6 and sharing local
+  `SUCCESS` at 5 (with root success at 6). Also reject ordinary repeat entries
+  at 0 and 4 both targeting one ending at 8. Valid empty nested bodies need
+  separate owned endings; empty alternative arms still have their tail jump.
 - Explicit root completion: a one-word empty-regex program succeeds; an empty
   stream, missing root success, local-only success, trailing emission/binding,
   wrong completion ownership, and fallthrough outside a scope/program fail.
@@ -3449,8 +3620,9 @@ Agreed implementation boundary and remaining design decisions:
 - Execution-model and slice 1 construction decisions are agreed; their
   implementation and differential/resource verification remain ES-01 through
   ES-08 work. Locale singleton operations and source-sensitive lowering remain
-  open (AR-03) for later parser/compiler/executor slices. Slice 1 implements
-  the currently agreed opcode set without claiming those additions are final.
+  partially settled (AR-03): singleton opcodes and source-shape rules are
+  agreed; exact AST-normalization rewrite shapes still need agreement. Slice 1
+  includes the selected singleton formats and their validation.
 - Concrete binding APIs, native-resource cleanup, and the initial syntax/API
   slice, including buffer-protocol dependencies. Execution-time subject-storage
   mechanics remain deferred to runtime integration.
@@ -3467,7 +3639,7 @@ exist. Do not drop open items when splitting the implementation into slices.
 |---|---|---|
 | AR-01 | Published-program mutation through implicit special members | Fixed in design: delete copy/move construction and assignment; transfer only owning pointers. Add compile-time API tests in slice 1. |
 | AR-02 | Moving a builder invalidates target/helper pointers | Fixed in design: builder and helpers are noncopyable/nonmovable; builder outlives helpers. Add slice 1 lifetime tests. |
-| AR-03 | Locale-ignorecase classes differ from literal/negated-literal paths, including source-sensitive lowering and platform mapping results | Verified CPython behavior is recorded. **Open:** choose singleton encoding and preserve reference lowering; update opcode/test eligibility and class-normalization rules before implementing locale operations. |
+| AR-03 | Locale-ignorecase classes differ from literal/negated-literal paths, including source-sensitive lowering and platform mapping results | Singleton opcodes `0x40`/`0xD0`, early source classification, scoped-flag provenance, and reference normalization order are agreed. **Open:** specify the explicit AST normalization pass and verify singleton/class/alternation distinctions across locales before implementing locale lowering. |
 | AR-04 | Eager replacement snapshots differ from the retained-literal path | Fixed in design: substitution retains escape-free literal objects and snapshots parsed templates at reference preparation time. Add mutable-replacement/exporter regressions when that protocol lands. |
 | AR-05 | Match results omitted last-group and bounds snapshots | Fixed in design: retain `last_group`, `pos`, and `endpos` independently of executor scratch. Add nested-capture, iterator, and retained-callback regressions. |
 | AR-06 | Unsigned flag storage could expose wrong Python values/ranges | Fixed in design: store bits, expose signed 32-bit values, and preserve reference signed-C-int conversion stage. Add negative/oversized flags and precedence tests. |
@@ -3478,6 +3650,38 @@ exist. Do not drop open items when splitting the implementation into slices.
 | AR-11 | Capture reset per search candidate is unspecified | Fixed in design: reset valid-mark count and last-group metadata while reusing allocated mark storage; initialize gaps when extending validity. Verify that candidate reset does not clear every capture slot or expose stale captures in matcher tests. |
 | AR-12 | Interrupt polling and safepoint integration | **Deliberately deferred:** engine supports easy typed interruption exits, but checks/cleanup must not enter GC safepoints or allocate managed exceptions while borrowed pointers are live. Polling cadence, shared request mechanism, signal delivery, and GC-only request handling remain unresolved; see Interrupt Polling And Safepoint Integration. |
 | AR-13 | Ignorecase compilation can rescan all equivalence members for every source range | **Open:** assess one pass over grouped members against the normalized range set; benchmark many-range classes. |
+| AR-14 | Current capture participation is underspecified for open-group conditionals | Fixed in design: shared conditionals/backreferences predicate requires a valid, nonnegative ordered mark pair with `end >= start`, preserving equality even for an open group. Add the three open-group regressions in matcher tests. |
+| AR-15 | Single-character alternatives can miss simple-repeat lowering | Fixed in design: explicit AST normalization unions eligible fixed-rule one-character alternatives before analysis/codegen; repeat selection consumes that normalized tree. Preserve source/provenance and AR-03 locale barriers. Add normalization-shape and semantic regressions. |
+| AR-16 | Greedy simple tail retries lack the reference literal-rejection shortcut | Fixed in design: greedy simple repeats reject endpoints using an immediate exact literal or first element of a nonempty exact run before a tail child call. Preserve bounds, capture restoration, endpoint order, and full tail execution on a pass. Verify child-call reduction and unchanged matches; no CloverVM timing result exists. |
+
+Second review round, against commit `b1c9333f`, used three independent reviews:
+CPython compatibility, execution/ownership/verifier correctness, and performance
+and missing contracts. AR-14 through AR-16 corrections are agreed and recorded
+above; implementation and regression verification remain.
+
+AR-14 reference probes on local CPython 3.14.5:
+`fullmatch(r"((?(1)a|b))+", "ba")` succeeds;
+`fullmatch(r"(?:((?(1)a|b))x)+", "bxbx")` succeeds;
+the latter pattern on `bxax` fails. Reopening the group can give start 2 and
+old end 1, which must count as absent; start equal to old end can still count
+as an empty participating pair. See the reference
+[conditional predicate](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre_lib.h#L1423).
+
+AR-15 was checked with local `re.DEBUG`: `(?:a|b)*`, `*?`, and `*+` lower to
+the corresponding simple-repeat operation plus a class test. The 128N-byte
+estimate is analytical from a standalone Clang layout probe of the documented
+64-byte context and the general/branch execution path, not a matcher measurement.
+AR-16 corresponds to the reference
+[literal-tail skip](https://github.com/python/cpython/blob/v3.14.5/Modules/_sre/sre_lib.h#L859).
+
+No additional high-confidence execution-state/lifetime defect was found. An
+independent model passed 94,829 fullmatch comparisons (3,059 generated patterns
+and 31 binary subjects) against CPython 3.14.5, with repeat-record LIFO assertions.
+It does not validate physical context/save-buffer truncation, C++ union
+initialization, allocation/interrupt failure, lookbehind, wide subject access,
+or the verifier implementation. Separately, 547,560 checks of Unicode ignorecase
+range expansion across 169 boundary/random ranges passed. Both are reference
+or model checks; no CloverVM matcher has been implemented.
 
 The existing parser/compiler depth-guard question and buffer/runtime integration
 remain open independently of this review. Performance follow-up must include
