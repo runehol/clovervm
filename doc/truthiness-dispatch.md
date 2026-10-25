@@ -7,7 +7,7 @@
 | Implementation | Implemented |
 | Scope | Truth conversion and conditional branches, cached special-method dispatch, result validation, and Python return continuations |
 | Owning layers | Builtin numeric methods and integer validation; runtime dispatch and caches; interpreter continuations; codegen and bytecode metadata |
-| Validated against | `3f5095c7` plus verified implementation working tree (2026-10-12) |
+| Validated against | Truth dispatch: `3f5095c7` plus verified implementation working tree (2026-10-12); public bool construction: `f064e71f` plus implementation working tree (2026-10-25) |
 | Supersedes | General truthiness dispatch entry in [Small Tasks](small-tasks.md) |
 
 Both explicit conversions and conditional jumps implement this contract.
@@ -17,6 +17,28 @@ branching, preserving the tested value on both normal edges. Native int/float
 __bool__ methods, registered trusted handlers, and direct integer-length
 validation are implemented. Length-result index coercion and correcting
 sys.maxsize remain separate follow-ups.
+
+## Public bool construction
+
+`bool(object=False, /)` accepts zero or one positional argument and returns the
+existing `True` or `False` singleton. Its generated managed `bool.__new__`
+validates that the explicit receiver is the builtin bool class before executing
+`ToBool` on the argument. The ordinary argument binder rejects missing receivers,
+excess positional arguments, and keywords; diagnostic wording follows CloverVM's
+binder rather than reproducing CPython's constructor-specific messages.
+
+The builtin type file owns construction and receiver validation. The existing
+new-only constructor thunk injects the class for public `bool(...)` calls, and
+managed truth dispatch owns callbacks, result validation, cache invalidation,
+reentry, and rooted return continuations. Neither constructor path resolves
+public `bool`, `len`, or exception bindings internally. Length validation is
+shared with the existing protocol; construction introduces no new coercion.
+
+Bool remains a non-subclassable int subclass with immediate singleton values.
+The C API's `clover_bool_from_bool`, `clover_true`, and `clover_false` only wrap
+native boolean/singleton values and do not invoke Python truth conversion.
+The existing NotImplemented and length-result index-coercion deviations below
+also apply to public bool construction.
 
 ## Truthiness semantics and call path
 
