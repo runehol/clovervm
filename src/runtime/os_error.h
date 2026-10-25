@@ -15,6 +15,9 @@ namespace cl
     void install_os_error_methods(VirtualMachine *vm);
     [[nodiscard]] TValue<OSErrorObject>
     allocate_default_os_error(ThreadState *thread, TValue<ClassObject> cls);
+    [[nodiscard]] Value raise_os_error(ThreadState *thread, int error_number,
+                                       TValue<String> message, Value filename,
+                                       Value filename2);
     [[nodiscard]] Value prepare_os_error_new(ThreadState *thread, Value cls,
                                              Value args, Value kwargs);
     [[nodiscard]] Value finish_os_error_new(ThreadState *thread, Value self,

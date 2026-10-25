@@ -329,8 +329,9 @@ progress counts raise ValueError. Errno selection uses normal dictionary lookup,
 including builtin int-subclass hash/equality/truth callbacks. Formatting uses native instance
 presence, never inherited default values. Windows winerror is not exposed.
 
-Existing os functions still translate OS failures into ValueError. Shared syscall
-translation and native-module C API helpers are separate work; registering the
-hierarchy does not change those producers. Internal generic exception factories
-allocate the correct OSError storage and retain raw args without invoking public
+The existing POSIX os syscall wrappers translate failures into the appropriate
+OSError subclass, retaining the original filename objects (both for rename).
+The native-module C API provides `clover_raise_os_error` for this translation.
+Argument-validation and allocation-error policies remain separate. Internal
+generic exception factories allocate the correct OSError storage and retain raw args without invoking public
 constructor parsing or errno-based class selection.

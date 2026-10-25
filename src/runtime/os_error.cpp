@@ -242,6 +242,45 @@ namespace cl
         return Value::None();
     }
 
+    Value raise_os_error(ThreadState *thread, int error_number,
+                         TValue<String> message, Value filename,
+                         Value filename2)
+    {
+        Owned<TValue<String>> retained_message(message);
+        Owned<Value> retained_filename(filename);
+        Owned<Value> retained_filename2(filename2);
+        Owned<Value> number(CL_TRY(int_value_from_int64(thread, error_number)));
+        TValue<Dict> mapping =
+            CL_TRY(thread->get_machine()->os_error_errno_map());
+        Dict::ItemResult selected = CL_TRY(
+            mapping.extract()->get_item_if_present(thread, number.value()));
+        TValue<ClassObject> cls =
+            selected.found
+                ? TValue<ClassObject>::from_value_assumed(selected.value)
+                : TValue<ClassObject>::from_oop(
+                      thread->class_for_native_layout(NativeLayoutId::OSError));
+        size_t count = !filename2.is_none() ? 5 : !filename.is_none() ? 3 : 2;
+        Owned<TValue<Tuple>> args(thread->make_object_value<Tuple>(count));
+        args.extract()->initialize_item_unchecked(0, number.value());
+        args.extract()->initialize_item_unchecked(1,
+                                                  retained_message.raw_value());
+        if(count >= 3)
+            args.extract()->initialize_item_unchecked(
+                2, retained_filename.value());
+        if(count == 5)
+        {
+            args.extract()->initialize_item_unchecked(3, Value::None());
+            args.extract()->initialize_item_unchecked(
+                4, retained_filename2.value());
+        }
+        Owned<TValue<OSErrorObject>> object(
+            allocate_default_os_error(thread, cls));
+        CL_PROPAGATE_EXCEPTION(
+            initialize_os_error(thread, object.value(), args.value()));
+        return thread->set_pending_exception_object(
+            TValue<Exception>::from_value_assumed(object.raw_value()));
+    }
+
     Value finish_os_error_new(ThreadState *thread, Value self, Value args)
     {
         TValue<OSErrorObject> object =

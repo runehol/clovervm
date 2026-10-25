@@ -261,7 +261,21 @@ clover_handle clover_raise_overflow_error(clover_context *ctx,
                                          const char *utf8_message);
 clover_handle clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
+clover_handle clover_raise_os_error(clover_context *ctx, int error_number,
+                                   const char *utf8_message,
+                                   clover_handle filename,
+                                   clover_handle filename2);
 ```
+
+`clover_raise_os_error` raises the canonical builtin `OSError` subclass selected
+by the supplied error number, with the supplied UTF-8 message and original
+filename objects. Pass `clover_none(ctx)` for absent filenames. It uses the
+native OSError constructor's field and `args` normalization without invoking
+Python constructor overrides. Capture `errno` before cleanup or other API calls;
+this function never reads the process's current `errno`. Invalid UTF-8 or a null
+message raises `ValueError`; invalid value handles follow ordinary API error
+propagation. The message is copied during the call and filenames are retained
+by the exception. The result is an exception-marker handle.
 
 `clover_bool_from_bool` converts a C `bool` to the Python `True` or `False`
 singleton. `clover_true` and `clover_false` return those singletons explicitly.

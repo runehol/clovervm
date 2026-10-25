@@ -58,6 +58,7 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_is
     clover_none
     clover_propagate_error
+    clover_raise_os_error
     clover_raise_overflow_error
     clover_raise_value_error
     clover_string_as_utf8

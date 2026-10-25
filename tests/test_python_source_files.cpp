@@ -131,7 +131,8 @@ TEST(OSErrorReclamation, ConstructorAndLatentAttributes)
         {"tests/python/os_error.py", "tests/python/os_error_latent.py",
          "tests/python/os_error_presence.py",
          "tests/python/os_error_callbacks.py",
-         "tests/python/os_error_progress.py"})
+         "tests/python/os_error_progress.py",
+         "tests/python/os_errno_bridge.py"})
     {
         SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);

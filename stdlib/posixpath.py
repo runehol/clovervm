@@ -45,6 +45,8 @@ def _prefix(parts, n):
 def _stat_or_none(stat_fn, path):
     try:
         return stat_fn(path)
+    except OSError:
+        return None
     except ValueError:
         return None
 
@@ -169,6 +171,8 @@ def lexists(path):
 def isdir(path):
     try:
         mode = os.stat(path)[0]
+    except OSError:
+        return False
     except ValueError:
         return False
     return stat.S_ISDIR(mode)
@@ -177,6 +181,8 @@ def isdir(path):
 def isfile(path):
     try:
         mode = os.stat(path)[0]
+    except OSError:
+        return False
     except ValueError:
         return False
     return stat.S_ISREG(mode)
@@ -204,6 +210,8 @@ def ismount(path):
     try:
         path_stat = os.lstat(path)
         parent_stat = os.lstat(join(path, pardir))
+    except OSError:
+        return False
     except ValueError:
         return False
     return (

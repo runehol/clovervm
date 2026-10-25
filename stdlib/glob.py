@@ -161,6 +161,8 @@ def _listdir(dirname):
         dirname = "."
     try:
         return os.listdir(dirname)
+    except OSError:
+        return ()
     except ValueError:
         return ()
 
