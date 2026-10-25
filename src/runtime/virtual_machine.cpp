@@ -8,6 +8,7 @@
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
 #include "builtin_types/ellipsis_type.h"
+#include "builtin_types/enumerate.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
@@ -23,6 +24,7 @@
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "builtin_types/unicode.h"
+#include "builtin_types/zip.h"
 #include "bytecode/code_object.h"
 #include "compiler/codegen.h"
 #include "compiler/parser.h"
@@ -456,6 +458,8 @@ namespace cl
                         Optional<TValue<Function>>::none();
                     vm->test_equal_helper_function_ =
                         Optional<TValue<Function>>::none();
+                    vm->enumerate_call_function_ =
+                        Optional<TValue<Function>>::none();
                     for(auto &helper: vm->ordering_helper_functions_)
                     {
                         helper = Optional<TValue<Function>>::none();
@@ -494,6 +498,7 @@ namespace cl
             range_builtin = Value::None();
             hash_value_helper_function_ = Optional<TValue<Function>>::none();
             test_equal_helper_function_ = Optional<TValue<Function>>::none();
+            enumerate_call_function_ = Optional<TValue<Function>>::none();
             for(auto &helper: ordering_helper_functions_)
             {
                 helper = Optional<TValue<Function>>::none();
@@ -1083,6 +1088,8 @@ namespace cl
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
+        register_builtin_class(make_enumerate_class(this));
+        register_builtin_class(make_zip_class(this));
         register_builtin_class(make_string_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
         register_builtin_class(make_dict_keys_view_class(this));
@@ -1464,15 +1471,18 @@ namespace cl
                 "creating mapping error helper")
                 .raw_value());
 
+        install_enumerate_helpers(this, implementation_module);
+        install_zip_helpers(this, implementation_module);
+
         // Seed dependencies explicitly: empty __builtins__ disables public
         // fallback.
         const wchar_t *seed_names[] = {
-            L"list",       L"tuple",         L"slice",
-            L"dict",       L"int",           L"str",
-            L"isinstance", L"TypeError",     L"ValueError",
-            L"IndexError", L"StopIteration", L"NotImplemented",
-            L"True",       L"False",         L"None",
-            L"Ellipsis",   L"AttributeError"};
+            L"list",           L"tuple",      L"slice",
+            L"dict",           L"int",        L"str",
+            L"object",         L"isinstance", L"TypeError",
+            L"ValueError",     L"IndexError", L"StopIteration",
+            L"NotImplemented", L"True",       L"False",
+            L"None",           L"Ellipsis",   L"AttributeError"};
         for(const wchar_t *name: seed_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);
@@ -1498,6 +1508,16 @@ namespace cl
             fatal_bootstrap_python_exception(
                 thread, "initializing trusted builtin_implementations.py");
         }
+
+        Value enumerate_call = implementation_module->get_own_property(
+            get_or_create_interned_string_value(L"_clover_enumerate_call"));
+        if(!has_native_layout<Function>(enumerate_call))
+        {
+            fatal(
+                "trusted builtin source did not define enumerate constructor");
+        }
+        enumerate_call_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(enumerate_call));
 
         Value to_exact_tuple = implementation_module->get_own_property(
             get_or_create_interned_string_value(
@@ -1561,6 +1581,8 @@ namespace cl
         install_dict_python_methods(this, implementation_module);
         install_list_python_methods(this, implementation_module);
         install_tuple_python_methods(this, implementation_module);
+        install_enumerate_python_methods(this, implementation_module);
+        install_zip_python_methods(this, implementation_module);
         install_slice_python_methods(this, implementation_module);
 
         TValue<String> membership_iter_fallback_name =
@@ -1615,6 +1637,12 @@ namespace cl
         {
             definition.cls->freeze();
         }
+    }
+
+    TValue<Function> VirtualMachine::enumerate_call_function() const
+    {
+        assert(enumerate_call_function_.value().has_value());
+        return enumerate_call_function_.value().value();
     }
 
     TValue<Function> VirtualMachine::iterable_to_exact_tuple_function() const

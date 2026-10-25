@@ -129,6 +129,7 @@ namespace cl
         TValue<Function> hash_value_helper_function() const;
         TValue<Function> test_equal_helper_function() const;
         TValue<Function> ordering_helper_function(OrderingOp operation) const;
+        TValue<Function> enumerate_call_function() const;
         TValue<Function> iterable_to_exact_tuple_function() const;
         TValue<Function> iterable_to_exact_list_function() const;
         TValue<Function> dict_insert_if_absent_known_hash_function() const;
@@ -241,6 +242,14 @@ namespace cl
         ClassObject *code_class() const
         {
             return class_for_native_layout(NativeLayoutId::CodeObject);
+        }
+        ClassObject *enumerate_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::EnumerateIterator);
+        }
+        ClassObject *zip_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::ZipIterator);
         }
         ClassObject *range_iterator_class() const
         {
@@ -480,6 +489,7 @@ namespace cl
         Owned<Optional<TValue<Function>>> test_equal_helper_function_;
         std::array<Owned<Optional<TValue<Function>>>, 4>
             ordering_helper_functions_;
+        Owned<Optional<TValue<Function>>> enumerate_call_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_tuple_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_list_function_;
         Owned<Optional<TValue<Function>>>

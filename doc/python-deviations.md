@@ -182,6 +182,36 @@ adding a distinct Python-visible range object.
 To close: introduce a range object, make `range()` return it, and have
 `range.__iter__` create a fresh `RangeIterator`.
 
+### `enumerate` and `zip` use the existing iterator protocol subset
+
+`enumerate(iterable, start=0)` and `zip(*iterables, strict=False)` are lazy
+native builtin iterator objects with managed construction and stepping methods.
+Both accept builtin containers and supported custom iterators, return themselves
+from `iter`, and yield exact tuples. Sources are acquired eagerly at construction;
+elements are fetched only by `next`. `enumerate` accepts arbitrary-size builtin
+integers, bools and integer subclasses for `start`, normalizing the counter to an
+exact integer without invoking subclass overrides. Custom `__index__` inputs
+remain unsupported. Exact `enumerate(...)` calls use CPython's vectorcall
+keyword matching by string payload; inherited and direct `__new__` calls use
+dictionary lookup, including keyword hash/equality behavior and duplicate-argument
+validation. The exact-type entry uses the normal constructor-thunk cache, while
+the public `__new__` method remains independently callable.
+
+`zip` consumes sources left to right, supports zero inputs and strict length
+checking, and preserves CPython 3.14.5 mismatch consumption and diagnostics.
+Neither wrapper adds an exhaustion latch: source exceptions and strict mismatches
+leave it resumable, and exhaustion remains permanent when its sources remain
+exhausted. Non-strict zip and enumerate propagate source `StopIteration` payloads;
+strict zip discards them. Reentry uses frame-local partial rows and enumerate
+reads its shared counter after the source callback returns.
+
+Construction relies on the existing `iter` implementation. Validation of invalid
+`__iter__` results and sequence-only `__getitem__` fallback belong to the separate
+ordinary-iteration work. Subclasses preserve their runtime class and inherit the
+existing class-call limitations on custom initialization. Pickling, CPython's
+private result-tuple recycling/retention behavior, and specialized iteration/JIT
+paths are omitted. Held result tuples remain distinct and retain their elements.
+
 ## Numeric Semantics
 
 ### Some integer consumers still require SMI-sized tagged integers

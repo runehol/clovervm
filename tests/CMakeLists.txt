@@ -17,6 +17,7 @@ target_sources(test_clovervm PRIVATE
 	test_bytecode.cpp
 	test_codegen.cpp
 	test_exception_handling.cpp
+	test_enumerate_zip.cpp
 	test_expanded_call.cpp
 	test_float.cpp
 	test_num_parse.cpp

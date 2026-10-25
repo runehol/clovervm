@@ -19,6 +19,8 @@ namespace cl
         Slice,
         Float,
         Function,
+        EnumerateIterator,
+        ZipIterator,
         RangeIterator,
         TupleIterator,
         StringIterator,

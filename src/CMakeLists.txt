@@ -72,6 +72,10 @@ add_library(libclovervm_objects OBJECT
     runtime/fatal.h
     util/compiler.h
     util/result.h
+    builtin_types/enumerate.cpp
+    builtin_types/enumerate.h
+    builtin_types/zip.cpp
+    builtin_types/zip.h
     builtin_types/float.cpp
     builtin_types/float.h
     builtin_types/num_parse.cpp
