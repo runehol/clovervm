@@ -495,6 +495,16 @@ namespace cl
     make_new_only_constructor_thunk_function(ClassObject *cls,
                                              TValue<Function> new_)
     {
+        // Exact enumerate calls have CPython's vectorcall keyword rules.
+        // Keep public __new__ and subclass calls on the ordinary entry point.
+        // Builtin classes are frozen, and the usual MRO validity cell still
+        // owns this constructor thunk's lifetime and cache validity.
+        if(cls->instance_native_layout_id() ==
+               NativeLayoutId::EnumerateIterator &&
+           cls == active_vm()->enumerate_class())
+        {
+            new_ = active_vm()->enumerate_call_function();
+        }
         CodeObject *code =
             CL_TRY(make_new_only_constructor_thunk_code(cls, new_));
         Optional<TValue<Tuple>> defaults =

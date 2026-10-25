@@ -6,6 +6,7 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
+#include "builtin_types/enumerate.h"
 #include "builtin_types/float.h"
 #include "builtin_types/list.h"
 #include "builtin_types/list_iterator.h"
@@ -18,6 +19,7 @@
 #include "builtin_types/string_iterator.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
+#include "builtin_types/zip.h"
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
 #include "jit/jit_code_object.h"
@@ -36,6 +38,8 @@
     V(Bytes);                                                                  \
     V(List);                                                                   \
     V(Tuple);                                                                  \
+    V(EnumerateIterator);                                                      \
+    V(ZipIterator);                                                            \
     V(RangeIterator);                                                          \
     V(StringIterator);                                                         \
     V(TupleIterator);                                                          \

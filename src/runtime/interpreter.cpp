@@ -5003,33 +5003,40 @@ namespace cl
         COMPLETE();
     }
 
+    [[nodiscard]] NOINLINE static Expected<TValue<Dict>>
+    create_dict_literal(ThreadState *thread, Value *fp, int8_t reg,
+                        uint8_t n_items)
+    {
+        // Insertion may execute __hash__ or __eq__ and run reclamation. The
+        // inputs are in the published caller frame, but the partial dictionary
+        // is not in that frame or the accumulator yet.
+        Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+        for(uint8_t idx = 0; idx < n_items; ++idx)
+        {
+            Value key = fp[int32_t(reg) - int32_t(idx) * 2];
+            Value value = fp[int32_t(reg) - int32_t(idx) * 2 - 1];
+            CL_TRY(dict.extract()->set_item(thread, key, value));
+        }
+        return Expected<TValue<Dict>>::ok(dict.value());
+    }
+
     static INTERP_CC Value op_create_dict(PARAMS)
     {
         START(3);
-        int8_t reg = pc[1];
-        uint8_t n_items = pc[2];
-
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
-        TValue<Dict> dict = thread->make_object_value<Dict>();
-        for(uint8_t idx = 0; idx < n_items; ++idx)
+        Expected<TValue<Dict>> dict =
+            create_dict_literal(thread, fp, int8_t(pc[1]), pc[2]);
+        if(unlikely(dict.has_exception()))
         {
-            Value key = fp[reg - int8_t(idx * 2)];
-            Value value = fp[reg - int8_t(idx * 2 + 1)];
-            Expected<void> inserted =
-                dict.extract()->set_item(thread, key, value);
-            if(unlikely(inserted.has_exception()))
-            {
-                ExceptionalTarget target =
-                    resolve_exceptional_frame_exit(thread, fp, pc, code_object);
-                fp = target.fp;
-                code_object = target.code_object;
-                pc = target.interpreted_pc;
-                START(0);
-                COMPLETE();
-            }
+            ExceptionalTarget target =
+                resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+            fp = target.fp;
+            code_object = target.code_object;
+            pc = target.interpreted_pc;
+            START(0);
+            COMPLETE();
         }
-        accumulator = dict.raw_value();
-
+        accumulator = dict.value().raw_value();
         COMPLETE();
     }
 

@@ -667,3 +667,163 @@ def _clover_list_extend(builder, source):
     for item in source:
         __clover_list_append__(builder, item)
     return None
+
+
+def _clover_enumerate_call(cls, /, *args, **kwargs):
+    _clover_enumerate_validate_class(cls)
+    count = len(args) + len(kwargs)
+    # CPython's public enumerate call accepts both named parameters, but its
+    # two-argument path requires a lone keyword to be "start".
+    if count == 1 or count == 2:
+        iterable = None
+        start = 0
+        if len(args) > 0:
+            iterable = args[0]
+        if len(args) == 2:
+            start = args[1]
+        has_iterable = len(args) > 0
+        has_start = len(args) == 2
+        for entry in kwargs.items():
+            name = str.__str__(entry[0])
+            if name == "iterable" and not has_iterable:
+                iterable = entry[1]
+                has_iterable = True
+            elif name == "start" and count == 2 and not has_start:
+                start = entry[1]
+                has_start = True
+            else:
+                raise TypeError(
+                    "'" + str(entry[0]) + "' is an invalid keyword argument for enumerate()"
+                )
+        if has_iterable:
+            start = _clover_enumerate_normalize_start(start)
+            source = iter(iterable)
+            return _clover_enumerate_allocate(cls, source, start)
+    if len(args) == 0:
+        raise TypeError("enumerate() missing required argument 'iterable'")
+    raise TypeError("enumerate() takes at most 2 arguments (" + str(count) + " given)")
+
+
+_clover_enumerate_missing = object()
+
+
+def _clover_enumerate_new(cls, /, *args, **kwargs):
+    _clover_enumerate_validate_class(cls)
+    positional = len(args)
+    remaining = len(kwargs)
+    if positional + remaining > 2:
+        qualifier = "keyword " if positional == 0 else ""
+        raise TypeError(
+            "enumerate() takes at most 2 " + qualifier + "arguments ("
+            + str(positional + remaining) + " given)"
+        )
+    # Match CPython's Argument Clinic __new__ entry: required keyword lookup
+    # comes first, using the stored dictionary hashes and rich equality.
+    if positional > 0:
+        iterable = args[0]
+    else:
+        iterable = kwargs.get("iterable", _clover_enumerate_missing)
+        if iterable is _clover_enumerate_missing:
+            raise TypeError("enumerate() missing required argument 'iterable' (pos 1)")
+        remaining -= 1
+    start = 0
+    if positional > 1:
+        start = args[1]
+    elif remaining > 0:
+        candidate = kwargs.get("start", _clover_enumerate_missing)
+        if candidate is not _clover_enumerate_missing:
+            start = candidate
+            remaining -= 1
+    if remaining > 0:
+        if positional > 0:
+            duplicate = kwargs.get("iterable", _clover_enumerate_missing)
+            if duplicate is not _clover_enumerate_missing:
+                raise TypeError(
+                    "argument for enumerate() given by name ('iterable') and position (1)"
+                )
+        for keyword in kwargs:
+            if keyword not in ("iterable", "start"):
+                diagnostic = str.__str__(str(keyword))
+                raise TypeError(
+                    "enumerate() got an unexpected keyword argument '" + diagnostic + "'"
+                )
+        raise TypeError("invalid keyword argument for enumerate()")
+    start = _clover_enumerate_normalize_start(start)
+    source = iter(iterable)
+    return _clover_enumerate_allocate(cls, source, start)
+
+
+def _clover_enumerate_next(self, /):
+    source = _clover_enumerate_source(self)
+    item = next(source)
+    index = _clover_enumerate_take_index(self)
+    return (index, item)
+
+
+_clover_zip_missing = object()
+
+
+def _clover_zip_new(cls, /, *iterables, **kwargs):
+    _clover_zip_validate_class(cls)
+    if len(kwargs) > 1:
+        raise TypeError(
+            "zip() takes at most 1 keyword argument (" + str(len(kwargs)) + " given)"
+        )
+    strict = kwargs.get("strict", _clover_zip_missing)
+    if strict is _clover_zip_missing:
+        for name in kwargs:
+            if str.__str__(name) != "strict":
+                raise TypeError("zip() got an unexpected keyword argument '" + str(name) + "'")
+            raise TypeError("invalid keyword argument for zip()")
+        strict = False
+    else:
+        strict = True if strict else False
+    sources = []
+    for iterable in iterables:
+        __clover_list_append__(sources, iter(iterable))
+    return _clover_zip_allocate(cls, __clover_list_to_tuple__(sources), strict)
+
+
+def _clover_zip_next(self, /):
+    sources = _clover_zip_sources(self)
+    strict = _clover_zip_strict(self)
+    count = len(sources)
+    if count == 0:
+        raise StopIteration
+    row = []
+    i = 0
+    while i < count:
+        try:
+            item = next(sources[i])
+        except StopIteration:
+            if not strict:
+                raise
+            break
+        __clover_list_append__(row, item)
+        i += 1
+    if i == count:
+        return __clover_list_to_tuple__(row)
+
+    # Leave the exhaustion handler before reporting a strict mismatch or
+    # final exhaustion, so the discarded source exception is not chained.
+    if i > 0:
+        suffix = " 1" if i == 1 else "s 1-" + str(i)
+        raise ValueError(
+            "zip() argument " + str(i + 1) + " is shorter than argument" + suffix
+        )
+    # Input 1 ended: probe each remaining input once. A yielded item is
+    # consumed before reporting a mismatch. Other errors propagate unchanged.
+    j = 1
+    while j < count:
+        try:
+            next(sources[j])
+        except StopIteration:
+            j += 1
+        else:
+            break
+    if j < count:
+        suffix = " 1" if j == 1 else "s 1-" + str(j)
+        raise ValueError(
+            "zip() argument " + str(j + 1) + " is longer than argument" + suffix
+        )
+    raise StopIteration
