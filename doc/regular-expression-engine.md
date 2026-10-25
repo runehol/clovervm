@@ -718,7 +718,7 @@ template<typename Literal>
 class ProgramBuilder
 {
 public:
-    [[nodiscard]] Result<std::unique_ptr<CompiledProgram<Literal>>, BuildError>
+    [[nodiscard]] Result<std::unique_ptr<CompiledProgram<Literal>>, ProgramError>
     freeze() &&;
 
 private:
@@ -825,6 +825,47 @@ can check indices. Copy names and overlap data into owned storage before
 freezing. `freeze()` completes name lookup ordering and checks metadata
 references and limits. Public program accessors expose const data only.
 
+### Program Error Payload
+
+Use one allocation-free error payload for construction, decoding, and debug
+verification, independent of VM exception state:
+
+```cpp
+enum class ProgramErrorKind : uint8_t
+{
+    LimitExceeded,
+    OutOfMemory,
+    InvalidProgram,
+};
+
+struct ProgramError
+{
+    ProgramErrorKind kind;
+    std::optional<uint32_t> word_offset;
+    const char* message; // Static string literal.
+};
+
+template<typename T>
+using BuildResult = Result<T, ProgramError>;
+```
+
+`LimitExceeded` covers instruction/pool format ceilings and maps to
+`OverflowError` at the future binding. Allocation failure maps through
+`OutOfMemory` to `MemoryError`. Internal construction/encoding defects such as
+unresolved targets, malformed operands, or incorrect nesting use
+`InvalidProgram`, mapping to `RuntimeError`.
+
+The optional offset identifies an offending instruction or operand word where
+available; leave it absent for failures such as pool allocation. Messages have
+static lifetime, so constructing an error never allocates. Add offset formatting
+only when displaying diagnostics. Construction boundaries translate
+`std::bad_alloc` into `OutOfMemory`; ordinary typed propagation needs no pending
+VM exception or cancellation machinery. Do not add offending-value fields,
+nested errors, or dynamically formatted messages without a concrete need.
+
+Keep these internal program errors separate from future parser/compiler
+syntax diagnostics, which carry source positions and become `PatternError`.
+
 ### RAII Jump Targets
 
 Follow `CodeObjectBuilder`'s target-local relocation ownership. Each stack-scoped
@@ -835,9 +876,6 @@ asserting completion or automatically binding it. Do not introduce a label-ID
 table or global fixup list.
 
 ```cpp
-template<typename T>
-using BuildResult = Result<T, BuildError>;
-
 template<typename Literal>
 class JumpTarget
 {
@@ -1035,7 +1073,7 @@ struct DecodedInstruction
     std::optional<DecodedCharacterTest> repeat_test;
 };
 
-Result<DecodedInstruction, DecodeError>
+Result<DecodedInstruction, ProgramError>
 decode_instruction(std::span<const uint32_t> words, uint32_t pc);
 ```
 
@@ -1062,8 +1100,8 @@ returned in `repeat_test`, with its actual opcode and normalized operand, and
 instruction. Three operand slots suffice for the selected instruction set.
 
 Check opcode/encoding validity, available operand words, reserved bits, and
-embedded test eligibility/completeness. `DecodeError` contains a kind and
-offending word offset. Decoding does not inspect pools or build a control-flow
+embedded test eligibility/completeness. Return the shared `ProgramError` with
+the offending word offset. Decoding does not inspect pools or build a control-flow
 graph. The whole-program verifier checks pool/capture bounds, target boundaries
 from a complete walk, and structural nesting. Disassembly resolves pool contents
 when printing. Callers walk from `pc=0` using each result's `next_pc` until the
@@ -2759,6 +2797,81 @@ maximum to `UINT64_MAX` must not silently convert representational exhaustion
 into an ordinary finite-repeat exit. No automatic timeout or backtracking-work
 budget is introduced in this initial design; those would require separate
 agreement.
+
+## Slice 1: Program Construction And Inspection
+
+Implement the program format, owning storage, builder, and inspection tooling
+in `src/regex/`, namespace `cl::regex`. This slice emits and inspects programs;
+it contains no matcher, parser/AST, Unicode generation, replacement interpreter,
+Python binding, or changes to existing string/tokenizer behavior. Later users
+consume these interfaces without changing the selected encoding.
+
+Use these file boundaries:
+
+| File under `src/regex/` | Responsibility |
+|---|---|
+| `error.h` | `ProgramErrorKind`, `ProgramError`, and `BuildResult` |
+| `opcode.def`, `opcode.h` | Numeric opcodes and shared encoding/operand metadata |
+| `operands.h` | Typed class references, literal slices, ranges/bitmaps, class metadata, `CharacterTest`, repeat bounds/modes, assertion polarity |
+| `program.h` | Owning `CompiledProgram`, class storage records, program/search metadata, group-name records, const accessors |
+| `program_builder.h/.cpp` | `ProgramBuilder`, target-local RAII `JumpTarget`, repeat/region helpers, pool interning, direct emission and freezing |
+| `instruction.h` | Inspection-only `DecodedInstruction` and `DecodedCharacterTest` |
+| `decode.h/.cpp` | Stateless bounds-checked instruction decoding |
+| `verify.h/.cpp` | Debug/test whole-program verification |
+| `disassemble.h/.cpp` | Readable instruction/pool/metadata inspection |
+
+`CharacterTest` belongs in `operands.h`, shared by emission and later execution,
+not among the inspection-only decoded types. Keep helpers that operate on
+builder state with the builder, following `CodeObjectBuilder`'s organization.
+Use explicit `uint8_t` and `uint32_t` instantiations for out-of-line templated
+implementation; keep small const accessors inline. Engine interfaces depend on
+native C++ values and `Result`, not `Value`, `ThreadState`, pending exceptions,
+or interpreter frames. Add sources to the existing library build rather than
+introducing a separate build project or public C API.
+
+Tests join the existing GTest target without requiring a VM fixture:
+
+| Test file | Scope |
+|---|---|
+| `tests/test_regex_program_builder.cpp` | Pool/metadata ownership, stable references, direct encodings, relocations, structured helpers, freeze/error behavior; parameterized over both literal types |
+| `tests/test_regex_decode.cpp` | Operand normalization, instruction extents, compact/wide forms, malformed/truncated encodings, embedded repeat tests |
+| `tests/test_regex_verify.cpp` | Invalid targets/pools/indices/metadata, reserved bits, improper region/repeat nesting, incomplete programs |
+| `tests/test_regex_disassemble.cpp` | Readable representative output with word offsets, full target values, resolved pool content, and embedded tests |
+
+The verification baseline is:
+
+- Representative golden words for every encoding layout, plus decoding
+  coverage of all selected opcodes. Do not duplicate the opcode definition
+  table solely to test that its values agree with themselves.
+- Forward, backward, and multiple references to a target, including references
+  emitted after resolution. Patching never changes instruction sizes or later
+  offsets. Reject unresolved references at freeze even if the helper has
+  already been destroyed; verify ordinary early-return cleanup without
+  cancellation or destructor assertions.
+- Nested repeat/assertion/atomic helpers, correct ending and continuation
+  positions, closing order, and unclosed-helper rejection. Include all four
+  simple-repeat header/test-width combinations and reject targets anywhere
+  inside the embedded test.
+- Literal/capture/class compact-wide boundaries where applicable; control-flow
+  targets always have the sole 32-bit form. Test ceiling arithmetic with
+  synthetic counts rather than allocating multi-gigabyte pools.
+- Copied caller buffers, surviving program ownership after builder destruction,
+  immutable public access, stable pool indices, shared bitmap/page payloads,
+  metadata defaults, group-name lookup ordering, and search metadata slices.
+  Verify kind/location for malformed-program diagnostics and that allocation
+  failure reporting itself requires no formatted/allocated message.
+
+Construct valid programs through typed builders and helpers. Decoder/verifier
+negative tests may operate on manually created word streams or test-local
+copies mutated into malformed input; keep production storage private and avoid
+adding mutable public access just for tests. Unicode identifier/name semantics
+and the correctness of a prefix's necessity belong to later parser/Unicode
+analysis tests, not this representation slice.
+
+Run focused tests while developing and the required debug `all check` before
+finalizing implementation. Run release `all check` at the exact commit before
+push. Match behavior, CPython regex differential tests, and matcher performance
+measurements begin in the slices that implement those capabilities.
 
 ## Open Decisions And Verification
 
