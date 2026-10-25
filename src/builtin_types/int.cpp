@@ -636,6 +636,31 @@ namespace cl
         }
     };
 
+    struct IntTrueDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__truediv__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            double result = CL_TRY(bigint_true_divide(left, right));
+            return thread->make_object_value<Float>(result).raw_value();
+        }
+    };
+
+    struct IntRTrueDivOperator
+    {
+        static constexpr const wchar_t *receiver_error =
+            L"int.__rtruediv__ expects an int receiver";
+
+        Value operator()(ThreadState *thread, ConstBigIntView left,
+                         ConstBigIntView right) const
+        {
+            return IntTrueDivOperator{}(thread, right, left);
+        }
+    };
+
     struct SMITrueDivOperator
     {
         static constexpr const wchar_t *receiver_error =
@@ -647,9 +672,19 @@ namespace cl
             {
                 return int_zero_division_error(thread);
             }
-            return thread
-                ->make_object_value<Float>(double(left) / double(right))
-                .raw_value();
+            constexpr int64_t exact_double_limit = int64_t{1} << 53;
+            if(left >= -exact_double_limit && left <= exact_double_limit &&
+               right >= -exact_double_limit && right <= exact_double_limit)
+            {
+                return thread
+                    ->make_object_value<Float>(double(left) / double(right))
+                    .raw_value();
+            }
+            SmiViewStorage left_storage;
+            SmiViewStorage right_storage;
+            return IntTrueDivOperator{}(thread,
+                                        smi_bigint_view(left, &left_storage),
+                                        smi_bigint_view(right, &right_storage));
         }
     };
 
@@ -1506,31 +1541,6 @@ namespace cl
     }
 
     template <typename Operator>
-    static Value native_int_binary_operator(ThreadState *thread, Value self,
-                                            Value other)
-    {
-        // Heap-int true division is otherwise unsupported here, but this
-        // mixed pair must yield to float's reflected implementation.
-        if(has_native_layout<BigInt>(self) && has_native_layout<Float>(other))
-            return Value::NotImplemented();
-
-        int64_t left;
-        if(!try_get_smi_or_bool(self, &left))
-        {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError", Operator::receiver_error);
-        }
-
-        int64_t right;
-        if(!try_get_smi_or_bool(other, &right))
-        {
-            return Value::NotImplemented();
-        }
-
-        return Operator{}(thread, left, right);
-    }
-
-    template <typename Operator>
     static Value native_int_bigint_binary_operator(ThreadState *thread,
                                                    Value self, Value other)
     {
@@ -1551,6 +1561,21 @@ namespace cl
         ConstBigIntView other_view =
             intlike_value_bigint_view(other, &other_storage);
         return Operator{}(thread, self_view, other_view);
+    }
+
+    template <typename SMIOperator, typename BigIntOperator>
+    static Value native_int_true_divide(ThreadState *thread, Value self,
+                                        Value other)
+    {
+        int64_t left;
+        int64_t right;
+        if(try_get_smi_or_bool(self, &left) &&
+           try_get_smi_or_bool(other, &right))
+        {
+            return SMIOperator{}(thread, left, right);
+        }
+        return native_int_bigint_binary_operator<BigIntOperator>(thread, self,
+                                                                 other);
     }
 
     static Value native_int_binary_pow(ThreadState *thread, Value self,
@@ -1847,26 +1872,6 @@ namespace cl
     }
 
     template <typename Operator>
-    static TrustedResolution resolve_trusted_int_binary_handler(
-        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
-    {
-        if(is_smi_or_bool_shape_key(operand0_key) &&
-           is_smi_or_bool_shape_key(operand1_key))
-        {
-            return TrustedResolution::call_trusted(
-                trusted_intlike_intlike_operator<Operator>);
-        }
-        if((is_intlike_shape_key(vm, operand0_key) &&
-            is_float_shape_key(vm, operand1_key)) ||
-           (is_float_shape_key(vm, operand0_key) &&
-            is_intlike_shape_key(vm, operand1_key)))
-        {
-            return TrustedResolution::known_not_implemented_skip_method();
-        }
-        return TrustedResolution::no_trusted_handler_call_untrusted();
-    }
-
-    template <typename Operator>
     static TrustedResolution resolve_trusted_int_bigint_binary_handler(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key)
     {
@@ -1884,24 +1889,6 @@ namespace cl
             return TrustedResolution::known_not_implemented_skip_method();
         }
         return TrustedResolution::no_trusted_handler_call_untrusted();
-    }
-
-    template <typename NormalOperator, typename ReflectedOperator>
-    static TrustedResolution resolve_trusted_int_binary_resolver(
-        VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
-        TrustedHandlerOperandOrder order, TrustedHandlerArity requested_arity)
-    {
-        if(requested_arity != TrustedHandlerArity::Binary)
-        {
-            return TrustedResolution::no_trusted_handler_call_untrusted();
-        }
-        if(order == TrustedHandlerOperandOrder::Reflected)
-        {
-            return resolve_trusted_int_binary_handler<ReflectedOperator>(
-                vm, operand0_key, operand1_key);
-        }
-        return resolve_trusted_int_binary_handler<NormalOperator>(
-            vm, operand0_key, operand1_key);
     }
 
     template <typename NormalOperator, typename ReflectedOperator>
@@ -1968,6 +1955,51 @@ namespace cl
             NormalSMIOperator, NormalBigIntOperator>(vm, operand0_key,
                                                      operand1_key);
     }
+
+    template <bool Reflected>
+    class IntTrueDivResolver final
+        : public TrustedHandlerResolverBase<
+              TrustedHandlerDefinition<
+                  trusted_intlike_intlike_operator<SMITrueDivOperator>,
+                  TrustedHandlerEffects::Allocate |
+                      TrustedHandlerEffects::Raise,
+                  TrustedHandlerSemantics::TrueDiv>,
+              TrustedHandlerDefinition<
+                  trusted_intlike_intlike_operator<SMIRTrueDivOperator>,
+                  TrustedHandlerEffects::Allocate |
+                      TrustedHandlerEffects::Raise,
+                  TrustedHandlerSemantics::RTrueDiv>,
+              TrustedHandlerDefinition<
+                  trusted_intlike_bigint_operator<IntTrueDivOperator>,
+                  TrustedHandlerEffects::Allocate |
+                      TrustedHandlerEffects::Raise,
+                  TrustedHandlerSemantics::TrueDiv>,
+              TrustedHandlerDefinition<
+                  trusted_intlike_bigint_operator<IntRTrueDivOperator>,
+                  TrustedHandlerEffects::Allocate |
+                      TrustedHandlerEffects::Raise,
+                  TrustedHandlerSemantics::RTrueDiv>>
+    {
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm,
+                                         ShapeKey operand0_key,
+                                         ShapeKey operand1_key,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity requested_arity)
+        {
+            if constexpr(Reflected)
+            {
+                return resolve_trusted_int_smi_or_bigint_binary_resolver<
+                    SMIRTrueDivOperator, SMITrueDivOperator,
+                    IntRTrueDivOperator, IntTrueDivOperator>(
+                    vm, operand0_key, operand1_key, order, requested_arity);
+            }
+            return resolve_trusted_int_smi_or_bigint_binary_resolver<
+                SMITrueDivOperator, SMIRTrueDivOperator, IntTrueDivOperator,
+                IntRTrueDivOperator>(vm, operand0_key, operand1_key, order,
+                                     requested_arity);
+        }
+    };
 
     static TrustedResolution resolve_trusted_int_pow_resolver(
         VirtualMachine *vm, ShapeKey operand0_key, ShapeKey operand1_key,
@@ -2180,20 +2212,18 @@ namespace cl
                                   L"Return pow(value, self, mod)."),
                               int_pow_defaults.value()),
                 resolve_trusted_int_rpow_resolver),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__truediv__",
-                    native_int_binary_operator<SMITrueDivOperator>,
-                    L"Return self / value."),
-                resolve_trusted_int_binary_resolver<SMITrueDivOperator,
-                                                    SMIRTrueDivOperator>),
-            with_trusted_handler_resolver(
-                builtin_intrinsic_method(
-                    L"__rtruediv__",
-                    native_int_binary_operator<SMIRTrueDivOperator>,
-                    L"Return value / self."),
-                resolve_trusted_int_binary_resolver<SMIRTrueDivOperator,
-                                                    SMITrueDivOperator>),
+            with_trusted_handler_resolver<IntTrueDivResolver<false>>(
+                vm, builtin_intrinsic_method(
+                        L"__truediv__",
+                        native_int_true_divide<SMITrueDivOperator,
+                                               IntTrueDivOperator>,
+                        L"Return self / value.")),
+            with_trusted_handler_resolver<IntTrueDivResolver<true>>(
+                vm, builtin_intrinsic_method(
+                        L"__rtruediv__",
+                        native_int_true_divide<SMIRTrueDivOperator,
+                                               IntRTrueDivOperator>,
+                        L"Return value / self.")),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(
                     L"__floordiv__",
