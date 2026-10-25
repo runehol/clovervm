@@ -155,11 +155,10 @@ def test_call_contract():
         raises(TypeError, function, heap=heap, item=2)
         assert heap == [1]
     assert heapq.__all__ == ["heapify", "heappush", "heappop",
-                             "heapreplace", "heappushpop"]
-    for name in ("merge", "nlargest", "nsmallest", "heapify_max",
-                 "heappush_max", "heappop_max", "heapreplace_max",
-                 "heappushpop_max"):
-        assert not hasattr(heapq, name)
+                             "heapreplace", "heappushpop", "heapify_max",
+                             "heappush_max", "heappop_max", "heapreplace_max",
+                             "heappushpop_max", "nlargest", "nsmallest"]
+    assert not hasattr(heapq, "merge")
 
 
 class Duck:
