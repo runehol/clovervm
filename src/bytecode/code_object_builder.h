@@ -331,6 +331,8 @@ namespace cl
                                        uint32_t context_reg);
         Expected<uint32_t> emit_raise_bare(uint32_t source_offset);
         Expected<uint32_t> emit_write_stdout(uint32_t source_offset);
+        Expected<uint32_t> emit_create_os_error(uint32_t source_offset,
+                                                uint32_t class_reg);
         Expected<uint32_t>
         emit_create_instance_known_class(uint32_t source_offset,
                                          uint8_t class_idx);

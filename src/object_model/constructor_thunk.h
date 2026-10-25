@@ -12,6 +12,9 @@ namespace cl
     make_init_only_constructor_thunk_function(ClassObject *cls,
                                               Optional<TValue<Function>> init);
     Expected<TValue<Function>>
+    make_os_error_constructor_thunk_function(ClassObject *cls,
+                                             TValue<Function> init);
+    Expected<TValue<Function>>
     make_new_only_constructor_thunk_function(ClassObject *cls,
                                              TValue<Function> new_);
 }  // namespace cl

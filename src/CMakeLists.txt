@@ -63,6 +63,8 @@ add_library(libclovervm_objects OBJECT
     api/native_module_api.cpp
     api/native_module_api_internal.h
     runtime/exception_handling.h
+    runtime/os_error.cpp
+    runtime/os_error.h
     runtime/exception_object.cpp
     runtime/exception_object.h
     runtime/exception_propagation.h

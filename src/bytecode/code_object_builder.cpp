@@ -517,6 +517,14 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_create_os_error(uint32_t source_offset,
+                                            uint32_t class_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::CreateOSError,
+                               class_reg);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_create_instance_known_class(uint32_t source_offset,
                                                         uint8_t class_idx)
     {

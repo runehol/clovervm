@@ -2,12 +2,14 @@
 #include "builtin_types/list.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/bytecode_decoder.h"
 #include "bytecode/code_object.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
 #include "object_model/shape.h"
+#include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
 #include <cassert>
@@ -2160,4 +2162,107 @@ TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
     ASSERT_TRUE(lookup.is_latent());
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
     EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(child), attr_name));
+}
+
+TEST(InstanceStorageSelection, OSErrorPreservesProviderAndCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *os = context.thread()->class_for_builtin_name(L"OSError");
+    ClassObject *exception =
+        context.thread()->class_for_builtin_name(L"Exception");
+    auto ordinary = make_storage_selection_class(context, {exception});
+    ASSERT_FALSE(ordinary.has_exception());
+    Owned<TValue<ClassObject>> e(ordinary.value());
+    for(bool first: {false, true})
+    {
+        auto candidate =
+            first ? make_storage_selection_class(context, {e.extract(), os})
+                  : make_storage_selection_class(context, {os, e.extract()});
+        ASSERT_FALSE(candidate.has_exception());
+        Owned<TValue<ClassObject>> cls(candidate.value());
+        auto selected = select_instance_storage(
+            TValue<Tuple>::from_value_assumed(cls.extract()->get_mro_value()),
+            10);
+        ASSERT_FALSE(selected.has_exception());
+        EXPECT_EQ(os, selected.value().builtin_provider);
+        EXPECT_EQ(NativeLayoutId::OSError, selected.value().layout);
+        EXPECT_EQ(OSErrorObject::kInlineSlotCount,
+                  selected.value().inline_slot_capacity);
+    }
+}
+
+TEST(ConstructorAllocatorSelection,
+     OSErrorUsesDynamicClassAllocationAndLatentSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ClassObject *os = context.thread()->class_for_builtin_name(L"OSError");
+    auto thunk = os->get_or_create_constructor_thunk();
+    ASSERT_FALSE(thunk.has_exception());
+    ASSERT_TRUE(thunk.value().is_found());
+    BytecodeDecoder decoder(*thunk.value().thunk->code_object.extract());
+    bool found = false;
+    for(const auto &block: decoder.blocks())
+        for(const auto &instruction: block.instructions())
+            if(instruction.semantic_opcode() == Bytecode::CreateOSError)
+                found = true;
+    EXPECT_TRUE(found);
+    auto descriptor =
+        os->get_instance_root_shape()->lookup_descriptor_including_latent(
+            context.vm().get_or_create_interned_string_value(
+                L"characters_written"));
+    EXPECT_TRUE(descriptor.is_latent());
+    EXPECT_EQ(int32_t(OSErrorObject::kCharactersWrittenSlot),
+              descriptor.info.physical_idx);
+    EXPECT_TRUE(descriptor.info.has_flag(DescriptorFlag::StableSlot));
+    for(const wchar_t *name: {L"errno", L"strerror", L"filename", L"filename2"})
+    {
+        auto field =
+            os->get_instance_root_shape()->lookup_descriptor_including_latent(
+                context.vm().get_or_create_interned_string_value(name));
+        EXPECT_TRUE(field.is_latent());
+        EXPECT_TRUE(field.info.has_flag(DescriptorFlag::StableSlot));
+        EXPECT_TRUE(
+            os->get_own_property(
+                  context.vm().get_or_create_interned_string_value(name))
+                .is_none());
+    }
+}
+
+TEST(ConstructorAllocatorSelection, OSErrorRebuildsDoNotAllocateImmortalHelpers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    auto candidate = make_storage_selection_class(
+        context, {context.thread()->class_for_builtin_name(L"OSError")});
+    ASSERT_FALSE(candidate.has_exception());
+    Owned<TValue<ClassObject>> cls(candidate.value());
+    auto warm = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(warm.has_exception());
+    ASSERT_TRUE(warm.value().is_found());
+    auto &immortal_heap = context.vm().get_interned_global_heap();
+    uint64_t immortal_before = immortal_heap.count_valid_objects_slow();
+    for(int i = 0; i < 100; ++i)
+    {
+        // Python initializer reassignment uses this same invalidation path.
+        cls.extract()->invalidate_lookup_validity_cells_for_contents_change();
+        auto lookup = cls.extract()->get_or_create_constructor_thunk();
+        ASSERT_FALSE(lookup.has_exception());
+        ASSERT_TRUE(lookup.value().is_found());
+        CodeObject *code = lookup.value().thunk->code_object.extract();
+        uint32_t helpers = 0;
+        for(size_t index = 0; index < code->constant_table.size(); ++index)
+        {
+            Value constant = code->constant_table[index].value();
+            if(has_native_layout<CodeObject>(constant))
+            {
+                EXPECT_TRUE(constant.is_refcounted_ptr());
+                ++helpers;
+            }
+        }
+        EXPECT_EQ(2u, helpers);
+        context.vm().run_heap_reclamation();
+    }
+    EXPECT_EQ(immortal_before, immortal_heap.count_valid_objects_slow());
 }

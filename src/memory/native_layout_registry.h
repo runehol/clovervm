@@ -55,6 +55,7 @@
     V(ModuleSpecObject);                                                       \
     V(ExceptionObject);                                                        \
     V(StopIterationObject);                                                    \
+    V(OSErrorObject);                                                          \
     V(Float);                                                                  \
     V(Function);                                                               \
     V(Dict);                                                                   \

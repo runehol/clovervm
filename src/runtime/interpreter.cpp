@@ -32,6 +32,7 @@
 #include "runtime/method_call.h"
 #include "runtime/operator_frame.h"
 #include "runtime/operator_walk.h"
+#include "runtime/os_error.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -4643,6 +4644,28 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE INTERP_CC Value create_os_error_slow(PARAMS)
+    {
+        START(2);
+        TValue<ClassObject> cls = TValue<ClassObject>::from_value_assumed(
+            fp[static_cast<int8_t>(pc[1])]);
+        accumulator = allocate_default_os_error(thread, cls).raw_value();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_create_os_error(PARAMS)
+    {
+        Value cls_value = fp[static_cast<int8_t>(pc[1])];
+        if(unlikely(
+               !has_native_layout<ClassObject>(cls_value) ||
+               cls_value.get_ptr<ClassObject>()->instance_native_layout_id() !=
+                   NativeLayoutId::OSError))
+        {
+            MUSTTAIL return incompatible_instance_storage(ARGS);
+        }
+        MUSTTAIL return create_os_error_slow(ARGS);
+    }
+
     static INTERP_CC Value op_is_instance_of_known_class(PARAMS)
     {
         START(2);
@@ -6912,6 +6935,7 @@ namespace cl
                         op_create_instance_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateListKnownClass,
                         op_create_list_known_class);
+        SET_TABLE_ENTRY(Bytecode::CreateOSError, op_create_os_error);
         SET_TABLE_ENTRY(Bytecode::CreateExceptionKnownClass,
                         op_create_exception_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateStopIterationKnownClass,

@@ -118,7 +118,8 @@ namespace cl
                native_layout == NativeLayoutId::ModuleLoaderObject ||
                native_layout == NativeLayoutId::ModuleSpecObject ||
                native_layout == NativeLayoutId::Exception ||
-               native_layout == NativeLayoutId::StopIteration;
+               native_layout == NativeLayoutId::StopIteration ||
+               native_layout == NativeLayoutId::OSError;
     }
 
     class InlineSlotObject : public Object

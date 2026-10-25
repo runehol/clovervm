@@ -39,6 +39,7 @@ namespace cl
         ClassObject,
         Exception,
         StopIteration,
+        OSError,
         Instance,
         Scope,
         Shape,

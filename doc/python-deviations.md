@@ -300,9 +300,37 @@ checks, warning emission, finalization detection, and emergency `MemoryError`
 allocation are absent. Ordinary allocation failure is not converted into the
 new `MemoryError` class.
 
-Remaining families outside this slice are `OSError` and its subclasses/aliases
-and errno translation, `UnicodeError` and its specialized subclasses,
+Remaining families outside this slice are `UnicodeError` and its specialized
+subclasses,
 `SystemExit`, `GeneratorExit`, `StopAsyncIteration`, `BaseExceptionGroup`, and
 `ExceptionGroup`. Chaining, full traceback support, and signal handling remain
 separate work. Supplying these classes does not complete specialized exception
 behavior.
+
+### OSError fields use ordinary latent attributes
+
+The POSIX OSError hierarchy and IOError/EnvironmentError aliases share one native
+layout, including Python subclasses. Constructors select errno-specific classes
+only for exact OSError, preserve filename/filename2 and args conventions, and
+support inherited native allocation with a custom Python initializer. Custom
+Python __new__ plus __init__ still depends on the general constructor protocol.
+
+errno, strerror, filename and filename2 start as latent stable slots with
+class-level None defaults. characters_written starts latent without a default.
+Setting/deleting these fields uses ordinary attribute and shape transitions;
+class defaults may be shadowed or overridden by Python subclasses. This
+intentionally differs from CPython's member descriptors: class introspection
+returns defaults, instance dictionaries expose ordinary present slots, and
+characters_written assignment accepts any Python value instead of coercing a
+platform-sized integer. Native constructor progress counts accept builtin
+ints/bools/int subclasses within signed platform-size bounds; general custom
+numeric/index protocols remain unsupported. Out-of-range native constructor
+progress counts raise ValueError. Errno selection uses normal dictionary lookup,
+including builtin int-subclass hash/equality/truth callbacks. Formatting uses native instance
+presence, never inherited default values. Windows winerror is not exposed.
+
+Existing os functions still translate OS failures into ValueError. Shared syscall
+translation and native-module C API helpers are separate work; registering the
+hierarchy does not change those producers. Internal generic exception factories
+allocate the correct OSError storage and retain raw args without invoking public
+constructor parsing or errno-based class selection.
