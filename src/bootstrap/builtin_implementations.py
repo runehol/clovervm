@@ -539,6 +539,46 @@ def _clover_slice_ne(self, other, /):
     return not result
 
 
+def _clover_slice_lt(self, other, /):
+    if not isinstance(self, slice):
+        raise TypeError("slice.__lt__ expects a slice receiver")
+    if not isinstance(other, slice):
+        return NotImplemented
+    if self is other:
+        return False
+    return (self.start, self.stop, self.step) < (other.start, other.stop, other.step)
+
+
+def _clover_slice_le(self, other, /):
+    if not isinstance(self, slice):
+        raise TypeError("slice.__le__ expects a slice receiver")
+    if not isinstance(other, slice):
+        return NotImplemented
+    if self is other:
+        return True
+    return (self.start, self.stop, self.step) <= (other.start, other.stop, other.step)
+
+
+def _clover_slice_gt(self, other, /):
+    if not isinstance(self, slice):
+        raise TypeError("slice.__gt__ expects a slice receiver")
+    if not isinstance(other, slice):
+        return NotImplemented
+    if self is other:
+        return False
+    return (self.start, self.stop, self.step) > (other.start, other.stop, other.step)
+
+
+def _clover_slice_ge(self, other, /):
+    if not isinstance(self, slice):
+        raise TypeError("slice.__ge__ expects a slice receiver")
+    if not isinstance(other, slice):
+        return NotImplemented
+    if self is other:
+        return True
+    return (self.start, self.stop, self.step) >= (other.start, other.stop, other.step)
+
+
 def _clover_tuple_count(self, needle, /):
     """Return number of occurrences of value."""
     if not isinstance(self, tuple):

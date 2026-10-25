@@ -2974,6 +2974,63 @@ TEST(Interpreter, subscript_load_passes_none_for_omitted_slice_bounds)
               slice->get_shape());
 }
 
+TEST(Interpreter, slice_ordering_retains_fields_across_callback_reclamation)
+{
+    // CPython 3.14.5 slice_richcompare: identity shortcuts and tuple field
+    // order.
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+owners = []
+class Field:
+    def __init__(self, marker):
+        self.marker = marker
+    def __eq__(self, other):
+        owners.clear()
+        garbage = []
+        for i in range(30):
+            garbage.append(Field(i))
+        assert self.marker == 7
+        assert other.marker == 8
+        assert slice(slice(1)) < slice(slice(2))
+        return False
+    def __lt__(self, other):
+        owners.clear()
+        garbage = []
+        for i in range(30):
+            garbage.append(Field(i))
+        assert self.marker == 7
+        assert other.marker == 8
+        assert slice((1,)) < slice((2,))
+        return self
+    def __le__(self, other):
+        return self.__lt__(other)
+    def __gt__(self, other):
+        return self.__lt__(other)
+    def __ge__(self, other):
+        return self.__lt__(other)
+def lt(a, b):
+    return a < b
+def le(a, b):
+    return a <= b
+def gt(a, b):
+    return a > b
+def ge(a, b):
+    return a >= b
+for compare in (lt, le, gt, ge):
+    for step in (None, 1):
+        for i in range(20):
+            owners.append(slice(Field(7), None, step))
+            owners.append(slice(Field(8), None, step))
+            assert compare(owners[0], owners[1]).marker == 7
+            assert owners == []
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, slice_constructor_uses_python_argument_convention)
 {
     test::FileRunner unary_runner(L"slice(5)\n");
@@ -9138,6 +9195,67 @@ assert (left < right).marker == 7
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
+TEST(Interpreter,
+     bool_construction_roots_temporaries_across_reclamation_and_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    // Original regression, with the Python assertions checked on
+    // CPython 3.14.5.
+    CodeObject *code = context.compile_file(LR"(
+class Length:
+    def __init__(self, marker):
+        self.marker = marker
+    def __len__(self):
+        garbage = []
+        for i in range(30):
+            garbage.append([i])
+        assert self.marker == 7
+        return 0
+class Truth:
+    def __init__(self, marker):
+        self.marker = marker
+    def __bool__(self):
+        # Replace the shared bool.__new__ truth cache's result kind while the
+        # outer invocation's Bool continuation is suspended.
+        assert bool(Length(7)) is False
+        garbage = []
+        for i in range(30):
+            garbage.append([i])
+        assert self.marker == 8
+        return True
+for repeat in range(4):
+    assert bool(Truth(8)) is True
+    assert bool.__new__(bool, Truth(8)) is True
+    assert bool(Length(7)) is False
+class PlainTruth:
+    def __bool__(self):
+        return False
+class ReentrantLength:
+    def __len__(self):
+        assert bool(PlainTruth()) is False
+        # The outer integer is valid as a length, but not as a __bool__ result.
+        return 2
+assert bool(ReentrantLength()) is True
+class Raising:
+    def __bool__(self):
+        assert bool(Truth(8)) is True
+        raise ValueError("callback failed")
+try:
+    bool(Raising())
+except ValueError as error:
+    assert str(error) == "callback failed"
+else:
+    assert False
+assert bool(Truth(8)) is True
+)");
+    ASSERT_NE(nullptr, code);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, class_body_dunder_class_shadowing_is_explicitly_unsupported)
 {
     const wchar_t *bases[] = {L"", L"(object)", L"(int)"};
@@ -9184,4 +9302,41 @@ except TypeError as error:
 assert obj.__class__ is Valid
 )");
     EXPECT_FALSE(runner.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, functools_reduce_retains_state_across_reclamation_and_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+from functools import reduce
+class Source:
+    def __init__(self): self.position = 0
+    def __iter__(self): return self
+    def __next__(self):
+        if self.position == 12: raise StopIteration
+        value = [self.position]
+        self.position += 1
+        return value
+def add(a, b): return a + b
+def accumulate(acc, item):
+    garbage = [[1, 2, 3], [4, 5, 6]]
+    acc.append(reduce(add, [item, [99]], []))
+    return acc
+result = reduce(accumulate, Source(), [])
+assert len(result) == 12
+assert result[0] == [0, 99]
+assert result[11] == [11, 99]
+error = StopIteration('callback')
+def fail(a, b): raise error
+try:
+    reduce(fail, Source())
+    assert False
+except StopIteration as caught:
+    assert caught is error
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }

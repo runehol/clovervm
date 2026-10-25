@@ -645,6 +645,8 @@ discarded after script execution.
   incoming, intermediate, and outgoing bundle bindings.
 - Cover conditional edges, joins, loops, critical edges, parallel cycles, and
   mixed register/stack transfers.
+- Require the duplicate-edge alias regression below in both script planning
+  and helper-block construction tests.
 - Verify that all arguments are locally available and that predecessor indexes
   are correct after publication.
 
@@ -723,3 +725,64 @@ The existing allocation materializer and AArch64 execution tests provide the
 behavioral cases. New script tests should additionally make planning failures
 and exact carrier selection visible without relying on graph-rewriter
 normalization.
+
+### Required duplicate-edge alias regressions
+
+Retain this reduced Python reproducer as end-to-end regression coverage for
+the JIT abort investigated at `f064e71f58c121307406c923c8e82ce72e5b56d8`
+on 2026-10-25:
+
+```python
+def f(x, lo, hi):
+    while lo < hi:
+        mid = lo + hi
+        if x < mid:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+for i in range(101):
+    assert f(100, 0, 2) == 3
+```
+
+The test must exercise JIT compilation and complete with the asserted result.
+The 101 calls trigger the current tiering budget; adapt the harness if that
+budget changes so an interpreter-only pass cannot satisfy the regression.
+Also compile the function directly through the JIT test path: the failure
+occurs during materialization, before generated code executes. A debug VM run
+with ordinary JIT tiering disabled does not cover it.
+
+Require a focused script and graph-construction regression for the underlying
+duplicate-edge alias case. In `bisect._right`, the `hi = mid` edge passes `mid`
+twice, once as the new bound and once as the retained temporary. The observed
+allocation gives both incoming helper parameters bundle `b38` in `x6`, but
+their outgoing arguments require `b31` in `x13` and `b38` in `x6`, respectively:
+
+```text
+incoming: p3(b38, x6), p10(b38, x6)   ; same semantic value
+body:     moved = move p3             ; b31, x13
+outgoing argument 3:  moved           ; b31, x13
+outgoing argument 10: p3              ; b38, x6, physical no-op
+```
+
+Register numbers, bundle numbers, and parameter positions describe the
+observed failure; tests must establish the alias/move/no-op relationship
+without depending on incidental allocator numbering. Verify that:
+
+- both incoming argument positions and their intentional alias survive;
+- the moved argument receives a new carrier at its destination while the
+  unchanged argument retains a valid carrier at the original location;
+- the no-op assignment may reuse an existing helper-parameter definition
+  without inventing a move or claiming that parameter was newly emitted;
+- outgoing edge arguments resolve independently to those selected carriers;
+- script validation, output CFG verification, and output location assignments
+  agree, and the input CFG remains unchanged.
+
+The old materializer collapses the two parameters through its bundle-to-value
+map, then treats the second parameter's substitution with the first as an
+insertion transfer. The first parameter was not emitted by that insertion,
+so the graph rewriter correctly rejects it. Required coverage must demonstrate
+correct carrier binding rather than suppressing that invariant. Keep these
+cases as cutover acceptance criteria; recording them here does not implement
+or authorize a repair to the current materializer.
