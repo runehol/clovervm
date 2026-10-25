@@ -1509,6 +1509,11 @@ namespace cl
     static Value native_int_binary_operator(ThreadState *thread, Value self,
                                             Value other)
     {
+        // Heap-int true division is otherwise unsupported here, but this
+        // mixed pair must yield to float's reflected implementation.
+        if(has_native_layout<BigInt>(self) && has_native_layout<Float>(other))
+            return Value::NotImplemented();
+
         int64_t left;
         if(!try_get_smi_or_bool(self, &left))
         {
@@ -1851,10 +1856,10 @@ namespace cl
             return TrustedResolution::call_trusted(
                 trusted_intlike_intlike_operator<Operator>);
         }
-        if((is_smi_or_bool_shape_key(operand0_key) &&
+        if((is_intlike_shape_key(vm, operand0_key) &&
             is_float_shape_key(vm, operand1_key)) ||
            (is_float_shape_key(vm, operand0_key) &&
-            is_smi_or_bool_shape_key(operand1_key)))
+            is_intlike_shape_key(vm, operand1_key)))
         {
             return TrustedResolution::known_not_implemented_skip_method();
         }

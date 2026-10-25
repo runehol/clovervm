@@ -15,6 +15,180 @@
 
 namespace cl
 {
+    TEST(FloatRuntime, MixedHeapIntegerArithmeticTrustedReplay)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        struct Operation
+        {
+            const wchar_t *normal;
+            const wchar_t *reflected;
+            const wchar_t *source;
+            TrustedHandlerSemantics semantics;
+            bool raises_without_heap_integer;
+            double forward;
+            double reverse;
+        };
+        const Operation operations[] = {
+            {L"__add__", L"__radd__",
+             L"def calculate(a, b): return a + b\ncalculate\n",
+             TrustedHandlerSemantics::Add, false, 0x1p60, 0x1p60},
+            {L"__sub__", L"__rsub__",
+             L"def calculate(a, b): return a - b\ncalculate\n",
+             TrustedHandlerSemantics::Sub, false, -0x1p60, 0x1p60},
+            {L"__mul__", L"__rmul__",
+             L"def calculate(a, b): return a * b\ncalculate\n",
+             TrustedHandlerSemantics::Mul, false, 0x1p60, 0x1p60},
+            {L"__truediv__", L"__rtruediv__",
+             L"def calculate(a, b): return a / b\ncalculate\n",
+             TrustedHandlerSemantics::TrueDiv, true, 0x1p-60, 0x1p60},
+            {L"__floordiv__", L"__rfloordiv__",
+             L"def calculate(a, b): return a // b\ncalculate\n",
+             TrustedHandlerSemantics::FloorDiv, true, 0.0, 0x1p60},
+            {L"__mod__", L"__rmod__",
+             L"def calculate(a, b): return a % b\ncalculate\n",
+             TrustedHandlerSemantics::Mod, true, 1.0, 0.0},
+        };
+        Owned<Value> integer(context.run_file(L"2**60\n"));
+        Owned<Value> huge(context.run_file(L"10**400\n"));
+        Owned<Value> number(box_float(context.thread(), 1.0));
+        Owned<Value> subclass(
+            context.run_file(L"class I(int): pass\nI(2**60)\n"));
+        for(const Operation &operation: operations)
+        {
+            SCOPED_TRACE(operation.normal);
+            for(bool reflected: {false, true})
+            {
+                Value method = context.vm().float_class()->get_own_property(
+                    interned_string(reflected ? operation.reflected
+                                              : operation.normal));
+                auto resolver = method.get_ptr<Function>()
+                                    ->code_object.extract()
+                                    ->trusted_handler_resolver;
+                ASSERT_NE(nullptr, resolver);
+                // Exercise both method registrations and every normalized
+                // operand adaptation, including direct reflected methods.
+                for(auto handler_order: {TrustedHandlerOperandOrder::Normal,
+                                         TrustedHandlerOperandOrder::Reflected})
+                {
+                    for(bool integer_first: {false, true})
+                    {
+                        Value a =
+                            integer_first ? integer.value() : number.value();
+                        Value b =
+                            integer_first ? number.value() : integer.value();
+                        auto adapted =
+                            resolver(&context.vm(), ShapeKey::from_value(a),
+                                     ShapeKey::from_value(b), handler_order,
+                                     TrustedHandlerArity::Binary);
+                        ASSERT_TRUE(adapted.has_trusted_handler());
+                        Owned<Value> result(
+                            adapted.binary(context.thread(), a, b));
+                        ASSERT_TRUE(has_native_layout<Float>(result.value()));
+                        bool reverse_function =
+                            reflected !=
+                            (handler_order ==
+                             TrustedHandlerOperandOrder::Reflected);
+                        bool integer_on_left =
+                            integer_first != reverse_function;
+                        EXPECT_EQ(integer_on_left ? operation.reverse
+                                                  : operation.forward,
+                                  native_cast<Float>(result.value())->value());
+                    }
+                }
+
+                Value left = reflected ? integer.value() : number.value();
+                Value right = reflected ? number.value() : integer.value();
+                auto order = reflected ? TrustedHandlerOperandOrder::Reflected
+                                       : TrustedHandlerOperandOrder::Normal;
+                auto resolution =
+                    resolver(&context.vm(), ShapeKey::from_value(left),
+                             ShapeKey::from_value(right), order,
+                             TrustedHandlerArity::Binary);
+                ASSERT_TRUE(resolution.has_trusted_handler());
+                auto metadata = context.vm().trusted_handler_metadata(
+                    erase_trusted_handler_target(resolution.binary));
+                ASSERT_TRUE(metadata.has_value());
+                EXPECT_EQ(TrustedHandlerEffects::Allocate |
+                              TrustedHandlerEffects::Raise,
+                          metadata->effects);
+                EXPECT_EQ(operation.semantics, metadata->semantics);
+                Owned<TValue<Function>> function(
+                    TValue<Function>::from_value_assumed(
+                        context.run_file(operation.source)));
+                for(int replay = 0; replay < 3; ++replay)
+                {
+                    Owned<Value> direct(
+                        resolution.binary(context.thread(), left, right));
+                    ASSERT_TRUE(has_native_layout<Float>(direct.value()));
+                    EXPECT_EQ(reflected ? operation.reverse : operation.forward,
+                              native_cast<Float>(direct.value())->value());
+                    Owned<Value> result(
+                        context.thread()->call_clovervm_function(
+                            function.value(), left, right));
+                    ASSERT_TRUE(has_native_layout<Float>(result.value()));
+                    EXPECT_EQ(reflected ? operation.reverse : operation.forward,
+                              native_cast<Float>(result.value())->value());
+                }
+                const auto &caches = function.extract()
+                                         ->code_object.extract()
+                                         ->inline_caches.operator_caches;
+                ASSERT_EQ(1u, caches.size());
+                EXPECT_TRUE(caches[0].matches_reflectable_binary(left, right));
+                ASSERT_FALSE(caches[0].trusted_handler.is_null());
+                EXPECT_EQ(erase_trusted_handler_target(resolution.binary),
+                          caches[0].trusted_handler.target(
+                              TrustedHandlerArity::Binary));
+                EXPECT_NE(nullptr, caches[0].operand_lookup_validity_cells[0]);
+                EXPECT_NE(nullptr, caches[0].operand_lookup_validity_cells[1]);
+                // The successful handler remains cached for an overflowing
+                // integer of the same shape. Failure must propagate on replay.
+                for(int replay = 0; replay < 2; ++replay)
+                {
+                    Value failed = context.thread()->call_clovervm_function(
+                        function.value(),
+                        reflected ? huge.value() : number.value(),
+                        reflected ? number.value() : huge.value());
+                    EXPECT_TRUE(failed.is_exception_marker());
+                    EXPECT_TRUE(context.thread()->has_pending_exception());
+                    context.thread()->clear_pending_exception();
+                }
+
+                EXPECT_FALSE(resolver(&context.vm(), ShapeKey::from_value(left),
+                                      ShapeKey::from_value(right), order,
+                                      TrustedHandlerArity::Unary)
+                                 .has_trusted_handler());
+                EXPECT_FALSE(resolver(&context.vm(),
+                                      ShapeKey::from_value(number.value()),
+                                      ShapeKey::from_value(subclass.value()),
+                                      order, TrustedHandlerArity::Binary)
+                                 .has_trusted_handler());
+            }
+            // Existing float/SMI/bool targets keep their narrower effects.
+            Value method = context.vm().float_class()->get_own_property(
+                interned_string(operation.normal));
+            auto resolver = method.get_ptr<Function>()
+                                ->code_object.extract()
+                                ->trusted_handler_resolver;
+            for(Value right:
+                {number.value(), Value::from_smi(1), Value::True()})
+            {
+                auto resolution = resolver(&context.vm(),
+                                           ShapeKey::from_value(number.value()),
+                                           ShapeKey::from_value(right),
+                                           TrustedHandlerOperandOrder::Normal,
+                                           TrustedHandlerArity::Binary);
+                ASSERT_TRUE(resolution.has_trusted_handler());
+                auto metadata = context.vm().trusted_handler_metadata(
+                    erase_trusted_handler_target(resolution.binary));
+                ASSERT_TRUE(metadata.has_value());
+                EXPECT_EQ(operation.raises_without_heap_integer,
+                          has_trusted_handler_effects(
+                              metadata->effects, TrustedHandlerEffects::Raise));
+            }
+        }
+    }
+
     TEST(FloatRuntime, EqualityTrustedHandlersPreserveIntegerPrecision)
     {
         test::VmTestContext context;
