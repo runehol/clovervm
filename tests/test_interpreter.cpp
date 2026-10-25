@@ -2974,6 +2974,63 @@ TEST(Interpreter, subscript_load_passes_none_for_omitted_slice_bounds)
               slice->get_shape());
 }
 
+TEST(Interpreter, slice_ordering_retains_fields_across_callback_reclamation)
+{
+    // CPython 3.14.5 slice_richcompare: identity shortcuts and tuple field
+    // order.
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+owners = []
+class Field:
+    def __init__(self, marker):
+        self.marker = marker
+    def __eq__(self, other):
+        owners.clear()
+        garbage = []
+        for i in range(30):
+            garbage.append(Field(i))
+        assert self.marker == 7
+        assert other.marker == 8
+        assert slice(slice(1)) < slice(slice(2))
+        return False
+    def __lt__(self, other):
+        owners.clear()
+        garbage = []
+        for i in range(30):
+            garbage.append(Field(i))
+        assert self.marker == 7
+        assert other.marker == 8
+        assert slice((1,)) < slice((2,))
+        return self
+    def __le__(self, other):
+        return self.__lt__(other)
+    def __gt__(self, other):
+        return self.__lt__(other)
+    def __ge__(self, other):
+        return self.__lt__(other)
+def lt(a, b):
+    return a < b
+def le(a, b):
+    return a <= b
+def gt(a, b):
+    return a > b
+def ge(a, b):
+    return a >= b
+for compare in (lt, le, gt, ge):
+    for step in (None, 1):
+        for i in range(20):
+            owners.append(slice(Field(7), None, step))
+            owners.append(slice(Field(8), None, step))
+            assert compare(owners[0], owners[1]).marker == 7
+            assert owners == []
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, slice_constructor_uses_python_argument_convention)
 {
     test::FileRunner unary_runner(L"slice(5)\n");

@@ -177,9 +177,11 @@ namespace cl
     void install_slice_python_methods(VirtualMachine *vm,
                                       ModuleObject *implementation_module)
     {
-        const wchar_t *method_names[] = {L"__eq__", L"__ne__"};
-        const wchar_t *helper_names[] = {L"_clover_slice_eq",
-                                         L"_clover_slice_ne"};
+        const wchar_t *method_names[] = {L"__eq__", L"__ne__", L"__lt__",
+                                         L"__le__", L"__gt__", L"__ge__"};
+        const wchar_t *helper_names[] = {
+            L"_clover_slice_eq", L"_clover_slice_ne", L"_clover_slice_lt",
+            L"_clover_slice_le", L"_clover_slice_gt", L"_clover_slice_ge"};
         DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly) |
                                 descriptor_flag(DescriptorFlag::StableSlot);
         for(size_t idx = 0; idx < std::size(method_names); ++idx)

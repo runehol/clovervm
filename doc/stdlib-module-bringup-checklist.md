@@ -123,6 +123,13 @@ edge cases, platform behavior, or APIs are still missing.
   future native-backed modules less ad hoc, especially modules that need to
   accept structured Python values or text from public wrappers.
 
+### Slice comparisons
+
+`slice` supports `<`, `<=`, `>`, and `>=` through managed field-tuple comparisons
+with CPython 3.14.5 identity, callback, reflection, and result-preservation
+semantics. Comparison does not normalize indices. See the
+[slice comparison contract](slice-support-design.md#implemented-surface).
+
 ### UserDict boundaries and VM dependencies
 
 - `stdlib/collections.py` exports only `UserDict`. `Counter`, `defaultdict`,
