@@ -73,12 +73,12 @@ Keep `Pattern.search`, `match`, `fullmatch`, `finditer`, `findall`, `split`,
 construction stay together. A native match iterator owns the shared progression
 rules, including empty matches, rather than each consumer implementing those
 rules independently; see [iteration](#iteration-and-empty-match-progression).
-API-specific output rules remain to be settled.
+Result shapes follow [result construction](#result-construction).
 
 Replacement-template compilation and interpretation are C++, following the
 separate [replacement program](#replacement-programs-and-substitution).
-Callable replacements use the ordinary runtime Python call API; detailed
-callback behavior remains a separate design decision.
+Callable replacements use the ordinary runtime Python call API and the
+CPython-compatible fragment-retention rules in the replacement section.
 
 The native binding provides `PatternError`, `Pattern`, and `Match`, exposed
 through the public `re` API; Python re-exports these and aliases `error =
@@ -182,7 +182,7 @@ Use a full typed regex AST, separate from the Python language AST. The parser
 owns syntax, source spans, effective scoped flags, and group definitions and
 references. Analysis derives widths and search metadata; the compiler expands
 classes, forms literal runs, and selects instructions through the program
-builder. Freeze validates and publishes the program, then compilation discards
+builder. Freeze finalizes and publishes the program, then compilation discards
 the tree. Do not emit matching bytecode directly from the parser or introduce a
 second lowered tree initially.
 
@@ -337,8 +337,8 @@ closing it. Derived capture widths belong in the analysis cache. Names must be
 unique Python identifiers; bytes-pattern names must also be ASCII. Compare
 names exactly, without Unicode normalization or case folding. Local CPython
 3.14.5 probes accept `K` and `K` as distinct group names. Unicode identifier
-validation requires a fixed predicate distinct from regex word membership; its
-table integration remains to be specified.
+validation uses the shared predicates under Unicode Identifier Validation,
+distinct from regex word membership.
 
 | Reference | Validation |
 |---|---|
@@ -506,6 +506,46 @@ classification and case mappings, kept separate from the Unicode database;
 bytes digit and whitespace predicates remain ASCII even under `LOCALE`. Unicode
 patterns reject `LOCALE`. An explicit Unicode-ignorecase class such as `[a-z]`
 uses the tables during compilation to expand membership.
+
+### Unicode Identifier Validation
+
+Within regex parsing, identifier validation checks group names and named
+references, not subject text. For example, `(?P<word>...)` and `(?P<名前>...)`
+use valid identifiers; names such as `123name` or `hello-world` are invalid.
+Reject empty names. The first character must have Unicode `XID_Start` or be
+underscore; remaining characters must have `XID_Continue`. Keywords such as
+`class` are allowed as regex group names. Do not normalize or case-fold names.
+
+Provide shared native predicates:
+
+```cpp
+bool is_identifier_start(uint32_t ch);    // XID_Start or '_'.
+bool is_identifier_continue(uint32_t ch); // XID_Continue.
+```
+
+A whole-name validator checks the first character separately, then scans the
+remainder. ASCII uses direct letter/digit/underscore checks. Unicode-pattern
+names use these rules even under ASCII matching flags; bytes-pattern names
+remain ASCII-only. Combining marks can be valid continuation characters,
+whereas superscript `²` matches Unicode regex word membership but is not an
+identifier character. Do not use `\w` as the identifier predicate.
+
+Generate two additional positive membership sets, `XID_Start` and
+`XID_Continue`, from the same pinned Unicode 16.0.0 source. Use the existing
+ten-bit page layout and share deduplicated bitmap pages across these sets and
+the three standard regex classes. The underscore exception for starting a
+Python identifier belongs in the helper, not the raw `XID_Start` set.
+
+A local Unicode 16.0.0 probe measured 153 unique pages across all five sets:
+21,760 directory bytes plus 19,584 bitmap bytes, totaling 41,344 bytes. This
+adds 16,896 bytes to the three-set standard-class layout. Generate and validate
+against the pinned properties, not an arbitrary host Unicode version.
+
+The helpers are shared infrastructure for regex group names, Python
+tokenization, and `str.isidentifier()`. The current tokenizer's CTRE `\w+`
+name pattern can migrate in a separate correctness change. Python source-name
+normalization remains a separate compiler concern and does not apply to regex
+group names.
 
 ### Unicode Regex Lowercase Mapping
 
@@ -697,7 +737,7 @@ to the builder, and execution scratch belongs to each match invocation.
 
 The friend builder creates and fills an unpublished program. Its consuming
 `freeze()` resolves fixups, finalizes pools and metadata, checks format limits,
-and validates instruction boundaries, targets, and referenced slices before
+and runs structural verification in debug builds before
 transferring ownership of the completed object. On failure it publishes no
 program. After success, the builder retains no writable aliases into the
 program, and execution never mutates its storage. Freezing does not copy or
@@ -707,6 +747,35 @@ Native container sizes remain host-sized internally; conversions into the
 engine's 32-bit counts and indices must be checked against the agreed limits.
 The Python `Pattern` object owns the completed program, as specified below; the
 unique pointer above expresses the builder's ownership transfer.
+
+### Construction Guarantees And Debug Verification
+
+Compiled programs are internal compiler output, not externally supplied
+bytecode. Make them correct by construction through typed emission helpers,
+labels/fixups, and structured repeat/region emission. Do not require an
+independent full structural verifier in production `freeze()`.
+
+Always check arithmetic, format/resource limits, and bounds when creating
+pool references, indices, slices, and fixups. Resolve every label before
+publication and preserve the builder's ownership-transfer guarantees.
+Python-visible syntax, flag, group-reference, and template validation remain
+required independently of build mode.
+
+Use a full verifier in debug builds and tests to catch codegen bugs: malformed
+instruction extents or reserved fields, invalid operands and targets, jumps
+into embedded simple-repeat tests, invalid class metadata/payloads, and
+incorrect repeat/region nesting or endings. Share instruction-format
+definitions with decoding and disassembly. Debug `freeze()` verifies the
+completed program before publication; verifier failures are internal errors,
+not invalid user-pattern diagnostics. Detected invalid internal bytecode/state
+uses the existing `RuntimeError` mapping.
+
+Verification checks the compiled structure, not semantic equivalence to the
+source regex. AST analysis and differential tests establish properties such as
+the necessity of a search prefix and correct capture restoration. Runtime
+subject-bound checks, allocation failures, and repeat-counter exhaustion retain
+their existing handling. Concrete emission-helper APIs and verifier checks can
+be completed with the implementation slice.
 
 ## Bytecode And Execution
 
@@ -830,8 +899,7 @@ the indicated payload in bits 8-31.
 Consuming instructions require the necessary subject input; `ANY` and `ANY_ALL`
 fail at end of subject. Category and position-test identifiers encode Unicode,
 ASCII, and locale distinctions where applicable, independently of subject
-storage width. Predicate and test identifiers are specified below; `AT` numeric
-assignments remain open.
+storage width. Predicate and test identifiers are specified below.
 
 Capture slots are paired: slots 0 and 1 record Python group 1's start and end,
 slots 2 and 3 record group 2, and so on. `GROUPREF` uses zero-based group
@@ -877,7 +945,69 @@ Invalid/reserved combinations must be rejected by validation.
 This structure applies to matching families rather than forcing all
 control-flow or capture operations into literal/bitmap/range/page meanings.
 Assign their opcode ranges separately, preserving operand-form bit positions
-where practical. The numeric operation-family assignments remain open.
+where practical. Numeric assignments follow.
+
+### Opcode Numbers
+
+Reserve `0x00` as invalid. Matching families preserve the family/form/
+representation fields above:
+
+| Instruction | Compact/immediate | Wide |
+|---|---|---|
+| `LITERAL` | `0x10` | None |
+| `LITERAL_RUN` | `0x14` | `0x18` |
+| `IN_BITMAP` | `0x15` | `0x19` |
+| `IN_RANGES` | `0x16` | `0x1A` |
+| `IN_PAGES` | `0x17` | `0x1B` |
+| `LITERAL_RUN_ASCII_IGNORECASE` | `0x24` | `0x28` |
+| `IN_LOCALE_BITMAP` | `0x35` | `0x39` |
+| `IN_LOCALE_IGNORECASE_BITMAP` | `0x45` | `0x49` |
+| `NOT_LITERAL` | `0x50` | None |
+
+Other compact/wide families retain operand-form bits 3-2; bits 1-0 distinguish
+operations rather than literal/bitmap/range/page representations:
+
+| Instruction | Compact | Wide |
+|---|---|---|
+| `MARK` | `0x74` | `0x78` |
+| `GROUPREF_EXISTS` | `0x75` | `0x79` |
+| `GROUPREF` | `0x84` | `0x88` |
+| `GROUPREF_ASCII_IGNORECASE` | `0x85` | `0x89` |
+| `GROUPREF_UNICODE_IGNORECASE` | `0x86` | `0x8A` |
+| `GROUPREF_LOCALE_IGNORECASE` | `0x87` | `0x8B` |
+| `TRY` | `0x94` | `0x98` |
+| `JUMP` | `0x95` | `0x99` |
+| `ASSERT` | `0xA4` | `0xA8` |
+| `ASSERT_NOT` | `0xA5` | `0xA9` |
+| `ATOMIC_GROUP` | `0xA6` | `0xAA` |
+| `REPEAT_GREEDY` | `0xB4` | `0xB8` |
+| `REPEAT_LAZY` | `0xB5` | `0xB9` |
+| `REPEAT_ONE_GREEDY` | `0xC4` | `0xC8` |
+| `REPEAT_ONE_LAZY` | `0xC5` | `0xC9` |
+| `REPEAT_ONE_POSSESSIVE` | `0xC6` | `0xCA` |
+
+Every wide opcode is its compact counterpart plus `0x04`. This selects the
+form, not a universal instruction length; operand counts remain defined by
+each instruction's format. Wide names have the `_WIDE` suffix.
+
+Standalone operations have no compact/wide variants. Their low bits select
+the operation without form or representation semantics:
+
+| Instruction | Opcode |
+|---|---|
+| `SUCCESS` | `0x60` |
+| `FAILURE` | `0x61` |
+| `ANY` | `0x62` |
+| `ANY_ALL` | `0x63` |
+| `CATEGORY` | `0x64` |
+| `AT` | `0x65` |
+| `REGION_END` | `0x66` |
+| `REPEAT_END` | `0x67` |
+| `REPEAT_EXIT` | `0x68` |
+
+All unassigned combinations are reserved, including operation families
+`0xD`-`0xF`. These values define an internal format, not a public bytecode
+compatibility commitment.
 
 ### Indexed Wide Forms And Engine Field Widths
 
@@ -938,24 +1068,22 @@ Each wide form has an opcode word with upper 24 bits zero, followed by a full
 the wide form otherwise. Behavior is identical apart from instruction length.
 `AT` and `CATEGORY` do not need wide forms for their small identifier sets.
 `GROUPREF_EXISTS_WIDE` and literal-run wide forms have two full operands and
-therefore use three words, as specified in their own sections. Numeric
-assignments are not yet finalized. Overflow/resource errors follow the policy
-below.
+therefore use three words, as specified in their own sections. Overflow/resource
+errors follow Error Behavior.
 
 ### Position Tests
 
 `AT` is one word: opcode in bits 0-7 and a test identifier in bits 8-31. The
 compiler resolves effective scoped flags into that identifier. No ignorecase
-variants or runtime flag stack are needed. Numeric identifier assignments are
-not yet frozen.
+variants or runtime flag stack are needed. Numeric test IDs are:
 
-| Identifier | Condition | Source syntax |
-|---|---|---|
-| `BEGIN_STRING` | Position is zero in the original subject | `\A`, or `^` without `MULTILINE` |
-| `BEGIN_LINE` | Position is zero or the preceding character is `\n` | `^` with `MULTILINE` |
-| `END_STRING` | Position equals effective subject end | `\z`, `\Z` |
-| `END_OR_FINAL_NEWLINE` | At effective end, or immediately before its final `\n` | `$` without `MULTILINE` |
-| `END_LINE` | At effective end, or the next character is `\n` | `$` with `MULTILINE` |
+| Identifier | ID | Condition | Source syntax |
+|---|---|---|---|
+| `BEGIN_STRING` | `0x00` | Position is zero in the original subject | `\A`, or `^` without `MULTILINE` |
+| `BEGIN_LINE` | `0x01` | Position is zero or the preceding character is `\n` | `^` with `MULTILINE` |
+| `END_STRING` | `0x02` | Position equals effective subject end | `\z`, `\Z` |
+| `END_OR_FINAL_NEWLINE` | `0x03` | At effective end, or immediately before its final `\n` | `$` without `MULTILINE` |
+| `END_LINE` | `0x04` | At effective end, or the next character is `\n` | `$` with `MULTILINE` |
 
 Here newline is specifically `\n`, not general Unicode line-separator
 membership. `pos` starts the search but does not create a new subject
@@ -988,6 +1116,19 @@ state. Failed tests initiate ordinary backtracking. Word classification is
 unaffected by `IGNORECASE`; `ASCII`, `LOCALE`, and `MULTILINE` distinctions are
 already expressed by the selected test identifier. All tests must use checked
 subject bounds.
+
+Boundary-test IDs are paired so bit zero selects the complement:
+
+| Identifier | ID |
+|---|---|
+| `WORD_BOUNDARY_ASCII` | `0x10` |
+| `NOT_WORD_BOUNDARY_ASCII` | `0x11` |
+| `WORD_BOUNDARY_UNICODE` | `0x12` |
+| `NOT_WORD_BOUNDARY_UNICODE` | `0x13` |
+| `WORD_BOUNDARY_LOCALE` | `0x14` |
+| `NOT_WORD_BOUNDARY_LOCALE` | `0x15` |
+
+Unassigned test IDs are reserved.
 
 ### Character Category Tests
 
@@ -1953,6 +2094,52 @@ contracts. Concrete subject-storage access during execution follows the
 existing runtime/buffer contracts and is deferred from this regex object-model
 discussion; no new storage-stability mechanism is selected here.
 
+### Result Construction
+
+Match CPython's result shapes and unmatched-capture conventions. Unicode text
+results are `str`; byte results are `bytes`, including for supported bytes-like
+subjects. Construct collection results directly from cursor spans where
+possible, without temporary public `Match` objects.
+
+`findall` returns a list whose item shape depends on the total capture count:
+
+| Capture count | Each item |
+|---|---|
+| Zero | Whole matched text |
+| One | That capture's text |
+| Two or more | Tuple of capture texts in group-number order |
+
+Named captures count normally; noncapturing groups do not. Unmatched captures
+become empty text, not `None`. For example, `findall('(a)|(b)', 'ab')` returns
+`[('a', ''), ('', 'b')]`. Matching empty captures also produces empty text.
+
+For every separator match, `split` appends the preceding subject text followed
+by all captured groups in group-number order. Append the final subject
+remainder even when empty, preserving leading and trailing empty pieces.
+Unmatched separator captures become `None`; matched empty captures become
+empty text. For example, `split('(,)|;', 'a,b;c')` returns
+`['a', ',', 'b', None, 'c']`. `maxsplit` counts separator matches, not appended
+capture values: zero is unlimited, positive values cap the number of splits,
+and negative values perform no splitting. Both collection APIs use the shared
+empty-match progression.
+
+Public `Match` access preserves a distinction between unmatched captures and
+participating empty captures:
+
+| Operation | Unmatched capture |
+|---|---|
+| `group(n)` | `None` |
+| `groups(default)` | Supplied default, normally `None` |
+| `groupdict(default)` | Supplied default, normally `None` |
+| `start(n)`, `end(n)` | `-1` |
+| `span(n)` | `(-1, -1)` |
+
+A participating empty capture returns empty text and equal nonnegative
+endpoints. Invalid group numbers or names raise `IndexError`. Share capture
+slicing with an explicit unmatched-value argument, so each caller selects
+empty text, `None`, or its caller-supplied default. Offsets remain directly
+available from spans. These rules were checked against local CPython 3.14.5.
+
 ## Iteration And Empty-Match Progression
 
 Resume repeated search at the preceding match's end. After an empty result,
@@ -2071,11 +2258,102 @@ searched again. Search progression and the end of already emitted subject text
 are separate positions, particularly around empty matches. Count limits and
 API-specific argument/error ordering must follow CPython.
 
-Callable replacements take a separate path: construct a `Match`, invoke the
-callback through the runtime call API, and append the returned text without
-interpreting it as a template. Callback/result validation and detailed ordering
-remain to be worked out; callback exceptions propagate under the existing error
-contract.
+### Replacement Callbacks
+
+Match CPython's callback behavior. For each selected match in order, construct
+an independent `Match` and invoke the callable with that single argument through
+the ordinary runtime call API. Do not compile or interpret its returned text as
+a replacement template. No matches means no calls. Count limits and the shared
+empty-match progression determine which matches receive callbacks. `count=0`
+is unlimited, a positive count caps replacements, and a negative count invokes
+no callbacks and performs no replacements.
+
+| Return value | Behavior |
+|---|---|
+| `str` for Unicode matching | Insert the text |
+| Join-compatible bytes-like object for bytes matching | Insert the bytes |
+| `None` | Insert nothing; still count the replacement |
+| Other value | Raise `TypeError` during final output joining |
+
+The callback path accumulates retained output fragments, then joins them at
+the end. For each match, first save preceding unmatched subject text as a
+fragment, then call the callback and retain its result object unless it is
+`None`. Append the trailing subject fragment after iteration. Validate and join
+the pieces using the appropriate Unicode or bytes join semantics. This refines
+the general output-builder sketch: callback results are retained as objects,
+not eagerly copied or type-checked at the callback boundary. Matching still
+proceeds one result at a time; it does not collect all matches first.
+
+Local CPython 3.14.5 probes show that returning `42` for three matches invokes
+all three callbacks before the final `TypeError`. A later callback exception
+therefore takes precedence over an earlier invalid return. Returning the same
+mutable `bytearray` for two matches, changing it from `b"1"` to `b"2"` on the
+second call, produces `b"22"`; immediate copying would change that behavior.
+Callback exceptions stop substitution immediately and propagate unchanged.
+
+Callbacks may retain their `Match` objects or invoke regex operations
+recursively. Saved result spans must be independent of the outer cursor's
+reusable scratch state. The substitution operation coordinates the calls;
+the matching interpreter itself never invokes replacement callbacks.
+
+## Argument Conversion And Error Ordering
+
+Match CPython 3.14.5's conversion and ordering behavior. Validation is staged
+across the Python wrapper, native argument converters, replacement preparation,
+subject adaptation, execution, and result assembly. Do not introduce one
+up-front validation pass that changes which exception wins.
+
+| Argument | Conversion and interpretation |
+|---|---|
+| `pos`, `endpos` | Integer index protocol (`__index__`), checked signed 64-bit conversion; floats rejected and overflow reported |
+| `count`, `maxsplit` | Same numeric conversion; zero unlimited, positive a cap, negative no replacements/splits |
+| Flags | Python integer/`RegexFlag` bitmask behavior, not generic index conversion |
+
+Process native position converters in signature order: `pos` before `endpos`,
+both before subject validation. Propagate numeric-conversion exceptions before
+examining later arguments. After validating the subject, independently clamp
+positions into `[0, subject_length]`; negative positions mean zero, not indexing
+from the end. A resulting `pos > endpos` means no match. Overflow is checked
+before clamping, so an unrepresentably large integer is not silently clipped.
+Keep counts signed until their zero/positive/negative meaning has been applied.
+
+Module-level calls bind their Python arguments, resolve/compile the pattern
+and flags, then invoke a native `Pattern` method. Only then do method numeric
+conversions and operation-specific validation run. Preserve signature binding,
+duplicate-argument handling, and reference warnings where applicable. Existing
+compiled patterns are accepted unchanged when no effective flags are supplied;
+nonzero flags with a compiled pattern raise `ValueError`. Preserve the
+reference flag normalization and bitmask behavior, including acceptance of
+unknown bits where CPython accepts them. Do not route flags through the
+position/count converter. Pattern caching remains deferred, so its incidental
+hash lookups are not part of this implementation.
+
+The native substitution ordering is:
+
+1. Convert `count`.
+2. Identify a callable or prepare/compile the replacement template.
+3. Validate the subject and pattern/subject bytes-versus-Unicode category.
+4. Search and perform replacements.
+5. Assemble the output with the appropriate joining rules.
+
+An invalid template group reference can therefore win over an invalid subject.
+A negative count still prepares the replacement and validates the subject.
+Template syntax and references are validated before searching, but replacement
+text category compatibility may fail only when that text is actually used.
+For example, CPython returns `"zzz"` for `sub("a", b"X", "zzz")`, but raises
+`TypeError` for `sub("a", b"X", "a")`. Do not reject an otherwise unused
+replacement solely for its byte/Unicode category. The template's own literal
+category must remain available so expansion/joining preserves these checks;
+do not silently coerce it to the pattern's category. Callback returns follow
+the deferred validation rules already specified above.
+
+The Python wrapper owns public binding and flags; the native binding performs
+sequential checked numeric conversions using the runtime index protocol, then
+subject adaptation and operation-specific preparation in the reference order.
+Group access has a separate error mapping: invalid `Match.group()` selectors
+raise `IndexError`, not the `TypeError` used for invalid position/count types.
+Use differential tests with two invalid arguments and observable `__index__`
+methods to establish precedence and avoid reordering user-visible conversions.
 
 ## Error Behavior
 
@@ -2148,12 +2426,9 @@ agreement.
 
 Remaining design decisions:
 
-- Replacement callbacks: return-value validation, invocation order, and errors.
-- API result rules: `findall` capture shapes, `split` separators and captures,
-  unmatched groups, count limits, and argument/error ordering.
-- Shared Unicode identifier validation for group names.
-- Numeric opcode-family and `AT` test assignments, and complete structural
-  validation rules. `CATEGORY` identifiers and operand layouts are settled.
+- Concrete emission helpers and debug-verifier checks. Opcode numbers, `AT`
+  and `CATEGORY` identifiers, operand layouts, and construction guarantees are
+  settled.
 - Concrete binding APIs, native-resource cleanup, and the initial syntax/API
   slice, including buffer-protocol dependencies. Execution-time subject-storage
   mechanics remain deferred to runtime integration.
