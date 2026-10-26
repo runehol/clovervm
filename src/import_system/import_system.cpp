@@ -312,30 +312,6 @@ namespace cl
                         .raw_value()));
         }
 
-        Value load_builtin_module(ThreadState *thread, const ModuleSpec &spec,
-                                  TValue<String> name)
-        {
-            assert(spec.kind == ModuleSpecKind::Builtin);
-            VirtualMachine *machine = thread->get_machine();
-            Value module = Value::not_present();
-            if(spec.name == L"sys")
-            {
-                module = machine->sys_module().raw_value();
-            }
-            else if(spec.name == L"builtins")
-            {
-                module = machine->global_builtins_module().raw_value();
-            }
-            else
-            {
-                return set_module_not_found(thread, spec.name);
-            }
-
-            CL_TRY(machine->imported_modules().extract()->set_item_for_str(
-                thread, name, module));
-            return module;
-        }
-
         Owned<TValue<ModuleObject>>
         create_module_from_spec(ThreadState *thread, const ModuleSpec &spec,
                                 TValue<String> name)
@@ -358,6 +334,50 @@ namespace cl
                     interned_string(thread, package_name).raw_value(),
                     loader.raw_value(), spec_object.raw_value(), file)));
             install_package_import_metadata(thread, module.extract(), spec);
+            return module;
+        }
+
+        Value load_builtin_module(ThreadState *thread, const ModuleSpec &spec,
+                                  TValue<String> name)
+        {
+            assert(spec.kind == ModuleSpecKind::Builtin);
+            VirtualMachine *machine = thread->get_machine();
+            Value module = Value::not_present();
+            if(spec.name == L"sys")
+            {
+                module = machine->sys_module().raw_value();
+            }
+            else if(spec.name == L"builtins")
+            {
+                module = machine->global_builtins_module().raw_value();
+            }
+            else if(spec.name == L"_io")
+            {
+                Owned<TValue<ModuleObject>> io(
+                    create_module_from_spec(thread, spec, name));
+                // Builtins have an origin, but no filesystem __file__.
+                (void)io.extract()->delete_own_property(
+                    interned_string(thread, L"__file__"));
+                CL_TRY(io.extract()->set_own_property(
+                    machine->get_or_create_interned_string_value(L"FileIO"),
+                    Value::from_oop(thread->class_for_native_layout(
+                        NativeLayoutId::FileIO))));
+                CL_TRY(io.extract()->set_own_property(
+                    machine->get_or_create_interned_string_value(
+                        L"UnsupportedOperation"),
+                    Value::from_oop(thread->class_for_builtin_name(
+                        L"UnsupportedOperation"))));
+                CL_TRY(machine->imported_modules().extract()->set_item_for_str(
+                    thread, name, io.raw_value()));
+                return io.raw_value();
+            }
+            else
+            {
+                return set_module_not_found(thread, spec.name);
+            }
+
+            CL_TRY(machine->imported_modules().extract()->set_item_for_str(
+                thread, name, module));
             return module;
         }
 

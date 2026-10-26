@@ -126,6 +126,7 @@ namespace cl
         }
 
         Value get_range_builtin() const { return range_builtin; }
+        [[nodiscard]] Expected<TValue<Dict>> os_error_errno_map();
         TValue<Function> hash_value_helper_function() const;
         TValue<Function> test_equal_helper_function() const;
         TValue<Function> ordering_helper_function(OrderingOp operation) const;
@@ -485,6 +486,8 @@ namespace cl
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
             clover_function_entry_adapters = {};
         Owned<Value> range_builtin;
+        Owned<Optional<TValue<Dict>>> os_error_errno_map_{
+            Optional<TValue<Dict>>::none()};
         Owned<Optional<TValue<Function>>> hash_value_helper_function_;
         Owned<Optional<TValue<Function>>> test_equal_helper_function_;
         std::array<Owned<Optional<TValue<Function>>>, 4>

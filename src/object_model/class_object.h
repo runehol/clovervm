@@ -67,7 +67,9 @@ namespace cl
         BuiltinInstanceShapeBuilder &add_descriptor(TValue<String> name,
                                                     DescriptorInfo info);
 
-        void install(ShapeFlags shape_flags);
+        // The final latent_count descriptors reserve slots without exposing
+        // instance attributes. Their native members must start not_present.
+        void install(ShapeFlags shape_flags, uint32_t latent_count = 0);
 
     private:
         ClassObject *cls;

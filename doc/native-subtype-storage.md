@@ -5,9 +5,9 @@
 | Document type | Architecture contract |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Native subclass storage, class-creation validation, allocation, and the current single-method constructor boundary |
+| Scope | Native subclass storage, class-creation validation, allocation, the general single-method constructor boundary, and specialized OSError construction |
 | Owning layers | Object model owns layouts, Shapes, and class validation; memory layer owns allocation extents and reclamation; builtin families own payload construction; constructor thunks own call adaptation |
-| Validated against | `3eca186b` (2026-10-11); latest implementation checks: 1,580 passed, one skipped |
+| Validated against | Original storage contract: `3eca186b` (2026-10-11); OSError extension: local constructor, storage-selection, and forced-reclamation tests (2026-10-25) |
 | Supersedes | The earlier proposal and staged implementation discussion in this document |
 
 Native subclasses keep the builtin's physical payload and their own Python class
@@ -51,6 +51,7 @@ count. Transitions and clones preserve the selected layout and capacity.
 | Slice | Slice | 3 | start, stop, step |
 | ExceptionObject | Exception | 1 | args |
 | StopIterationObject | StopIteration | 2 | args, value |
+| OSErrorObject | OSError | 6 | args; latent errno, strerror, filename, filename2, characters_written |
 
 Keep these native IDs and existing physical capacities distinct. Function,
 ClassObject, and ModuleObject likewise retain their own layouts and metadata.
@@ -69,6 +70,10 @@ Inspect ancestors' instance layouts, not the layout of their ClassObject records
 - StopIteration extends Exception storage. Keep a selected StopIteration when
   later Exception ancestors appear. If Exception was selected first, upgrade
   provider, layout, and capacity together when StopIteration appears later.
+- OSError likewise extends Exception storage. Keep or upgrade the provider,
+  layout, and capacity together. OSError and StopIteration are sibling native
+  extensions and are incompatible. All builtin OSError descendants share the
+  OSError layout.
 - Reject every other distinct non-Instance combination with TypeError at class
   creation. List plus Dict and Slice plus Exception are conflicts.
 - Use the provider's existing capacity and predefined descriptors. All-Instance
@@ -288,3 +293,37 @@ References:
 - [Builtin object model](builtin-object-model.md)
 - [Native layout descriptors](native-layout-descriptors.md)
 - [Refcounting and reclamation](refcounting-and-reclamation.md)
+
+## OSError construction
+
+The OSError family uses a shared six-slot native layout. All five OS fields
+start as ordinary latent StableSlots initialized to not_present. Class-level
+None defaults on OSError supply unset errno, strerror, filename and filename2;
+characters_written has no fallback and is absent until set. Native producers
+validate write counts and activate fields through ordinary shape mutation.
+Python assignment and deletion use ordinary attribute semantics, including
+subclass class defaults. Formatting reads native instance-slot presence, so
+OSError() remains distinct from OSError(None, None). No presence mask or special
+attribute handlers are needed. These ordinary attributes intentionally differ
+from CPython's member descriptors and coercing characters_written descriptor.
+
+A constructor thunk specialized to the resolved native OSError allocator
+preserves original positional and keyword arguments. Runtime preparation selects
+an errno-specific class only for exact OSError and its aliases. The private
+errno-to-class dictionary is lazily initialized and owned by the VM; normal
+dictionary lookup preserves int-subclass hash/equality/truth callbacks and
+propagates their failures. CreateOSError
+allocates blank storage using that selected class from a register. Semantic
+initialization remains in the exception helpers. Inherited allocation with a
+custom Python __init__ defers field initialization and leaves args empty; the
+custom initializer may explicitly call OSError.__init__. The preparation and
+finish helpers are ordinary reclaimable code objects owned by the thunk's
+constant table; rebuilding a constructor must not allocate immortal wrappers.
+General custom Python
+__new__ plus __init__ remains outside this family-specific constructor path.
+
+Direct OSError.__new__ and internal exception factories share the blank
+allocator. Generic factories retain raw args without public constructor parsing
+or errno-based class selection. POSIX constructor parsing accepts the ignored Windows argument but does
+not expose winerror. Syscall translation, C API errno helpers and os-module
+migration are separate work.

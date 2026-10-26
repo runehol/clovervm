@@ -15,9 +15,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-static clover_handle raise_errno(clover_context *ctx)
+static clover_handle raise_errno(clover_context *ctx, int error_number,
+                                 clover_handle filename,
+                                 clover_handle filename2)
 {
-    return clover_raise_value_error(ctx, strerror(errno));
+    return clover_raise_os_error(ctx, error_number, strerror(error_number),
+                                 filename, filename2);
 }
 
 typedef struct
@@ -81,7 +84,9 @@ static clover_handle os_getcwd(clover_context *ctx)
     char *cwd = getcwd(NULL, 0);
     if(cwd == NULL)
     {
-        return raise_errno(ctx);
+        int saved_errno = errno;
+        return raise_errno(ctx, saved_errno, clover_none(ctx),
+                           clover_none(ctx));
     }
     clover_handle result = clover_string_from_utf8(ctx, cwd);
     free(cwd);
@@ -100,8 +105,7 @@ static clover_handle os_chdir(clover_context *ctx, clover_handle path_value)
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -119,8 +123,7 @@ static clover_handle os_listdir(clover_context *ctx, clover_handle path_value)
     path_string_destroy(&path);
     if(dir == NULL)
     {
-        errno = opendir_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, opendir_errno, path_value, clover_none(ctx));
     }
 
     size_t count = 0;
@@ -132,10 +135,16 @@ static clover_handle os_listdir(clover_context *ctx, clover_handle path_value)
         return clover_raise_value_error(ctx, "out of memory");
     }
 
-    errno = 0;
-    struct dirent *entry;
-    while((entry = readdir(dir)) != NULL)
+    int readdir_errno = 0;
+    for(;;)
     {
+        errno = 0;
+        struct dirent *entry = readdir(dir);
+        if(entry == NULL)
+        {
+            readdir_errno = errno;
+            break;
+        }
         if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue;
@@ -156,13 +165,11 @@ static clover_handle os_listdir(clover_context *ctx, clover_handle path_value)
         items[count] = clover_string_from_utf8(ctx, entry->d_name);
         ++count;
     }
-    int readdir_errno = errno;
     closedir(dir);
     if(readdir_errno != 0)
     {
         free(items);
-        errno = readdir_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, readdir_errno, path_value, clover_none(ctx));
     }
 
     clover_handle result = clover_tuple_from_array(ctx, items, count);
@@ -238,8 +245,8 @@ static clover_handle os_putenv(clover_context *ctx, clover_handle name_value,
     path_string_destroy(&name);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, clover_none(ctx),
+                           clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -256,8 +263,8 @@ static clover_handle os_unsetenv(clover_context *ctx, clover_handle name_value)
     path_string_destroy(&name);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, clover_none(ctx),
+                           clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -324,8 +331,7 @@ static clover_handle os_stat(clover_context *ctx, clover_handle path_value)
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return stat_to_tuple(ctx, &st);
 }
@@ -343,8 +349,7 @@ static clover_handle os_lstat(clover_context *ctx, clover_handle path_value)
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return stat_to_tuple(ctx, &st);
 }
@@ -387,8 +392,7 @@ static clover_handle os_chmod(clover_context *ctx, clover_handle path_value,
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -412,8 +416,7 @@ static clover_handle os_mkdir(clover_context *ctx, clover_handle path_value,
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -430,8 +433,7 @@ static clover_handle os_rmdir(clover_context *ctx, clover_handle path_value)
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -448,8 +450,7 @@ static clover_handle os_unlink(clover_context *ctx, clover_handle path_value)
     path_string_destroy(&path);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, path_value, clover_none(ctx));
     }
     return clover_none(ctx);
 }
@@ -474,8 +475,7 @@ static clover_handle os_rename(clover_context *ctx, clover_handle src_value,
     path_string_destroy(&src);
     if(rc != 0)
     {
-        errno = saved_errno;
-        return raise_errno(ctx);
+        return raise_errno(ctx, saved_errno, src_value, dst_value);
     }
     return clover_none(ctx);
 }

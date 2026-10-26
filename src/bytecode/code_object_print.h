@@ -932,6 +932,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::RaiseUnwind:
             case cl::Bytecode::RaiseBare:
                 break;
+            case cl::Bytecode::CreateOSError:
             case cl::Bytecode::RaiseUnwindWithContext:
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);

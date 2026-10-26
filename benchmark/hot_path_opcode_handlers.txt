@@ -96,6 +96,7 @@ op_lt
 op_le
 op_ne
 op_create_list_known_class
+op_create_os_error
 
 op_to_bool
 op_to_bool_not

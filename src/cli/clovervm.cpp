@@ -101,9 +101,13 @@ int main(int argc, const char *argv[])
         return 0;
     }
 
+    clover_vm_config config;
+    clover_vm_config_init(&config);
+    config.signal_policy = CLOVER_SIGNALS_INSTALL;
+
     if(!command_line.has_command && command_line.source_file.empty())
     {
-        clover_vm *vm = clover_vm_new();
+        clover_vm *vm = clover_vm_new(&config);
         if(vm == nullptr)
         {
             std::cerr << "failed to create clover VM\n";
@@ -116,7 +120,7 @@ int main(int argc, const char *argv[])
         return status == CLOVER_STATUS_OK ? 0 : 1;
     }
 
-    clover_vm *vm = clover_vm_new();
+    clover_vm *vm = clover_vm_new(&config);
     if(vm == nullptr)
     {
         std::cerr << "failed to create clover VM\n";

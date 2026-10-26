@@ -188,13 +188,15 @@ namespace cl
                 continue;
             }
             if(layout == selected.layout ||
-               (selected.layout == NativeLayoutId::StopIteration &&
+               ((selected.layout == NativeLayoutId::StopIteration ||
+                 selected.layout == NativeLayoutId::OSError) &&
                 layout == NativeLayoutId::Exception))
             {
                 continue;
             }
             if(selected.layout == NativeLayoutId::Exception &&
-               layout == NativeLayoutId::StopIteration)
+               (layout == NativeLayoutId::StopIteration ||
+                layout == NativeLayoutId::OSError))
             {
                 selected = {ancestor, layout,
                             ancestor->get_instance_inline_slot_capacity()};
@@ -649,8 +651,10 @@ namespace cl
         return *this;
     }
 
-    void BuiltinInstanceShapeBuilder::install(ShapeFlags shape_flags)
+    void BuiltinInstanceShapeBuilder::install(ShapeFlags shape_flags,
+                                              uint32_t latent_count)
     {
+        assert(latent_count <= descriptors.size());
         for(const ShapeRootDescriptor &descriptor: descriptors)
         {
             DescriptorInfo info = descriptor.info;
@@ -667,8 +671,8 @@ namespace cl
                                               (predefined_slot_count - 1) / 2);
         cls->install_instance_root_shape_from_builder(
             descriptors.data(), uint32_t(descriptors.size()),
-            int32_t(predefined_slot_count), uint32_t(descriptors.size()),
-            shape_flags);
+            int32_t(predefined_slot_count),
+            uint32_t(descriptors.size()) - latent_count, shape_flags);
     }
 
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,
@@ -870,6 +874,38 @@ namespace cl
         }
         if(new_descriptor.is_found())
         {
+            if(instance_native_layout_id() == NativeLayoutId::OSError &&
+               new_descriptor.is_cacheable() &&
+               init_descriptor.is_cacheable() &&
+               new_descriptor.plan.kind !=
+                   AttributeReadPlanKind::DataDescriptorGet &&
+               new_descriptor.plan.kind !=
+                   AttributeReadPlanKind::NonDataDescriptorGet &&
+               init_descriptor.plan.kind !=
+                   AttributeReadPlanKind::DataDescriptorGet &&
+               init_descriptor.plan.kind !=
+                   AttributeReadPlanKind::NonDataDescriptorGet)
+            {
+                Value new_value = load_attr_from_plan(Value::from_oop(self),
+                                                      new_descriptor.plan);
+                Value init_value = load_attr_from_plan(Value::from_oop(self),
+                                                       init_descriptor.plan);
+                Value builtin_new =
+                    active_thread()
+                        ->class_for_native_layout(NativeLayoutId::OSError)
+                        ->get_own_property(new_name);
+                if(new_value == builtin_new &&
+                   has_native_layout<Function>(init_value))
+                {
+                    TValue<Function> thunk =
+                        CL_TRY(make_os_error_constructor_thunk_function(
+                            self,
+                            TValue<Function>::from_value_assumed(init_value)));
+                    constructor_thunk = thunk.extract();
+                    return Expected<ConstructorThunkLookup>::ok(
+                        ConstructorThunkLookup{thunk.extract(), lookup_cell});
+                }
+            }
             return Expected<ConstructorThunkLookup>::ok(
                 ConstructorThunkLookup{nullptr, nullptr});
         }

@@ -40,6 +40,38 @@ Non-goals:
 - Support arbitrary CPython C API compatibility.
 - Provide a full packaging story for external native extensions.
 
+## VM startup configuration
+
+The embedder API in `clovervm/clovervm.h` creates a VM from an explicit
+configuration. Initialize the structure before selecting a signal policy:
+
+```c
+clover_vm_config config;
+clover_vm_config_init(&config);
+config.signal_policy = CLOVER_SIGNALS_INSTALL;
+clover_vm *vm = clover_vm_new(&config);
+```
+
+`clover_vm_config_init` defaults to `CLOVER_SIGNALS_LEAVE_UNCHANGED`, preserving
+an embedding host's signal disposition. The command-line runner explicitly
+selects `CLOVER_SIGNALS_INSTALL` for interactive, command and file execution.
+Installation currently ignores SIGPIPE; SIGINT/KeyboardInterrupt and other
+signal setup are separate work. Internal C++ VirtualMachine construction has
+no signal-policy side effects.
+
+Configuration is borrowed only during creation and is not retained. A null
+configuration, invalid signal enum, or signal installation failure returns
+null before VM construction. This does not change the existing VM bootstrap
+and allocation failure behavior. Signal disposition is process-wide: leaving
+it unchanged does not undo another VM's installation, and destroying a VM
+does not restore the previous disposition. Initialization is a caller-controlled
+process policy decision; creating multiple VMs does not give each a separate
+signal policy. Callers must coordinate changes to the host's signal policy.
+
+The config initializer is an embedder export, not a native-extension export.
+This changes the VM-creation signature; in-repository callers use the new
+configuration API directly.
+
 ## Conventions
 
 All `const char *` strings accepted by the native extension API are UTF-8
@@ -261,7 +293,21 @@ clover_handle clover_raise_overflow_error(clover_context *ctx,
                                          const char *utf8_message);
 clover_handle clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
+clover_handle clover_raise_os_error(clover_context *ctx, int error_number,
+                                   const char *utf8_message,
+                                   clover_handle filename,
+                                   clover_handle filename2);
 ```
+
+`clover_raise_os_error` raises the canonical builtin `OSError` subclass selected
+by the supplied error number, with the supplied UTF-8 message and original
+filename objects. Pass `clover_none(ctx)` for absent filenames. It uses the
+native OSError constructor's field and `args` normalization without invoking
+Python constructor overrides. Capture `errno` before cleanup or other API calls;
+this function never reads the process's current `errno`. Invalid UTF-8 or a null
+message raises `ValueError`; invalid value handles follow ordinary API error
+propagation. The message is copied during the call and filenames are retained
+by the exception. The result is an exception-marker handle.
 
 `clover_bool_from_bool` converts a C `bool` to the Python `True` or `False`
 singleton. `clover_true` and `clover_false` return those singletons explicitly.

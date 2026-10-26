@@ -300,9 +300,52 @@ checks, warning emission, finalization detection, and emergency `MemoryError`
 allocation are absent. Ordinary allocation failure is not converted into the
 new `MemoryError` class.
 
-Remaining families outside this slice are `OSError` and its subclasses/aliases
-and errno translation, `UnicodeError` and its specialized subclasses,
+Remaining families outside this slice are `UnicodeError` and its specialized
+subclasses,
 `SystemExit`, `GeneratorExit`, `StopAsyncIteration`, `BaseExceptionGroup`, and
 `ExceptionGroup`. Chaining, full traceback support, and signal handling remain
 separate work. Supplying these classes does not complete specialized exception
 behavior.
+
+### OSError fields use ordinary latent attributes
+
+The POSIX OSError hierarchy and IOError/EnvironmentError aliases share one native
+layout, including Python subclasses. Constructors select errno-specific classes
+only for exact OSError, preserve filename/filename2 and args conventions, and
+support inherited native allocation with a custom Python initializer. Custom
+Python __new__ plus __init__ still depends on the general constructor protocol.
+
+errno, strerror, filename and filename2 start as latent stable slots with
+class-level None defaults. characters_written starts latent without a default.
+Setting/deleting these fields uses ordinary attribute and shape transitions;
+class defaults may be shadowed or overridden by Python subclasses. This
+intentionally differs from CPython's member descriptors: class introspection
+returns defaults, instance dictionaries expose ordinary present slots, and
+characters_written assignment accepts any Python value instead of coercing a
+platform-sized integer. Native constructor progress counts accept builtin
+ints/bools/int subclasses within signed platform-size bounds; general custom
+numeric/index protocols remain unsupported. Out-of-range native constructor
+progress counts raise ValueError. Errno selection uses normal dictionary lookup,
+including builtin int-subclass hash/equality/truth callbacks. Formatting uses native instance
+presence, never inherited default values. Windows winerror is not exposed.
+
+The existing POSIX os syscall wrappers translate failures into the appropriate
+OSError subclass, retaining the original filename objects (both for rename).
+The native-module C API provides `clover_raise_os_error` for this translation.
+Argument-validation and allocation-error policies remain separate. Internal
+generic exception factories allocate the correct OSError storage and retain raw args without invoking public
+constructor parsing or errno-based class selection.
+
+### Native FileIO is a bounded POSIX slice with explicit cleanup
+
+`io.FileIO` / `_io.FileIO` provides native unbuffered binary I/O using one shared
+fixed-slot/native-field layout. Descriptor ownership transfers after successful
+construction. Explicit close and context-manager exit release owned descriptors;
+construction failures close descriptors opened during that attempt. Abandoned
+streams are intentionally not closed by reclamation or VM teardown.
+
+The IOBase/RawIOBase hierarchy, buffering, text I/O and builtin open remain
+unimplemented. FileIO accepts string paths and stored integer descriptors; bytes
+paths, path/index protocols, general write buffers, unbounded reads and subclass
+construction/reinitialization are deferred. See [Native FileIO](file-io.md) for
+operation, validation, attribute-introspection and platform boundaries.

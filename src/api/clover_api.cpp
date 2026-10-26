@@ -12,10 +12,13 @@
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <csignal>
+#include <cstring>
 #include <fmt/core.h>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <type_traits>
 
 struct clover_vm
 {
@@ -111,7 +114,43 @@ namespace
 extern "C"
 {
 
-    CL_EXPORT clover_vm *clover_vm_new(void) { return new clover_vm(); }
+    CL_EXPORT void clover_vm_config_init(clover_vm_config *config)
+    {
+        if(config != nullptr)
+            config->signal_policy = CLOVER_SIGNALS_LEAVE_UNCHANGED;
+    }
+
+    CL_EXPORT clover_vm *clover_vm_new(const clover_vm_config *config)
+    {
+        if(config == nullptr)
+        {
+            std::cerr << "clover_vm_new called with null config\n";
+            return nullptr;
+        }
+        // Reject malformed C input without loading an out-of-range C++ enum.
+        std::underlying_type_t<clover_signal_policy> policy;
+        std::memcpy(&policy, &config->signal_policy, sizeof(policy));
+        switch(policy)
+        {
+            case CLOVER_SIGNALS_LEAVE_UNCHANGED:
+                break;
+            case CLOVER_SIGNALS_INSTALL:
+#ifdef SIGPIPE
+                if(std::signal(SIGPIPE, SIG_IGN) == SIG_ERR)
+                {
+                    std::cerr << "failed to install SIGPIPE policy\n";
+                    return nullptr;
+                }
+#endif
+                break;
+            default:
+                std::cerr << "invalid clover signal policy\n";
+                return nullptr;
+        }
+        // The config is not retained. Signal disposition is process-wide and
+        // is intentionally not restored by clover_vm_destroy.
+        return new clover_vm();
+    }
 
     CL_EXPORT void clover_vm_destroy(clover_vm *vm) { delete vm; }
 

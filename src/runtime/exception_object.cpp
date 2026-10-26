@@ -8,6 +8,7 @@
 #include "object_model/shape.h"
 #include "object_model/value_string.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/os_error.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -273,6 +274,17 @@ namespace cl
             return TValue<Exception>::from_value_assumed(
                 allocate_stop_iteration_object(thread, cls, args).raw_value());
         }
+        if(cls.extract()->instance_native_layout_id() ==
+           NativeLayoutId::OSError)
+        {
+            Owned<TValue<Tuple>> retained_args(args);
+            Owned<TValue<OSErrorObject>> object(
+                allocate_default_os_error(thread, cls));
+            // Generic exception factories preserve their ordinary args
+            // contract.
+            object.extract()->args = retained_args.value();
+            return TValue<Exception>::from_value_assumed(object.raw_value());
+        }
         Owned<TValue<Tuple>> retained_args(args);
         return TValue<Exception>::from_value_assumed(
             thread
@@ -355,7 +367,12 @@ namespace cl
             exception.extract()->get_shape()->get_class()->get_name().extract();
         std::wstring result(name->data, size_t(name->count.extract()));
         thread->clear_pending_exception();
-        Value message = exception_args_to_string(thread, exception.value());
+        Value message =
+            has_native_layout<OSErrorObject>(exception.raw_value())
+                ? os_error_args_to_string(
+                      thread, TValue<OSErrorObject>::from_value_assumed(
+                                  exception.raw_value()))
+                : exception_args_to_string(thread, exception.value());
         if(message.is_exception_marker())
         {
             result += L": <exception str() failed>";

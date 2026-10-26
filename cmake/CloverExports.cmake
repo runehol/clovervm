@@ -7,6 +7,7 @@
 #   should force a decision about whether it belongs to embedders, extensions,
 #   both, or neither.
 set(CLOVERVM_EMBEDDER_API_SYMBOLS
+    clover_vm_config_init
     clover_vm_destroy
     clover_vm_new
     clover_vm_run_file
@@ -58,6 +59,7 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_is
     clover_none
     clover_propagate_error
+    clover_raise_os_error
     clover_raise_overflow_error
     clover_raise_value_error
     clover_string_as_utf8

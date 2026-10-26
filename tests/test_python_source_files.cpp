@@ -125,6 +125,33 @@ TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
+TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
+{
+    std::wstring source = read_source_file("tests/python/file_io.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
+TEST(OSErrorReclamation, ConstructorAndLatentAttributes)
+{
+    for(const char *path:
+        {"tests/python/os_error.py", "tests/python/os_error_latent.py",
+         "tests/python/os_error_presence.py",
+         "tests/python/os_error_callbacks.py",
+         "tests/python/os_error_progress.py",
+         "tests/python/os_errno_bridge.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST_P(TupleSubclassReclamationTest, RunsSelfCheckingSource)
 {
     std::wstring source = read_source_file(GetParam().path);

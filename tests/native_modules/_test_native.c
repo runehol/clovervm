@@ -1,5 +1,39 @@
 #include <clovervm/native_module.h>
+#include <limits.h>
 #include <stdint.h>
+
+static clover_handle os_error_func(clover_context *ctx, clover_handle code,
+                                   clover_handle filename,
+                                   clover_handle filename2)
+{
+    int64_t number;
+    if(clover_int_as_int64(ctx, code, &number) != CLOVER_STATUS_OK)
+        return clover_propagate_error(ctx);
+    if(number < INT_MIN || number > INT_MAX)
+        return clover_raise_overflow_error(ctx, "errno outside C int range");
+    return clover_raise_os_error(ctx, (int)number, "native test error",
+                                 filename, filename2);
+}
+
+static clover_handle os_error_invalid_message_func(clover_context *ctx)
+{
+    return clover_raise_os_error(ctx, 2, "\xff", clover_none(ctx),
+                                 clover_none(ctx));
+}
+
+static clover_handle os_error_null_message_func(clover_context *ctx)
+{
+    return clover_raise_os_error(ctx, 2, NULL, clover_none(ctx),
+                                 clover_none(ctx));
+}
+
+static clover_handle os_error_propagated_func(clover_context *ctx)
+{
+    clover_handle error =
+        clover_raise_value_error(ctx, "original native error");
+    return clover_raise_os_error(ctx, 2, "replacement error", error,
+                                 clover_none(ctx));
+}
 
 static clover_handle answer_func(clover_context *ctx)
 {
@@ -544,6 +578,18 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     {
         return CLOVER_STATUS_ERROR;
     }
+    if(clover_module_add_function_3(builder, "os_error", os_error_func,
+                                    "Raise an OS error.") != CLOVER_STATUS_OK ||
+       clover_module_add_function_0(builder, "os_error_invalid_message",
+                                    os_error_invalid_message_func,
+                                    "Invalid message.") != CLOVER_STATUS_OK ||
+       clover_module_add_function_0(builder, "os_error_null_message",
+                                    os_error_null_message_func,
+                                    "Null message.") != CLOVER_STATUS_OK ||
+       clover_module_add_function_0(
+           builder, "os_error_propagated", os_error_propagated_func,
+           "Preserve pending exception.") != CLOVER_STATUS_OK)
+        return CLOVER_STATUS_ERROR;
     if(clover_module_add_function_0(builder, "answer_func", answer_func,
                                     "Return 42.") != CLOVER_STATUS_OK)
     {

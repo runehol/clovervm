@@ -151,15 +151,15 @@ nested = base.__add__("/a/b")
 parent = base.__add__("/a")
 try:
     os.rmdir(nested)
-except ValueError:
+except OSError:
     pass
 try:
     os.rmdir(parent)
-except ValueError:
+except OSError:
     pass
 try:
     os.rmdir(base)
-except ValueError:
+except OSError:
     pass
 
 os.makedirs(nested)

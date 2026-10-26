@@ -70,6 +70,44 @@ namespace cl
                       StopIterationObject::kValueSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<StopIterationObject>);
 
+    class OSErrorObject : public ExceptionObject
+    {
+    public:
+        static constexpr NativeLayoutId native_layout = NativeLayoutId::OSError;
+        static constexpr uint32_t kErrnoSlot = 1;
+        static constexpr uint32_t kStrerrorSlot = 2;
+        static constexpr uint32_t kFilenameSlot = 3;
+        static constexpr uint32_t kFilename2Slot = 4;
+        static constexpr uint32_t kCharactersWrittenSlot = 5;
+        static constexpr uint32_t kPredefinedInlineSlotCount = 6;
+        static constexpr uint32_t kInlineSlotCount = 6;
+
+        OSErrorObject(ClassObject *cls, TValue<Tuple> args)
+            : ExceptionObject(cls, native_layout, args),
+              errno_value(Value::not_present()), strerror(Value::not_present()),
+              filename(Value::not_present()), filename2(Value::not_present()),
+              characters_written(Value::not_present())
+        {
+        }
+
+        Member<Value> errno_value;
+        Member<Value> strerror;
+        Member<Value> filename;
+        Member<Value> filename2;
+        Member<Value> characters_written;
+
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(OSErrorObject, ExceptionObject, 5);
+        CL_DECLARE_STATIC_OBJECT_SIZE(OSErrorObject);
+    };
+
+    static_assert(CL_OFFSETOF(OSErrorObject, errno_value) ==
+                  sizeof(InlineSlotObject) +
+                      OSErrorObject::kErrnoSlot * sizeof(Value));
+    static_assert(CL_OFFSETOF(OSErrorObject, characters_written) ==
+                  sizeof(InlineSlotObject) +
+                      OSErrorObject::kCharactersWrittenSlot * sizeof(Value));
+    static_assert(std::is_trivially_destructible_v<OSErrorObject>);
+
     struct Exception
     {
     };
@@ -87,7 +125,8 @@ namespace cl
             NativeLayoutId layout_id =
                 value.get_ptr<Object>()->native_layout_id();
             return layout_id == NativeLayoutId::Exception ||
-                   layout_id == NativeLayoutId::StopIteration;
+                   layout_id == NativeLayoutId::StopIteration ||
+                   layout_id == NativeLayoutId::OSError;
         }
 
         static extract_type extract_unchecked(Value value)

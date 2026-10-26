@@ -204,6 +204,11 @@ extern "C"
     clover_raise_overflow_error(clover_context *ctx, const char *utf8_message);
     CL_EXPORT clover_handle clover_raise_value_error(clover_context *ctx,
                                                      const char *utf8_message);
+    CL_EXPORT clover_handle clover_raise_os_error(clover_context *ctx,
+                                                  int error_number,
+                                                  const char *utf8_message,
+                                                  clover_handle filename,
+                                                  clover_handle filename2);
     CL_EXPORT clover_handle clover_propagate_error(clover_context *ctx);
 
 #ifdef __cplusplus

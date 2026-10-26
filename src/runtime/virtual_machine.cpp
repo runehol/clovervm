@@ -9,6 +9,7 @@
 #include "builtin_types/dict_view.h"
 #include "builtin_types/ellipsis_type.h"
 #include "builtin_types/enumerate.h"
+#include "builtin_types/file_io.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
@@ -43,6 +44,7 @@
 #include "runtime/exception_propagation.h"
 #include "runtime/fatal.h"
 #include "runtime/operator_walk.h"
+#include "runtime/os_error.h"
 #include "runtime/protocol_helper_functions.h"
 #include "runtime/thread_state.h"
 #include <bit>
@@ -192,8 +194,9 @@ namespace cl
                              make_string_list(vm, {L""}));
         install_module_value(vm, sys_module, L"warnoptions",
                              make_string_list(vm, {}));
-        install_module_value(vm, sys_module, L"builtin_module_names",
-                             make_string_tuple(vm, {L"builtins", L"sys"}));
+        install_module_value(
+            vm, sys_module, L"builtin_module_names",
+            make_string_tuple(vm, {L"builtins", L"sys", L"_io"}));
         install_module_value(vm, sys_module, L"byteorder",
                              make_string_value(vm, sys_byteorder_name()));
         install_module_value(vm, sys_module, L"copyright",
@@ -454,6 +457,7 @@ namespace cl
                 if(armed)
                 {
                     vm->range_builtin = Value::None();
+                    vm->os_error_errno_map_ = Optional<TValue<Dict>>::none();
                     vm->hash_value_helper_function_ =
                         Optional<TValue<Function>>::none();
                     vm->test_equal_helper_function_ =
@@ -496,6 +500,7 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
+            os_error_errno_map_ = Optional<TValue<Dict>>::none();
             hash_value_helper_function_ = Optional<TValue<Function>>::none();
             test_equal_helper_function_ = Optional<TValue<Function>>::none();
             enumerate_call_function_ = Optional<TValue<Function>>::none();
@@ -1171,6 +1176,24 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"KeyError", lookup_error));
         register_builtin_class(make_stop_iteration_class(this, exception));
+        auto os_error_definition =
+            make_os_error_class(this, L"OSError", exception, true);
+        ClassObject *os_error = os_error_definition.cls;
+        register_builtin_class(os_error_definition);
+        for(const wchar_t *name:
+            {L"BlockingIOError", L"ChildProcessError", L"FileExistsError",
+             L"FileNotFoundError", L"InterruptedError", L"IsADirectoryError",
+             L"NotADirectoryError", L"PermissionError", L"ProcessLookupError",
+             L"TimeoutError"})
+            register_builtin_class(make_os_error_class(this, name, os_error));
+        auto connection_definition =
+            make_os_error_class(this, L"ConnectionError", os_error);
+        ClassObject *connection = connection_definition.cls;
+        register_builtin_class(connection_definition);
+        for(const wchar_t *name:
+            {L"BrokenPipeError", L"ConnectionAbortedError",
+             L"ConnectionRefusedError", L"ConnectionResetError"})
+            register_builtin_class(make_os_error_class(this, name, connection));
         register_builtin_class(
             make_exception_subclass(this, L"BufferError", exception));
         register_builtin_class(
@@ -1206,8 +1229,12 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"UserWarning", warning));
 
+        register_builtin_class(make_file_io_class(this));
+        register_builtin_class(make_unsupported_operation_class(this));
+
         install_object_class_methods(this);
         install_exception_class_methods(this);
+        install_os_error_methods(this);
         install_str_class_methods(this);
         install_bytes_class_methods(this);
         install_int_class_methods(this);
@@ -1236,6 +1263,7 @@ namespace cl
                 "creating keyword helper"));
         install_slotdict_class_methods(this);
         install_slice_class_methods(this);
+        install_file_io_methods(this);
         install_float_class_methods(this);
         install_module_class_methods(this);
 
@@ -1407,6 +1435,10 @@ namespace cl
                             "installing range")
                             .raw_value();
         install_builtin_binding(range_name, range_builtin);
+        for(const wchar_t *alias: {L"IOError", L"EnvironmentError"})
+            install_builtin_binding(get_or_create_interned_string_value(alias),
+                                    Value::from_oop(class_for_native_layout(
+                                        NativeLayoutId::OSError)));
         unwrap_bootstrap_expected(
             this,
             install_builtin_function_bindings(this, implementation_module),
@@ -1698,6 +1730,17 @@ namespace cl
     {
         assert(membership_iter_fallback_function_.value().has_value());
         return membership_iter_fallback_function_.value().value();
+    }
+
+    Expected<TValue<Dict>> VirtualMachine::os_error_errno_map()
+    {
+        if(!os_error_errno_map_.value().has_value())
+        {
+            TValue<Dict> mapping =
+                CL_TRY(make_os_error_errno_map(active_thread()));
+            os_error_errno_map_ = Optional<TValue<Dict>>::some(mapping);
+        }
+        return Expected<TValue<Dict>>::ok(os_error_errno_map_.value().value());
     }
 
     TValue<Function> VirtualMachine::hash_value_helper_function() const

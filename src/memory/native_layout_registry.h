@@ -7,6 +7,7 @@
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
 #include "builtin_types/enumerate.h"
+#include "builtin_types/file_io.h"
 #include "builtin_types/float.h"
 #include "builtin_types/list.h"
 #include "builtin_types/list_iterator.h"
@@ -55,10 +56,12 @@
     V(ModuleSpecObject);                                                       \
     V(ExceptionObject);                                                        \
     V(StopIterationObject);                                                    \
+    V(OSErrorObject);                                                          \
     V(Float);                                                                  \
     V(Function);                                                               \
     V(Dict);                                                                   \
     V(SlotDict);                                                               \
+    V(FileIOObject);                                                           \
     V(Slice);                                                                  \
     V(String);                                                                 \
     V(Instance);                                                               \

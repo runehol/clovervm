@@ -72,7 +72,7 @@ def makedirs(name, mode=511, exist_ok=False):
         makedirs(head, mode, exist_ok)
     try:
         mkdir(name, mode)
-    except ValueError:
+    except OSError:
         if not exist_ok or not _isdir(name):
             raise
 
@@ -84,6 +84,8 @@ def _exists(path):
 def _isdir(path):
     try:
         mode = stat(path)[0]
+    except OSError:
+        return False
     except ValueError:
         return False
     return _stat.S_ISDIR(mode)

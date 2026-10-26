@@ -10,6 +10,7 @@
 #include "object_model/class_object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
+#include "runtime/os_error.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <optional>
@@ -903,6 +904,28 @@ extern "C" CL_EXPORT clover_handle
 clover_raise_value_error(clover_context *ctx, const char *utf8_message)
 {
     return clover_raise_builtin_error(ctx, L"ValueError", utf8_message);
+}
+
+extern "C" CL_EXPORT clover_handle clover_raise_os_error(
+    clover_context *ctx, int error_number, const char *utf8_message,
+    clover_handle filename, clover_handle filename2)
+{
+    cl::Value path, path2;
+    if(!cl::unwrap_extension_value(ctx, filename, path) ||
+       !cl::unwrap_extension_value(ctx, filename2, path2))
+        return clover_propagate_error(ctx);
+    if(utf8_message == nullptr)
+        return clover_raise_value_error(
+            ctx, "native extension error message must not be null");
+    std::optional<cl::TValue<cl::String>> message =
+        cl::try_make_string_from_utf8(ctx->thread,
+                                      std::string_view(utf8_message));
+    if(!message.has_value())
+        return clover_raise_value_error(
+            ctx, "native extension error message must be valid UTF-8");
+    return cl::allocate_handle(
+        ctx,
+        cl::raise_os_error(ctx->thread, error_number, *message, path, path2));
 }
 
 extern "C" CL_EXPORT clover_handle clover_propagate_error(clover_context *ctx)
