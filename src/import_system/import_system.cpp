@@ -360,7 +360,9 @@ namespace cl
                     interned_string(thread, L"__file__"));
                 for(auto entry:
                     {std::pair{L"IOBase", NativeLayoutId::IOBase},
-                     std::pair{L"RawIOBase", NativeLayoutId::RawIOBase}})
+                     std::pair{L"RawIOBase", NativeLayoutId::RawIOBase},
+                     std::pair{L"BufferedIOBase",
+                               NativeLayoutId::BufferedIOBase}})
                 {
                     CL_TRY(io.extract()->set_own_property(
                         machine->get_or_create_interned_string_value(

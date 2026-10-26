@@ -65,6 +65,7 @@
     V(Dict);                                                                   \
     V(SlotDict);                                                               \
     V(IOBaseObject);                                                           \
+    V(BufferedIOBaseObject);                                                   \
     V(RawIOBaseObject);                                                        \
     V(FileIOObject);                                                           \
     V(Slice);                                                                  \

@@ -74,10 +74,13 @@ TEST(FileIO, SharedLayoutHasFivePythonSlotsAndNoCleanupHook)
 TEST(IOBase, NativePrefixMetadataAndMostDerivedStorage)
 {
     EXPECT_TRUE((std::is_base_of_v<IOBaseObject, RawIOBaseObject>));
+    EXPECT_TRUE((std::is_base_of_v<IOBaseObject, BufferedIOBaseObject>));
     EXPECT_TRUE((std::is_base_of_v<RawIOBaseObject, FileIOObject>));
-    for(auto layout: {NativeLayoutId::IOBase, NativeLayoutId::RawIOBase})
+    for(auto layout: {NativeLayoutId::IOBase, NativeLayoutId::RawIOBase,
+                      NativeLayoutId::BufferedIOBase})
     {
         const auto &release = release_descriptor_for(layout);
+        EXPECT_TRUE(native_layout_has_inline_slots(layout));
         EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
         EXPECT_EQ(InlineSlotObject::native_static_release_count() + 1,
                   release.static_release_count);

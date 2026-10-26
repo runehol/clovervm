@@ -1237,6 +1237,7 @@ namespace cl
 
         register_builtin_class(make_io_base_class(this));
         register_builtin_class(make_raw_io_base_class(this));
+        register_builtin_class(make_buffered_io_base_class(this));
         register_builtin_class(make_file_io_class(this));
         register_builtin_class(make_unsupported_operation_class(this));
 
@@ -1513,6 +1514,10 @@ namespace cl
                 "creating mapping error helper")
                 .raw_value());
 
+        install_implementation_binding(
+            interned_string(L"_clover_io_unsupported"),
+            Value::from_oop(
+                thread->class_for_builtin_name(L"UnsupportedOperation")));
         install_io_base_helpers(this, implementation_module);
         install_bytearray_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);

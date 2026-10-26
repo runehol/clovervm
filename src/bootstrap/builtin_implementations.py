@@ -922,3 +922,28 @@ def _clover_fileio_readall(self, /):
         if bytes.__len__(chunk) == 0:
             return bytes(result)
         bytearray.extend(result, chunk)
+
+
+# BufferedIOBase's transfer fallbacks contain no buffering policy.
+def _clover_bufferedio_read(self, size=-1, /):
+    _clover_bufferedio_validate(self)
+    _clover_bufferedio_read_size(_clover_rawio_index(size))
+    raise _clover_io_unsupported('read')
+
+
+def _clover_bufferedio_read1(self, size=-1, /):
+    _clover_bufferedio_validate(self)
+    _clover_bufferedio_read_size(_clover_rawio_index(size))
+    raise _clover_io_unsupported('read1')
+
+
+def _clover_bufferedio_readinto(self, buffer, /):
+    size = _clover_bufferedio_readinto_size(self, buffer)
+    data = self.read(size)
+    return _clover_bufferedio_finish_readinto(buffer, data, size)
+
+
+def _clover_bufferedio_readinto1(self, buffer, /):
+    size = _clover_bufferedio_readinto_size(self, buffer)
+    data = self.read1(size)
+    return _clover_bufferedio_finish_readinto(buffer, data, size)

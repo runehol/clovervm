@@ -21,6 +21,7 @@ namespace cl
         Slice,
         IOBase,
         RawIOBase,
+        BufferedIOBase,
         FileIO,
         Float,
         Function,
