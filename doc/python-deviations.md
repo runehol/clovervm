@@ -397,7 +397,9 @@ support custom Python initializers with the inherited native allocator. Closed
 attributes use native read-only slots rather than getset descriptors. Descriptor
 isatty and truncate remain unsupported; inherited isatty returns False.
 Buffering, text I/O and builtin open remain
-unimplemented. FileIO accepts string paths and stored integer descriptors; bytes
+unimplemented. FileIO.readinto accepts bytearray destinations using a synchronous
+native borrow; general writable-buffer inputs remain deferred. FileIO accepts
+string paths and stored integer descriptors; bytes
 paths, path/index protocols, general write buffers, unbounded reads, custom FileIO
 initializers and reinitialization are deferred. FileIO subclasses inherit the native constructor
 and can override methods and store additional attributes. See

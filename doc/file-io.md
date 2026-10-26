@@ -86,16 +86,25 @@ open until process exit. No finalizer, GC hook, or resource registry is installe
   without CPython's RuntimeWarning.
 - Modes `r`, `w`, `x`, `a`, optional `+`, and binary markers, including repeated
   `b` markers accepted by CPython FileIO. Update `w+` reports mode `rb+`.
-- Bounded `read(size)`, bytes `write(data)`, seek/tell, readable/writable/seekable,
-  fileno, close, and context management. Reads with omitted, None or negative
-  size raise NotImplementedError. Inherited flush is a no-op while base-open;
+- Bounded `read(size)`, `readinto(bytearray)`, bytes `write(data)`, seek/tell,
+  readable/writable/seekable, fileno, close, and context management. Reads with
+  omitted, None or negative size raise NotImplementedError. Inherited flush is a no-op while base-open;
   inherited isatty returns False after checking closed state. Descriptor-aware
   isatty and truncate, general buffer objects, custom openers and reinitialization
   are not implemented. RawIOBase read/readinto/write defaults raise
   NotImplementedError; generic read/readall fallbacks remain deferred.
-- Raw transfers preserve short results; EOF returns empty bytes and would-block
-  returns None. Interrupted open/read/write/fstat operations retry EINTR; Python
-  signal-handler execution is not implemented by this layer.
+- FileIO overrides `readinto(buffer)` for bytearray destinations only. It returns
+  the transferred count, 0 at EOF, or None on would-block, preserving short reads,
+  destination length, and the unwritten suffix. Buffer validation precedes
+  closed/readability checks. The synchronous writable borrow contains only the
+  native read and errno/result capture. Requests are capped at INT_MAX bytes
+  on macOS and SSIZE_MAX on other POSIX platforms, matching CPython. All VM
+  allocation and error translation
+  happen after it ends. No buffer exports or pinning are introduced.
+- Raw transfers preserve short results; EOF returns empty bytes for read and 0
+  for readinto, and would-block returns None. Interrupted open/read/write/fstat
+  operations retry EINTR; Python signal-handler execution is not implemented by
+  this layer.
 - FileIO leaves the host's SIGPIPE disposition and signal mask unchanged.
   When the host ignores SIGPIPE, EPIPE becomes BrokenPipeError. Under the default
   disposition a broken-pipe write can terminate the process. The public startup

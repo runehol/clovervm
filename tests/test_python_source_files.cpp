@@ -128,7 +128,8 @@ TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
 TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
 {
     for(const char *path:
-        {"tests/python/file_io.py", "tests/python/file_io_subclasses.py"})
+        {"tests/python/file_io.py", "tests/python/file_io_subclasses.py",
+         "tests/python/file_io_readinto.py"})
     {
         std::wstring source = read_source_file(path);
         cl::test::VmTestContext context;
