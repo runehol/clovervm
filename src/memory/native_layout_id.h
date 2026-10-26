@@ -13,6 +13,7 @@ namespace cl
         String,
         Bytes,
         ByteArray,
+        ByteArrayIterator,
         List,
         Tuple,
         Dict,

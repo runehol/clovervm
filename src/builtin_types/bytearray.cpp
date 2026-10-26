@@ -2,6 +2,7 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/int.h"
 #include "builtin_types/module_object.h"
+#include "builtin_types/string_builder.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
 #include "runtime/exception_propagation.h"
@@ -127,6 +128,131 @@ namespace cl
         return Value::None();
     }
 
+    template <bool NotEqual>
+    static Value native_compare(ThreadState *, Value self, Value other)
+    {
+        auto array = CL_TRY(receiver(self, NotEqual ? L"__ne__" : L"__eq__"));
+        std::span<const uint8_t> rhs;
+        if(has_native_layout<ByteArray>(other))
+            rhs = other.get_ptr<ByteArray>()->view();
+        else if(has_native_layout<Bytes>(other))
+            rhs = bytes_view(TValue<Bytes>::from_value_assumed(other));
+        else
+            return Value::NotImplemented();
+        bool equal =
+            std::equal(array.extract()->view().begin(),
+                       array.extract()->view().end(), rhs.begin(), rhs.end());
+        return equal != NotEqual ? Value::True() : Value::False();
+    }
+
+    template <bool NotEqual>
+    static Value trusted_compare(ThreadState *, Value left, Value right)
+    {
+        auto view = [](Value value) -> std::span<const uint8_t> {
+            return has_native_layout<ByteArray>(value)
+                       ? value.get_ptr<ByteArray>()->view()
+                       : bytes_view(TValue<Bytes>::from_value_assumed(value));
+        };
+        auto lhs = view(left);
+        auto rhs = view(right);
+        bool equal = std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+        return equal != NotEqual ? Value::True() : Value::False();
+    }
+
+    template <bool NotEqual>
+    static TrustedResolution
+    resolve_compare(VirtualMachine *vm, ShapeKey left, ShapeKey right,
+                    TrustedHandlerOperandOrder order, TrustedHandlerArity arity)
+    {
+        if(arity != TrustedHandlerArity::Binary)
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        auto lhs = vm->shape_for_key(left)->get_class();
+        auto rhs = vm->shape_for_key(right)->get_class();
+        auto receiver_class =
+            order == TrustedHandlerOperandOrder::Reflected ? rhs : lhs;
+        auto other_class =
+            order == TrustedHandlerOperandOrder::Reflected ? lhs : rhs;
+        if(receiver_class == vm->bytearray_class() &&
+           (other_class == vm->bytearray_class() ||
+            other_class == vm->bytes_class()))
+            return TrustedResolution::call_trusted(trusted_compare<NotEqual>);
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
+    static Value native_repr(ThreadState *, Value self)
+    {
+        auto array = CL_TRY(receiver(self, L"__repr__"));
+        auto view = array.extract()->view();
+        if(view.size() > (static_cast<size_t>(value_smi_max) - 14) / 4)
+            return active_thread()->set_pending_builtin_exception_string(
+                L"OverflowError",
+                L"bytearray object is too large to make repr");
+        bool single = std::find(view.begin(), view.end(), '\'') != view.end();
+        bool double_quote =
+            std::find(view.begin(), view.end(), '"') != view.end();
+        wchar_t quote = single && !double_quote ? L'"' : L'\'';
+        StringBuilder builder;
+        builder.append_c_str(L"bytearray(b");
+        builder.append_char(quote);
+        static constexpr wchar_t digits[] = L"0123456789abcdef";
+        for(uint8_t byte: view)
+        {
+            if(byte == '\\' || byte == '\'')
+            {
+                builder.append_char(L'\\');
+                builder.append_char(byte);
+            }
+            else if(byte == '\t')
+                builder.append_c_str(L"\\t");
+            else if(byte == '\n')
+                builder.append_c_str(L"\\n");
+            else if(byte == '\r')
+                builder.append_c_str(L"\\r");
+            else if(byte >= 32 && byte <= 126)
+                builder.append_char(byte);
+            else
+            {
+                builder.append_c_str(L"\\x");
+                builder.append_char(digits[byte >> 4]);
+                builder.append_char(digits[byte & 15]);
+            }
+        }
+        builder.append_char(quote);
+        builder.append_char(L')');
+        return builder.finish();
+    }
+
+    static Value native_iter(ThreadState *thread, Value self)
+    {
+        return thread
+            ->make_object_value<ByteArrayIterator>(
+                CL_TRY(receiver(self, L"__iter__")))
+            .raw_value();
+    }
+    static Value iterator_iter(ThreadState *, Value self)
+    {
+        (void)CL_TRY(TValue<ByteArrayIterator>::from_value_or_raise(
+            self, L"TypeError", L"expected bytearray_iterator receiver"));
+        return self;
+    }
+    static Value iterator_next(ThreadState *thread, Value self)
+    {
+        auto iterator = CL_TRY(TValue<ByteArrayIterator>::from_value_or_raise(
+            self, L"TypeError", L"expected bytearray_iterator receiver"));
+        if(!iterator.extract()->source.value())
+            return thread->set_pending_stop_iteration_no_value();
+        TValue<ByteArray> source = iterator.extract()->source.value().value();
+        size_t pos = static_cast<size_t>(iterator.extract()->index.extract());
+        if(pos >= source.extract()->size())
+        {
+            iterator.extract()->source = Optional<TValue<ByteArray>>::none();
+            return thread->set_pending_stop_iteration_no_value();
+        }
+        iterator.extract()->index =
+            TValue<SMI>::from_smi(static_cast<int64_t>(pos + 1));
+        return Value::from_smi(source.extract()->items[pos]);
+    }
+
     BuiltinClassDefinition make_bytearray_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId layouts[] = {NativeLayoutId::ByteArray};
@@ -136,10 +262,45 @@ namespace cl
         return builtin_class_definition(cls, layouts,
                                         BuiltinsVisibility::Public);
     }
+    BuiltinClassDefinition make_bytearray_iterator_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId layouts[] = {
+            NativeLayoutId::ByteArrayIterator};
+        BuiltinClassMethod methods[] = {
+            {vm->get_or_create_interned_string_value(L"__iter__"),
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, iterator_iter),
+                 "bytearray iterator")
+                 .raw_value()},
+            {vm->get_or_create_interned_string_value(L"__next__"),
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, iterator_next),
+                 "bytearray iterator")
+                 .raw_value()}};
+        auto cls = ClassObject::make_builtin_class<ByteArrayIterator>(
+            vm->get_or_create_interned_string_value(L"bytearray_iterator"), 0,
+            methods, std::size(methods), vm->object_class(),
+            SubclassPolicy::Disallowed);
+        return builtin_class_definition(cls, layouts,
+                                        BuiltinsVisibility::Internal);
+    }
     void install_bytearray_class_methods(VirtualMachine *vm)
     {
+        vm->register_trusted_handler(trusted_compare<false>,
+                                     TrustedHandlerEffects::None);
+        vm->register_trusted_handler(trusted_compare<true>,
+                                     TrustedHandlerEffects::None);
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"__len__", native_len),
+            builtin_intrinsic_method(L"__repr__", native_repr),
+            builtin_intrinsic_method(L"__str__", native_repr),
+            builtin_intrinsic_method(L"__iter__", native_iter),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__eq__", native_compare<false>),
+                resolve_compare<false>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__ne__", native_compare<true>),
+                resolve_compare<true>),
             builtin_intrinsic_method(L"append", native_append),
             builtin_intrinsic_method(L"clear", native_clear)};
         unwrap_bootstrap_expected(

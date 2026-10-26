@@ -107,6 +107,9 @@ new-only empty/count/stored-bytes/iterable construction, length, append and
 clear. Reinitialization, subclassing, encoded-string construction, general
 index/buffer protocols and recoverable heap exhaustion remain unavailable.
 
+Iteration releases its source on exhaustion. Repr, equality with bytes and
+bytearray, and independent immutable bytes copies are also supported.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object

@@ -38,6 +38,7 @@
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
     V(BigInt);                                                                 \
     V(ByteArray);                                                              \
+    V(ByteArrayIterator);                                                      \
     V(Bytes);                                                                  \
     V(List);                                                                   \
     V(Tuple);                                                                  \

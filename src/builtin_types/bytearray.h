@@ -3,6 +3,7 @@
 
 #include "object_model/builtin_class_registry.h"
 #include "object_model/object.h"
+#include "object_model/owned.h"
 #include "object_model/vm_array.h"
 #include <cstddef>
 #include <cstdint>
@@ -34,9 +35,29 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(ByteArray);
     };
 
+    class ByteArrayIterator : public Object
+    {
+    public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+        static constexpr NativeLayoutId native_layout =
+            NativeLayoutId::ByteArrayIterator;
+        ByteArrayIterator(ClassObject *cls, TValue<ByteArray> source)
+            : Object(cls, native_layout),
+              source(Optional<TValue<ByteArray>>::some(source)),
+              index(TValue<SMI>::from_smi(0))
+        {
+        }
+        Member<Optional<TValue<ByteArray>>> source;
+        Member<TValue<SMI>> index;
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ByteArrayIterator, Object, 2);
+        CL_DECLARE_STATIC_OBJECT_SIZE(ByteArrayIterator);
+    };
+
     static_assert(std::is_trivially_destructible_v<ByteArray>);
+    static_assert(std::is_trivially_destructible_v<ByteArrayIterator>);
 
     BuiltinClassDefinition make_bytearray_class(VirtualMachine *vm);
+    BuiltinClassDefinition make_bytearray_iterator_class(VirtualMachine *vm);
     void install_bytearray_class_methods(VirtualMachine *vm);
     void install_bytearray_helpers(VirtualMachine *vm, ModuleObject *module);
     void install_bytearray_python_methods(VirtualMachine *vm,
