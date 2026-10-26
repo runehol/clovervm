@@ -145,12 +145,18 @@ struct PlannedMove
     ScriptDefinitionId output;
 };
 
+struct RealizationBinding
+{
+    MaterializationRealizationId realization;
+    ScriptDefinitionId result;
+};
+
 struct BoundaryProgram
 {
     std::vector<ScriptDefinitionId> assignment_sources;
     std::vector<PlannedMove> moves;
     std::vector<BoundaryBinding> bindings;
-    std::vector<MaterializationRealizationId> realizations;
+    std::vector<RealizationBinding> realizations;
 };
 
 struct OperandScript
@@ -271,13 +277,63 @@ one realization on each applicable outgoing edge, all referring to the same
 original action. Realization identity includes that expansion site; structurally
 identical actions and distinct outgoing edges are not interchangeable.
 
-The script assigns each realization an ID. Boundary programs account for those
-IDs exactly once, including logical no-op bindings that emit no move. Scratch
-moves and stack-copy legalization are implementation steps of a realization,
-not extra consumptions of its original schedule entry. Validation checks both
-original-action coverage and the complete required set of realizations; a single
-consumed-bit vector over original transfers is insufficient to detect missing
-or duplicated per-edge work.
+The script assigns each realization an ID. Boundary programs record each ID's
+result definition exactly once, including logical no-op bindings that emit no
+move. Different realizations may name the same result definition. Scratch moves
+and stack-copy legalization implement the physical boundary program and can
+support several requests; they are not extra consumptions of original schedule
+entries and need not belong exclusively to one realization. Validation checks
+both original-action coverage and the complete required set of realization
+bindings. Neither a consumed-bit vector over original transfers nor a count of
+emitted moves is sufficient to establish this accounting.
+
+### Grouping Compatible Physical Assignment Requests
+
+Keep logical requests, physical assignments, and final operand bindings distinct.
+Resolve requests at their required parallel phase, after earlier phases have
+established their source carriers. Within that phase, group requests by physical
+destination before invoking the existing parallel-assignment resolver, which
+rejects duplicate non-no-op destinations.
+
+Requests may share a group only when they require the same semantic value and
+compatible representation. Establish value equality from original definitions,
+forwarding semantics, or known aliases, not from register class or coincident
+locations. A request for a different value or incompatible representation at the
+same destination is a planning conflict, not an ordering problem. Do not group
+across instruction boundaries, sequential phases, or different edges.
+
+Choose one available, legal source carrier deterministically per compatible
+group. Prefer an already valid destination carrier when available, making the
+physical assignment a no-op. Source selection must respect the boundary's
+reservations and the complete parallel assignment's dependencies. Submit one
+physical assignment per destination to the resolver and retain a mapping from
+each logical realization to its assignment group. Resolver assignment indices
+now identify groups, not individual operand requests. Expand group results back
+to every request after copy ordering and legalization; these grouping maps are
+planning state, not executor-side carrier selection.
+
+```text
+requests: F0 / R0: operand 0 needs a in x0
+          F1 / R1: operand 1 needs a in x0
+source:   S carries a in x3
+
+group:    G0: x3 -> x0
+result:   M = move S
+bindings: operand 0 -> M; operand 1 -> M
+accounts: R0 -> M; R1 -> M
+```
+
+If a valid source already carries `a` in `x0`, the group result is that existing
+definition, both operand bindings and realization records still exist, and no
+move is emitted. Cycle scratch definitions may feed multiple groups; each group
+still resolves to its final result before expansion to per-request bindings.
+
+Each original fixed-copy request retains its own provenance and realization,
+even when requests share physical work. `BoundaryBinding`/`OperandScript` retain
+the individual operand overrides, while `RealizationBinding` records each
+request's result. Validation independently checks every original request's value,
+destination, and operand binding and permits shared result definitions. Physical
+sharing never erases logical accounting.
 
 The materialized input is Machine IR. Snapshot instructions and Snapshot
 operands have already been removed by side-exit lowering, so every main-CFG
@@ -582,7 +638,15 @@ an unrelated edge are both validation failures.
 
 This is planner-owned placement, not an executor or rewrite-engine decision.
 Further placement optimization may avoid helpers where legal, but must preserve
-carrier selection, comparison/branch grouping, and realization accounting.
+carrier selection, conditional exit-placement rules, and realization accounting.
+
+The exit-placement rule does not prohibit ordinary `BeforeInstruction(branch)`
+work between a comparison and its conditional branch. Such a transfer may break
+adjacency and disable the emitter's comparison/branch peephole. The normal
+boolean-producing comparison followed by a branch on that boolean remains a
+valid fallback. Accept this optimization loss; do not hoist required transfers
+across the comparison or add allocation/scheduling constraints solely to preserve
+fusion.
 
 ## Representative Carrier Split
 
@@ -636,7 +700,9 @@ has its required carrier and no copy is emitted. Otherwise the reserved
 register is guaranteed not to hold another Early operand, and the script may
 copy the source into it before the instruction. Constraint validation rejects
 two fixed-copy operands requiring the same destination for different semantic
-values; identical values may share the one carrier.
+values; identical values may share the one carrier. Use the compatible-request
+grouping described above, preserving one binding and accounting record per
+original operand-copy request even when only one physical copy is needed.
 
 This reservation is separate from the instruction's Late clobber. The
 reservation protects the copy at instruction entry; the clobber permits the
@@ -912,6 +978,10 @@ materializer cutover.
   accounting and select helpers where edge-local physical moves require them.
   Preserve all argument
   positions and no-op assignment results, even when aliases share one carrier.
+- Group compatible same-destination requests within each parallel phase before
+  resolution. Map each request to the physical group result, retaining separate
+  operand bindings and realization accounting. Reject conflicting destinations
+  before invoking the resolver; do not coalesce requests across phases or edges.
 - Add structural accounting and symbolic physical-flow validation for debug and
   tests. Keep it independent from realization and optional in production.
 - Audit prelude-copy safety for the supported allocation products. If an existing
@@ -928,7 +998,13 @@ on both edges, one needed on only one edge, and composition with edge-specific
 transfers. Reject missing and duplicated realizations. Reject a script that
 supplies the wrong symbolic value at the correct location for an operand or a
 helper outgoing argument, using the original occurrence as the oracle.
-Tests must not depend on incidental bundle, register, or instruction numbering.
+Cover identical fixed-copy requests sharing one emitted move, requests sharing
+an existing no-op carrier, equality established by known aliases, and shared
+results through cycle/scratch legalization. Verify every per-request binding and
+accounting record survives grouping. Reject different-value or incompatible-
+representation requests for one destination, and keep sequential phases and
+separate edges distinct. Tests must not depend on incidental bundle, register,
+or instruction numbering.
 
 ### 3. Realize block-local edits with reuse
 
@@ -967,7 +1043,9 @@ surface, including the observed abort, before switching production callers.
 
 - Emit unconditional exit programs before their jumps. For conditionals,
   allocate helpers on every edge requiring physical exit or reconciliation
-  work, keeping compare and branch together. Test both outgoing paths.
+  work without inserting exit moves between comparison and branch. Test both
+  outgoing paths. Separately cover required pre-branch transfers that break
+  adjacency: permit fusion loss and verify the normal boolean/branch fallback.
 - Allocate planned helpers with exact source-to-helper definition bindings,
   explicit parameter definitions and locations, ordered exit-then-edge phases,
   and exact helper-to-destination definition bindings. Preserve duplicate
@@ -1097,7 +1175,11 @@ Tests should establish:
   emitted at an adjacent instruction;
 - unconditional exit transfers execute before the jump without forcing helper
   allocation; conditional exit transfers expand onto exactly the applicable
-  outgoing edges without disturbing comparison/branch grouping;
+  outgoing edges without inserting exit work between comparison and branch;
+- an eligible adjacent comparison/branch pair still uses fused emission;
+  a required pre-branch transfer may break adjacency and must produce correct
+  boolean-producing comparison and branch fallback, including both branch
+  outcomes, without hoisting the transfer merely to preserve fusion;
 - source actions and their required realizations are accounted for separately;
   both conditional paths compose exit work with edge-specific reconciliation;
 - edge transfers remain path-specific on branches and compose correctly at
