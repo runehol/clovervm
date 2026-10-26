@@ -29,6 +29,28 @@ TEST(ByteArray, LayoutTracesOwnerBackingAndIterator)
               release_descriptor_for(NativeLayoutId::RawArrayBacking).kind);
 }
 
+TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/builtin_bytearray.py",
+                           "tests/python/builtin_bytearray_callbacks.py",
+                           "tests/python/builtin_bytearray_errors.py",
+                           "tests/python/builtin_bytearray_copies.py",
+                           "tests/python/builtin_bytearray_slices.py",
+                           "tests/python/builtin_bytearray_limits.py"})
+    {
+        SCOPED_TRACE(path);
+        std::ifstream input(path);
+        ASSERT_TRUE(input);
+        std::string source((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+        std::wstring wide(source.begin(), source.end());
+        test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(wide.c_str()).is_exception_marker());
+    }
+}
+
 TEST(ByteArray, ExhaustionReleasesSourceAndItsBackingWhileIteratorStaysAlive)
 {
     test::VmTestContext context;
@@ -76,6 +98,79 @@ TEST(ByteArray, ExhaustionReleasesSourceAndItsBackingWhileIteratorStaysAlive)
     ASSERT_TRUE(thread->call_clovervm_method(iterator.raw_value(), next_name)
                     .is_exception_marker());
     thread->clear_pending_exception();
+}
+
+TEST(ByteArray, StoredPayloadExtensionReusesCapacityWithoutHeapAllocation)
+{
+    // bytes, another bytearray, self, and both empty payload forms.
+    for(int kind = 0; kind < 5; ++kind)
+    {
+        SCOPED_TRACE(kind);
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<ByteArray>> target(thread->make_object_value<ByteArray>());
+        target.extract()->items.reserve(64);
+        target.extract()->items.resize(2);
+        target.extract()->items[0] = 'A';
+        target.extract()->items[1] = 'B';
+        Owned<Value> source(target.raw_value());
+        const uint8_t payload[] = {'C', 'D'};
+        if(kind == 0 || kind == 3)
+            source = thread
+                         ->make_object_value<Bytes>(
+                             kind == 0 ? std::span<const uint8_t>(payload)
+                                       : std::span<const uint8_t>{})
+                         .raw_value();
+        else if(kind == 1 || kind == 4)
+        {
+            auto other = thread->make_object_value<ByteArray>();
+            source = other.raw_value();
+            if(kind == 1)
+            {
+                other.extract()->items.resize(2);
+                other.extract()->items[0] = 'C';
+                other.extract()->items[1] = 'D';
+            }
+        }
+        auto extend_name =
+            context.vm().get_or_create_interned_string_value(L"extend");
+        // Warm the method and entry adapter before measuring the steady path.
+        ASSERT_EQ(Value::None(),
+                  thread->call_clovervm_method(target.raw_value(), extend_name,
+                                               source.value()));
+        target.extract()->items.resize(2);
+        context.vm().clear_safepoint_request();
+        const void *backing = target.extract()->view().data();
+        auto &heap = context.vm().get_refcounted_global_heap();
+        auto &interned = context.vm().get_interned_global_heap();
+        uint64_t objects_before = heap.count_valid_objects_slow();
+        uint64_t interned_before = interned.count_valid_objects_slow();
+        size_t safepoints = 0;
+        context.vm().set_safepoint_callback_for_testing(
+            [](void *state, ThreadState *, Value, Value *, CodeObject *,
+               uint32_t, const SafepointScanRecord &) {
+                ++*static_cast<size_t *>(state);
+            },
+            &safepoints);
+        Value result = thread->call_clovervm_method(
+            target.raw_value(), extend_name, source.value());
+        context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+        ASSERT_EQ(Value::None(), result);
+        EXPECT_EQ(0u, safepoints);
+        EXPECT_EQ(objects_before, heap.count_valid_objects_slow());
+        EXPECT_EQ(interned_before, interned.count_valid_objects_slow());
+        EXPECT_EQ(backing, target.extract()->view().data());
+        EXPECT_EQ(64u, target.extract()->items.capacity());
+        EXPECT_EQ(kind >= 3 ? 2u : 4u, target.extract()->size());
+        EXPECT_EQ('A', target.extract()->items[0]);
+        EXPECT_EQ('B', target.extract()->items[1]);
+        if(kind < 3)
+        {
+            EXPECT_EQ(kind == 2 ? 'A' : 'C', target.extract()->items[2]);
+            EXPECT_EQ(kind == 2 ? 'B' : 'D', target.extract()->items[3]);
+        }
+    }
 }
 
 TEST(ByteArray, ConstructionAndBasicMutationSurviveCollection)

@@ -102,13 +102,36 @@ CPython allocation/population split.
 
 ### `bytearray` provides a bounded mutable byte container
 
-The initial bytearray slice provides traced, growable native byte storage,
-new-only empty/count/stored-bytes/iterable construction, length, append and
-clear. Reinitialization, subclassing, encoded-string construction, general
-index/buffer protocols and recoverable heap exhaustion remain unavailable.
+`bytearray` supports empty/zero-filled construction, stored bytes/bytearray
+copies, integer iterables, length/truth, indexing and slicing, item/slice
+assignment and deletion, `append`, `extend`, `clear`, repr/str, equality with
+bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into an
+independent immutable bytes object; bytes immutability and hashing are unchanged.
 
-Iteration releases its source on exhaustion. Repr, equality with bytes and
-bytearray, and independent immutable bytes copies are also supported.
+Like the existing dict boundary, construction is implemented by a Python-backed
+`__new__` that returns a populated object. Direct `__new__` therefore differs
+from CPython, `__init__`/reinitialization is unavailable, and bytearray subclassing
+is rejected. Encoded-string constructors, arbitrary buffer objects, general
+user-defined `__index__`, ordering, concatenation/repetition and other bytes-like
+methods remain deferred. Iterable conversion uses the existing iterator subset:
+there is no sequence-only fallback or length-hint callback. Stored integer/bool
+payloads (including supported integer subclasses) are accepted. Counts and
+growth are checked against the VM's SMI storage limit; heap exhaustion retains
+the existing fatal VM heap policy rather than recoverable `MemoryError`.
+
+Item access, assignment, and deletion enter native code. Slice assignment
+inspects the replacement on every call: bytes and distinct bytearrays copy directly into the destination,
+reusing spare capacity; self-assignment snapshots before modifying storage.
+Only the iterable fallback enters the managed snapshot loop.
+
+`extend` copies stored bytes/bytearray payloads directly, reusing spare capacity
+and handling self-extension without a snapshot. Arbitrary iterable extension
+and iterable slice assignment validate a private snapshot before committing;
+mutations performed by input callbacks remain visible on failure.
+Slices are validated before input consumption and normalized against the current
+length after callbacks. Iterators follow current contents through backing
+replacement, release their source on exhaustion, and remain exhausted after
+later mutations of that source.
 
 ## Methods And Attribute Access
 

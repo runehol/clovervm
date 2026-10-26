@@ -838,3 +838,19 @@ def _clover_bytearray_new(cls, /, source=()):
     for item in source:
         _clover_bytearray_append(result, item)
     return result
+
+
+def _clover_bytearray_snapshot(source):
+    result = _clover_bytearray_allocate(bytearray)
+    if _clover_bytearray_copy_native(result, source):
+        return result
+    for item in source:
+        _clover_bytearray_append(result, item)
+    return result
+
+
+def _clover_bytearray_extend(self, source, /):
+    if _clover_bytearray_extend_native(self, source):
+        return
+    staged = _clover_bytearray_snapshot(source)
+    _clover_bytearray_extend_native(self, staged)
