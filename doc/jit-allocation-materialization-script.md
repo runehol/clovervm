@@ -56,7 +56,8 @@ complete graph clone nor a second graph generation is required.
 - Updates are staged lazily. Unchanged blocks retain their existing instruction
   vectors; changed vectors may contain both retained and newly allocated IDs.
 - Commit updates structure coherently, maintains predecessor indexes and
-  mutation generation, and retires only definitions absent from the result.
+  mutation generation, and validates surviving references. Materialization does
+  not poison replaced instructions.
 - Locations describe retained and new definitions in the committed CFG. Backend
   observation and emission continue to consume that same CFG object.
 
@@ -125,6 +126,16 @@ struct MaterializationProvenance
     size_t element_index;
 };
 
+// Index into this script's realization table.
+using MaterializationRealizationId = DenseId<MaterializationRealization>;
+
+struct MaterializationRealization
+{
+    MaterializationProvenance input;
+    // Original edge for a path-specific expansion; null for a local action.
+    const BlockEdge *edge;
+};
+
 struct PlannedMove
 {
     OrderedMoveSource source;
@@ -139,7 +150,7 @@ struct BoundaryProgram
     std::vector<ScriptDefinitionId> assignment_sources;
     std::vector<PlannedMove> moves;
     std::vector<BoundaryBinding> bindings;
-    std::vector<MaterializationProvenance> consumed_inputs;
+    std::vector<MaterializationRealizationId> realizations;
 };
 
 struct OperandScript
@@ -161,9 +172,12 @@ struct InstructionScript
 struct EdgeScript
 {
     const BlockEdge *original_edge;
+    // Source-local definitions passed to helper parameters, by position.
+    std::vector<ScriptDefinitionId> incoming_arguments;
     std::vector<EdgeParameterScript> parameters;
     std::vector<BoundaryProgram> phases;
-    std::vector<BundleId> outgoing_bundles;
+    // Helper-local definitions passed to destination parameters, by position.
+    std::vector<ScriptDefinitionId> outgoing_arguments;
 };
 
 struct TerminatorScript
@@ -188,6 +202,7 @@ struct MaterializationScript
     IRLevel ir_level;
     uint64_t input_generation;
     std::vector<ScriptDefinition> definitions;
+    std::vector<MaterializationRealization> realizations;
     std::vector<BlockScript> blocks;
     uint32_t managed_frame_spill_extent;
 };
@@ -248,10 +263,21 @@ phases may name definitions produced by earlier phases. Phase-local
 `OrderedMoveSource` indices are resolved or rebased while the script is built,
 so the executor receives an unambiguous dependency order.
 
-Every planned action retains its coordinate in the allocation product: transfer
-set and element index, fixed-copy index, or reused-input-fixup index. Script
-validation accounts for these coordinates with dense consumed-bit vectors;
-structurally identical transfers are not treated as interchangeable.
+Every original action retains its coordinate in the allocation product: transfer
+set and element index, fixed-copy index, or reused-input-fixup index. Planning
+accounts for each original action once and records its required realizations.
+A local action has one realization. A conditional block-exit transfer may have
+one realization on each applicable outgoing edge, all referring to the same
+original action. Realization identity includes that expansion site; structurally
+identical actions and distinct outgoing edges are not interchangeable.
+
+The script assigns each realization an ID. Boundary programs account for those
+IDs exactly once, including logical no-op bindings that emit no move. Scratch
+moves and stack-copy legalization are implementation steps of a realization,
+not extra consumptions of its original schedule entry. Validation checks both
+original-action coverage and the complete required set of realizations; a single
+consumed-bit vector over original transfers is insufficient to detect missing
+or duplicated per-edge work.
 
 The materialized input is Machine IR. Snapshot instructions and Snapshot
 operands have already been removed by side-exit lowering, so every main-CFG
@@ -358,8 +384,6 @@ public:
     void stage(BlockUpdate update);
     void set_block_order(std::vector<Block *> blocks);
     void set_ir_level(IRLevel level);
-    void mark_edges_changed();
-    void retire_instruction(InstructionId instruction);
     void commit();
 };
 ```
@@ -371,16 +395,43 @@ ownership and normal/exception entry metadata remain intact. New helper blocks
 are associated with the same graph and inherit their source's loop depth.
 
 Commit checks the expected input mutation generation before installing edits.
-It swaps only supplied sequences, installs a changed block order when needed,
-rebuilds predecessor indexes only when executable edges change, poisons retired
-instructions, applies any requested IR-level change, and advances mutation
-generation when the graph changes. That generation invalidates cached use lists
-and tagged-value analysis through their existing generation checks. A
-locations-only realization need not mutate the graph or advance its generation.
+Before swapping sequences, the mutation layer compares each changed block's
+original and staged terminator successor-edge references, including their
+semantic arm positions. It also accounts for edges introduced by newly published
+helpers. Untouched block sequences need no comparison. A replacement edge counts
+as a change even when only its arguments differ and its endpoints are identical:
+predecessor indexes store edge objects, not merely source/target pairs. Allocating
+an unattached edge alone does not constitute an executable edge change.
+
+Clients do not declare edge changes through a separate flag. The mutation layer
+derives predecessor maintenance from the staged structure before installing the
+new sequences. It swaps only supplied sequences, installs a changed block order
+when needed, rebuilds predecessor indexes only when executable edge references
+change, applies any requested IR-level change, and advances mutation generation
+when the graph changes. That generation invalidates cached use lists and
+tagged-value analysis through their existing generation checks. A locations-only
+realization need not mutate the graph or advance its generation.
+
+Poisoning is client policy, not part of shared structural commit. The rewriter
+retains its existing removed-instruction accounting and poisoning behavior after
+structural installation. Materialization needs neither a retirement list nor
+poisoning: replaced entries remain in compilation-owned storage until that
+storage is released. They are absent from the committed graph's sequences, but
+still being readable in storage does not make them valid operand definitions.
+No reclamation or extra compatibility mechanism is required.
+
+Initially retain the existing full `rebuild_predecessor_edge_index()` operation:
+when executable edge references change, clear predecessor indexes across the CFG
+and rebuild them by walking all executable edges. Even an argument-only edge
+replacement incurs this graph-wide pass. Automatic detection avoids the pass
+when edge references are unchanged; it does not make maintenance incremental.
+Do not add per-destination removal/insertion machinery in the initial extraction
+or materializer cutover. Consider incremental maintenance only if measurements
+justify its extra edge-identity and ordering bookkeeping.
 
 Cheap structural preconditions reject foreign blocks, repeated updates, and
 stale generations. Debug auditing additionally checks unique instruction
-placement, correct retirement, and the resulting CFG. There are no callbacks or
+placement, reference availability in the resulting graph, and CFG structure. There are no callbacks or
 graph queries during installation. Commit is coherent publication, not a
 recoverable rollback transaction: expected allocation failures occur during
 planning; malformed realized edits are compiler bugs. Allocation products must
@@ -389,7 +440,8 @@ not be queried as though they describe the committed generation.
 This boundary follows the existing `StagedBlockRewrite` and commit tail in
 [`graph_rewriter.cpp`](../src/jit/graph_rewriter.cpp). The rewriter keeps its
 callback dispatch, allocation tracking, erasure and replacement contracts,
-normalization maps, parameter conversions, and rewrite summary. The materializer
+normalization maps, parameter conversions, removed-instruction poisoning, and
+rewrite summary. The materializer
 keeps bundles, occurrences, carrier bindings, copy ordering, and locations. The
 shared layer knows none of those semantics. Edge splitting is prepared by the
 client as blocks, edges, and sequences; it is not a normalization operation.
@@ -410,13 +462,14 @@ object or a separate factory remains an API-layout choice within this boundary.
    with `ReuseIfUnchanged` to retain instructions whose resolved references agree.
 3. On the first changed sequence element, initialize a staged vector from the
    unchanged prefix, then append retained and new IDs. Do not eagerly copy the
-   instruction vector of every block. Record replaced instructions for
-   retirement; never retire a retained definition.
+   instruction vector of every block. Omit replaced IDs from the final sequence
+   without recording a retirement list or poisoning their storage entries.
 4. Resolve outgoing arguments independently by position. Retain an edge when
    its endpoints and arguments are unchanged; otherwise allocate its replacement.
    Current `BlockEdge` has no mutation setters. Reconstruct the source terminator
    when its operand or edge references change. Only helpers require new parameter
-   columns. Stage block order and predecessor-index maintenance when needed.
+   columns. Stage block order when needed; the mutation layer derives
+   predecessor-index maintenance from staged terminators.
 5. Finalize locations against realized IDs, audit the realization in debug/test
    configurations, and commit the staged edits. Backend observation and emission
    use the mutated CFG and these locations.
@@ -444,35 +497,92 @@ transition-only region bodies; physical allocation occurrences belong to the
 main CFG. A future transformation of region bodies would need its own explicit
 reference and sharing contract.
 
-## Edge Transfers
+## Block-Exit and Edge Transfer Placement
 
-The script represents a transfer as belonging to an original edge. The
-allocator does not decide whether its instructions ultimately live in the
-source block, destination block, or a split-edge block.
+`BlockExit` is a logical allocation position, not a universal executable slot.
+Planning chooses placement according to the source terminator:
 
-The initial placement policy uses a helper block for an edge whose planned
-phases emit physical moves. Pure no-op bindings do not alone require splitting
-an edge; they remain explicit in the script:
+- For an unconditional branch, place the block-exit program before the jump.
+  Its outgoing arguments resolve through the resulting carriers. Emit each
+  logical exit transfer once in the source block.
+- For a conditional branch, expand each block-exit transfer onto the outgoing
+  edges that require it. Keep comparison and branch together: their emission
+  consumes register sources and deliberately avoids exposing flag-register
+  lifetime. Do not move exit transfers ahead of that combined operation.
+- Edge-specific reconciliation follows the source-side exit program. It remains
+  attached to its particular original edge, independently of exit provenance.
 
 ```text
-source -- incoming carriers --> helper
-helper -- transferred carriers --> destination
+unconditional:
+    source: exit program; jump --> [edge reconciliation helper] --> destination
+
+conditional:
+                         helper T: exit realization(s); edge program --> T
+    compare + branch --<
+                         helper F: exit realization(s); edge program --> F
 ```
 
-The helper's parameters receive the source-side carriers. Its body performs
-the already ordered transfer phases, and its outgoing edge supplies the
-resulting carriers to the destination. Each helper inherits its source block's
-loop depth. Its script records the incoming parameter bundle and location and
-the outgoing bundle separately for every argument; duplicate arguments and
-intentional carrier aliases are preserved. This is valid for unconditional,
-conditional, and critical edges without needing path-sensitive placement rules
-during initial construction.
+For a conditional, either or both outgoing edges may need splitting solely for
+block-exit work, even without a scheduled edge-specific physical transfer. Each
+edge receives the subset of exit transfers needed by its outgoing argument
+occurrences, not a blind copy of every source-block transfer. A helper performs
+ordered exit and edge phases; these are sequential phases, not one parallel
+assignment. A later phase can use the carriers established by the earlier one.
 
-This is deliberately a construction policy rather than part of the script's
-meaning. A later placement optimization may put a transfer in the source when
-it is safe on every outgoing path, put it at a single-predecessor destination,
-remove redundant transfers, or retain an edge helper. That optimization must
-not change bundle selection or occurrence resolution.
+The initial policy uses helpers for edge-local programs that emit physical
+moves. Pure no-op bindings alone do not require splitting an edge and remain
+explicit in the script. For an unconditional branch, exit moves alone do not
+require a helper; an edge reconciliation program may still require one.
+
+A helper's parameters receive source-side carriers and its outgoing edge supplies
+the selected destination carriers. It inherits its source's loop depth. Record
+incoming bundle/location and outgoing bindings separately for every argument,
+preserving duplicate positions and intentional aliases. Helpers use their own
+parameters, never predecessor-local definitions directly.
+
+Planning records exact definition bindings on both sides of every helper:
+
+```text
+source -> helper:
+    incoming_arguments[i] -> helper parameter definition[i]
+
+helper -> destination:
+    outgoing_arguments[i] -> original destination parameter[i]
+```
+
+Each helper parameter has its own script definition recorded in
+`EdgeParameterScript`, together with its incoming bundle and location for
+validation. The incoming argument names a definition available in the source
+at its terminator, after any source-local exit program. The outgoing argument
+names a helper parameter or a transfer result available after all helper phases.
+Both vectors preserve argument order and duplicates. Shared incoming definitions
+do not collapse positional helper parameters.
+
+Bundle IDs may remain as validation provenance, but neither outgoing arguments
+nor their physical carriers are chosen by looking up bundles during execution.
+Planning resolves the bindings once. The executor only translates their script
+definition IDs to actual instruction IDs and constructs the edges. An edge with
+no helper similarly records exact source-local arguments directly for its
+original destination; it has no fictitious helper parameters or helper-local
+bindings.
+
+For the duplicate-edge alias case, both incoming positions may name the same
+source definition. Inside the helper, the moved outgoing position names the
+move's result definition and the unchanged position names an existing helper
+parameter definition. Later phases may overwrite locations, so outgoing bindings
+must describe the final valid carriers rather than an earlier intermediate state.
+
+For example, one original exit transfer `A -> B` needed on both conditional
+successors expands to `(exit transfer, true edge)` and `(exit transfer, false
+edge)`. The true helper may then perform `B -> C`, while the false helper performs
+`B -> D`. The schedule entry is accounted for once; each required realization
+must occur once. If one successor does not need `B`, there is no exit realization
+for that successor. A missing required realization and an extra realization on
+an unrelated edge are both validation failures.
+
+This is planner-owned placement, not an executor or rewrite-engine decision.
+Further placement optimization may avoid helpers where legal, but must preserve
+carrier selection, comparison/branch grouping, and realization accounting.
 
 ## Representative Carrier Split
 
@@ -622,16 +732,25 @@ It checks two classes of invariant:
    - every generated helper corresponds to one planned transferred edge;
    - every operand, result, edge argument, and temporary occurrence is attached
      to its original anchor;
-   - every allocator transfer, fixed operand copy, and reused-input fixup is
-     consumed exactly once;
+   - every original allocator transfer, fixed operand copy, and reused-input
+     fixup has one accounting record with its required realization set;
+   - unconditional block-exit actions have a source-local realization before
+     the jump; conditional exit actions have precisely the required edge-local
+     realizations, independently checked against outgoing argument occurrences;
+   - every required realization is accounted for exactly once, including no-op
+     bindings, and no extra realization occurs on an unrelated edge;
    - every script definition is introduced once and used only where it is
      available;
+   - each helper incoming argument binds an exact source-local definition to
+     the matching helper parameter; each outgoing argument binds an exact final
+     helper-local definition to the matching destination parameter;
    - a definition from one block appears in another block only as an outgoing
      edge argument; helper bodies use their own parameters rather than source
      definitions directly.
 2. Physical flow:
    - every operand's script definition has the representation and physical
-     location assigned to its occurrence's bundle;
+     location assigned to its occurrence's bundle and carries the symbolic
+     value required by the original occurrence;
    - each planned move reads the symbolic value occupying its stated source
      location and establishes the same symbolic value at its destination;
    - writing a destination invalidates an unrelated previous occupant while
@@ -644,18 +763,28 @@ It checks two classes of invariant:
    - temporary locations satisfy their constraints but never appear as SSA
      carriers.
 
-The validator uses symbolic value identities, not output `InstructionId`s.
-Normal instruction results create a symbolic value, forwarding definitions and
-physical transfers preserve one, and block parameters begin a block with
-abstract symbolic inputs. This lets it detect a stale bundle-to-definition
-binding after its physical location has been overwritten without complicating
-the construction executor.
+The validator uses symbolic value identities, not realized `InstructionId`s.
+Derive each use's expected identity independently from its original occurrence's
+anchor and definition in the frozen input CFG, never from the script's selected
+source. Original ordinary computation results establish identities; realization
+or reconstruction of those computations preserves that correspondence.
+Forwarding definitions and physical copies preserve their source's identity.
+Original block parameters establish block-local abstract input identities.
+
+At each operand use, check both the selected carrier's physical location against
+its allocated requirement and its symbolic identity against the original value.
+Availability, representation, correct location, and faithful execution of moves
+are necessary but insufficient: a script can consistently move the wrong value
+into the right register. These checks also detect stale carrier bindings after
+an unrelated value overwrites a location, without complicating the executor.
 
 Block parameters are symbolic rebinding boundaries. Validation does not seek a
 fixed point or require all predecessors of a loop to carry one symbolic
 identity. Instead, it checks each incoming edge independently: the source or
-helper output must have the destination parameter's representation and assigned
-physical location at the matching argument index. The destination block then
+helper output must carry the original edge argument occurrence's required
+symbolic value and have the destination parameter's representation and assigned
+physical location at the matching argument index. Check that source-side value
+before rebinding it at the destination. The destination block then
 starts with a fresh abstract identity for that parameter. This covers joins,
 self-edges, and exception-free normal predecessors without path-sensitive
 symbolic execution; normal and exception entry parameters are checked directly
@@ -666,12 +795,28 @@ symbolic equality while remaining distinct positional definitions. They cannot
 be treated as unrelated abstract values merely because their IDs differ. This
 alias information comes from the planned incoming arguments, not from physical
 location coincidence alone; unrelated values at different times can occupy the
-same location.
+same location. Helper parameters inherit the checked identities of their
+source-to-helper arguments; helper creation is not a fresh semantic rebinding
+that can hide an incorrect value. Outgoing helper arguments are checked against
+the corresponding original edge argument occurrences before destination
+parameter rebinding. This preserves block-local checking without whole-loop
+symbolic execution.
+
+Require a negative validator test that substitutes a different same-representation
+value for an original operand while placing it at the required physical location.
+The definition must be available and the planned copies individually legal, so
+rejection specifically establishes the original-occurrence value check. Include
+the equivalent wrong-value case on a helper's outgoing edge: representation and
+destination location alone must not allow it to pass.
 
 A realization audit checks that retained definitions keep their IDs, newly
-emitted definitions receive distinct IDs, and no retired ID remains referenced.
-Locations must use the realized IDs, including temporaries of reconstructed
-instructions. Unchanged side-exit regions and their sharing remain intact.
+emitted definitions receive distinct IDs, and every surviving operand and edge
+argument refers to an available definition in the committed graph. Check graph
+membership, block locality, and definition-before-use rather than relying on
+poison bits or storage-ID validity. Locations must use the realized IDs, including
+temporaries of reconstructed instructions, without depending on definitions
+removed from the graph. Retained side-exit region references remain subject to
+their existing region-local availability checks. Unchanged side-exit regions and their sharing remain intact.
 Ordinary CFG verification checks the committed graph in debug configurations.
 
 ## Public Result and Call Flow
@@ -731,8 +876,9 @@ cutover, rather than postponed as optimizations.
 rewriter semantics.
 
 - Introduce the small mutation interface around storage-owned allocation,
-  optional block updates, helper publication and block order, retirement,
-  predecessor rebuilding, IR-level updates, and mutation generation.
+  optional block updates, helper publication and block order, predecessor
+  rebuilding, IR-level updates, and mutation generation. Keep poisoning out of
+  this shared API; the rewriter retains its existing poisoning policy.
 - Move the existing rewriter's commit responsibilities behind it. Preserve
   rewrite callbacks, normalization, replacement checks, allocation tracking,
   summaries, and staged edge-split behavior in their current owning layer.
@@ -740,9 +886,15 @@ rewriter semantics.
   existing algorithms. Do not remove materializer-specific rewriter features yet.
 
 **Acceptance:** existing rewrite tests pass; focused coverage checks stale
-mutation generations, retained instruction IDs, unchanged vectors, retired
-instructions, helper publication, predecessor indexes, and analysis invalidation.
+mutation generations, retained instruction IDs, unchanged vectors, the rewriter's
+existing poisoning behavior, helper publication, predecessor indexes, and analysis
+invalidation. The materializer path must leave replaced storage entries
+unpoisoned while rejecting references to definitions absent from the result.
 A no-change mutation does not advance generation or rebuild predecessor indexes.
+Cover argument-only edge replacement with unchanged endpoints, helper insertion,
+and changed instructions with identical terminator edges. The first two require
+predecessor rebuilding; the last does not. Edge allocation without publication
+must not trigger rebuilding. No caller-supplied edge-change flag is required.
 
 ### 2. Plan scripts from current allocation products
 
@@ -754,8 +906,11 @@ materializer cutover.
 - Build the occurrence-to-bundle index once. Resolve block-local carrier state
   into script definition IDs with exact operand bindings, result/temporary
   locations, input generation, and source-product provenance.
-- Plan entry and instruction boundary programs and ordered edge phases. Select
-  helper sites only where physical moves require them. Preserve all argument
+- Plan entry and instruction boundary programs and ordered edge phases. Place
+  unconditional exit transfers before the jump; expand conditional exit work
+  per applicable edge. Record source accounting separately from realization
+  accounting and select helpers where edge-local physical moves require them.
+  Preserve all argument
   positions and no-op assignment results, even when aliases share one carrier.
 - Add structural accounting and symbolic physical-flow validation for debug and
   tests. Keep it independent from realization and optional in production.
@@ -766,8 +921,13 @@ materializer cutover.
 
 **Acceptance:** direct script tests cover unchanged blocks, ordinary/spill/ABI
 carriers, fixed operand copies, ordered phases, cycles and legalization failures,
-and the duplicate-edge move/no-op case below. Verify exact action consumption,
-known helper-parameter aliases, and unchanged published input on planning errors.
+and the duplicate-edge move/no-op case below. Verify source-action coverage,
+per-realization accounting, known helper-parameter aliases, and unchanged
+published input on planning errors. Include a conditional exit transfer needed
+on both edges, one needed on only one edge, and composition with edge-specific
+transfers. Reject missing and duplicated realizations. Reject a script that
+supplies the wrong symbolic value at the correct location for an operand or a
+helper outgoing argument, using the original occurrence as the oracle.
 Tests must not depend on incidental bundle, register, or instruction numbering.
 
 ### 3. Realize block-local edits with reuse
@@ -788,19 +948,29 @@ shared mutation layer; production still uses the old materializer.
 
 **Acceptance:** an unchanged input retains instruction IDs and vector storage;
 locations alone do not mutate the graph. A changed block retains unaffected IDs,
-reconstructs required consumers, and retires only removed instructions. Cover a
+reconstructs required consumers, and leaves replaced storage entries unpoisoned. Cover a
 split value whose producer survives and an unsplit result whose producer changes
 because an operand selects a different carrier. Multi-carrier cases preserve
-still-live source carriers. All published test outputs are complete for their
-supported cases.
+still-live source carriers. Add a dependency-chain test where changing the first
+instruction's operand reconstructs its transitive consumers, while an independent
+instruction in the same block retains its ID. Verify that all consumer references
+use the realized IDs and no definition removed from the graph remains referenced,
+including when the removed storage entry is unpoisoned. Retain the
+original destination parameter IDs and verify that changing the outgoing argument
+does not reconstruct the destination body. All published test outputs are
+complete for their supported cases.
 
 ### 4. Complete edge and side-exit realization
 
 **Boundary:** make the test-only path handle the full current materialization
 surface, including the observed abort, before switching production callers.
 
-- Allocate planned helpers with explicit incoming parameter locations, ordered
-  phases, and independently selected outgoing arguments. Preserve duplicate
+- Emit unconditional exit programs before their jumps. For conditionals,
+  allocate helpers on every edge requiring physical exit or reconciliation
+  work, keeping compare and branch together. Test both outgoing paths.
+- Allocate planned helpers with exact source-to-helper definition bindings,
+  explicit parameter definitions and locations, ordered exit-then-edge phases,
+  and exact helper-to-destination definition bindings. Preserve duplicate
   argument positions and intentional aliases.
 - Retain unchanged edges. Allocate replacements when arguments or endpoints
   change and reconstruct only affected source terminators. Pure no-op bindings
@@ -884,10 +1054,16 @@ requirements, not deferred optimizations. Further work may improve transfer
 placement in existing blocks and remove redundant moves or helpers. Those
 optimizations must preserve scripted carrier selection and occurrence identity.
 
-Measure materialization time, replacement instruction counts, helper/edge
-counts, and transient memory on representative small and larger JIT compilations
-before claiming a performance improvement. Include unchanged graphs and graphs
-with side exits. Dense script storage and arena allocation may reduce overhead,
+Measure materialization time, retained and reconstructed original instruction
+counts, newly emitted transfer instruction counts, helper/edge counts, and
+transient memory on representative small and larger JIT compilations before
+claiming a performance improvement. Distinguish reconstructed consumers from
+new transfer definitions; allocation split counts are not a proxy for actual
+reconstruction cost. Measure predecessor-index rebuild time and rebuild counts
+separately from planning and instruction realization, including a single
+argument-only edge replacement in a larger graph and unchanged-edge cases where
+no rebuild should occur. Include unchanged graphs, long dependency chains with
+one changed input, and graphs with side exits. Dense script storage and arena allocation may reduce overhead,
 but the script still incurs planning, initialization, and traversal costs.
 Do not introduce a separate heap allocation for every conceptual script node
 merely because the vocabulary sketch uses nested vectors.
@@ -901,12 +1077,16 @@ Tests should establish:
   instruction vectors, and locations-only materialization does not mutate CFG
   structure or advance its generation;
 - reconstructed instructions and transfers receive new IDs, with every affected
-  consumer resolving to its planned carrier;
+  consumer resolving to its planned carrier; a changed input propagates through
+  its dependency chain while independent instructions retain their IDs, and
+  original parameter boundaries stop reconstruction spreading between blocks;
 - normal and exception entries, loops, edges, parameters, and side-exit region
   references are preserved;
 - unchanged side-exit regions and their sharing survive owner reconstruction;
 - each operand occurrence resolves to its planned script definition and the
-  carrier for its allocated bundle;
+  carrier for its allocated bundle, carrying the independently derived original
+  symbolic value; wrong-value/correct-location scripts fail validation for
+  ordinary operands and outgoing helper arguments;
 - transfers create destination carriers without destroying still-live source
   carriers;
 - fixed operand copies and reused-input copies affect only their selected
@@ -915,16 +1095,27 @@ Tests should establish:
   temporary, while an already correctly located copy source remains legal;
 - block-entry and pre-terminator boundary programs are neither dropped nor
   emitted at an adjacent instruction;
+- unconditional exit transfers execute before the jump without forcing helper
+  allocation; conditional exit transfers expand onto exactly the applicable
+  outgoing edges without disturbing comparison/branch grouping;
+- source actions and their required realizations are accounted for separately;
+  both conditional paths compose exit work with edge-specific reconciliation;
 - edge transfers remain path-specific on branches and compose correctly at
   joins and loops;
 - stack cycles use legal scratch sequences;
 - `LocationAssignments` mention retained or new definitions in the committed
   graph, with locations for all emitter-visible physical definitions and
-  temporaries and none relying on retired IDs;
-- helpers and replacement edges are allocated only when needed; predecessor
-  indexes are rebuilt only when executable edges change;
-- commit rejects stale input generations, retires only removed instructions,
-  and invalidates analyses through mutation generation;
+  temporaries and none relying on definitions absent from the committed graph;
+- helpers and replacement edges are allocated only when needed; mutation-layer
+  comparison of staged terminator edges detects argument-only replacements and
+  helper insertion without a caller flag; unchanged executable edge references
+  do not trigger predecessor rebuilding, while changed references initially use
+  the established full-graph rebuild;
+- commit rejects stale input generations and invalidates analyses through
+  mutation generation; materialization leaves replaced entries unpoisoned,
+  while the rewriter preserves its existing poisoning behavior;
+- reference validation rejects operands and edge arguments naming definitions
+  absent from the resulting graph even when their storage IDs remain readable;
 - backend observation and emission consume the same materialized graph object;
 - failed planning leaves the published graph unchanged;
 - independent validation may be disabled without changing materialized behavior.
@@ -989,6 +1180,8 @@ without depending on incidental allocator numbering. Verify that:
   unchanged argument retains a valid carrier at the original location;
 - the no-op assignment may reuse an existing helper-parameter definition
   without inventing a move or claiming that parameter was newly emitted;
+- incoming helper arguments and outgoing destination arguments name exact
+  script definitions by position, with no executor-side bundle selection;
 - outgoing edge arguments resolve independently to those selected carriers;
 - script validation, committed CFG verification, and location assignments agree;
 - planning and staging preserve the input generation until coherent commit,
