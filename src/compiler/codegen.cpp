@@ -2098,6 +2098,9 @@ namespace cl
 
         bool node_has_raise_in_current_exception_context(int32_t node_idx) const
         {
+            // Omitted slice components are represented by absent AST children.
+            if(node_idx < 0)
+                return false;
             AstKind kind = av.kinds[node_idx];
             const AstChildren &children = av.children[node_idx];
 
