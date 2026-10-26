@@ -1513,20 +1513,35 @@ namespace cl
                 "creating mapping error helper")
                 .raw_value());
 
+        install_io_base_helpers(this, implementation_module);
         install_bytearray_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
         install_zip_helpers(this, implementation_module);
 
         // Seed dependencies explicitly: empty __builtins__ disables public
         // fallback.
-        const wchar_t *seed_names[] = {
-            L"list",       L"tuple",         L"slice",
-            L"bytearray",  L"bytes",         L"dict",
-            L"int",        L"str",           L"object",
-            L"isinstance", L"TypeError",     L"ValueError",
-            L"IndexError", L"StopIteration", L"NotImplemented",
-            L"True",       L"False",         L"None",
-            L"Ellipsis",   L"AttributeError"};
+        const wchar_t *seed_names[] = {L"list",
+                                       L"tuple",
+                                       L"slice",
+                                       L"bytearray",
+                                       L"bytes",
+                                       L"dict",
+                                       L"int",
+                                       L"str",
+                                       L"object",
+                                       L"isinstance",
+                                       L"TypeError",
+                                       L"ValueError",
+                                       L"IndexError",
+                                       L"StopIteration",
+                                       L"NotImplemented",
+                                       L"True",
+                                       L"False",
+                                       L"None",
+                                       L"Ellipsis",
+                                       L"AttributeError",
+                                       L"BaseException",
+                                       L"OSError"};
         for(const wchar_t *name: seed_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);
@@ -1629,6 +1644,7 @@ namespace cl
                   "helper");
         bytearray_snapshot_function_ = Optional<TValue<Function>>::some(
             TValue<Function>::from_value_assumed(bytearray_snapshot));
+        install_io_base_python_methods(this, implementation_module);
         install_bytearray_python_methods(this, implementation_module);
         install_dict_python_methods(this, implementation_module);
         install_list_python_methods(this, implementation_module);

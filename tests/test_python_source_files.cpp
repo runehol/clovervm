@@ -128,7 +128,8 @@ TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
 TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
 {
     for(const char *path:
-        {"tests/python/file_io.py", "tests/python/file_io_subclasses.py"})
+        {"tests/python/file_io.py", "tests/python/file_io_subclasses.py",
+         "tests/python/file_io_readinto.py"})
     {
         std::wstring source = read_source_file(path);
         cl::test::VmTestContext context;
@@ -144,6 +145,25 @@ TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
         {"tests/python/io_base.py", "tests/python/io_context_exit.py",
          "tests/python/io_capability_checks.py"})
     {
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(PythonSourceFiles, RawIOReadsSurviveEverySafepointReclamation)
+{
+    for(const char *path:
+        {"tests/python/rawio_read.py", "tests/python/rawio_read_validation.py",
+         "tests/python/rawio_read_callbacks.py",
+         "tests/python/rawio_readall.py",
+         "tests/python/rawio_readall_errors.py",
+         "tests/python/rawio_read_resized_buffer.py",
+         "tests/python/file_io_readall.py"})
+    {
+        SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);
         cl::test::VmTestContext context;
         context.vm().set_fire_every_safepoint_for_testing(true);

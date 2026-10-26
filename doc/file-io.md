@@ -86,16 +86,28 @@ open until process exit. No finalizer, GC hook, or resource registry is installe
   without CPython's RuntimeWarning.
 - Modes `r`, `w`, `x`, `a`, optional `+`, and binary markers, including repeated
   `b` markers accepted by CPython FileIO. Update `w+` reports mode `rb+`.
-- Bounded `read(size)`, bytes `write(data)`, seek/tell, readable/writable/seekable,
-  fileno, close, and context management. Reads with omitted, None or negative
-  size raise NotImplementedError. Inherited flush is a no-op while base-open;
+- Bounded `read(size)`, `readinto(bytearray)`, bytes `write(data)`, seek/tell,
+  readable/writable/seekable, fileno, close, and context management. Reads with
+  omitted, None or negative size raise NotImplementedError. Inherited flush is a no-op while base-open;
   inherited isatty returns False after checking closed state. Descriptor-aware
   isatty and truncate, general buffer objects, custom openers and reinitialization
-  are not implemented. RawIOBase read/readinto/write defaults raise
-  NotImplementedError; generic read/readall fallbacks remain deferred.
-- Raw transfers preserve short results; EOF returns empty bytes and would-block
-  returns None. Interrupted open/read/write/fstat operations retry EINTR; Python
-  signal-handler execution is not implemented by this layer.
+  are not implemented. RawIOBase readinto/write defaults raise
+  NotImplementedError. Managed RawIOBase read/readall implementations use
+  subclass readinto/read overrides; FileIO has a managed readall wrapper that
+  calls the retained native FileIO.read directly. Unbounded FileIO.read remains
+  deferred.
+- FileIO overrides `readinto(buffer)` for bytearray destinations only. It returns
+  the transferred count, 0 at EOF, or None on would-block, preserving short reads,
+  destination length, and the unwritten suffix. Buffer validation precedes
+  closed/readability checks. The synchronous writable borrow contains only the
+  native read and errno/result capture. Requests are capped at INT_MAX bytes
+  on macOS and SSIZE_MAX on other POSIX platforms, matching CPython. All VM
+  allocation and error translation
+  happen after it ends. No buffer exports or pinning are introduced.
+- Raw transfers preserve short results; EOF returns empty bytes for read and 0
+  for readinto, and would-block returns None. Interrupted open/read/write/fstat
+  operations retry EINTR; Python signal-handler execution is not implemented by
+  this layer.
 - FileIO leaves the host's SIGPIPE disposition and signal mask unchanged.
   When the host ignores SIGPIPE, EPIPE becomes BrokenPipeError. Under the default
   disposition a broken-pipe write can terminate the process. The public startup
@@ -118,3 +130,23 @@ Base regressions additionally cover Python subclass initialization and attribute
 compatible and incompatible multiple inheritance, constructor invalidation and
 reclaimable helpers, independent base/descriptor closed state, dynamic capability
 checks and context exit, failing/reentrant flush, and close-error precedence.
+
+## Managed raw-read fallbacks
+
+RawIOBase.read validates the receiver and index-sized size, delegates negative
+sizes to self.readall(), and otherwise allocates a bytearray for self.readinto().
+Index callbacks stay in managed code. Native result validation checks the
+returned count against both the original request and the destination's current
+length after callbacks, then copies its filled prefix into independent bytes.
+None is preserved as would-block. A resized buffer whose reported count exceeds
+its current length raises ValueError instead of permitting an out-of-bounds copy.
+
+RawIOBase.readall calls self.read in 128 KiB chunks, preserving short reads until
+EOF or would-block. It returns accumulated bytes, or None when the first read
+would block. Chunk lengths and payload copies use stored bytes data, bypassing
+bytes-subclass conversion, iteration and length overrides. OSError with errno
+EINTR is retried; other errors propagate. FileIO.readall uses the same chunk size
+but bypasses subclass read/readinto overrides via the original native read.
+These managed methods are installed on native classes during trusted bootstrap;
+no layouts, bytecode operations, interpreter dispatch paths or resource-cleanup
+hooks are added.

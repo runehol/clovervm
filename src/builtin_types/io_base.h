@@ -9,6 +9,7 @@
 
 namespace cl
 {
+    class ModuleObject;
     class ThreadState;
     class VirtualMachine;
 
@@ -62,6 +63,9 @@ namespace cl
     BuiltinClassDefinition make_io_base_class(VirtualMachine *vm);
     BuiltinClassDefinition make_raw_io_base_class(VirtualMachine *vm);
     void install_io_base_methods(VirtualMachine *vm);
+    void install_io_base_helpers(VirtualMachine *vm, ModuleObject *module);
+    void install_io_base_python_methods(VirtualMachine *vm,
+                                        ModuleObject *module);
 }  // namespace cl
 
 #endif  // CL_IO_BASE_H
