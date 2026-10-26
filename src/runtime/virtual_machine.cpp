@@ -4,6 +4,7 @@
 #include "bootstrap/builtins.h"
 #include "build_config.h"
 #include "builtin_types/bool.h"
+#include "builtin_types/bytearray.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
@@ -456,6 +457,8 @@ namespace cl
             {
                 if(armed)
                 {
+                    vm->bytearray_snapshot_function_ =
+                        Optional<TValue<Function>>::none();
                     vm->range_builtin = Value::None();
                     vm->os_error_errno_map_ = Optional<TValue<Dict>>::none();
                     vm->hash_value_helper_function_ =
@@ -499,6 +502,7 @@ namespace cl
         if(!threads.empty())
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
+            bytearray_snapshot_function_ = Optional<TValue<Function>>::none();
             range_builtin = Value::None();
             os_error_errno_map_ = Optional<TValue<Dict>>::none();
             hash_value_helper_function_ = Optional<TValue<Function>>::none();
@@ -1074,6 +1078,7 @@ namespace cl
             0, 0, immutable_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_bytes_class(this));
+        register_builtin_class(make_bytearray_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_slotdict_class(this));
         register_builtin_class(make_slice_class(this));
@@ -1097,6 +1102,7 @@ namespace cl
         register_builtin_class(make_zip_class(this));
         register_builtin_class(make_string_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
+        register_builtin_class(make_bytearray_iterator_class(this));
         register_builtin_class(make_dict_keys_view_class(this));
         register_builtin_class(make_dict_values_view_class(this));
         register_builtin_class(make_dict_items_view_class(this));
@@ -1239,6 +1245,7 @@ namespace cl
         install_os_error_methods(this);
         install_str_class_methods(this);
         install_bytes_class_methods(this);
+        install_bytearray_class_methods(this);
         install_int_class_methods(this);
         install_bool_class_methods(this);
         install_none_type_class_methods(this);
@@ -1506,18 +1513,20 @@ namespace cl
                 "creating mapping error helper")
                 .raw_value());
 
+        install_bytearray_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
         install_zip_helpers(this, implementation_module);
 
         // Seed dependencies explicitly: empty __builtins__ disables public
         // fallback.
         const wchar_t *seed_names[] = {
-            L"list",           L"tuple",      L"slice",
-            L"dict",           L"int",        L"str",
-            L"object",         L"isinstance", L"TypeError",
-            L"ValueError",     L"IndexError", L"StopIteration",
-            L"NotImplemented", L"True",       L"False",
-            L"None",           L"Ellipsis",   L"AttributeError"};
+            L"list",       L"tuple",         L"slice",
+            L"bytearray",  L"bytes",         L"dict",
+            L"int",        L"str",           L"object",
+            L"isinstance", L"TypeError",     L"ValueError",
+            L"IndexError", L"StopIteration", L"NotImplemented",
+            L"True",       L"False",         L"None",
+            L"Ellipsis",   L"AttributeError"};
         for(const wchar_t *name: seed_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);
@@ -1613,6 +1622,14 @@ namespace cl
             }
             install_builtin_binding(key, function);
         }
+        Value bytearray_snapshot = implementation_module->get_own_property(
+            get_or_create_interned_string_value(L"_clover_bytearray_snapshot"));
+        if(!has_native_layout<Function>(bytearray_snapshot))
+            fatal("trusted builtin source did not define bytearray snapshot "
+                  "helper");
+        bytearray_snapshot_function_ = Optional<TValue<Function>>::some(
+            TValue<Function>::from_value_assumed(bytearray_snapshot));
+        install_bytearray_python_methods(this, implementation_module);
         install_dict_python_methods(this, implementation_module);
         install_list_python_methods(this, implementation_module);
         install_tuple_python_methods(this, implementation_module);
@@ -1684,6 +1701,12 @@ namespace cl
     {
         assert(iterable_to_exact_tuple_function_.value().has_value());
         return iterable_to_exact_tuple_function_.value().value();
+    }
+
+    TValue<Function> VirtualMachine::bytearray_snapshot_function() const
+    {
+        assert(bytearray_snapshot_function_.value().has_value());
+        return bytearray_snapshot_function_.value().value();
     }
 
     TValue<Function> VirtualMachine::iterable_to_exact_list_function() const

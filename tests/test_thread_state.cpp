@@ -223,6 +223,9 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
 
+        // Bootstrap allocations may already have requested collection. This
+        // test checks forwarding of an explicitly controlled VM flag.
+        context.vm().clear_safepoint_request();
         EXPECT_FALSE(thread->safepoint_requested());
 
         context.vm().request_safepoint();

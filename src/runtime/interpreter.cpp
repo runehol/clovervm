@@ -2188,6 +2188,8 @@ namespace cl
             case OperatorWalkStatus::CallTrustedHandler:
                 {
                     install_operator_cache_if_cacheable(cache, descriptor);
+                    set_clover_frame_frontier_for_native_call(thread, fp,
+                                                              code_object);
                     accumulator =
                         descriptor.cache_entry.trusted_handler.ternary(
                             thread, operand0, operand1, operand2);
@@ -2427,6 +2429,8 @@ namespace cl
         {
             if(!cache.trusted_handler.is_null())
             {
+                set_clover_frame_frontier_for_native_call(thread, fp,
+                                                          code_object);
                 accumulator = cache.trusted_handler.ternary(thread, operand0,
                                                             operand1, operand2);
                 assert(!accumulator.is_not_implemented_singleton());
@@ -2509,6 +2513,8 @@ namespace cl
         {
             if(!cache.trusted_handler.is_null())
             {
+                set_clover_frame_frontier_for_native_call(thread, fp,
+                                                          code_object);
                 accumulator = cache.trusted_handler.ternary(thread, operand0,
                                                             operand1, operand2);
                 if(unlikely(accumulator.is_exception_marker()))
@@ -5930,6 +5936,8 @@ namespace cl
                 {
                     cache = entry;
                 }
+                set_clover_frame_frontier_for_native_call(thread, fp,
+                                                          code_object);
                 accumulator = invoke_special_method_trusted_handler<NUserArgs>(
                     thread, entry, fp, receiver_reg, receiver);
                 if(unlikely(accumulator.is_exception_marker()))
@@ -5993,6 +6001,7 @@ namespace cl
             code_object->inline_caches.operator_caches[cache_idx];
         assert(!cache.trusted_handler.is_null());
 
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         accumulator = invoke_special_method_trusted_handler<NUserArgs>(
             thread, cache, fp, receiver_reg, receiver);
         if(unlikely(accumulator.is_exception_marker()))

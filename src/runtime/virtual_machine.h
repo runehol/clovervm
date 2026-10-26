@@ -133,6 +133,7 @@ namespace cl
         TValue<Function> enumerate_call_function() const;
         TValue<Function> iterable_to_exact_tuple_function() const;
         TValue<Function> iterable_to_exact_list_function() const;
+        TValue<Function> bytearray_snapshot_function() const;
         TValue<Function> dict_insert_if_absent_known_hash_function() const;
         TValue<Function> call_keyword_error_function() const;
         TValue<Function> call_keyword_merge_function() const;
@@ -177,6 +178,10 @@ namespace cl
         ClassObject *str_class() const
         {
             return class_for_native_layout(NativeLayoutId::String);
+        }
+        ClassObject *bytearray_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::ByteArray);
         }
         ClassObject *bytes_class() const
         {
@@ -495,6 +500,9 @@ namespace cl
         Owned<Optional<TValue<Function>>> enumerate_call_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_tuple_function_;
         Owned<Optional<TValue<Function>>> iterable_to_exact_list_function_;
+        // TODO: Group bootstrap helper handles in a dedicated holder if this
+        // collection keeps growing, rather than adding unrelated VM fields.
+        Owned<Optional<TValue<Function>>> bytearray_snapshot_function_;
         Owned<Optional<TValue<Function>>>
             dict_insert_if_absent_known_hash_function_;
         Owned<Optional<TValue<Function>>> call_keyword_error_function_;

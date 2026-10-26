@@ -669,6 +669,9 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
     ModuleObject *second_builtins = context.make_test_module_object(
         second_builtins_name,
         context.vm().global_builtins_module().raw_value());
+    Owned<TValue<ModuleObject>> second_builtins_owner(
+        TValue<ModuleObject>::from_oop(second_builtins));
+    context.vm().request_safepoint();
     ASSERT_TRUE(
         first_builtins->set_own_property(global_name, Value::from_smi(1))
             .value());

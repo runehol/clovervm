@@ -3,6 +3,7 @@
 
 #include "api/extension_handle.h"
 #include "builtin_types/bigint.h"
+#include "builtin_types/bytearray.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
@@ -36,6 +37,8 @@
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
     V(BigInt);                                                                 \
+    V(ByteArray);                                                              \
+    V(ByteArrayIterator);                                                      \
     V(Bytes);                                                                  \
     V(List);                                                                   \
     V(Tuple);                                                                  \

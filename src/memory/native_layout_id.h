@@ -12,6 +12,8 @@ namespace cl
         BigInt,
         String,
         Bytes,
+        ByteArray,
+        ByteArrayIterator,
         List,
         Tuple,
         Dict,

@@ -602,20 +602,26 @@ TEST(Interpreter, to_bool_not_inverts_immediate_truthiness)
 TEST(Interpreter, truthiness_conversion_handles_float_truthiness)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation(test_context.thread());
 
-    Value zero =
-        test_context.thread()->make_object_value<Float>(0.0).raw_value();
-    Value one =
-        test_context.thread()->make_object_value<Float>(1.0).raw_value();
+    Owned<TValue<Float>> zero(
+        test_context.thread()->make_object_value<Float>(0.0));
+    Owned<TValue<Float>> one(
+        test_context.thread()->make_object_value<Float>(1.0));
+    test_context.vm().request_safepoint();
 
     EXPECT_EQ(Value::False(),
-              run_truthiness_conversion(test_context, Bytecode::ToBool, zero));
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        zero.raw_value()));
     EXPECT_EQ(Value::True(),
-              run_truthiness_conversion(test_context, Bytecode::ToBool, one));
-    EXPECT_EQ(Value::True(), run_truthiness_conversion(
-                                 test_context, Bytecode::ToBoolNot, zero));
-    EXPECT_EQ(Value::False(), run_truthiness_conversion(
-                                  test_context, Bytecode::ToBoolNot, one));
+              run_truthiness_conversion(test_context, Bytecode::ToBool,
+                                        one.raw_value()));
+    EXPECT_EQ(Value::True(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        zero.raw_value()));
+    EXPECT_EQ(Value::False(),
+              run_truthiness_conversion(test_context, Bytecode::ToBoolNot,
+                                        one.raw_value()));
 }
 
 TEST(Interpreter, truthiness_conversion_handles_string_truthiness)
@@ -4004,6 +4010,9 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
         leaf_name, 4, mid, NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
+    Owned<TValue<Instance>> obj_owner(TValue<Instance>::from_oop(obj));
+
+    test_context.vm().request_safepoint();
 
     Value base_method_1 = make_test_function(test_context, L"base_method_1",
                                              L"def base_method_1(self):\n"
@@ -4748,6 +4757,8 @@ TEST(Interpreter, call_clovervm_method_binds_class_function_receiver)
         NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
+    Owned<TValue<Instance>> instance_owner(
+        TValue<Instance>::from_oop(instance));
     Value method = make_test_function(test_context, L"method",
                                       L"def method(self, value):\n"
                                       L"    return value + 5\n");
@@ -4775,6 +4786,8 @@ TEST(Interpreter, call_clovervm_method_calls_unbound_own_function)
         NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
+    Owned<TValue<Instance>> instance_owner(
+        TValue<Instance>::from_oop(instance));
     Value method = make_test_function(test_context, L"method",
                                       L"def method():\n"
                                       L"    return 42\n");
@@ -4802,6 +4815,8 @@ TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
         NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
+    Owned<TValue<Instance>> instance_owner(
+        TValue<Instance>::from_oop(instance));
     Value method = make_test_function(test_context, L"method",
                                       L"def method(self, value=32):\n"
                                       L"    return value + 10\n");
@@ -4829,6 +4844,8 @@ TEST(Interpreter, value_repr_uses_special_method_lookup)
         NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
+    Owned<TValue<Instance>> instance_owner(
+        TValue<Instance>::from_oop(instance));
     Value class_repr = make_test_function(test_context, L"class_repr",
                                           L"def class_repr(self):\n"
                                           L"    return 'class repr'\n");
@@ -7467,11 +7484,16 @@ TEST(Interpreter, python_defined_len_builtin_missing_method_error)
 TEST(Interpreter, python_defined_hash_builtin_matches_runtime_string_hash)
 {
     test::VmTestContext test_context;
-
-    TValue<String> abc =
-        test_context.thread()->make_object_value<String>(L"abc");
-    EXPECT_EQ(string_hash_normalized(abc).raw_value(),
-              test_context.run_file(L"hash('abc')\n"));
+    ThreadState::ActivationScope activation(test_context.thread());
+    Owned<TValue<String>> abc(
+        test_context.thread()->make_object_value<String>(L"abc"));
+    test_context.vm().set_fire_every_safepoint_for_testing(true);
+    test_context.vm().request_safepoint();
+    // Compute the managed result first so the fixture must survive collection,
+    // regardless of the compiler's function-argument evaluation order.
+    Value actual = test_context.run_file(L"hash('abc')\n");
+    ASSERT_TRUE(actual.is_smi());
+    EXPECT_EQ(string_hash_normalized(abc.value()).raw_value(), actual);
 }
 
 TEST(Interpreter, python_defined_hash_builtin_rejects_non_integer_hash_result)

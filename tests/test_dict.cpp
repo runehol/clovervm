@@ -134,6 +134,7 @@ TEST(Dict, SemanticApiAcceptsStringValueKeys)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     Value key = make_string(context, L"key");
 
@@ -151,6 +152,7 @@ TEST(Dict, SemanticApiPopAndSetdefaultAcceptStringValueKeys)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     Value key = make_string(context, L"key");
 
@@ -171,6 +173,7 @@ TEST(Dict, SemanticApiGetItemIfPresentDistinguishesNoneFromMissing)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Value key = make_string(context, L"key");
     Value missing = make_string(context, L"missing");
 
@@ -192,7 +195,9 @@ TEST(Dict, SemanticApiPopItemIfPresentDistinguishesNoneFromMissing)
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
-    Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> owner(thread->make_object_value<Dict>());
+    Dict *dict = owner.extract();
+    context.vm().request_safepoint();
 
     ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::None())
                      .has_exception());
@@ -214,7 +219,9 @@ TEST(Dict, SemanticApiSetdefaultWithPresenceReportsInsertionAndHit)
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
-    Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> owner(thread->make_object_value<Dict>());
+    Dict *dict = owner.extract();
+    context.vm().request_safepoint();
 
     Dict::SetDefaultResult inserted =
         dict->setdefault_with_presence(thread, Value::from_smi(1),
@@ -237,7 +244,9 @@ TEST(Dict, SemanticApiGetItemIfPresentPropagatesHashFailure)
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
-    Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> owner(thread->make_object_value<Dict>());
+    Dict *dict = owner.extract();
+    context.vm().request_safepoint();
     Value bad_hash_key = context.run_file(L"class BadHash:\n"
                                           L"    def __hash__(self):\n"
                                           L"        return 'bad'\n"
@@ -516,6 +525,7 @@ TEST(Dict, SemanticApiLookupAndContainsPromoteNonStringMisses)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     EXPECT_TRUE(dict->get_item(thread, Value::from_smi(1)).has_exception());
@@ -533,6 +543,7 @@ TEST(Dict, SemanticApiDeleteAndPopPromoteNonStringMisses)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     EXPECT_TRUE(dict->del_item(thread, Value::from_smi(1)).has_exception());
@@ -551,6 +562,7 @@ TEST(Dict, SemanticApiLookupKeepsPromotionWhenHashFails)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     Value bad_hash_key = context.run_file(L"class BadHash:\n"
@@ -572,6 +584,7 @@ TEST(Dict, SemanticApiSetItemPromotesNonStringKeys)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
@@ -607,6 +620,7 @@ TEST(Dict, SemanticApiSetItemKeepsStringShapeForStringKeys)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
     Value key = make_string(context, L"key");
@@ -625,6 +639,7 @@ TEST(Dict, SemanticApiSetItemUsesGeneralSemanticsAfterPromotion)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
@@ -654,6 +669,7 @@ TEST(Dict, SemanticApiLookupUsesGeneralSemanticsAfterPromotion)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
                      .has_exception());
@@ -804,6 +820,7 @@ TEST(Dict, SemanticApiDeleteUsesGeneralSemanticsAfterPromotion)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
                      .has_exception());
@@ -897,6 +914,7 @@ TEST(Dict, SemanticApiSetItemKeepsPromotionWhenHashFails)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     Value bad_hash_key = context.run_file(L"class BadHash:\n"
@@ -934,6 +952,7 @@ TEST(Dict, PublicAssignmentKeepsPromotionWhenHashFails)
 
     ASSERT_TRUE(has_native_layout<Dict>(result));
     Dict *dict = result.get_ptr<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     EXPECT_NE(string_key_shape, dict->get_shape());
     EXPECT_EQ(1u, dict->table_generation());
     EXPECT_EQ(0u, dict->size());
@@ -945,6 +964,7 @@ TEST(Dict, SemanticApiSetItemPropagatesEqualityExceptionAfterPromotion)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     Owned<Value> keys_value(context.run_file(L"class Stored:\n"
@@ -1258,6 +1278,7 @@ TEST(Dict, SemanticApiSetdefaultPromotesNonStringMiss)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     EXPECT_EQ(Value::from_smi(11),
@@ -1280,6 +1301,7 @@ TEST(Dict, SemanticApiSetdefaultDoesNotOverwritePromotedHit)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
 
     ASSERT_FALSE(dict->set_item(thread, Value::from_smi(1), Value::from_smi(11))
                      .has_exception());
@@ -1396,7 +1418,9 @@ TEST(Dict, SemanticApiUpdatePromotesFromNonStringSourceKey)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *target = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> target_owner(TValue<Dict>::from_oop(target));
     Dict *source = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> source_owner(TValue<Dict>::from_oop(source));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     ASSERT_FALSE(
@@ -1748,7 +1772,9 @@ TEST(Dict, SemanticApiUpdateReusesStoredSourceHashes)
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope activation_scope(thread);
     Dict *target = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> target_owner(TValue<Dict>::from_oop(target));
     Dict *source = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> source_owner(TValue<Dict>::from_oop(source));
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     Owned<TValue<String>> good_key(thread->make_object_value<String>(L"good"));
@@ -1864,6 +1890,7 @@ TEST(Dict, FromTupleKeysKeepsStringShapeForStringKeys)
     ASSERT_FALSE(result.is_exception_marker());
     ASSERT_TRUE(has_native_layout<Dict>(result));
     Dict *dict = result.get_ptr<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     EXPECT_EQ(string_key_shape, dict->get_shape());
     EXPECT_EQ(0u, dict->table_generation());
     EXPECT_EQ(Value::from_smi(7),
@@ -1920,6 +1947,7 @@ TEST(Dict, ExactBuiltinDictConstructionStartsStringKeyed)
     Shape *string_key_shape = thread->get_exact_dict_string_key_shape();
 
     Dict *native_dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> native_dict_owner(TValue<Dict>::from_oop(native_dict));
     EXPECT_EQ(string_key_shape, native_dict->get_shape());
 
     Value literal = context.run_file(L"{}\n");
@@ -2049,6 +2077,7 @@ TEST(Dict, InsertProbeReadDistinguishesSlotStates)
     ThreadState::ActivationScope activation_scope(thread);
 
     Dict *empty_dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> empty_dict_owner(TValue<Dict>::from_oop(empty_dict));
     Expected<TValue<SMI>> hash_one_result =
         thread->hash_value(Value::from_smi(1));
     ASSERT_FALSE(hash_one_result.has_exception());
@@ -2062,6 +2091,7 @@ TEST(Dict, InsertProbeReadDistinguishesSlotStates)
                                                           empty_hash_idx));
 
     Dict *dict = thread->make_object_raw<Dict>();
+    Owned<TValue<Dict>> dict_owner(TValue<Dict>::from_oop(dict));
     Expected<void> inserted =
         dict->set_item(thread, Value::from_smi(1), Value::None());
     ASSERT_FALSE(inserted.has_exception());

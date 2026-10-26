@@ -129,6 +129,7 @@ def fail(source):
     {
         Owned<TValue<Tuple>> source(thread->make_object_value<Tuple>(1));
         source.extract()->initialize_item_unchecked(0, child.raw_value());
+        context.vm().request_safepoint();
         result = thread->call_clovervm_function(build, source.raw_value());
         ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
         Tuple *tuple = native_cast<Tuple>(result.value());
@@ -140,6 +141,12 @@ def fail(source):
         EXPECT_TRUE(thread->call_clovervm_function(fail, source.raw_value())
                         .is_exception_marker());
         thread->clear_pending_exception();
+        // Manual native-side collection needs the current idle scan boundary,
+        // not a conservative record left by a safepoint in the completed call.
+        ASSERT_EQ(thread->clover_frame_sentinel(),
+                  thread->clover_frame_frontier());
+        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
+                                              Value::not_present());
         // The epoch scan can enqueue a builder's backing storage after the
         // zero-count-table phase; the following pass releases that storage.
         context.vm().run_heap_reclamation();
