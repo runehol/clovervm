@@ -955,12 +955,12 @@ class BufferedReader(BufferedIOBase):
     def __init__(self, raw, buffer_size=_clover_bufferedio_default_buffer_size):
         if hasattr(self, '_busy') and self._busy:
             raise RuntimeError('reentrant call inside BufferedReader')
+        size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
         self.raw = None
         self._busy = True
         self._pos = 0
         self._end = 0
         try:
-            size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
             if not raw.readable():
                 raise _clover_io_unsupported('File or stream is not readable')
             if size <= 0:
