@@ -194,6 +194,7 @@ TEST(PythonSourceFiles, BufferedReaderSurvivesEverySafepointReclamation)
                            "tests/python/buffered_reader_nonblocking.py",
                            "tests/python/buffered_reader_position.py",
                            "tests/python/buffered_reader_callbacks.py",
+                           "tests/python/buffered_reader_errors.py",
                            "tests/python/buffered_reader_lifecycle.py",
                            "tests/python/buffered_reader_reentry.py",
                            "tests/python/buffered_reader_mixed.py"})

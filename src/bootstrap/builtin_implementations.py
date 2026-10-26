@@ -1024,7 +1024,7 @@ class BufferedReader(BufferedIOBase):
             self._end = count
         return count
 
-    def _read_sized(self, raw, size, one_raw):
+    def _read_sized(self, raw, size):
         if size == 0:
             return b''
         available = self._end - self._pos
@@ -1034,21 +1034,11 @@ class BufferedReader(BufferedIOBase):
         if available:
             bytearray.extend(result, self._take(available))
         remaining = size - available
-        calls = 0
         while remaining > 0:
-            if one_raw and calls:
-                break
-            # readinto1 can combine buffered bytes with one large direct read,
-            # but does not refill merely to top up an already partial result.
-            if one_raw and bytearray.__len__(result) and remaining <= self._buffer_size:
-                break
             if remaining >= self._buffer_size:
-                wanted = remaining
-                if not one_raw:
-                    wanted = (remaining // self._buffer_size) * self._buffer_size
+                wanted = (remaining // self._buffer_size) * self._buffer_size
                 buffer = bytearray(wanted)
                 count = self._raw_into(raw, buffer, wanted)
-                calls += 1
                 if count is None:
                     if bytearray.__len__(result) == 0:
                         return None
@@ -1059,7 +1049,6 @@ class BufferedReader(BufferedIOBase):
                 remaining -= count
             else:
                 count = self._fill(raw)
-                calls += 1
                 if count is None:
                     if bytearray.__len__(result) == 0:
                         return None
@@ -1112,9 +1101,11 @@ class BufferedReader(BufferedIOBase):
         size = _clover_rawio_read_size(_clover_rawio_index(size))
         raw = self._begin()
         try:
+            if size < -1:
+                raise ValueError('read length must be non-negative or -1')
             if size < 0:
                 return self._read_all(raw)
-            return self._read_sized(raw, size, False)
+            return self._read_sized(raw, size)
         finally:
             self._busy = False
 
@@ -1149,14 +1140,52 @@ class BufferedReader(BufferedIOBase):
         finally:
             self._busy = False
 
+    def _read_into(self, raw, buffer, size, one_raw):
+        written = 0
+        while written < size:
+            available = self._end - self._pos
+            if available:
+                take = size - written
+                if take > available:
+                    take = available
+                _clover_bufferedio_copy_into(buffer, written, self._buffer, self._pos, take)
+                self._pos += take
+                written += take
+                if written == size:
+                    break
+            remaining = size - written
+            if remaining > self._buffer_size:
+                scratch = bytearray(remaining)
+                count = self._raw_into(raw, scratch, remaining)
+                if count is not None and count > 0:
+                    _clover_bufferedio_copy_into(buffer, written, scratch, 0, count)
+                    written += count
+            elif one_raw and written:
+                break
+            else:
+                count = self._fill(raw)
+                if count is not None and count > 0:
+                    # Commit this successful transfer before another callback
+                    # can fail, including callbacks in a later loop iteration.
+                    take = remaining
+                    if take > count:
+                        take = count
+                    _clover_bufferedio_copy_into(buffer, written, self._buffer, self._pos, take)
+                    self._pos += take
+                    written += take
+            if count is None:
+                if written == 0:
+                    return None
+                break
+            if count == 0 or one_raw:
+                break
+        return written
+
     def readinto(self, buffer, /):
         size = _clover_bufferedio_readinto_size(self, buffer)
         raw = self._begin()
         try:
-            data = self._read_sized(raw, size, False)
-            if data is None:
-                return None
-            return _clover_bufferedio_finish_readinto(buffer, data, size)
+            return self._read_into(raw, buffer, size, False)
         finally:
             self._busy = False
 
@@ -1164,10 +1193,7 @@ class BufferedReader(BufferedIOBase):
         size = _clover_bufferedio_readinto_size(self, buffer)
         raw = self._begin()
         try:
-            data = self._read_sized(raw, size, True)
-            if data is None:
-                return None
-            return _clover_bufferedio_finish_readinto(buffer, data, size)
+            return self._read_into(raw, buffer, size, True)
         finally:
             self._busy = False
 
@@ -1190,6 +1216,8 @@ class BufferedReader(BufferedIOBase):
         raw = self._begin()
         try:
             self._raw_open(raw)
+            if not raw.seekable():
+                raise _clover_io_unsupported('File or stream is not seekable')
             if whence == 1:
                 offset -= self._end - self._pos
             position = _clover_rawio_read_size(_clover_rawio_index(raw.seek(offset, whence)))
