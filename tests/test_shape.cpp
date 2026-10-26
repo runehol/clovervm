@@ -1,4 +1,5 @@
 #include "builtin_types/float.h"
+#include "builtin_types/io_base.h"
 #include "builtin_types/list.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/tuple.h"
@@ -2265,4 +2266,47 @@ TEST(ConstructorAllocatorSelection, OSErrorRebuildsDoNotAllocateImmortalHelpers)
         context.vm().run_heap_reclamation();
     }
     EXPECT_EQ(immortal_before, immortal_heap.count_valid_objects_slow());
+}
+
+TEST(ConstructorAllocatorSelection, IOBaseRebuildsUseReclaimableAllocator)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ASSERT_FALSE(
+        context
+            .run_file(L"import io\nclass C(io.RawIOBase):\n    def "
+                      L"__init__(self, x):\n        self.x = x\nio.C = C\n")
+            .is_exception_marker());
+    // Resolve through the imported module, since run_file replaces main
+    // globals.
+    Value value = context.run_file(L"import io\nio.C\n");
+    ASSERT_TRUE(has_native_layout<ClassObject>(value));
+    Owned<TValue<ClassObject>> cls(
+        TValue<ClassObject>::from_value_assumed(value));
+    auto warm = cls.extract()->get_or_create_constructor_thunk();
+    ASSERT_FALSE(warm.has_exception());
+    ASSERT_TRUE(warm.value().is_found());
+    auto &heap = context.vm().get_interned_global_heap();
+    uint64_t before = heap.count_valid_objects_slow();
+    for(int i = 0; i < 100; ++i)
+    {
+        cls.extract()->invalidate_lookup_validity_cells_for_contents_change();
+        auto lookup = cls.extract()->get_or_create_constructor_thunk();
+        ASSERT_FALSE(lookup.has_exception());
+        ASSERT_TRUE(lookup.value().is_found());
+        CodeObject *code = lookup.value().thunk->code_object.extract();
+        uint32_t helpers = 0;
+        for(size_t idx = 0; idx < code->constant_table.size(); ++idx)
+        {
+            Value constant = code->constant_table[idx].value();
+            if(has_native_layout<CodeObject>(constant))
+            {
+                EXPECT_TRUE(constant.is_refcounted_ptr());
+                ++helpers;
+            }
+        }
+        EXPECT_EQ(1u, helpers);
+        context.vm().run_heap_reclamation();
+    }
+    EXPECT_EQ(before, heap.count_valid_objects_slow());
 }

@@ -358,6 +358,16 @@ namespace cl
                 // Builtins have an origin, but no filesystem __file__.
                 (void)io.extract()->delete_own_property(
                     interned_string(thread, L"__file__"));
+                for(auto entry:
+                    {std::pair{L"IOBase", NativeLayoutId::IOBase},
+                     std::pair{L"RawIOBase", NativeLayoutId::RawIOBase}})
+                {
+                    CL_TRY(io.extract()->set_own_property(
+                        machine->get_or_create_interned_string_value(
+                            entry.first),
+                        Value::from_oop(
+                            thread->class_for_native_layout(entry.second))));
+                }
                 CL_TRY(io.extract()->set_own_property(
                     machine->get_or_create_interned_string_value(L"FileIO"),
                     Value::from_oop(thread->class_for_native_layout(

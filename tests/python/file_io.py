@@ -172,13 +172,6 @@ try:
 except IsADirectoryError:
     pass
 try:
-    class Derived(io.FileIO):
-        pass
-    assert False
-except TypeError:
-    pass
-
-try:
     io.FileIO.__new__(object, path)
     assert False
 except TypeError:

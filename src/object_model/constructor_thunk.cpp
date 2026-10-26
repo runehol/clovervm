@@ -1,5 +1,6 @@
 #include "object_model/constructor_thunk.h"
 
+#include "builtin_types/io_base.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
@@ -395,6 +396,74 @@ namespace cl
                 CL_TRY(code.emit_mov(0, args + 1, 0));
                 CL_TRY(code.emit_call_code_object(0, finish_idx, args, 2));
             }
+            CodeObjectBuilder::TemporaryReg callable(code);
+            uint32_t init_idx =
+                CL_TRY(code.allocate_constant(init.raw_value()));
+            CL_TRY(code.emit_lda_constant(0, init_idx));
+            CL_TRY(code.emit_star(0, callable));
+            CodeObjectBuilder::TemporaryReg containers(code, 2);
+            CL_TRY(code.emit_create_list(0, instance, 1));
+            CL_TRY(code.emit_star(0, containers));
+            CL_TRY(code.emit_ldar(0, 0));
+            CL_TRY(code.emit_list_extend(0, containers));
+            CL_TRY(code.emit_list_to_tuple(0, containers));
+            CL_TRY(code.emit_mov(0, containers + 1, 1));
+            {
+                CodeObjectBuilder::TemporaryReg outgoing(
+                    code, 1, RegisterAlignment::CallFrame);
+                CL_TRY(
+                    code.emit_call_expanded(0, callable, containers, outgoing));
+            }
+            CL_TRY(code.emit_check_init_returned_none(0));
+            CL_TRY(code.emit_ldar(0, instance));
+            CL_TRY(code.emit_return(0));
+        }
+        return Expected<TValue<Function>>::ok(make_object_value<Function>(
+            TValue<CodeObject>::from_oop(CL_TRY(code.finalize())),
+            Optional<TValue<String>>::none()));
+    }
+
+    static Expected<CodeObject *> make_io_base_allocator_code()
+    {
+        CodeObjectBuilder code(nullptr, active_vm()->global_builtins_module(),
+                               make_internal_raw<Scope>(nullptr),
+                               interned_string(L"<io_base_allocator>"));
+        code.configure_positional_function(1);
+        NativeFunctionTarget target{};
+        target.fixed1 = allocate_io_base;
+        uint32_t idx = CL_TRY(code.add_native_function_target(target));
+        CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic1,
+                                        uint8_t(idx)));
+        CL_TRY(code.emit_return_or_raise_exception(0));
+        return code.finalize();
+    }
+
+    Expected<TValue<Function>>
+    make_io_base_constructor_thunk_function(ClassObject *cls,
+                                            TValue<Function> init)
+    {
+        VirtualMachine *vm = active_vm();
+        CodeObjectBuilder code(nullptr, vm->global_builtins_module(),
+                               make_internal_raw<Scope>(nullptr),
+                               interned_string(L"<io_base_constructor_thunk>"));
+        code.n_parameters() = 2;
+        code.parameter_flags() = FunctionParameterFlags::HasVarArgs |
+                                 FunctionParameterFlags::HasKwArgs;
+        code.reserve_parameter_slots_and_frame_header();
+        uint32_t cls_idx = CL_TRY(code.allocate_constant(Value::from_oop(cls)));
+        CodeObject *allocate = CL_TRY(make_io_base_allocator_code());
+        uint32_t allocate_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(allocate)));
+        {
+            CodeObjectBuilder::TemporaryReg instance(code);
+            {
+                CodeObjectBuilder::TemporaryReg args(
+                    code, 1, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_lda_constant(0, cls_idx));
+                CL_TRY(code.emit_star(0, args));
+                CL_TRY(code.emit_call_code_object(0, allocate_idx, args, 1));
+            }
+            CL_TRY(code.emit_star(0, instance));
             CodeObjectBuilder::TemporaryReg callable(code);
             uint32_t init_idx =
                 CL_TRY(code.allocate_constant(init.raw_value()));

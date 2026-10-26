@@ -135,6 +135,11 @@ Observable consequences include:
   raises an internal unsupported-descriptor error instead of invoking `__get__`;
 - class creation rejects values that require `__set_name__` notification instead
   of calling `descriptor.__set_name__(owner, name)`.
+- native-originated attribute reads and method calls can still reach an unchecked
+  descriptor loader and abort the process when a Python subclass supplies a
+  descriptor override. The shared boundary remains an
+  [open design issue](descriptor-execution.md#open-attribute-access-initiated-by-native-code);
+  it needs to be addressed across native callers rather than patched per class.
 
 Reason: the lookup planner needs descriptor awareness for correct precedence and
 cache guards, but invoking arbitrary Python code from those descriptor paths is a
@@ -344,8 +349,16 @@ construction. Explicit close and context-manager exit release owned descriptors;
 construction failures close descriptors opened during that attempt. Abandoned
 streams are intentionally not closed by reclamation or VM teardown.
 
-The IOBase/RawIOBase hierarchy, buffering, text I/O and builtin open remain
+Native IOBase/RawIOBase now form the FileIO base hierarchy. Their first slice
+provides close/flush, capabilities, context management and state checks; generic
+raw read/readall fallbacks and line iteration remain deferred. Base subclasses
+support custom Python initializers with the inherited native allocator. Closed
+attributes use native read-only slots rather than getset descriptors. Descriptor
+isatty and truncate remain unsupported; inherited isatty returns False.
+Buffering, text I/O and builtin open remain
 unimplemented. FileIO accepts string paths and stored integer descriptors; bytes
-paths, path/index protocols, general write buffers, unbounded reads and subclass
-construction/reinitialization are deferred. See [Native FileIO](file-io.md) for
-operation, validation, attribute-introspection and platform boundaries.
+paths, path/index protocols, general write buffers, unbounded reads, custom FileIO
+initializers and reinitialization are deferred. FileIO subclasses inherit the native constructor
+and can override methods and store additional attributes. See
+[Native FileIO](file-io.md) for operation, validation, attribute-introspection and
+platform boundaries.

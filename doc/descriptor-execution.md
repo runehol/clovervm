@@ -108,6 +108,37 @@ Builtin type files own trusted descriptor implementations and their trusted
 handler resolvers. The attribute system should ask a `CodeObject` resolver for a
 trusted ternary handler; it should not duplicate builtin descriptor semantics.
 
+## Open: attribute access initiated by native code
+
+Adversarial review of PR #79 at `e49d172a` (2026-10-26) exposed a boundary not
+settled by the bytecode execution design above: native implementations can read
+attributes or call methods that a Python subclass replaces with descriptors.
+A native receiver layout does not prove that Python-visible lookup is a direct
+slot read or function load.
+
+Two concrete examples are an IOBase subclass supplying a data descriptor for
+`closed`, then calling `_checkClosed()`, and a subclass supplying a descriptor
+for `flush`, then calling inherited `close()`. The current native paths use
+`load_attr` or `ThreadState::call_clovervm_method_with_args`, which can reach
+`load_attr_from_plan`'s fatal descriptor branch. Ordinary bytecode attribute
+access instead raises the current unsupported-descriptor `TypeError`.
+
+This is a general native-to-Python attribute/call boundary issue, not an IOBase
+special case. Audit other native callers of the unchecked lookup helpers when
+addressing it. Keep the solution open until a shared design settles:
+
+- how native-originated attribute reads execute descriptor plans;
+- how a descriptor-produced value participates in subsequent method/call binding;
+- how Python callbacks, exceptions, reentrancy, and retained receiver/result
+  lifetimes cross that boundary;
+- which callers can prove a direct read and legitimately use unchecked helpers;
+- behavior while descriptor execution remains unsupported, including avoiding
+  process termination from Python-controlled descriptor overrides.
+
+No per-class workaround or new native dispatch API is selected by this note.
+Regression coverage should include descriptor overrides reached from inherited
+native methods, not only descriptor reads issued by bytecode.
+
 ## Cache Policy
 
 The outer attribute-read inline cache is still guided by the receiver shape and
