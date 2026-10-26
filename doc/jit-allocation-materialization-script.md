@@ -814,9 +814,9 @@ It checks two classes of invariant:
      edge argument; helper bodies use their own parameters rather than source
      definitions directly.
 2. Physical flow:
-   - every operand's script definition has the representation and physical
-     location assigned to its occurrence's bundle and carries the symbolic
-     value required by the original occurrence;
+   - every operand's script definition has the required representation and
+     effective operand location, derived from the allocated bundle or applicable
+     copy/fixup requirement, and carries the original occurrence's symbolic value;
    - each planned move reads the symbolic value occupying its stated source
      location and establishes the same symbolic value at its destination;
    - writing a destination invalidates an unrelated previous occupant while
@@ -837,8 +837,26 @@ or reconstruction of those computations preserves that correspondence.
 Forwarding definitions and physical copies preserve their source's identity.
 Original block parameters establish block-local abstract input identities.
 
+Derive each operand's effective location independently from the allocation and
+applicable constraint/fixup records:
+
+- Ordinary operands use their occurrence's allocated bundle location.
+- A fixed-copy operand uses the destination specified by its fixed-copy request,
+  which may differ from its ordinary source bundle's location.
+- A reused-input operand uses the protected result-bundle location specified by
+  the matching reused-input fixup; the pre-instruction carrier contains the
+  original input value, not the instruction's not-yet-defined result value.
+
+Do not infer the effective requirement from the script's selected override.
+Check a copy's source against the required source carrier and its current value
+before the assignment, then check the operand's selected carrier against the
+effective destination at the operand's access timing. A no-op or grouped copy
+still has the same per-request requirement. Copies affect only their selected
+operands; later ordinary uses continue to use their own bundle requirements.
+
 At each operand use, check both the selected carrier's physical location against
-its allocated requirement and its symbolic identity against the original value.
+this independently derived effective requirement and its symbolic identity
+against the original value.
 Availability, representation, correct location, and faithful execution of moves
 are necessary but insufficient: a script can consistently move the wrong value
 into the right register. These checks also detect stale carrier bindings after
@@ -874,6 +892,24 @@ The definition must be available and the planned copies individually legal, so
 rejection specifically establishes the original-occurrence value check. Include
 the equivalent wrong-value case on a helper's outgoing edge: representation and
 destination location alone must not allow it to pass.
+
+Also require negative validator tests for operand-local location requirements:
+
+- Bind a fixed-copy operand to its ordinary source carrier when that carrier is
+  outside the required copy destination. The value and representation are right,
+  but the operand location is wrong, so validation must reject the script.
+- Copy the correct value into a different register from the request's fixed
+  destination and bind the operand to that copy. An available, correctly typed
+  copy is insufficient when it violates the actual requirement.
+- When reused-input support is implemented, bind its operand to a carrier
+  outside the protected result location and require rejection even if its value
+  is correct. Check that the instruction result subsequently uses that same
+  protected location with its new semantic identity.
+
+Retain positive coverage where the ordinary source stays in one location, the
+selected operand uses its required copy destination, and a later ordinary use
+still reads the original carrier. Include valid already-located no-op and shared
+copy results, so location checking does not incorrectly demand a new move.
 
 A realization audit checks that retained definitions keep their IDs, newly
 emitted definitions receive distinct IDs, and every surviving operand and edge
@@ -1004,7 +1040,11 @@ results through cycle/scratch legalization. Verify every per-request binding and
 accounting record survives grouping. Reject different-value or incompatible-
 representation requests for one destination, and keep sequential phases and
 separate edges distinct. Tests must not depend on incidental bundle, register,
-or instruction numbering.
+or instruction numbering. Derive effective operand locations from bundle and
+copy/fixup records; reject fixed-copy scripts that select the ordinary source
+outside the required destination or a correct-value copy in the wrong register.
+Apply the corresponding protected-location negative test when reused-input
+support is enabled, and retain positive ordinary-source/later-use coverage.
 
 ### 3. Realize block-local edits with reuse
 
@@ -1161,9 +1201,9 @@ Tests should establish:
 - normal and exception entries, loops, edges, parameters, and side-exit region
   references are preserved;
 - unchanged side-exit regions and their sharing survive owner reconstruction;
-- each operand occurrence resolves to its planned script definition and the
-  carrier for its allocated bundle, carrying the independently derived original
-  symbolic value; wrong-value/correct-location scripts fail validation for
+- each operand occurrence resolves to its planned script definition at the
+  independently derived bundle or applicable copy/fixup location, carrying the
+  independently derived original symbolic value; wrong-value/correct-location scripts fail validation for
   ordinary operands and outgoing helper arguments;
 - transfers create destination carriers without destroying still-live source
   carriers;
