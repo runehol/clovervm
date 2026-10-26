@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <climits>
+#include <cstring>
 #include <iterator>
 
 namespace cl
@@ -290,6 +291,47 @@ namespace cl
                                     result.extract()->data);
                     });
             return result.raw_value();
+        }
+
+        Value native_buffered_copy_into(ThreadState *thread, Value buffer,
+                                        Value offset, Value data,
+                                        Value source_offset, Value count)
+        {
+            auto destination = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                buffer, L"TypeError", L"destination must be bytearray"));
+            auto source = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                data, L"TypeError", L"source must be bytearray"));
+            auto start = CL_TRY(TValue<SMI>::from_value_or_raise(
+                offset, L"TypeError", L"invalid destination offset"));
+            auto source_start = CL_TRY(TValue<SMI>::from_value_or_raise(
+                source_offset, L"TypeError", L"invalid source offset"));
+            auto length = CL_TRY(TValue<SMI>::from_value_or_raise(
+                count, L"TypeError", L"invalid copy length"));
+            if(start.extract() < 0 || source_start.extract() < 0 ||
+               length.extract() < 0 ||
+               static_cast<size_t>(start.extract()) >
+                   destination.extract()->size() ||
+               static_cast<size_t>(length.extract()) >
+                   destination.extract()->size() -
+                       static_cast<size_t>(start.extract()) ||
+               static_cast<size_t>(source_start.extract()) >
+                   source.extract()->size() ||
+               static_cast<size_t>(length.extract()) >
+                   source.extract()->size() -
+                       static_cast<size_t>(source_start.extract()))
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"invalid readinto buffer range");
+            if(length.extract() != 0)
+                with_bytearray_writable_bytes(
+                    destination, [&](std::span<uint8_t> bytes) noexcept {
+                        // No allocation or callback can invalidate either
+                        // payload. memmove also permits an aliased scratch.
+                        std::memmove(bytes.data() + start.extract(),
+                                     source.extract()->view().data() +
+                                         source_start.extract(),
+                                     static_cast<size_t>(length.extract()));
+                    });
+            return Value::None();
         }
 
         Value native_buffered_read_count(ThreadState *thread, Value buffer,
@@ -662,6 +704,8 @@ namespace cl
                                      native_buffered_set_closed),
             builtin_intrinsic_method(L"_clover_bufferedio_copy",
                                      native_buffered_copy),
+            builtin_intrinsic_method(L"_clover_bufferedio_copy_into",
+                                     native_buffered_copy_into),
             builtin_intrinsic_method(L"_clover_bufferedio_read_count",
                                      native_buffered_read_count),
             builtin_intrinsic_method(L"_clover_bufferedio_bytes_size",
