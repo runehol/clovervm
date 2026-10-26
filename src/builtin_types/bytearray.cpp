@@ -469,6 +469,53 @@ namespace cl
         return del_index(array, CL_TRY(item_index_or_raise(index)));
     }
 
+    template <bool SliceKey>
+    static Value trusted_getitem(ThreadState *thread, Value self, Value index)
+    {
+        auto array = TValue<ByteArray>::from_value_assumed(self);
+        if constexpr(SliceKey)
+            return get_slice(thread, array, index);
+        else
+            return get_index(array, index.get_smi());
+    }
+
+    template <bool SliceKey>
+    static Value trusted_setitem(ThreadState *thread, Value self, Value index,
+                                 Value value)
+    {
+        auto array = TValue<ByteArray>::from_value_assumed(self);
+        if constexpr(SliceKey)
+            return set_slice(thread, array, index, value);
+        else
+            return set_index(array, index.get_smi(), value);
+    }
+
+    template <bool SliceKey>
+    static Value trusted_delitem(ThreadState *, Value self, Value index)
+    {
+        auto array = TValue<ByteArray>::from_value_assumed(self);
+        if constexpr(SliceKey)
+            return del_slice(array, index);
+        else
+            return del_index(array, index.get_smi());
+    }
+
+    template <auto SmiHandler, auto SliceHandler, TrustedHandlerArity Arity>
+    static TrustedResolution
+    resolve_item(VirtualMachine *vm, ShapeKey left, ShapeKey right,
+                 TrustedHandlerOperandOrder order, TrustedHandlerArity arity)
+    {
+        if(order != TrustedHandlerOperandOrder::Normal || arity != Arity ||
+           vm->shape_for_key(left)->get_class() != vm->bytearray_class())
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        if(right == ShapeKey::from_value(Value::from_smi(0)))
+            return TrustedResolution::call_trusted(SmiHandler);
+        if(right == ShapeKey::from_shape(vm->slice_step_none_shape()) ||
+           right == ShapeKey::from_shape(vm->slice_general_shape()))
+            return TrustedResolution::call_trusted(SliceHandler);
+        return TrustedResolution::no_trusted_handler_call_untrusted();
+    }
+
     template <bool NotEqual>
     static Value native_compare(ThreadState *, Value self, Value other)
     {
@@ -631,14 +678,40 @@ namespace cl
                                      TrustedHandlerEffects::None);
         vm->register_trusted_handler(trusted_compare<true>,
                                      TrustedHandlerEffects::None);
+        vm->register_trusted_handler(trusted_getitem<false>,
+                                     TrustedHandlerEffects::Raise);
+        vm->register_trusted_handler(trusted_getitem<true>,
+                                     TrustedHandlerEffects::Raise |
+                                         TrustedHandlerEffects::Allocate);
+        vm->register_trusted_handler(trusted_setitem<false>,
+                                     TrustedHandlerEffects::Raise);
+        // The RHS is not guarded by the IC. Every replay may enter Python.
+        vm->register_trusted_handler(trusted_setitem<true>,
+                                     TrustedHandlerEffects::Raise |
+                                         TrustedHandlerEffects::Allocate |
+                                         TrustedHandlerEffects::Safepoint |
+                                         TrustedHandlerEffects::CallPython);
+        vm->register_trusted_handler(trusted_delitem<false>,
+                                     TrustedHandlerEffects::Raise);
+        vm->register_trusted_handler(trusted_delitem<true>,
+                                     TrustedHandlerEffects::Raise);
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"__len__", native_len),
             builtin_intrinsic_method(L"__repr__", native_repr),
             builtin_intrinsic_method(L"__str__", native_repr),
             builtin_intrinsic_method(L"__iter__", native_iter),
-            builtin_intrinsic_method(L"__getitem__", native_getitem),
-            builtin_intrinsic_method(L"__setitem__", native_setitem),
-            builtin_intrinsic_method(L"__delitem__", native_delitem),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__getitem__", native_getitem),
+                resolve_item<trusted_getitem<false>, trusted_getitem<true>,
+                             TrustedHandlerArity::Binary>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__setitem__", native_setitem),
+                resolve_item<trusted_setitem<false>, trusted_setitem<true>,
+                             TrustedHandlerArity::Ternary>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__delitem__", native_delitem),
+                resolve_item<trusted_delitem<false>, trusted_delitem<true>,
+                             TrustedHandlerArity::Binary>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__eq__", native_compare<false>),
                 resolve_compare<false>),

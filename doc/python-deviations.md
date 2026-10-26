@@ -119,8 +119,9 @@ payloads (including supported integer subclasses) are accepted. Counts and
 growth are checked against the VM's SMI storage limit; heap exhaustion retains
 the existing fatal VM heap policy rather than recoverable `MemoryError`.
 
-Item access, assignment, and deletion enter native code. Slice assignment
-inspects the replacement on every call: bytes and distinct bytearrays copy directly into the destination,
+Item access, assignment, and deletion enter native code, with trusted handlers
+for SMI and slice keys. Slice assignment inspects the replacement on every
+cached call: bytes and distinct bytearrays copy directly into the destination,
 reusing spare capacity; self-assignment snapshots before modifying storage.
 Only the iterable fallback enters the managed snapshot loop.
 

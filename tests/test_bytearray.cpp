@@ -173,6 +173,109 @@ TEST(ByteArray, StoredPayloadExtensionReusesCapacityWithoutHeapAllocation)
     }
 }
 
+TEST(ByteArray, SliceSetterCacheCopiesStoredPayloadWithoutAllocating)
+{
+    for(bool from_bytes: {false, true})
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Value function_value =
+            context.run_file(L"def assign(target, key, value):\n"
+                             L"    target[key] = value\n"
+                             L"assign\n");
+        ASSERT_TRUE(has_native_layout<Function>(function_value));
+        Owned<TValue<Function>> function(
+            TValue<Function>::from_value_assumed(function_value));
+        Owned<Value> key(context.run_file(L"slice(1, 1)\n"));
+        ASSERT_FALSE(key.value().is_exception_marker());
+        Owned<TValue<ByteArray>> target(thread->make_object_value<ByteArray>());
+        target.extract()->items.reserve(64);
+        target.extract()->items.resize(2);
+        target.extract()->items[0] = 'A';
+        target.extract()->items[1] = 'B';
+        Owned<Value> source(
+            context.run_file(from_bytes ? L"b'CD'\n" : L"bytearray(b'CD')\n"));
+        ASSERT_FALSE(source.value().is_exception_marker());
+        ASSERT_EQ(Value::None(), thread->call_clovervm_function(
+                                     function.value(), target.raw_value(),
+                                     key.value(), source.value()));
+        auto *code = function.extract()->code_object.extract();
+        ASSERT_EQ(1u, code->inline_caches.operator_caches.size());
+        const auto &cache = code->inline_caches.operator_caches[0];
+        ASSERT_FALSE(cache.trusted_handler.is_null());
+        auto metadata = context.vm().trusted_handler_metadata(
+            cache.trusted_handler.target(TrustedHandlerArity::Ternary));
+        ASSERT_TRUE(metadata.has_value());
+        EXPECT_EQ(TrustedHandlerEffects::Raise |
+                      TrustedHandlerEffects::Allocate |
+                      TrustedHandlerEffects::Safepoint |
+                      TrustedHandlerEffects::CallPython,
+                  metadata->effects);
+        target.extract()->items.resize(2);
+        target.extract()->items[1] = 'B';
+        context.vm().clear_safepoint_request();
+        const void *backing = target.extract()->items.data();
+        auto &heap = context.vm().get_refcounted_global_heap();
+        auto &interned = context.vm().get_interned_global_heap();
+        auto objects_before = heap.count_valid_objects_slow();
+        auto interned_before = interned.count_valid_objects_slow();
+        ASSERT_EQ(Value::None(), thread->call_clovervm_function(
+                                     function.value(), target.raw_value(),
+                                     key.value(), source.value()));
+        EXPECT_EQ(objects_before, heap.count_valid_objects_slow());
+        EXPECT_EQ(interned_before, interned.count_valid_objects_slow());
+        EXPECT_EQ(backing, target.extract()->items.data());
+        EXPECT_EQ(64u, target.extract()->items.capacity());
+        const uint8_t expected[] = {'A', 'C', 'D', 'B'};
+        EXPECT_TRUE(std::equal(target.extract()->view().begin(),
+                               target.extract()->view().end(),
+                               std::begin(expected), std::end(expected)));
+    }
+}
+
+TEST(ByteArray, ItemOperatorsCacheSmiAndSliceHandlers)
+{
+    for(const wchar_t *body: {L"def op(a, k):\n    return a[k]\nop\n",
+                              L"def op(a, k):\n    a[k] = 65\nop\n",
+                              L"def op(a, k):\n    del a[k]\nop\n",
+                              L"def op(a, k):\n    a[k] = b'AB'\nop\n"})
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<Function>> function(
+            TValue<Function>::from_value_assumed(context.run_file(body)));
+        bool set = std::wstring(body).find(L"a[k] =") != std::wstring::npos;
+        bool scalar_set =
+            std::wstring(body).find(L"= 65") != std::wstring::npos;
+        for(const wchar_t *key_source:
+            {L"0\n", L"slice(None)\n", L"slice(None, None, -1)\n"})
+        {
+            if((scalar_set && key_source[0] != L'0') ||
+               (set && !scalar_set && key_source[0] == L'0'))
+                continue;
+            Owned<Value> key(context.run_file(key_source));
+            for(int repeat = 0; repeat < 2; ++repeat)
+            {
+                Owned<Value> target(context.run_file(L"bytearray(b'CD')\n"));
+                ASSERT_FALSE(thread
+                                 ->call_clovervm_function(function.value(),
+                                                          target.value(),
+                                                          key.value())
+                                 .is_exception_marker());
+                const auto &caches = function.extract()
+                                         ->code_object.extract()
+                                         ->inline_caches.operator_caches;
+                ASSERT_EQ(1u, caches.size());
+                ASSERT_FALSE(caches[0].trusted_handler.is_null());
+                EXPECT_TRUE(
+                    caches[0].matches_binary(target.value(), key.value()));
+            }
+        }
+    }
+}
+
 TEST(ByteArray, ConstructionAndBasicMutationSurviveCollection)
 {
     test::VmTestContext context;
