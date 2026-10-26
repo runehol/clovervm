@@ -1,5 +1,15 @@
 # Native FileIO
 
+| Field | Value |
+|---|---|
+| Document type | Architecture contract |
+| Status | Accepted |
+| Implementation | Implemented |
+| Scope | Native unbuffered FileIO layout, POSIX operations, descriptor ownership, and explicit cleanup |
+| Owning layers | Native object and stream semantics; POSIX backend; Python module exports; runtime reference metadata |
+| Validated against | `ff44559b` (2026-10-26) |
+| Supersedes | N/A |
+
 The first `io` slice exports one native `_io.FileIO` through `stdlib/io.py`.
 It is an exact, non-subclassable raw binary stream; the `IOBase`/`RawIOBase`
 hierarchy, buffered streams, text streams and builtin `open` are separate work.

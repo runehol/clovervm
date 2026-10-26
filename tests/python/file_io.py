@@ -5,7 +5,8 @@ import os
 assert io.FileIO is _io.FileIO
 assert issubclass(io.UnsupportedOperation, OSError)
 assert issubclass(io.UnsupportedOperation, ValueError)
-path = "build-debug/clover-fileio-" + str(os.getpid())
+# CTest may use any build directory; this fixture needs only its working directory.
+path = "clover-fileio-" + str(os.getpid())
 
 with io.FileIO(path, "wb") as f:
     assert not f.closed
