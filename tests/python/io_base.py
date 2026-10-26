@@ -76,9 +76,15 @@ class Stream(io.RawIOBase):
 
 s = Stream(3, other=10)
 assert not s.closed and s.value == 3 and s.other == 10
-assert s._checkReadable() is None
-assert s._checkWritable() is None
-assert s._checkSeekable() is None
+try:
+    s._checkReadable()
+    assert False
+except io.UnsupportedOperation:
+    pass
+s.value = True
+assert s._checkReadable() is True
+assert s._checkWritable() is True
+assert s._checkSeekable() is True
 assert s.tell() == 11
 s.close()
 

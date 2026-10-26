@@ -100,12 +100,10 @@ namespace cl
             Owned<Value> result(
                 thread->call_clovervm_method(self, interned_string(Name)));
             CL_PROPAGATE_EXCEPTION(result.value());
-            Value yes = truth(thread, result.value());
-            CL_PROPAGATE_EXCEPTION(yes);
-            if(yes == Value::False())
+            if(result.value() != Value::True())
                 return thread->set_pending_builtin_exception_string(
                     L"UnsupportedOperation", Name);
-            return Value::None();
+            return Value::True();
         }
         constexpr wchar_t readable[] = L"readable";
         constexpr wchar_t writable[] = L"writable";

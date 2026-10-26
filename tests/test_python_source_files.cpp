@@ -141,7 +141,8 @@ TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
 TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
 {
     for(const char *path:
-        {"tests/python/io_base.py", "tests/python/io_context_exit.py"})
+        {"tests/python/io_base.py", "tests/python/io_context_exit.py",
+         "tests/python/io_capability_checks.py"})
     {
         std::wstring source = read_source_file(path);
         cl::test::VmTestContext context;
