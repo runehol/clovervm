@@ -7484,11 +7484,16 @@ TEST(Interpreter, python_defined_len_builtin_missing_method_error)
 TEST(Interpreter, python_defined_hash_builtin_matches_runtime_string_hash)
 {
     test::VmTestContext test_context;
-
-    TValue<String> abc =
-        test_context.thread()->make_object_value<String>(L"abc");
-    EXPECT_EQ(string_hash_normalized(abc).raw_value(),
-              test_context.run_file(L"hash('abc')\n"));
+    ThreadState::ActivationScope activation(test_context.thread());
+    Owned<TValue<String>> abc(
+        test_context.thread()->make_object_value<String>(L"abc"));
+    test_context.vm().set_fire_every_safepoint_for_testing(true);
+    test_context.vm().request_safepoint();
+    // Compute the managed result first so the fixture must survive collection,
+    // regardless of the compiler's function-argument evaluation order.
+    Value actual = test_context.run_file(L"hash('abc')\n");
+    ASSERT_TRUE(actual.is_smi());
+    EXPECT_EQ(string_hash_normalized(abc.value()).raw_value(), actual);
 }
 
 TEST(Interpreter, python_defined_hash_builtin_rejects_non_integer_hash_result)
