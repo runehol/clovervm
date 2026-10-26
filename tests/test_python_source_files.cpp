@@ -140,11 +140,15 @@ TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
 
 TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
 {
-    std::wstring source = read_source_file("tests/python/io_base.py");
-    cl::test::VmTestContext context;
-    context.vm().set_fire_every_safepoint_for_testing(true);
-    context.vm().request_safepoint();
-    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    for(const char *path:
+        {"tests/python/io_base.py", "tests/python/io_context_exit.py"})
+    {
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
 }
 
 TEST(OSErrorReclamation, ConstructorAndLatentAttributes)

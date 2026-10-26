@@ -70,8 +70,10 @@ a failed OS close raises OSError and leaves the stream closed. Close is not
 retried after EINTR because the numeric descriptor may already have been reused.
 Borrowing streams detach without closing the caller's descriptor.
 
-`__enter__` rejects closed streams and returns the stream. `__exit__` closes the
-stream and does not suppress a body exception. There is deliberately **no cleanup
+`__enter__` rejects closed streams and returns the stream. `__exit__` dynamically
+calls `self.close()` and returns its result. The default close returns None and
+does not suppress a body exception; an overridden close returning a truthy value
+can suppress it, matching CPython. There is deliberately **no cleanup
 on abandonment, heap reclamation, or VM teardown**. Unclosed descriptors remain
 open until process exit. No finalizer, GC hook, or resource registry is installed.
 

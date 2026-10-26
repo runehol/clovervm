@@ -154,29 +154,78 @@ TEST(FileIO, DirectBaseClosePreservesDescriptorButFlushUsesBaseState)
 
 TEST(FileIO, FailedFlushStillClosesAndCloseErrorWins)
 {
-    for(bool close_error: {false, true})
+    for(const wchar_t *flush_error: {L"ZeroDivisionError", L"StopIteration"})
+    {
+        for(bool close_error: {false, true})
+        {
+            TestFd fd(temporary_fd());
+            ASSERT_GE(fd.fd, 0);
+            test::VmTestContext context;
+            ASSERT_EQ(
+                Value::None(),
+                run(context, L"io.f = io.FileIO(" + std::to_wstring(fd.fd) +
+                                 L")\n"
+                                 L"io.calls = 0\n"
+                                 L"def fail():\n    io.calls += 1\n    " +
+                                 (std::wstring(flush_error) == L"StopIteration"
+                                      ? L"next(iter(()))\n"
+                                      : L"raise ZeroDivisionError('flush')\n") +
+                                 L"io.f.flush = fail\nNone\n"));
+            int number = fd.release();
+            if(close_error)
+                ASSERT_EQ(0, close(number));
+            std::wstring check_errno =
+                close_error ? L"    assert error.errno == " +
+                                  std::to_wstring(EBADF) + L"\n"
+                : std::wstring(flush_error) == L"StopIteration"
+                    ? L"    assert error.args == ()\n"
+                    : L"    assert str(error) == 'flush'\n";
+            EXPECT_EQ(
+                Value::True(),
+                run(context,
+                    std::wstring(
+                        L"try:\n    io.f.close()\n    assert False\nexcept ") +
+                        (close_error ? L"OSError" : flush_error) +
+                        L" as error:\n" + check_errno +
+                        L"assert io.f.closed\n"
+                        L"try:\n    io.IOBase.flush(io.f)\n    assert "
+                        L"False\nexcept ValueError:\n    pass\n"
+                        L"assert io.f.close() is None\nassert io.calls == "
+                        L"1\nTrue\n"));
+            EXPECT_EQ(-1, fcntl(number, F_GETFD));
+            EXPECT_EQ(EBADF, errno);
+        }
+    }
+}
+
+TEST(FileIO, FailedFlushDetachesBorrowedDescriptorWithoutClosingIt)
+{
+    for(const wchar_t *flush_error: {L"ZeroDivisionError", L"StopIteration"})
     {
         TestFd fd(temporary_fd());
         ASSERT_GE(fd.fd, 0);
         test::VmTestContext context;
-        EXPECT_EQ(Value::None(),
+        EXPECT_EQ(Value::True(),
                   run(context,
                       L"io.f = io.FileIO(" + std::to_wstring(fd.fd) +
-                          L")\n"
-                          L"def fail():\n    raise ZeroDivisionError('flush')\n"
-                          L"io.f.flush = fail\nNone\n"));
-        int number = fd.release();
-        if(close_error)
-            ASSERT_EQ(0, close(number));
-        EXPECT_EQ(
-            Value::True(),
-            run(context,
-                std::wstring(
-                    L"try:\n    io.f.close()\n    assert False\nexcept ") +
-                    (close_error ? L"OSError" : L"ZeroDivisionError") +
-                    L":\n    pass\nassert io.f.closed\nio.f.close()\nTrue\n"));
-        EXPECT_EQ(-1, fcntl(number, F_GETFD));
-        EXPECT_EQ(EBADF, errno);
+                          L", closefd=False)\n"
+                          L"io.calls = 0\n"
+                          L"def fail():\n    io.calls += 1\n    " +
+                          (std::wstring(flush_error) == L"StopIteration"
+                               ? L"next(iter(()))\n"
+                               : L"raise ZeroDivisionError('flush')\n") +
+                          L"io.f.flush = fail\n"
+                          L"try:\n    io.f.close()\n    assert False\nexcept " +
+                          std::wstring(flush_error) +
+                          L":\n    pass\n"
+                          L"assert io.f.closed\n"
+                          L"try:\n    io.IOBase.flush(io.f)\n    assert "
+                          L"False\nexcept ValueError:\n    pass\n"
+                          L"assert io.f.close() is None\nassert io.calls == "
+                          L"1\nTrue\n"));
+        EXPECT_GE(fcntl(fd.fd, F_GETFD), 0);
+        char byte;
+        EXPECT_EQ(0, read(fd.fd, &byte, 1));
     }
 }
 
