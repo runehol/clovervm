@@ -28,6 +28,7 @@ namespace cl
     FileResult platform_file_validate(int fd);
     FileResult platform_file_read(int fd, void *data, size_t size);
     FileResult platform_file_write(int fd, const void *data, size_t size);
+    bool platform_file_seek_whence_is_valid(int whence);
     FileResult platform_file_seek(int fd, int64_t offset, int whence);
     FileResult platform_file_close(int fd);
 }  // namespace cl

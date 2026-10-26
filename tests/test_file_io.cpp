@@ -502,6 +502,64 @@ TEST(FileIO, ReadAllReturnsAvailablePipeDataOrNoneBeforeEOF)
     EXPECT_GE(fcntl(reader.fd, F_GETFD), 0);
 }
 
+TEST(BufferedReader, NonblockingPipeAndExplicitClose)
+{
+    int descriptors[2];
+    ASSERT_EQ(0, pipe(descriptors));
+    TestFd reader(descriptors[0]);
+    TestFd writer(descriptors[1]);
+    ASSERT_EQ(0, fcntl(reader.fd, F_SETFL, O_NONBLOCK));
+    test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_EQ(
+        Value::None(),
+        run(context,
+            L"io.raw = io.FileIO(" + std::to_wstring(reader.fd) +
+                L", closefd=False)\n"
+                L"io.reader = io.BufferedReader(io.raw, 4)\n"
+                L"assert io.reader.read(2) is None\n"
+                L"assert io.reader.read1(2) == b''\n"
+                L"assert io.reader.peek() == b''\n"
+                L"assert io.reader.readinto(bytearray(2)) is None\n"
+                L"assert io.reader.readinto1(bytearray(2)) is None\nNone\n"));
+    ASSERT_EQ(3, write(writer.fd, "ABC", 3));
+    EXPECT_EQ(Value::None(),
+              run(context, L"assert io.reader.read(1) == b'A'\n"
+                           L"assert io.reader.peek() == b'BC'\n"
+                           L"assert io.reader.read(5) == b'BC'\n"
+                           L"assert io.reader.read() is None\nNone\n"));
+    ASSERT_EQ(2, write(writer.fd, "DE", 2));
+    EXPECT_EQ(Value::None(),
+              run(context, L"io.destination = bytearray(b'....')\n"
+                           L"assert io.reader.readinto1(io.destination) == 2\n"
+                           L"assert io.destination == b'DE..'\nNone\n"));
+    ASSERT_EQ(0, close(writer.release()));
+    EXPECT_EQ(Value::None(),
+              run(context, L"assert io.reader.read(2) == b''\n"
+                           L"assert io.reader.read() == b''\n"
+                           L"io.reader.close()\nassert io.reader.closed and "
+                           L"io.raw.closed\nNone\n"));
+    EXPECT_GE(fcntl(reader.fd, F_GETFD), 0);
+}
+
+TEST(BufferedReader, AbandonmentDoesNotCloseOwnedDescriptor)
+{
+    TestFd descriptor(temporary_fd());
+    ASSERT_GE(descriptor.fd, 0);
+    {
+        test::VmTestContext context;
+        EXPECT_EQ(Value::None(),
+                  run(context, L"io.reader = io.BufferedReader(io.FileIO(" +
+                                   std::to_wstring(descriptor.fd) +
+                                   L"))\n"
+                                   L"del io.reader\nNone\n"));
+        context.vm().run_heap_reclamation();
+        EXPECT_GE(fcntl(descriptor.fd, F_GETFD), 0);
+    }
+    EXPECT_GE(fcntl(descriptor.fd, F_GETFD), 0);
+}
+
 TEST(FileIO, PathOpenIsNonInheritable)
 {
     test::VmTestContext context;
