@@ -100,6 +100,13 @@ while the combined `__new__`/`__init__` protocol remains incomplete.
 To close: implement the full combined constructor protocol, then restore the
 CPython allocation/population split.
 
+### `bytearray` provides a bounded mutable byte container
+
+The initial bytearray slice provides traced, growable native byte storage,
+new-only empty/count/stored-bytes/iterable construction, length, append and
+clear. Reinitialization, subclassing, encoded-string construction, general
+index/buffer protocols and recoverable heap exhaustion remain unavailable.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object

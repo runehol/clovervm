@@ -1,0 +1,197 @@
+#include "builtin_types/bytearray.h"
+#include "builtin_types/bytes.h"
+#include "builtin_types/int.h"
+#include "builtin_types/module_object.h"
+#include "object_model/class_object.h"
+#include "object_model/native_function.h"
+#include "runtime/exception_propagation.h"
+#include "runtime/thread_state.h"
+#include "runtime/virtual_machine.h"
+#include <algorithm>
+#include <string>
+
+namespace cl
+{
+    static Expected<TValue<ByteArray>> receiver(Value self,
+                                                const wchar_t *method)
+    {
+        if(!has_native_layout<ByteArray>(self))
+        {
+            std::wstring message = L"bytearray.";
+            message += method;
+            message += L" expects a bytearray receiver";
+            return Expected<TValue<ByteArray>>::raise_exception(
+                L"TypeError", message.c_str());
+        }
+        return Expected<TValue<ByteArray>>::ok(
+            TValue<ByteArray>::from_value_assumed(self));
+    }
+
+    static Expected<size_t> checked_size(size_t count)
+    {
+        // RawArray growth doubles capacity up to the SMI limit. uint8_t storage
+        // plus header, heap alignment and slab offset fit size_t in that range.
+        static_assert(static_cast<uint64_t>(value_smi_max) < SIZE_MAX / 2);
+        if(count > static_cast<size_t>(value_smi_max))
+            return Expected<size_t>::raise_exception(
+                L"OverflowError", L"bytearray size exceeds storage limit");
+        return Expected<size_t>::ok(count);
+    }
+
+    static Expected<uint8_t> byte_value(Value item)
+    {
+        if(item.is_smi())
+        {
+            int64_t byte = item.get_smi();
+            if(byte < 0 || byte > 255)
+                return Expected<uint8_t>::raise_exception(
+                    L"ValueError", L"byte must be in range(0, 256)");
+            return Expected<uint8_t>::ok(static_cast<uint8_t>(byte));
+        }
+        if(!is_intlike_value(item))
+            return Expected<uint8_t>::raise_exception(
+                L"TypeError", L"byte must be an integer");
+        SmiViewStorage storage, lower_storage, upper_storage;
+        auto view = intlike_value_bigint_view(item, &storage);
+        if(compare_bigint(view, smi_bigint_view(0, &lower_storage)) < 0 ||
+           compare_bigint(view, smi_bigint_view(255, &upper_storage)) > 0)
+            return Expected<uint8_t>::raise_exception(
+                L"ValueError", L"byte must be in range(0, 256)");
+        return Expected<uint8_t>::ok(
+            static_cast<uint8_t>(CL_TRY(bigint_to_int64(view))));
+    }
+
+    static Value allocate(ThreadState *thread, Value cls)
+    {
+        if(cls != Value::from_oop(thread->get_machine()->bytearray_class()))
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"bytearray.__new__ expects bytearray as cls");
+        return thread->make_object_value<ByteArray>().raw_value();
+    }
+
+    // Return False only when managed iteration is required. Strings must fail
+    // here, including empty strings, rather than accidentally becoming empty.
+    static Value initialize_native(ThreadState *thread, Value self,
+                                   Value source)
+    {
+        auto array = CL_TRY(receiver(self, L"__new__"));
+        if(is_intlike_value(source))
+        {
+            SmiViewStorage storage;
+            int64_t count = CL_TRY(
+                bigint_to_int64(intlike_value_bigint_view(source, &storage)));
+            if(count < 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"negative count");
+            array.extract()->items.resize(
+                CL_TRY(checked_size(static_cast<size_t>(count))));
+            return Value::True();
+        }
+        std::span<const uint8_t> bytes;
+        if(has_native_layout<Bytes>(source))
+            bytes = bytes_view(TValue<Bytes>::from_value_assumed(source));
+        else if(has_native_layout<ByteArray>(source))
+            bytes = source.get_ptr<ByteArray>()->view();
+        else if(has_native_layout<String>(source))
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"string argument without an encoding");
+        else
+            return Value::False();
+        // Called only with a fresh, private destination, never self-aliasing.
+        assert(self != source);
+        array.extract()->items.resize(CL_TRY(checked_size(bytes.size())));
+        std::copy(bytes.begin(), bytes.end(), array.extract()->items.data());
+        return Value::True();
+    }
+
+    static Value native_len(ThreadState *, Value self)
+    {
+        return CL_TRY(receiver(self, L"__len__"))
+            .extract()
+            ->items.len()
+            .raw_value();
+    }
+
+    static Value native_append(ThreadState *, Value self, Value item)
+    {
+        auto array = CL_TRY(receiver(self, L"append"));
+        uint8_t byte = CL_TRY(byte_value(item));
+        (void)CL_TRY(checked_size(array.extract()->size() + 1));
+        array.extract()->items.push_back(byte);
+        return Value::None();
+    }
+
+    static Value native_clear(ThreadState *, Value self)
+    {
+        CL_TRY(receiver(self, L"clear")).extract()->items.clear();
+        return Value::None();
+    }
+
+    BuiltinClassDefinition make_bytearray_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId layouts[] = {NativeLayoutId::ByteArray};
+        auto cls = ClassObject::make_builtin_class<ByteArray>(
+            vm->get_or_create_interned_string_value(L"bytearray"), 0, nullptr,
+            0, vm->object_class(), SubclassPolicy::Disallowed);
+        return builtin_class_definition(cls, layouts,
+                                        BuiltinsVisibility::Public);
+    }
+    void install_bytearray_class_methods(VirtualMachine *vm)
+    {
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__len__", native_len),
+            builtin_intrinsic_method(L"append", native_append),
+            builtin_intrinsic_method(L"clear", native_clear)};
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->bytearray_class(),
+                                              methods, std::size(methods)),
+            "installing bytearray methods");
+        bool stored = vm->bytearray_class()->define_own_property(
+            vm->get_or_create_interned_string_value(L"__hash__"), Value::None(),
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+                descriptor_flag(DescriptorFlag::StableSlot));
+        assert(stored);
+        (void)stored;
+    }
+    void install_bytearray_helpers(VirtualMachine *vm, ModuleObject *module)
+    {
+        BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bytearray_allocate", allocate),
+            builtin_intrinsic_method(L"_clover_bytearray_initialize_native",
+                                     initialize_native),
+            builtin_intrinsic_method(L"_clover_bytearray_append",
+                                     native_append)};
+        for(const auto &helper: helpers)
+        {
+            auto function = unwrap_bootstrap_expected(
+                vm, make_intrinsic_function(vm, helper),
+                "creating bytearray helper");
+            unwrap_bootstrap_expected(
+                vm,
+                module->set_own_property(
+                    vm->get_or_create_interned_string_value(helper.name),
+                    function.raw_value()),
+                "installing bytearray helper");
+        }
+    }
+    void install_bytearray_python_methods(VirtualMachine *vm,
+                                          ModuleObject *module)
+    {
+        const wchar_t *names[] = {L"__new__"};
+        const wchar_t *helpers[] = {L"_clover_bytearray_new"};
+        for(size_t n = 0; n < std::size(names); ++n)
+        {
+            Value function = module->get_own_property(
+                vm->get_or_create_interned_string_value(helpers[n]));
+            if(!has_native_layout<Function>(function))
+                fatal("missing bytearray Python method");
+            bool stored = vm->bytearray_class()->define_own_property(
+                vm->get_or_create_interned_string_value(names[n]), function,
+                descriptor_flag(DescriptorFlag::ReadOnly) |
+                    descriptor_flag(DescriptorFlag::StableSlot));
+            assert(stored);
+            (void)stored;
+        }
+    }
+}  // namespace cl

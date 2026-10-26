@@ -13,6 +13,7 @@ set_target_properties(test_clovervm PROPERTIES
 enable_sanitizers(test_clovervm)
 
 target_sources(test_clovervm PRIVATE
+	test_bytearray.cpp
 	test_bigint.cpp
 	test_bytecode.cpp
 	test_codegen.cpp

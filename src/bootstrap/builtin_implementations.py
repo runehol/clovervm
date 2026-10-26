@@ -827,3 +827,14 @@ def _clover_zip_next(self, /):
             "zip() argument " + str(j + 1) + " is longer than argument" + suffix
         )
     raise StopIteration
+
+
+# bytearray uses the same new-only construction boundary as dict. Native
+# storage operations never enter Python; callbacks live in these managed loops.
+def _clover_bytearray_new(cls, /, source=()):
+    result = _clover_bytearray_allocate(cls)
+    if _clover_bytearray_initialize_native(result, source):
+        return result
+    for item in source:
+        _clover_bytearray_append(result, item)
+    return result

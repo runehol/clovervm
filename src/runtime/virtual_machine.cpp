@@ -4,6 +4,7 @@
 #include "bootstrap/builtins.h"
 #include "build_config.h"
 #include "builtin_types/bool.h"
+#include "builtin_types/bytearray.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/dict_view.h"
@@ -1074,6 +1075,7 @@ namespace cl
             0, 0, immutable_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_bytes_class(this));
+        register_builtin_class(make_bytearray_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_slotdict_class(this));
         register_builtin_class(make_slice_class(this));
@@ -1239,6 +1241,7 @@ namespace cl
         install_os_error_methods(this);
         install_str_class_methods(this);
         install_bytes_class_methods(this);
+        install_bytearray_class_methods(this);
         install_int_class_methods(this);
         install_bool_class_methods(this);
         install_none_type_class_methods(this);
@@ -1506,18 +1509,20 @@ namespace cl
                 "creating mapping error helper")
                 .raw_value());
 
+        install_bytearray_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
         install_zip_helpers(this, implementation_module);
 
         // Seed dependencies explicitly: empty __builtins__ disables public
         // fallback.
         const wchar_t *seed_names[] = {
-            L"list",           L"tuple",      L"slice",
-            L"dict",           L"int",        L"str",
-            L"object",         L"isinstance", L"TypeError",
-            L"ValueError",     L"IndexError", L"StopIteration",
-            L"NotImplemented", L"True",       L"False",
-            L"None",           L"Ellipsis",   L"AttributeError"};
+            L"list",       L"tuple",         L"slice",
+            L"bytearray",  L"bytes",         L"dict",
+            L"int",        L"str",           L"object",
+            L"isinstance", L"TypeError",     L"ValueError",
+            L"IndexError", L"StopIteration", L"NotImplemented",
+            L"True",       L"False",         L"None",
+            L"Ellipsis",   L"AttributeError"};
         for(const wchar_t *name: seed_names)
         {
             TValue<String> key = get_or_create_interned_string_value(name);
@@ -1613,6 +1618,7 @@ namespace cl
             }
             install_builtin_binding(key, function);
         }
+        install_bytearray_python_methods(this, implementation_module);
         install_dict_python_methods(this, implementation_module);
         install_list_python_methods(this, implementation_module);
         install_tuple_python_methods(this, implementation_module);
