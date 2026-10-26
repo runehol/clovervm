@@ -135,6 +135,11 @@ Observable consequences include:
   raises an internal unsupported-descriptor error instead of invoking `__get__`;
 - class creation rejects values that require `__set_name__` notification instead
   of calling `descriptor.__set_name__(owner, name)`.
+- native-originated attribute reads and method calls can still reach an unchecked
+  descriptor loader and abort the process when a Python subclass supplies a
+  descriptor override. The shared boundary remains an
+  [open design issue](descriptor-execution.md#open-attribute-access-initiated-by-native-code);
+  it needs to be addressed across native callers rather than patched per class.
 
 Reason: the lookup planner needs descriptor awareness for correct precedence and
 cache guards, but invoking arbitrary Python code from those descriptor paths is a
