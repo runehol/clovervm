@@ -14,6 +14,7 @@
 #include "runtime/runtime_helpers.h"
 #include <algorithm>
 #include <cerrno>
+#include <climits>
 #include <iterator>
 
 namespace cl
@@ -158,13 +159,95 @@ namespace cl
         }
         Value native_raw_validate(ThreadState *thread, Value self)
         {
-            if(!self.is_ptr() || (self.get_ptr<Object>()->native_layout_id() !=
-                                      NativeLayoutId::RawIOBase &&
-                                  self.get_ptr<Object>()->native_layout_id() !=
-                                      NativeLayoutId::FileIO))
+            if(!self.is_ptr() ||
+               !is_io_base_layout(self.get_ptr<Object>()->native_layout_id()) ||
+               !is_instance_of(
+                   self.get_ptr<Object>(),
+                   thread->class_for_native_layout(NativeLayoutId::RawIOBase)))
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", L"RawIOBase method requires a raw stream");
             return Value::None();
+        }
+
+        Value native_buffered_validate(ThreadState *thread, Value self)
+        {
+            if(!self.is_ptr() ||
+               !is_io_base_layout(self.get_ptr<Object>()->native_layout_id()) ||
+               !is_instance_of(self.get_ptr<Object>(),
+                               thread->class_for_native_layout(
+                                   NativeLayoutId::BufferedIOBase)))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError",
+                    L"BufferedIOBase method requires a buffered stream");
+            return Value::None();
+        }
+
+        Value native_buffered_read_size(ThreadState *thread, Value size)
+        {
+            if(!is_intlike_value(size))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"read size must be an integer");
+            SmiViewStorage storage;
+            int64_t count = CL_TRY(
+                bigint_to_int64(intlike_value_bigint_view(size, &storage)));
+            // The abstract stubs use C int, unlike raw read's index-sized size.
+            if(count < INT_MIN || count > INT_MAX)
+                return thread->set_pending_builtin_exception_string(
+                    L"OverflowError",
+                    L"Python int too large to convert to C int");
+            return Value::None();
+        }
+
+        Value native_buffered_readinto_size(ThreadState *thread, Value self,
+                                            Value buffer)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            auto destination = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                buffer, L"TypeError",
+                L"readinto destination must be bytearray"));
+            return Value::from_smi(
+                static_cast<int64_t>(destination.extract()->size()));
+        }
+
+        Value native_buffered_finish_readinto(ThreadState *thread, Value buffer,
+                                              Value data, Value requested)
+        {
+            Owned<TValue<ByteArray>> destination(
+                CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                    buffer, L"TypeError",
+                    L"readinto destination must be bytearray")));
+            Owned<TValue<Bytes>> source(
+                CL_TRY(TValue<Bytes>::from_value_or_raise(
+                    data, L"TypeError", L"read() should return bytes")));
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested read size"));
+            int64_t count = source.extract()->count.value().extract();
+            if(count > bound.extract() ||
+               static_cast<size_t>(count) > destination.extract()->size())
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"read() returned more bytes than the "
+                                   L"destination can hold");
+            if(count != 0)
+                with_bytearray_writable_bytes(
+                    destination.value(),
+                    [&](std::span<uint8_t> bytes) noexcept {
+                        std::copy_n(source.extract()->data,
+                                    static_cast<size_t>(count), bytes.data());
+                    });
+            return Value::from_smi(count);
+        }
+
+        Value native_buffered_write(ThreadState *thread, Value self, Value)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            return thread->set_pending_builtin_exception_string(
+                L"UnsupportedOperation", L"write");
+        }
+        Value native_buffered_detach(ThreadState *thread, Value self)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            return thread->set_pending_builtin_exception_string(
+                L"UnsupportedOperation", L"detach");
         }
 
         Value native_raw_read_size(ThreadState *thread, Value size)
@@ -252,10 +335,13 @@ namespace cl
                 return thread
                     ->make_internal_value<RawIOBaseObject>(cls.extract())
                     .raw_value();
+            case NativeLayoutId::BufferedIOBase:
+                return thread
+                    ->make_internal_value<BufferedIOBaseObject>(cls.extract())
+                    .raw_value();
             default:
                 return thread->set_pending_builtin_exception_string(
-                    L"TypeError",
-                    L"IOBase.__new__ requires an IOBase or RawIOBase class");
+                    L"TypeError", L"IOBase.__new__ requires an IOBase layout");
         }
     }
 
@@ -272,18 +358,34 @@ namespace cl
         return result.is_exception_marker() ? result : Value::None();
     }
 
-    static BuiltinClassDefinition make_base(VirtualMachine *vm, bool raw)
+    static BuiltinClassDefinition make_base(VirtualMachine *vm,
+                                            NativeLayoutId layout)
     {
-        ClassObject *cls =
-            raw ? ClassObject::make_builtin_class<RawIOBaseObject>(
-                      vm->get_or_create_interned_string_value(L"RawIOBase"), 1,
-                      nullptr, 0,
-                      active_thread()->class_for_native_layout(
-                          NativeLayoutId::IOBase),
-                      SubclassPolicy::Allowed)
-                : ClassObject::make_builtin_class<IOBaseObject>(
-                      vm->get_or_create_interned_string_value(L"IOBase"), 1,
-                      nullptr, 0, vm->object_class(), SubclassPolicy::Allowed);
+        ClassObject *cls = nullptr;
+        switch(layout)
+        {
+            case NativeLayoutId::IOBase:
+                cls = ClassObject::make_builtin_class<IOBaseObject>(
+                    vm->get_or_create_interned_string_value(L"IOBase"), 1,
+                    nullptr, 0, vm->object_class(), SubclassPolicy::Allowed);
+                break;
+            case NativeLayoutId::RawIOBase:
+                cls = ClassObject::make_builtin_class<RawIOBaseObject>(
+                    vm->get_or_create_interned_string_value(L"RawIOBase"), 1,
+                    nullptr, 0,
+                    vm->class_for_native_layout(NativeLayoutId::IOBase),
+                    SubclassPolicy::Allowed);
+                break;
+            case NativeLayoutId::BufferedIOBase:
+                cls = ClassObject::make_builtin_class<BufferedIOBaseObject>(
+                    vm->get_or_create_interned_string_value(L"BufferedIOBase"),
+                    1, nullptr, 0,
+                    vm->class_for_native_layout(NativeLayoutId::IOBase),
+                    SubclassPolicy::Allowed);
+                break;
+            default:
+                fatal("invalid I/O base layout");
+        }
         auto readonly = descriptor_flag(DescriptorFlag::StableSlot) |
                         descriptor_flag(DescriptorFlag::ReadOnly);
         BuiltinInstanceShapeBuilder(
@@ -298,17 +400,29 @@ namespace cl
         assert(installed);
         (void)installed;
         static constexpr NativeLayoutId io[] = {NativeLayoutId::IOBase};
-        static constexpr NativeLayoutId raw_io[] = {NativeLayoutId::RawIOBase};
-        return builtin_class_definition(cls, raw ? raw_io : io,
-                                        BuiltinsVisibility::Internal);
+        static constexpr NativeLayoutId raw[] = {NativeLayoutId::RawIOBase};
+        static constexpr NativeLayoutId buffered[] = {
+            NativeLayoutId::BufferedIOBase};
+        return layout == NativeLayoutId::IOBase
+                   ? builtin_class_definition(cls, io,
+                                              BuiltinsVisibility::Internal)
+               : layout == NativeLayoutId::RawIOBase
+                   ? builtin_class_definition(cls, raw,
+                                              BuiltinsVisibility::Internal)
+                   : builtin_class_definition(cls, buffered,
+                                              BuiltinsVisibility::Internal);
     }
     BuiltinClassDefinition make_io_base_class(VirtualMachine *vm)
     {
-        return make_base(vm, false);
+        return make_base(vm, NativeLayoutId::IOBase);
     }
     BuiltinClassDefinition make_raw_io_base_class(VirtualMachine *vm)
     {
-        return make_base(vm, true);
+        return make_base(vm, NativeLayoutId::RawIOBase);
+    }
+    BuiltinClassDefinition make_buffered_io_base_class(VirtualMachine *vm)
+    {
+        return make_base(vm, NativeLayoutId::BufferedIOBase);
     }
 
     void install_io_base_methods(VirtualMachine *vm)
@@ -387,10 +501,29 @@ namespace cl
                 vm, thread->class_for_native_layout(NativeLayoutId::RawIOBase),
                 raw, std::size(raw)),
             "installing RawIOBase methods");
+        BuiltinIntrinsicMethod buffered[] = {
+            builtin_intrinsic_method(L"write", native_buffered_write),
+            builtin_intrinsic_method(L"detach", native_buffered_detach),
+        };
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(
+                vm,
+                thread->class_for_native_layout(NativeLayoutId::BufferedIOBase),
+                buffered, std::size(buffered)),
+            "installing BufferedIOBase methods");
     }
     void install_io_base_helpers(VirtualMachine *vm, ModuleObject *module)
     {
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bufferedio_validate",
+                                     native_buffered_validate),
+            builtin_intrinsic_method(L"_clover_bufferedio_read_size",
+                                     native_buffered_read_size),
+            builtin_intrinsic_method(L"_clover_bufferedio_readinto_size",
+                                     native_buffered_readinto_size),
+            builtin_intrinsic_method(L"_clover_bufferedio_finish_readinto",
+                                     native_buffered_finish_readinto),
             builtin_intrinsic_method(L"_clover_rawio_validate",
                                      native_raw_validate),
             builtin_intrinsic_method(L"_clover_rawio_read_size",
@@ -434,6 +567,14 @@ namespace cl
             const wchar_t *helper;
         };
         const Binding bindings[] = {
+            {NativeLayoutId::BufferedIOBase, L"read",
+             L"_clover_bufferedio_read"},
+            {NativeLayoutId::BufferedIOBase, L"read1",
+             L"_clover_bufferedio_read1"},
+            {NativeLayoutId::BufferedIOBase, L"readinto",
+             L"_clover_bufferedio_readinto"},
+            {NativeLayoutId::BufferedIOBase, L"readinto1",
+             L"_clover_bufferedio_readinto1"},
             {NativeLayoutId::RawIOBase, L"read", L"_clover_rawio_read"},
             {NativeLayoutId::RawIOBase, L"readall", L"_clover_rawio_readall"},
             {NativeLayoutId::FileIO, L"readall", L"_clover_fileio_readall"},

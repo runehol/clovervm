@@ -390,8 +390,10 @@ construction. Explicit close and context-manager exit release owned descriptors;
 construction failures close descriptors opened during that attempt. Abandoned
 streams are intentionally not closed by reclamation or VM teardown.
 
-Native IOBase/RawIOBase now form the FileIO base hierarchy. Their first slice
-provides close/flush, capabilities, context management and state checks; generic
+Native IOBase/RawIOBase form the FileIO base hierarchy; native BufferedIOBase
+is a sibling of RawIOBase with no additional fields. Its readinto/readinto1
+fallbacks support bytearray destinations only. The common base provides
+close/flush, capabilities, context management and state checks; generic
 raw read/readall fallbacks and FileIO.readall are available; line iteration remains
 deferred. RawIOBase.read rejects a count exceeding a callback-resized buffer's
 current length rather than copying beyond it. Base subclasses support custom

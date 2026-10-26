@@ -5,14 +5,16 @@
 | Document type | Architecture contract |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Native IOBase/RawIOBase hierarchy, unbuffered FileIO, POSIX operations, descriptor ownership, and explicit cleanup |
+| Scope | Native IOBase/RawIOBase/BufferedIOBase hierarchy, unbuffered FileIO, POSIX operations, descriptor ownership, and explicit cleanup |
 | Owning layers | Native object and stream semantics; POSIX backend; Python module exports; runtime reference metadata |
 | Validated against | Native IO base implementation working tree (2026-10-26) |
 | Supersedes | N/A |
 
-The `io` module exports native `IOBase`, `RawIOBase`, and `FileIO` classes
-through `stdlib/io.py`. The Python hierarchy is `IOBase -> RawIOBase -> FileIO`,
-matching the C++ native prefix hierarchy. All three allow Python subclasses;
+The `io` module exports native `IOBase`, `RawIOBase`, `BufferedIOBase`, and
+`FileIO` classes through `stdlib/io.py`. The raw branch is
+`IOBase -> RawIOBase -> FileIO`; `BufferedIOBase` derives directly from `IOBase`.
+These relationships match the C++ native prefixes. All four allow Python
+subclasses;
 FileIO subclasses inherit the native file constructor and descriptor layout.
 Buffered streams, text streams and builtin `open` are separate work.
 `io.UnsupportedOperation` inherits both `OSError` and `ValueError` and uses the
@@ -21,7 +23,8 @@ existing OSError native storage.
 ## Layout and layers
 
 `IOBaseObject` extends `InlineSlotObject` with one inline boolean value,
-`base_closed`; `RawIOBaseObject` adds no fields. `FileIOObject` extends
+`base_closed`; `RawIOBaseObject` and `BufferedIOBaseObject` add no fields.
+`FileIOObject` extends
 `RawIOBaseObject` with four contiguous Python slots (`name`, `mode`, `closed`,
 `closefd`), followed by `int fd`, access flags, and cached seekability.
 `name` is writable; the other three FileIO attributes use the existing read-only
@@ -35,10 +38,13 @@ is independent: directly calling `IOBase.close(file)` marks the base closed
 without closing the descriptor. Inherited `flush` checks the private base flag;
 `_checkClosed` and context entry check the public `closed` attribute.
 
-All three types declare static reference spans and fixed object sizes. They are
+All four types declare static reference spans and fixed object sizes. They are
 trivially destructible and have no custom resource-release callbacks. Native
-layout selection recognizes this prefix chain and retains the most derived
-storage provider, rejecting incompatible unrelated native bases. Python base
+layout selection recognizes the shared prefix. RawIOBase and BufferedIOBase
+can coexist in either MRO order because neither adds fields; FileIO storage wins
+when present. Method receiver checks also validate class ancestry, so sharing
+a prefix does not make a raw-only instance a buffered stream. Incompatible
+unrelated native bases remain rejected. Python base
 subclasses use the inherited native allocator; a reclaimable constructor thunk
 allocates the native layout before calling a custom Python `__init__`. The
 existing constructor MRO validity cell guards that decision. General custom
@@ -150,3 +156,19 @@ but bypasses subclass read/readinto overrides via the original native read.
 These managed methods are installed on native classes during trusted bootstrap;
 no layouts, bytecode operations, interpreter dispatch paths or resource-cleanup
 hooks are added.
+
+## BufferedIOBase
+
+BufferedIOBase introduces no buffer storage or resource ownership. It inherits
+IOBase lifecycle and capability behavior. Its abstract read/read1 defaults validate a
+C int-sized argument and raise UnsupportedOperation; write and detach also
+raise UnsupportedOperation. Managed readinto/readinto1 fallbacks call the
+current read/read1 override with the destination's stored bytearray length.
+They require stored bytes results and copy only the returned prefix, preserving
+the destination length and unwritten suffix. Non-bytes results raise TypeError;
+results exceeding the original request or a callback-resized destination raise
+ValueError. No writable span is retained across callbacks or VM allocation.
+General writable-buffer inputs, computed properties, and BufferedReader remain
+separate work. The regressions include shared-prefix multiple inheritance,
+constructor cache invalidation, callback failures, subclass hooks, destination
+resizing, and forced reclamation.
