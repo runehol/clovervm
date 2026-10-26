@@ -4,10 +4,12 @@
 #include "memory/heap_constants.h"
 #include "memory/native_layout_descriptor.h"
 #include "object_model/function.h"
+#include "platform/file_io.h"
 #include "runtime/trusted_handler.h"
 #include "test_helpers.h"
 #include <fstream>
 #include <iterator>
+#include <unistd.h>
 
 using namespace cl;
 
@@ -49,6 +51,46 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
         context.vm().request_safepoint();
         EXPECT_FALSE(context.run_file(wide.c_str()).is_exception_marker());
     }
+}
+
+TEST(ByteArray, SynchronousWritableBorrowPreservesLengthAndUnwrittenSuffix)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value result = context.run_file(L"bytearray(5)\n");
+    ASSERT_FALSE(result.is_exception_marker());
+    Owned<TValue<ByteArray>> owner(
+        TValue<ByteArray>::from_value_assumed(result));
+    context.vm().run_heap_reclamation();
+    int descriptors[2];
+    ASSERT_EQ(0, pipe(descriptors));
+    ASSERT_EQ(2, write(descriptors[1], "AB", 2));
+    FileResult read{};
+    // Pending collection is deliberately left pending throughout the native
+    // borrow; neither the borrow nor platform read enters a safepoint.
+    context.vm().request_safepoint();
+    with_bytearray_writable_bytes(
+        owner.value(), [&](std::span<uint8_t> bytes) noexcept {
+            read =
+                platform_file_read(descriptors[0], bytes.data(), bytes.size());
+        });
+    EXPECT_EQ(0, read.error);
+    EXPECT_EQ(2, read.value);
+    EXPECT_EQ(5, owner.extract()->size());
+    const uint8_t expected[] = {'A', 'B', 0, 0, 0};
+    EXPECT_TRUE(std::equal(owner.extract()->view().begin(),
+                           owner.extract()->view().end(), std::begin(expected),
+                           std::end(expected)));
+    context.vm().run_heap_reclamation();
+    EXPECT_EQ('A', owner.extract()->view()[0]);
+    EXPECT_EQ(0, close(descriptors[0]));
+    EXPECT_EQ(0, close(descriptors[1]));
+    owner.extract()->items.clear();
+    bool entered = false;
+    with_bytearray_writable_bytes(
+        owner.value(),
+        [&](std::span<uint8_t> bytes) noexcept { entered = bytes.empty(); });
+    EXPECT_TRUE(entered);
 }
 
 TEST(ByteArray, ExhaustionReleasesSourceAndItsBackingWhileIteratorStaysAlive)

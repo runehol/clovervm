@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 namespace cl
 {
@@ -55,6 +56,25 @@ namespace cl
 
     static_assert(std::is_trivially_destructible_v<ByteArray>);
     static_assert(std::is_trivially_destructible_v<ByteArrayIterator>);
+
+    // Narrow synchronous native borrowing contract, NOT a buffer export or a
+    // pin. The callback must not allocate, enter Python, poll a safepoint,
+    // reclaim, resize/mutate through another alias, or retain the span/pointer.
+    // Native execution must remain exclusive for this entire scope. Ownership
+    // preserves lifetime only; any future moving/concurrent collector must
+    // preserve the no-collection scope before this API can continue to be used.
+    // Results/errno may be saved in scalar locals; translate them after return.
+    template <typename Fn>
+    void with_bytearray_writable_bytes(TValue<ByteArray> value, Fn &&operation)
+    {
+        static_assert(
+            std::is_nothrow_invocable_r_v<void, Fn, std::span<uint8_t>>);
+        static_assert(
+            std::is_same_v<std::invoke_result_t<Fn, std::span<uint8_t>>, void>);
+        Owned<TValue<ByteArray>> owner(value);
+        std::forward<Fn>(operation)(std::span<uint8_t>(
+            owner.extract()->items.data(), owner.extract()->size()));
+    }
 
     BuiltinClassDefinition make_bytearray_class(VirtualMachine *vm);
     BuiltinClassDefinition make_bytearray_iterator_class(VirtualMachine *vm);

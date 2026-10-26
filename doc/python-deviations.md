@@ -134,6 +134,13 @@ length after callbacks. Iterators follow current contents through backing
 replacement, release their source on exhaustion, and remain exhausted after
 later mutations of that source.
 
+The internal `with_bytearray_writable_bytes` API permits only a synchronous,
+exclusive native operation without allocation, callbacks, safepoints,
+reclamation, resizing, alias mutation or retained pointers. It preserves owner
+lifetime, not pinning. This is not a buffer protocol, memoryview, or persistent
+export. FileIO `readinto` integration is separate; concurrent/moving collection,
+Python signal callbacks and asynchronous I/O must reassess this contract.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object
