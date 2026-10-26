@@ -104,15 +104,15 @@ CPython allocation/population split.
 
 `bytearray` supports empty/zero-filled construction, stored bytes/bytearray
 copies, integer iterables, length/truth, indexing and slicing, item/slice
-assignment and deletion, `append`, `extend`, `clear`, repr/str, equality with
-bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into an
-independent immutable bytes object; bytes immutability and hashing are unchanged.
+assignment and deletion, `append`, `extend`, `clear`, repr/str, all six comparisons
+with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
+an independent immutable bytes object; bytes immutability and hashing are unchanged.
 
 Like the existing dict boundary, construction is implemented by a Python-backed
 `__new__` that returns a populated object. Direct `__new__` therefore differs
 from CPython, `__init__`/reinitialization is unavailable, and bytearray subclassing
 is rejected. Encoded-string constructors, arbitrary buffer objects, general
-user-defined `__index__`, ordering, concatenation/repetition and other bytes-like
+user-defined `__index__`, concatenation/repetition and other bytes-like
 methods remain deferred. Iterable conversion uses the existing iterator subset:
 there is no sequence-only fallback or length-hint callback. Stored integer/bool
 payloads (including supported integer subclasses) are accepted. Counts and

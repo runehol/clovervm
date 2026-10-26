@@ -3,6 +3,7 @@
 #include "memory/global_heap.h"
 #include "memory/heap_constants.h"
 #include "memory/native_layout_descriptor.h"
+#include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "platform/file_io.h"
 #include "runtime/trusted_handler.h"
@@ -35,6 +36,7 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/builtin_bytearray.py",
                            "tests/python/builtin_bytearray_callbacks.py",
+                           "tests/python/builtin_bytearray_comparisons.py",
                            "tests/python/builtin_bytearray_errors.py",
                            "tests/python/builtin_bytearray_copies.py",
                            "tests/python/builtin_bytearray_slices.py",
@@ -355,4 +357,79 @@ TEST(ByteArray, IterationRepresentationAndImmutableCopiesSurviveCollection)
                                L"a.clear()\n"
                                L"assert b == b'AB' and a == b''\n")
                      .is_exception_marker());
+}
+
+TEST(ByteArray, AllComparisonCachesAndReflectedHandlersPreserveOrdering)
+{
+    const wchar_t *operators[] = {L"==", L"!=", L"<", L"<=", L">", L">="};
+    const bool expected[] = {false, true, true, true, false, false};
+    const wchar_t *reflected[] = {L"__eq__", L"__ne__", L"__gt__",
+                                  L"__ge__", L"__lt__", L"__le__"};
+    for(size_t op = 0; op < std::size(operators); ++op)
+    {
+        SCOPED_TRACE(op);
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        std::wstring source = L"def compare(left, right):\n    return left ";
+        source += operators[op];
+        source += L" right\ncompare\n";
+        Owned<TValue<Function>> function(TValue<Function>::from_value_assumed(
+            context.run_file(source.c_str())));
+        for(int kind = 0; kind < 3; ++kind)
+        {
+            SCOPED_TRACE(kind);
+            Owned<Value> left(context.run_file(
+                kind == 2 ? L"b'ab'\n" : L"bytearray(b'ab')\n"));
+            Owned<Value> right(
+                context.run_file(kind == 1 ? L"b'b'\n" : L"bytearray(b'b')\n"));
+            for(int repeat = 0; repeat < 2; ++repeat)
+            {
+                EXPECT_EQ(expected[op] ? Value::True() : Value::False(),
+                          thread->call_clovervm_function(
+                              function.value(), left.value(), right.value()));
+                const auto &caches = function.extract()
+                                         ->code_object.extract()
+                                         ->inline_caches.operator_caches;
+                ASSERT_EQ(1u, caches.size());
+                if(kind == 2)
+                {
+                    // The first bytes method remains the cached entry; its
+                    // NotImplemented continuation resolves the reflected
+                    // handler.
+                    ASSERT_NE(nullptr, caches[0].function);
+                    Value method =
+                        context.vm().bytearray_class()->get_own_property(
+                            context.vm().get_or_create_interned_string_value(
+                                reflected[op]));
+                    auto resolver = method.get_ptr<Function>()
+                                        ->code_object.extract()
+                                        ->trusted_handler_resolver;
+                    ASSERT_NE(nullptr, resolver);
+                    auto resolution = resolver(
+                        &context.vm(), ShapeKey::from_value(left.value()),
+                        ShapeKey::from_value(right.value()),
+                        TrustedHandlerOperandOrder::Reflected,
+                        TrustedHandlerArity::Binary);
+                    ASSERT_TRUE(resolution.has_trusted_handler());
+                    EXPECT_EQ(
+                        expected[op] ? Value::True() : Value::False(),
+                        resolution.binary(thread, left.value(), right.value()));
+                    auto metadata = context.vm().trusted_handler_metadata(
+                        erase_trusted_handler_target(resolution.binary));
+                    ASSERT_TRUE(metadata.has_value());
+                    EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+                    continue;
+                }
+                ASSERT_FALSE(caches[0].trusted_handler.is_null());
+                EXPECT_TRUE(
+                    caches[0].matches_binary(left.value(), right.value()));
+                auto metadata = context.vm().trusted_handler_metadata(
+                    caches[0].trusted_handler.target(
+                        TrustedHandlerArity::Binary));
+                ASSERT_TRUE(metadata.has_value());
+                EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
+            }
+        }
+    }
 }

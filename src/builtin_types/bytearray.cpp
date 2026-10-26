@@ -11,6 +11,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <algorithm>
+#include <compare>
 #include <string>
 
 namespace cl
@@ -516,38 +517,105 @@ namespace cl
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
-    template <bool NotEqual>
+    // Callers prove a stored byte payload before entering this unchecked view.
+    static std::span<const uint8_t> comparison_view(Value value)
+    {
+        if(has_native_layout<ByteArray>(value))
+            return value.get_ptr<ByteArray>()->view();
+        assert(has_native_layout<Bytes>(value));
+        return bytes_view(TValue<Bytes>::from_value_assumed(value));
+    }
+
+    static std::strong_ordering
+    compare_byte_views(std::span<const uint8_t> left,
+                       std::span<const uint8_t> right)
+    {
+        return std::lexicographical_compare_three_way(
+            left.begin(), left.end(), right.begin(), right.end());
+    }
+
+    struct ByteArrayEqOperator
+    {
+        static constexpr const wchar_t *method = L"__eq__";
+        bool operator()(std::span<const uint8_t> left,
+                        std::span<const uint8_t> right) const
+        {
+            return std::equal(left.begin(), left.end(), right.begin(),
+                              right.end());
+        }
+    };
+
+    struct ByteArrayNeOperator
+    {
+        static constexpr const wchar_t *method = L"__ne__";
+        bool operator()(std::span<const uint8_t> left,
+                        std::span<const uint8_t> right) const
+        {
+            return !ByteArrayEqOperator{}(left, right);
+        }
+    };
+
+    struct ByteArrayLtOperator
+    {
+        static constexpr const wchar_t *method = L"__lt__";
+        bool operator()(std::span<const uint8_t> left,
+                        std::span<const uint8_t> right) const
+        {
+            return compare_byte_views(left, right) < 0;
+        }
+    };
+
+    struct ByteArrayLeOperator
+    {
+        static constexpr const wchar_t *method = L"__le__";
+        bool operator()(std::span<const uint8_t> left,
+                        std::span<const uint8_t> right) const
+        {
+            return compare_byte_views(left, right) <= 0;
+        }
+    };
+
+    struct ByteArrayGtOperator
+    {
+        static constexpr const wchar_t *method = L"__gt__";
+        bool operator()(std::span<const uint8_t> left,
+                        std::span<const uint8_t> right) const
+        {
+            return compare_byte_views(left, right) > 0;
+        }
+    };
+
+    struct ByteArrayGeOperator
+    {
+        static constexpr const wchar_t *method = L"__ge__";
+        bool operator()(std::span<const uint8_t> left,
+                        std::span<const uint8_t> right) const
+        {
+            return compare_byte_views(left, right) >= 0;
+        }
+    };
+
+    template <typename ComparisonOp>
     static Value native_compare(ThreadState *, Value self, Value other)
     {
-        auto array = CL_TRY(receiver(self, NotEqual ? L"__ne__" : L"__eq__"));
-        std::span<const uint8_t> rhs;
-        if(has_native_layout<ByteArray>(other))
-            rhs = other.get_ptr<ByteArray>()->view();
-        else if(has_native_layout<Bytes>(other))
-            rhs = bytes_view(TValue<Bytes>::from_value_assumed(other));
-        else
+        auto array = CL_TRY(receiver(self, ComparisonOp::method));
+        if(!has_native_layout<ByteArray>(other) &&
+           !has_native_layout<Bytes>(other))
             return Value::NotImplemented();
-        bool equal =
-            std::equal(array.extract()->view().begin(),
-                       array.extract()->view().end(), rhs.begin(), rhs.end());
-        return equal != NotEqual ? Value::True() : Value::False();
+        return ComparisonOp{}(array.extract()->view(), comparison_view(other))
+                   ? Value::True()
+                   : Value::False();
     }
 
-    template <bool NotEqual>
+    template <typename ComparisonOp>
     static Value trusted_compare(ThreadState *, Value left, Value right)
     {
-        auto view = [](Value value) -> std::span<const uint8_t> {
-            return has_native_layout<ByteArray>(value)
-                       ? value.get_ptr<ByteArray>()->view()
-                       : bytes_view(TValue<Bytes>::from_value_assumed(value));
-        };
-        auto lhs = view(left);
-        auto rhs = view(right);
-        bool equal = std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
-        return equal != NotEqual ? Value::True() : Value::False();
+        return ComparisonOp{}(comparison_view(left), comparison_view(right))
+                   ? Value::True()
+                   : Value::False();
     }
 
-    template <bool NotEqual>
+    template <typename NormalOperator, typename ReflectedOperator>
     static TrustedResolution
     resolve_compare(VirtualMachine *vm, ShapeKey left, ShapeKey right,
                     TrustedHandlerOperandOrder order, TrustedHandlerArity arity)
@@ -560,11 +628,16 @@ namespace cl
             order == TrustedHandlerOperandOrder::Reflected ? rhs : lhs;
         auto other_class =
             order == TrustedHandlerOperandOrder::Reflected ? lhs : rhs;
-        if(receiver_class == vm->bytearray_class() &&
-           (other_class == vm->bytearray_class() ||
-            other_class == vm->bytes_class()))
-            return TrustedResolution::call_trusted(trusted_compare<NotEqual>);
-        return TrustedResolution::no_trusted_handler_call_untrusted();
+        if(receiver_class != vm->bytearray_class() ||
+           (other_class != vm->bytearray_class() &&
+            other_class != vm->bytes_class()))
+            return TrustedResolution::no_trusted_handler_call_untrusted();
+        // Handlers receive opcode operand order. Reflected ordering therefore
+        // selects the opposite operation rather than swapping the operands.
+        if(order == TrustedHandlerOperandOrder::Reflected)
+            return TrustedResolution::call_trusted(
+                trusted_compare<ReflectedOperator>);
+        return TrustedResolution::call_trusted(trusted_compare<NormalOperator>);
     }
 
     static Value native_repr(ThreadState *, Value self)
@@ -674,9 +747,17 @@ namespace cl
     }
     void install_bytearray_class_methods(VirtualMachine *vm)
     {
-        vm->register_trusted_handler(trusted_compare<false>,
+        vm->register_trusted_handler(trusted_compare<ByteArrayEqOperator>,
                                      TrustedHandlerEffects::None);
-        vm->register_trusted_handler(trusted_compare<true>,
+        vm->register_trusted_handler(trusted_compare<ByteArrayNeOperator>,
+                                     TrustedHandlerEffects::None);
+        vm->register_trusted_handler(trusted_compare<ByteArrayLtOperator>,
+                                     TrustedHandlerEffects::None);
+        vm->register_trusted_handler(trusted_compare<ByteArrayLeOperator>,
+                                     TrustedHandlerEffects::None);
+        vm->register_trusted_handler(trusted_compare<ByteArrayGtOperator>,
+                                     TrustedHandlerEffects::None);
+        vm->register_trusted_handler(trusted_compare<ByteArrayGeOperator>,
                                      TrustedHandlerEffects::None);
         vm->register_trusted_handler(trusted_getitem<false>,
                                      TrustedHandlerEffects::Raise);
@@ -713,11 +794,29 @@ namespace cl
                 resolve_item<trusted_delitem<false>, trusted_delitem<true>,
                              TrustedHandlerArity::Binary>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__eq__", native_compare<false>),
-                resolve_compare<false>),
+                builtin_intrinsic_method(L"__eq__",
+                                         native_compare<ByteArrayEqOperator>),
+                resolve_compare<ByteArrayEqOperator, ByteArrayEqOperator>),
             with_trusted_handler_resolver(
-                builtin_intrinsic_method(L"__ne__", native_compare<true>),
-                resolve_compare<true>),
+                builtin_intrinsic_method(L"__ne__",
+                                         native_compare<ByteArrayNeOperator>),
+                resolve_compare<ByteArrayNeOperator, ByteArrayNeOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__lt__",
+                                         native_compare<ByteArrayLtOperator>),
+                resolve_compare<ByteArrayLtOperator, ByteArrayGtOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__le__",
+                                         native_compare<ByteArrayLeOperator>),
+                resolve_compare<ByteArrayLeOperator, ByteArrayGeOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__gt__",
+                                         native_compare<ByteArrayGtOperator>),
+                resolve_compare<ByteArrayGtOperator, ByteArrayLtOperator>),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__ge__",
+                                         native_compare<ByteArrayGeOperator>),
+                resolve_compare<ByteArrayGeOperator, ByteArrayLeOperator>),
             builtin_intrinsic_method(L"append", native_append),
             builtin_intrinsic_method(L"clear", native_clear)};
         unwrap_bootstrap_expected(
