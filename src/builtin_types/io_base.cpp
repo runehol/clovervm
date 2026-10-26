@@ -325,6 +325,41 @@ namespace cl
             return bytes.extract()->count.raw_value();
         }
 
+        Value native_buffered_write_bytes(ThreadState *thread, Value data)
+        {
+            if(has_native_layout<Bytes>(data))
+                return data;
+            if(has_native_layout<ByteArray>(data))
+            {
+                auto buffer = TValue<ByteArray>::from_value_assumed(data);
+                return native_buffered_copy(
+                    thread, data, Value::from_smi(0),
+                    Value::from_smi(
+                        static_cast<int64_t>(buffer.extract()->size())));
+            }
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"write() requires bytes or bytearray");
+        }
+
+        Value native_buffered_write_count(ThreadState *thread, Value count,
+                                          Value requested)
+        {
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested write size"));
+            if(!is_intlike_value(count))
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw write() returned an invalid count");
+            SmiViewStorage storage, zero_storage, bound_storage;
+            auto view = intlike_value_bigint_view(count, &storage);
+            if(bound.extract() < 0 ||
+               compare_bigint(view, smi_bigint_view(0, &zero_storage)) < 0 ||
+               compare_bigint(
+                   view, smi_bigint_view(bound.extract(), &bound_storage)) > 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw write() returned an invalid count");
+            return Value::from_smi(CL_TRY(bigint_to_int64(view)));
+        }
+
         Value native_buffered_write(ThreadState *thread, Value self, Value)
         {
             CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
@@ -611,7 +646,16 @@ namespace cl
                 interned_string(L"_clover_bufferedio_default_buffer_size"),
                 Value::from_smi(default_buffer_size)),
             "installing buffered I/O default size");
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(interned_string(L"_clover_io_eagain"),
+                                     Value::from_smi(EAGAIN)),
+            "installing buffered I/O would-block errno");
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bufferedio_write_bytes",
+                                     native_buffered_write_bytes),
+            builtin_intrinsic_method(L"_clover_bufferedio_write_count",
+                                     native_buffered_write_count),
             builtin_intrinsic_method(L"_clover_bufferedio_seek_whence",
                                      native_buffered_seek_whence),
             builtin_intrinsic_method(L"_clover_bufferedio_set_closed",
