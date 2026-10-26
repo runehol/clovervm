@@ -560,6 +560,77 @@ TEST(BufferedReader, AbandonmentDoesNotCloseOwnedDescriptor)
     EXPECT_GE(fcntl(descriptor.fd, F_GETFD), 0);
 }
 
+TEST(BufferedWriter, NonblockingPipePreservesAcceptedSuffix)
+{
+    int descriptors[2];
+    ASSERT_EQ(0, pipe(descriptors));
+    TestFd reader(descriptors[0]);
+    TestFd writer(descriptors[1]);
+    ASSERT_EQ(0, fcntl(reader.fd, F_SETFL, O_NONBLOCK));
+    ASSERT_EQ(0, fcntl(writer.fd, F_SETFL, O_NONBLOCK));
+    char block[1024] = {};
+    ssize_t filled;
+    do
+    {
+        filled = write(writer.fd, block, sizeof(block));
+    }
+    while(filled > 0);
+    ASSERT_EQ(-1, filled);
+    ASSERT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK);
+    test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_EQ(Value::None(),
+              run(context,
+                  L"io.raw = io.FileIO(" + std::to_wstring(writer.fd) +
+                      L", 'wb', closefd=False)\n"
+                      L"io.writer = io.BufferedWriter(io.raw, 4)\n"
+                      L"assert io.writer.write(b'ab') == 2\n"
+                      L"try:\n    io.writer.write(b'cdefg')\n    assert False\n"
+                      L"except BlockingIOError as error:\n    assert "
+                      L"error.characters_written == 2\n"
+                      L"try:\n    io.writer.flush()\n    assert False\n"
+                      L"except BlockingIOError as error:\n    assert "
+                      L"error.characters_written == 0\nNone\n"));
+    ssize_t drained;
+    do
+    {
+        drained = read(reader.fd, block, sizeof(block));
+    }
+    while(drained > 0);
+    ASSERT_EQ(-1, drained);
+    ASSERT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK);
+    EXPECT_EQ(Value::None(),
+              run(context, L"io.writer.flush()\n"
+                           L"assert io.writer.write(b'efg') == 3\n"
+                           L"io.writer.close()\nassert io.writer.closed and "
+                           L"io.raw.closed\nNone\n"));
+    char output[16] = {};
+    ASSERT_EQ(7, read(reader.fd, output, sizeof(output)));
+    EXPECT_EQ(std::string("abcdefg"), std::string(output, 7));
+    EXPECT_GE(fcntl(writer.fd, F_GETFD), 0);
+}
+
+TEST(BufferedWriter, AbandonmentDoesNotFlushOrCloseOwnedDescriptor)
+{
+    TestFd descriptor(temporary_fd());
+    ASSERT_GE(descriptor.fd, 0);
+    {
+        test::VmTestContext context;
+        EXPECT_EQ(Value::None(),
+                  run(context, L"io.writer = io.BufferedWriter(io.FileIO(" +
+                                   std::to_wstring(descriptor.fd) +
+                                   L", 'wb'), 4)\n"
+                                   L"assert io.writer.write(b'ab') == 2\n"
+                                   L"del io.writer\nNone\n"));
+        context.vm().run_heap_reclamation();
+        EXPECT_GE(fcntl(descriptor.fd, F_GETFD), 0);
+        EXPECT_EQ(0, lseek(descriptor.fd, 0, SEEK_CUR));
+    }
+    EXPECT_GE(fcntl(descriptor.fd, F_GETFD), 0);
+    EXPECT_EQ(0, lseek(descriptor.fd, 0, SEEK_CUR));
+}
+
 TEST(FileIO, PathOpenIsNonInheritable)
 {
     test::VmTestContext context;

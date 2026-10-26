@@ -1552,6 +1552,7 @@ namespace cl
                                        L"Ellipsis",
                                        L"AttributeError",
                                        L"RuntimeError",
+                                       L"BlockingIOError",
                                        L"BaseException",
                                        L"OSError"};
         for(const wchar_t *name: seed_names)
@@ -1724,6 +1725,13 @@ namespace cl
         return TValue<ClassObject>::from_value_assumed(
             builtin_implementation_module_->get_own_property(
                 interned_string(L"BufferedReader")));
+    }
+
+    TValue<ClassObject> VirtualMachine::buffered_writer_class() const
+    {
+        return TValue<ClassObject>::from_value_assumed(
+            builtin_implementation_module_->get_own_property(
+                interned_string(L"BufferedWriter")));
     }
 
     TValue<Function> VirtualMachine::enumerate_call_function() const

@@ -1253,3 +1253,217 @@ class BufferedReader(BufferedIOBase):
             return raw
         finally:
             self._busy = False
+
+
+class BufferedWriter(BufferedIOBase):
+    __module__ = '_io'
+
+    def __init__(self, raw, buffer_size=_clover_bufferedio_default_buffer_size):
+        if hasattr(self, '_busy') and self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
+        self.raw = None
+        self._busy = True
+        try:
+            if not raw.writable():
+                raise _clover_io_unsupported('File or stream is not writable')
+            if size <= 0:
+                raise ValueError('buffer size must be strictly positive')
+            self._buffer_size = size
+            self._buffer = bytearray()
+            self._start = 0
+            self.raw = raw
+            _clover_bufferedio_set_closed(self, False)
+        finally:
+            self._busy = False
+
+    def _check_open(self):
+        if self.raw is None:
+            raise ValueError('raw stream has been detached')
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+
+    def _begin(self):
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        self._check_open()
+        self._busy = True
+        return self.raw
+
+    def _raw_open(self, raw):
+        if raw.closed:
+            raise ValueError('I/O operation on closed file')
+
+    def _pending(self):
+        return bytearray.__len__(self._buffer) - self._start
+
+    def _append(self, data, start, count):
+        if count:
+            bytearray.extend(self._buffer, bytes.__getitem__(data, slice(start, start + count)))
+
+    def _raw_write(self, raw, data):
+        self._raw_open(raw)
+        size = _clover_bufferedio_bytes_size(data)
+        while True:
+            try:
+                count = raw.write(data)
+            except OSError as error:
+                if _clover_rawio_is_eintr(error):
+                    continue
+                raise
+            if count is None:
+                return None
+            try:
+                count = _clover_rawio_index(count)
+            except BaseException:
+                raise OSError('raw write() returned an invalid count')
+            return _clover_bufferedio_write_count(count, size)
+
+    def _blocked(self, accepted):
+        return BlockingIOError(_clover_io_eagain,
+                               'write could not complete without blocking', accepted)
+
+    def _flush_buffer(self, raw):
+        while self._pending():
+            size = self._pending()
+            data = _clover_bufferedio_copy(self._buffer, self._start, size)
+            count = self._raw_write(raw, data)
+            if count is None:
+                raise self._blocked(0)
+            # Zero is valid in CPython: retry the same suffix without progress.
+            self._start += count
+        bytearray.clear(self._buffer)
+        self._start = 0
+
+    def write(self, data, /):
+        data = _clover_bufferedio_write_bytes(data)
+        size = _clover_bufferedio_bytes_size(data)
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            if size < self._buffer_size and size <= self._buffer_size - bytearray.__len__(self._buffer):
+                self._append(data, 0, size)
+                return size
+            try:
+                self._flush_buffer(raw)
+            except BlockingIOError as error:
+                # Reclaim a consumed prefix only after trying the old suffix.
+                # Its physical tail, not logical pending size, gates fast writes.
+                if self._start:
+                    del self._buffer[:self._start]
+                    self._start = 0
+                accepted = self._buffer_size - self._pending()
+                if accepted > size:
+                    accepted = size
+                self._append(data, 0, accepted)
+                if accepted == size:
+                    return size
+                raise BlockingIOError(error.errno, error.strerror, accepted)
+            written = 0
+            while size - written >= self._buffer_size:
+                chunk = bytes.__getitem__(data, slice(written, size))
+                count = self._raw_write(raw, chunk)
+                if count is None:
+                    accepted = self._buffer_size
+                    self._append(data, written, accepted)
+                    written += accepted
+                    if written == size:
+                        return size
+                    raise self._blocked(written)
+                written += count
+            self._append(data, written, size - written)
+            return size
+        finally:
+            self._busy = False
+
+    def flush(self):
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            self._flush_buffer(raw)
+        finally:
+            self._busy = False
+
+    def tell(self):
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            position = _clover_rawio_read_size(_clover_rawio_index(raw.tell()))
+            if position < 0:
+                raise OSError('tell() returned an invalid position')
+            return position + self._pending()
+        finally:
+            self._busy = False
+
+    def seek(self, offset, whence=0, /):
+        offset = _clover_rawio_read_size(_clover_rawio_index(offset))
+        whence = _clover_bufferedio_seek_whence(_clover_rawio_index(whence))
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            if not raw.seekable():
+                raise _clover_io_unsupported('File or stream is not seekable')
+            self._flush_buffer(raw)
+            position = _clover_rawio_read_size(_clover_rawio_index(raw.seek(offset, whence)))
+            if position < 0:
+                raise OSError('seek() returned an invalid position')
+            return position
+        finally:
+            self._busy = False
+
+    def readable(self):
+        return False
+
+    def writable(self):
+        self._check_open()
+        return self.raw.writable()
+
+    def seekable(self):
+        self._check_open()
+        return self.raw.seekable()
+
+    def fileno(self):
+        self._check_open()
+        return self.raw.fileno()
+
+    def isatty(self):
+        self._check_open()
+        return self.raw.isatty()
+
+    def detach(self):
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        self._check_open()
+        # flush may be overridden; do not hold its own operation guard here.
+        self.flush()
+        raw = self._begin()
+        try:
+            self.raw = None
+            bytearray.clear(self._buffer)
+            self._start = 0
+            return raw
+        finally:
+            self._busy = False
+
+    def close(self):
+        if self.raw is None:
+            raise ValueError('raw stream has been detached')
+        if self.closed:
+            return None
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        if self.raw.closed:
+            _clover_bufferedio_set_closed(self, True)
+            return None
+        try:
+            # Match the public override boundary: flush takes its own guard.
+            self.flush()
+        finally:
+            raw = self.raw
+            self._busy = True
+            try:
+                _clover_bufferedio_set_closed(self, True)
+                if raw is not None:
+                    raw.close()
+            finally:
+                self._busy = False

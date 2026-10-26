@@ -16,8 +16,8 @@ The `io` module exports native `IOBase`, `RawIOBase`, `BufferedIOBase`, and
 These relationships match the C++ native prefixes. All four allow Python
 subclasses;
 FileIO subclasses inherit the native file constructor and descriptor layout.
-BufferedReader provides managed binary buffering; writer classes, text streams
-and builtin `open` are separate work.
+BufferedReader and BufferedWriter provide managed binary buffering; text
+streams and builtin `open` are separate work.
 `io.UnsupportedOperation` inherits both `OSError` and `ValueError` and uses the
 existing OSError native storage.
 
@@ -210,4 +210,39 @@ Computed properties remain an accepted incompatibility: raw is an ordinary
 writable attribute, closed reflects the reader's own base flag, and name/mode
 are omitted. External raw closure does not change reader.closed; cached data
 can still be consumed, but further raw transfers reject the closed stream.
-Line methods/iteration, writer classes, text I/O and builtin open remain deferred.
+Line methods/iteration, text I/O and builtin open remain deferred.
+
+
+## BufferedWriter
+
+BufferedWriter is a managed Python subclass of native BufferedIOBase, exported
+through _io and io. It owns an ordinary raw reference, bytearray queue, consumed
+prefix index, capacity, and operation guard using existing overflow attributes.
+Bytes and bytearray inputs are supported; mutable input is snapshotted before
+raw callbacks. General buffer inputs and memoryview-based zero-copy transfers
+remain deferred because FileIO.write currently accepts bytes only.
+
+Writes smaller than capacity and fitting available queue space are accepted
+without a raw write. Otherwise pending data is drained before direct writes
+while at least a full buffer remains; smaller remainders are queued. A blocked
+exact-capacity remainder can still be accepted in full by buffering it. Invalid
+buffer-size conversion during reinitialization preserves the existing attachment
+and queued output. Fast writes use physical tail space; a consumed prefix is
+compacted only after another blocked flush attempt. Partial raw writes advance
+immediately so later retries never resend acknowledged bytes. None means would-block. A write accepts available queue
+space before raising BlockingIOError with characters_written counting bytes
+accepted from that call, including queued bytes. Flush preserves the unacknowledged
+suffix and reports would-block with characters_written zero. Zero from a
+nonempty raw write is accepted and retried without progress, matching CPython;
+a raw implementation returning zero forever can therefore loop indefinitely.
+Invalid raw counts/conversions raise OSError and retain known pending output.
+
+Flush drains queued output; it does not delegate to raw.flush. Tell adds pending
+bytes to the raw position. Seek and detach flush before changing position or
+attachment, preserving the queue when flushing fails. Close invokes the dynamic
+flush override without holding that operation's guard, then attempts raw close
+in finally. Raw callbacks during transfer/flush/seek/close are guarded against
+reentry. Raw-close errors take precedence over flush errors. As with the reader,
+raw is writable, closed uses the local base flag, name/mode are omitted, and
+abandonment does not flush or close raw. Truncate, text streams and builtin open
+remain deferred.

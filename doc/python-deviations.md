@@ -400,10 +400,12 @@ current length rather than copying beyond it. Base subclasses support custom
 Python initializers with the inherited native allocator. Closed
 attributes use native read-only slots rather than getset descriptors. Descriptor
 isatty and truncate remain unsupported; inherited isatty returns False.
-Managed BufferedReader provides binary buffering. Its raw attribute is writable,
-closed uses its own base flag rather than following external raw closure, and
+Managed BufferedReader and BufferedWriter provide binary buffering. Their raw
+attributes are writable, closed uses a local base flag rather than following
+external raw closure, and
 name/mode are omitted pending computed properties. Line methods/iteration,
-writers, text I/O and builtin open remain unimplemented. FileIO.readinto accepts bytearray destinations using a synchronous
+truncate, text I/O and builtin open remain unimplemented. FileIO.readinto accepts
+bytearray destinations using a synchronous
 native borrow; general writable-buffer inputs remain deferred. FileIO accepts
 string paths and stored integer descriptors; bytes
 paths, path/index protocols, general write buffers, unbounded FileIO.read, custom

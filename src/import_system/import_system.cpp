@@ -377,6 +377,10 @@ namespace cl
                     machine->buffered_reader_class().raw_value()));
                 CL_TRY(io.extract()->set_own_property(
                     machine->get_or_create_interned_string_value(
+                        L"BufferedWriter"),
+                    machine->buffered_writer_class().raw_value()));
+                CL_TRY(io.extract()->set_own_property(
+                    machine->get_or_create_interned_string_value(
                         L"DEFAULT_BUFFER_SIZE"),
                     Value::from_smi(default_io_buffer_size())));
                 CL_TRY(io.extract()->set_own_property(

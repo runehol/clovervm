@@ -207,6 +207,28 @@ TEST(PythonSourceFiles, BufferedReaderSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, BufferedWriterSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/buffered_writer.py",
+                           "tests/python/buffered_writer_nonblocking.py",
+                           "tests/python/buffered_writer_zero.py",
+                           "tests/python/buffered_writer_callbacks.py",
+                           "tests/python/buffered_writer_position.py",
+                           "tests/python/buffered_writer_lifecycle.py",
+                           "tests/python/buffered_writer_reentry.py",
+                           "tests/python/buffered_writer_mixed.py",
+                           "tests/python/buffered_writer_boundaries.py",
+                           "tests/python/buffered_writer_reinitialize.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(OSErrorReclamation, ConstructorAndLatentAttributes)
 {
     for(const char *path:
