@@ -392,16 +392,19 @@ streams are intentionally not closed by reclamation or VM teardown.
 
 Native IOBase/RawIOBase now form the FileIO base hierarchy. Their first slice
 provides close/flush, capabilities, context management and state checks; generic
-raw read/readall fallbacks and line iteration remain deferred. Base subclasses
-support custom Python initializers with the inherited native allocator. Closed
+raw read/readall fallbacks and FileIO.readall are available; line iteration remains
+deferred. RawIOBase.read rejects a count exceeding a callback-resized buffer's
+current length rather than copying beyond it. Base subclasses support custom
+Python initializers with the inherited native allocator. Closed
 attributes use native read-only slots rather than getset descriptors. Descriptor
 isatty and truncate remain unsupported; inherited isatty returns False.
 Buffering, text I/O and builtin open remain
 unimplemented. FileIO.readinto accepts bytearray destinations using a synchronous
 native borrow; general writable-buffer inputs remain deferred. FileIO accepts
 string paths and stored integer descriptors; bytes
-paths, path/index protocols, general write buffers, unbounded reads, custom FileIO
-initializers and reinitialization are deferred. FileIO subclasses inherit the native constructor
+paths, path/index protocols, general write buffers, unbounded FileIO.read, custom
+FileIO initializers and reinitialization are deferred. FileIO subclasses inherit
+the native constructor
 and can override methods and store additional attributes. See
 [Native FileIO](file-io.md) for operation, validation, attribute-introspection and
 platform boundaries.

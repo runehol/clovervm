@@ -467,6 +467,38 @@ TEST(FileIO, ReadIntoReportsExternalCloseEvenForEmptyDestination)
                 L"assert not io.reader.closed\nio.reader.close()\nNone\n"));
 }
 
+TEST(FileIO, ReadAllReturnsAvailablePipeDataOrNoneBeforeEOF)
+{
+    int descriptors[2];
+    ASSERT_EQ(0, pipe(descriptors));
+    TestFd reader(descriptors[0]);
+    TestFd writer(descriptors[1]);
+    ASSERT_EQ(0, fcntl(reader.fd, F_SETFL, O_NONBLOCK));
+    test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_EQ(Value::None(),
+              run(context, L"io.reader = io.FileIO(" +
+                               std::to_wstring(reader.fd) +
+                               L", closefd=False)\n"
+                               L"assert io.reader.readall() is None\nNone\n"));
+    ASSERT_EQ(3, write(writer.fd, "ABC", 3));
+    EXPECT_EQ(Value::None(),
+              run(context, L"assert io.reader.readall() == b'ABC'\n"
+                           L"assert io.reader.readall() is None\nNone\n"));
+    ASSERT_EQ(2, write(writer.fd, "DE", 2));
+    EXPECT_EQ(Value::None(),
+              run(context,
+                  L"assert io.RawIOBase.readall(io.reader) == b'DE'\n"
+                  L"assert io.RawIOBase.readall(io.reader) is None\nNone\n"));
+    ASSERT_EQ(0, close(writer.release()));
+    EXPECT_EQ(Value::None(),
+              run(context, L"assert io.reader.readall() == b''\n"
+                           L"assert io.RawIOBase.readall(io.reader) == "
+                           L"b''\nio.reader.close()\nNone\n"));
+    EXPECT_GE(fcntl(reader.fd, F_GETFD), 0);
+}
+
 TEST(FileIO, PathOpenIsNonInheritable)
 {
     test::VmTestContext context;

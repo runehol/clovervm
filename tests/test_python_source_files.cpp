@@ -153,6 +153,25 @@ TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, RawIOReadsSurviveEverySafepointReclamation)
+{
+    for(const char *path:
+        {"tests/python/rawio_read.py", "tests/python/rawio_read_validation.py",
+         "tests/python/rawio_read_callbacks.py",
+         "tests/python/rawio_readall.py",
+         "tests/python/rawio_readall_errors.py",
+         "tests/python/rawio_read_resized_buffer.py",
+         "tests/python/file_io_readall.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(OSErrorReclamation, ConstructorAndLatentAttributes)
 {
     for(const char *path:

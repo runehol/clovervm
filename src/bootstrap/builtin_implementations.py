@@ -854,3 +854,71 @@ def _clover_bytearray_extend(self, source, /):
         return
     staged = _clover_bytearray_snapshot(source)
     _clover_bytearray_extend_native(self, staged)
+
+
+# Shared by the generic raw loop and the FileIO wrapper. Raw readall observes
+# each read override; FileIO readall calls only the retained native primitive.
+_clover_rawio_chunk_size = 128 * 1024
+
+
+def _clover_rawio_index(value):
+    if isinstance(value, int):
+        return value
+    return __clover_call_special__(
+        value, "__index__", TypeError, "object cannot be interpreted as an integer"
+    )
+
+
+def _clover_rawio_read(self, size=-1, /):
+    _clover_rawio_validate(self)
+    size = _clover_rawio_read_size(_clover_rawio_index(size))
+    if size < 0:
+        return self.readall()
+    buffer = bytearray(size)
+    count = self.readinto(buffer)
+    if count is None:
+        return None
+    return _clover_rawio_finish_read(buffer, _clover_rawio_index(count), size)
+
+
+def _clover_rawio_is_eintr(error):
+    try:
+        return _clover_rawio_errno_is_eintr(_clover_rawio_index(error.errno))
+    except BaseException:
+        # Match the reference trap: failed errno conversion must not replace
+        # the original I/O error being considered for retry.
+        return False
+
+
+def _clover_rawio_readall(self, /):
+    _clover_rawio_validate(self)
+    result = bytearray()
+    while True:
+        try:
+            chunk = self.read(_clover_rawio_chunk_size)
+        except OSError as error:
+            if _clover_rawio_is_eintr(error):
+                continue
+            raise
+        if chunk is None:
+            if bytearray.__len__(result) == 0:
+                return None
+            return bytes(result)
+        if not isinstance(chunk, bytes):
+            raise TypeError('read() should return bytes')
+        if bytes.__len__(chunk) == 0:
+            return bytes(result)
+        bytearray.extend(result, chunk)
+
+
+def _clover_fileio_readall(self, /):
+    result = bytearray()
+    while True:
+        chunk = _clover_fileio_native_read(self, _clover_rawio_chunk_size)
+        if chunk is None:
+            if bytearray.__len__(result) == 0:
+                return None
+            return bytes(result)
+        if bytes.__len__(chunk) == 0:
+            return bytes(result)
+        bytearray.extend(result, chunk)
