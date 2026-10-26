@@ -17,6 +17,8 @@ namespace cl
         Dict,
         SlotDict,
         Slice,
+        IOBase,
+        RawIOBase,
         FileIO,
         Float,
         Function,

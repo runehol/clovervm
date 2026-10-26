@@ -1229,6 +1229,8 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"UserWarning", warning));
 
+        register_builtin_class(make_io_base_class(this));
+        register_builtin_class(make_raw_io_base_class(this));
         register_builtin_class(make_file_io_class(this));
         register_builtin_class(make_unsupported_operation_class(this));
 
@@ -1263,6 +1265,7 @@ namespace cl
                 "creating keyword helper"));
         install_slotdict_class_methods(this);
         install_slice_class_methods(this);
+        install_io_base_methods(this);
         install_file_io_methods(this);
         install_float_class_methods(this);
         install_module_class_methods(this);

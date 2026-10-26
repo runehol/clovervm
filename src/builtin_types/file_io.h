@@ -1,7 +1,7 @@
 #ifndef CL_FILE_IO_H
 #define CL_FILE_IO_H
 
-#include "object_model/builtin_class_registry.h"
+#include "builtin_types/io_base.h"
 #include "object_model/object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
@@ -12,15 +12,15 @@
 namespace cl
 {
     class VirtualMachine;
-    class FileIOObject : public InlineSlotObject
+    class FileIOObject : public RawIOBaseObject
     {
     public:
         static constexpr NativeLayoutId native_layout = NativeLayoutId::FileIO;
-        static constexpr uint32_t kPredefinedInlineSlotCount = 4;
-        static constexpr uint32_t kInlineSlotCount = 4;
+        static constexpr uint32_t kPredefinedInlineSlotCount = 5;
+        static constexpr uint32_t kInlineSlotCount = 5;
 
         explicit FileIOObject(ClassObject *cls)
-            : InlineSlotObject(cls, native_layout), name(Value::not_present()),
+            : RawIOBaseObject(cls, native_layout), name(Value::not_present()),
               mode(Value::not_present()), closed(TValue<Bool>::from_bool(true)),
               closefd(TValue<Bool>::from_bool(true))
         {
@@ -44,18 +44,18 @@ namespace cl
 
         // Intentionally no resource finalizer. Only explicit close, with-exit,
         // and local construction rollback release descriptors.
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(FileIOObject, InlineSlotObject, 4);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(FileIOObject, RawIOBaseObject, 4);
         CL_DECLARE_STATIC_OBJECT_SIZE(FileIOObject);
     };
-    static_assert(CL_OFFSETOF(FileIOObject, name) == sizeof(InlineSlotObject));
+    static_assert(CL_OFFSETOF(FileIOObject, name) == sizeof(RawIOBaseObject));
     static_assert(CL_OFFSETOF(FileIOObject, mode) ==
-                  sizeof(InlineSlotObject) + sizeof(Value));
+                  sizeof(RawIOBaseObject) + sizeof(Value));
     static_assert(CL_OFFSETOF(FileIOObject, closed) ==
-                  sizeof(InlineSlotObject) + 2 * sizeof(Value));
+                  sizeof(RawIOBaseObject) + 2 * sizeof(Value));
     static_assert(CL_OFFSETOF(FileIOObject, closefd) ==
-                  sizeof(InlineSlotObject) + 3 * sizeof(Value));
+                  sizeof(RawIOBaseObject) + 3 * sizeof(Value));
     static_assert(CL_OFFSETOF(FileIOObject, fd) ==
-                  sizeof(InlineSlotObject) + 4 * sizeof(Value));
+                  sizeof(RawIOBaseObject) + 4 * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<FileIOObject>);
 
     BuiltinClassDefinition make_file_io_class(VirtualMachine *vm);

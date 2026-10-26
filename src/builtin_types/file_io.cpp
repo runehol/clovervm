@@ -140,10 +140,13 @@ namespace cl
         Value native_file_new(ThreadState *thread, Value cls, Value source,
                               Value mode_value, Value closefd_value)
         {
-            if(cls != Value::from_oop(thread->class_for_native_layout(
-                          NativeLayoutId::FileIO)))
+            Owned<TValue<ClassObject>> type(
+                CL_TRY(TValue<ClassObject>::from_value_or_raise(
+                    cls, L"TypeError", L"FileIO.__new__ requires a class")));
+            if(type.extract()->instance_native_layout_id() !=
+               NativeLayoutId::FileIO)
                 return thread->set_pending_builtin_exception_string(
-                    L"TypeError", L"FileIO.__new__ expects FileIO as cls");
+                    L"TypeError", L"FileIO.__new__ expects a FileIO subclass");
             Owned<Value> retained_source(source);
             Owned<Value> retained_mode(mode_value);
             Owned<Value> retained_closefd(closefd_value);
@@ -186,7 +189,7 @@ namespace cl
             Owned<TValue<String>> normalized_mode(
                 string_value(thread, mode.canonical));
             Owned<TValue<FileIOObject>> file(
-                thread->make_object_value<FileIOObject>());
+                thread->make_internal_value<FileIOObject>(type.extract()));
             PendingFileDescriptor pending;
             if(from_path)
             {
@@ -233,33 +236,26 @@ namespace cl
 
         Value native_file_close(ThreadState *thread, Value self)
         {
-            TValue<FileIOObject> file = CL_TRY(file_receiver(self));
+            Owned<TValue<FileIOObject>> file(CL_TRY(file_receiver(self)));
+            Value flushed = close_io_base(thread, self);
             int fd = file.extract()->detach_fd();
             if(fd >= 0 && file.extract()->closefd.value().extract())
             {
                 FileResult result = platform_file_close(fd);
                 if(result.error)
+                {
+                    if(flushed.is_exception_marker())
+                        thread->clear_pending_exception();
                     return file_os_error(thread, result.error);
+                }
             }
-            return Value::None();
+            return flushed;
         }
 
         Value native_file_fileno(ThreadState *thread, Value self)
         {
             auto file = CL_TRY(open_file_receiver(self));
             return CL_TRY(int_value_from_int64(thread, file.extract()->fd));
-        }
-
-        Value native_file_enter(ThreadState *thread, Value self)
-        {
-            (void)CL_TRY(open_file_receiver(self));
-            return self;
-        }
-
-        Value native_file_exit(ThreadState *thread, Value self, Value type,
-                               Value exception, Value traceback)
-        {
-            return native_file_close(thread, self);
         }
 
         Value native_file_read(ThreadState *thread, Value self,
@@ -375,19 +371,21 @@ namespace cl
     {
         ClassObject *cls = ClassObject::make_builtin_class<FileIOObject>(
             vm->get_or_create_interned_string_value(L"FileIO"),
-            FileIOObject::kInlineSlotCount, nullptr, 0, vm->object_class(),
-            SubclassPolicy::Disallowed);
+            FileIOObject::kInlineSlotCount, nullptr, 0,
+            active_thread()->class_for_native_layout(NativeLayoutId::RawIOBase),
+            SubclassPolicy::Allowed);
         auto readonly = descriptor_flag(DescriptorFlag::StableSlot) |
                         descriptor_flag(DescriptorFlag::ReadOnly);
         BuiltinInstanceShapeBuilder(
             cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
             FileIOObject::kInlineSlotCount)
-            .add_slot(L"name", 0)
-            .add_slot(vm->get_or_create_interned_string_value(L"mode"), 1,
+            .reserve_slot(0)
+            .add_slot(L"name", 1)
+            .add_slot(vm->get_or_create_interned_string_value(L"mode"), 2,
                       readonly)
-            .add_slot(vm->get_or_create_interned_string_value(L"closed"), 2,
+            .add_slot(vm->get_or_create_interned_string_value(L"closed"), 3,
                       readonly)
-            .add_slot(vm->get_or_create_interned_string_value(L"closefd"), 3,
+            .add_slot(vm->get_or_create_interned_string_value(L"closefd"), 4,
                       readonly)
             .install(mutable_attribute_shape_flags());
         bool installed = cls->define_own_property(
@@ -456,8 +454,6 @@ namespace cl
                 names, 3, 1),
             builtin_intrinsic_method(L"close", native_file_close),
             builtin_intrinsic_method(L"fileno", native_file_fileno),
-            builtin_intrinsic_method(L"__enter__", native_file_enter),
-            builtin_intrinsic_method(L"__exit__", native_file_exit),
             with_defaults(builtin_intrinsic_method(L"read", native_file_read),
                           read_defaults.value()),
             builtin_intrinsic_method(L"write", native_file_write),
