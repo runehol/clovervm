@@ -51,7 +51,7 @@ edge cases, platform behavior, or APIs are still missing.
 
 | Status | Module | Why it matters | Not handled / notes |
 | --- | --- | --- | --- |
-| [ ] | `re` | Regular expressions; required by many parsers and validators. | Not started / not assessed. |
+| [ ] | `re` | Regular expressions; required by many parsers and validators. | Implementation not started. [Draft engine design](regular-expression-engine.md) records a C++ parser/compiler and a shared templated backtracking matcher based on CPython; pattern caching is deferred. Initial API/syntax scope and runtime integration remain open. |
 | [~] | `string` | Constants and formatter helpers. | Pure-Python module now exposes common constants (`ascii_*`, digits, hexdigits, octdigits, punctuation, whitespace, printable) and `capwords`. Missing `Template` and `Formatter`, which need richer formatting, regex, mapping, and protocol support. |
 | [ ] | `enum` | Enum classes used by stdlib and application APIs. | Depends on class/metaclass behavior. |
 | [ ] | `dataclasses` | Common declarative class helper. | Depends on annotations, descriptors, introspection, and class mutation semantics. |
