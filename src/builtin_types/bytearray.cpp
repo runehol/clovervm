@@ -470,32 +470,38 @@ namespace cl
         return del_index(array, CL_TRY(item_index_or_raise(index)));
     }
 
-    template <bool SliceKey>
+    enum class ItemKeyKind
+    {
+        Smi,
+        Slice,
+    };
+
+    template <ItemKeyKind KeyKind>
     static Value trusted_getitem(ThreadState *thread, Value self, Value index)
     {
         auto array = TValue<ByteArray>::from_value_assumed(self);
-        if constexpr(SliceKey)
+        if constexpr(KeyKind == ItemKeyKind::Slice)
             return get_slice(thread, array, index);
         else
             return get_index(array, index.get_smi());
     }
 
-    template <bool SliceKey>
+    template <ItemKeyKind KeyKind>
     static Value trusted_setitem(ThreadState *thread, Value self, Value index,
                                  Value value)
     {
         auto array = TValue<ByteArray>::from_value_assumed(self);
-        if constexpr(SliceKey)
+        if constexpr(KeyKind == ItemKeyKind::Slice)
             return set_slice(thread, array, index, value);
         else
             return set_index(array, index.get_smi(), value);
     }
 
-    template <bool SliceKey>
+    template <ItemKeyKind KeyKind>
     static Value trusted_delitem(ThreadState *, Value self, Value index)
     {
         auto array = TValue<ByteArray>::from_value_assumed(self);
-        if constexpr(SliceKey)
+        if constexpr(KeyKind == ItemKeyKind::Slice)
             return del_slice(array, index);
         else
             return del_index(array, index.get_smi());
@@ -759,22 +765,22 @@ namespace cl
                                      TrustedHandlerEffects::None);
         vm->register_trusted_handler(trusted_compare<ByteArrayGeOperator>,
                                      TrustedHandlerEffects::None);
-        vm->register_trusted_handler(trusted_getitem<false>,
+        vm->register_trusted_handler(trusted_getitem<ItemKeyKind::Smi>,
                                      TrustedHandlerEffects::Raise);
-        vm->register_trusted_handler(trusted_getitem<true>,
+        vm->register_trusted_handler(trusted_getitem<ItemKeyKind::Slice>,
                                      TrustedHandlerEffects::Raise |
                                          TrustedHandlerEffects::Allocate);
-        vm->register_trusted_handler(trusted_setitem<false>,
+        vm->register_trusted_handler(trusted_setitem<ItemKeyKind::Smi>,
                                      TrustedHandlerEffects::Raise);
         // The RHS is not guarded by the IC. Every replay may enter Python.
-        vm->register_trusted_handler(trusted_setitem<true>,
+        vm->register_trusted_handler(trusted_setitem<ItemKeyKind::Slice>,
                                      TrustedHandlerEffects::Raise |
                                          TrustedHandlerEffects::Allocate |
                                          TrustedHandlerEffects::Safepoint |
                                          TrustedHandlerEffects::CallPython);
-        vm->register_trusted_handler(trusted_delitem<false>,
+        vm->register_trusted_handler(trusted_delitem<ItemKeyKind::Smi>,
                                      TrustedHandlerEffects::Raise);
-        vm->register_trusted_handler(trusted_delitem<true>,
+        vm->register_trusted_handler(trusted_delitem<ItemKeyKind::Slice>,
                                      TrustedHandlerEffects::Raise);
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"__len__", native_len),
@@ -783,15 +789,18 @@ namespace cl
             builtin_intrinsic_method(L"__iter__", native_iter),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__getitem__", native_getitem),
-                resolve_item<trusted_getitem<false>, trusted_getitem<true>,
+                resolve_item<trusted_getitem<ItemKeyKind::Smi>,
+                             trusted_getitem<ItemKeyKind::Slice>,
                              TrustedHandlerArity::Binary>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__setitem__", native_setitem),
-                resolve_item<trusted_setitem<false>, trusted_setitem<true>,
+                resolve_item<trusted_setitem<ItemKeyKind::Smi>,
+                             trusted_setitem<ItemKeyKind::Slice>,
                              TrustedHandlerArity::Ternary>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__delitem__", native_delitem),
-                resolve_item<trusted_delitem<false>, trusted_delitem<true>,
+                resolve_item<trusted_delitem<ItemKeyKind::Smi>,
+                             trusted_delitem<ItemKeyKind::Slice>,
                              TrustedHandlerArity::Binary>),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(L"__eq__",
