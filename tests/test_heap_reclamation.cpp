@@ -307,11 +307,15 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         context.vm().run_heap_reclamation();
-        uint64_t baseline = heap.count_valid_objects_slow();
         TValue<String> source = thread->make_object_value<String>(L"source");
         String *source_ptr = source.extract();
         StringIterator *iterator =
             thread->make_object_raw<StringIterator>(source);
+        auto object_is_valid = [&heap](HeapObject *object) {
+            return heap.has_slab_for_address_for_testing(object) &&
+                   slab_has_valid_object(heap.slab_for_object_unlocked(object),
+                                         object);
+        };
         ASSERT_EQ(1, source_ptr->refcount);
         EXPECT_EQ(sizeof(StringIterator), object_size_in_bytes(iterator));
 
@@ -321,14 +325,16 @@ namespace cl
         thread->publish_safepoint_scan_record(slot, Value::not_present());
         thread->add_to_zero_count_table_if_needed(iterator);
         context.vm().run_heap_reclamation();
-        EXPECT_EQ(baseline + 2, heap.count_valid_objects_slow());
+        ASSERT_TRUE(object_is_valid(iterator));
+        ASSERT_TRUE(object_is_valid(source_ptr));
         EXPECT_EQ(1, source_ptr->refcount);
         EXPECT_EQ(std::wstring_view(L"source"), string_view(iterator->string));
 
         // Dropping the iterator reclaims both objects via its Member edge.
         *slot = Value::not_present();
         context.vm().run_heap_reclamation();
-        EXPECT_EQ(baseline, heap.count_valid_objects_slow());
+        EXPECT_FALSE(object_is_valid(iterator));
+        EXPECT_FALSE(object_is_valid(source_ptr));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(iterator));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(source_ptr));
     }
