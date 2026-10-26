@@ -16,7 +16,8 @@ The `io` module exports native `IOBase`, `RawIOBase`, `BufferedIOBase`, and
 These relationships match the C++ native prefixes. All four allow Python
 subclasses;
 FileIO subclasses inherit the native file constructor and descriptor layout.
-Buffered streams, text streams and builtin `open` are separate work.
+BufferedReader provides managed binary buffering; writer classes, text streams
+and builtin `open` are separate work.
 `io.UnsupportedOperation` inherits both `OSError` and `ValueError` and uses the
 existing OSError native storage.
 
@@ -168,7 +169,45 @@ They require stored bytes results and copy only the returned prefix, preserving
 the destination length and unwritten suffix. Non-bytes results raise TypeError;
 results exceeding the original request or a callback-resized destination raise
 ValueError. No writable span is retained across callbacks or VM allocation.
-General writable-buffer inputs, computed properties, and BufferedReader remain
-separate work. The regressions include shared-prefix multiple inheritance,
+General writable-buffer inputs and computed properties remain separate work. The regressions include shared-prefix multiple inheritance,
 constructor cache invalidation, callback failures, subclass hooks, destination
 resizing, and forced reclamation.
+
+
+## BufferedReader
+
+`io.BufferedReader` / `_io.BufferedReader` is a managed Python subclass of
+native BufferedIOBase, defined in the retained trusted bootstrap module. Its
+raw reference, bytearray buffer, cursor/end indices, capacity, and reentry flag
+are ordinary attributes using existing overflow storage. No reader-specific
+native layout, spare inline slots, descriptors, interpreter changes, or cleanup
+hooks are introduced. DEFAULT_BUFFER_SIZE is 128 KiB.
+
+Bounded read/readinto operations consume buffered bytes and issue raw.readinto
+calls until satisfied, EOF, or would-block. Large requests bypass the internal
+buffer with a temporary bytearray. Short transfers are not EOF. read1 returns
+buffered bytes immediately or makes one raw read; peek fills an empty buffer at
+most once and does not advance the cursor. readinto1 can combine buffered bytes
+with at most one additional raw read. General writable buffers remain deferred.
+read/readinto/readinto1 preserve partial results and return None if no data was
+available before would-block; read1/peek return empty bytes in that case.
+Unbounded read drains buffered bytes and calls raw.readall when present,
+otherwise loops over raw.read(). Raw transfer-count conversion/range failures
+raise OSError; a count beyond callback-resized storage raises ValueError.
+Native copy helpers validate stored bounds and acquire payloads only after
+allocation and callbacks have finished.
+
+tell subtracts unread bytes from raw.tell. Relative seeks compensate for
+read-ahead; seek always delegates to raw and discards buffered data only after
+success. Buffered operations reject reentry and release their guard on failure.
+flush is a stateless raw delegation. close runs IOBase.close and then attempts
+raw.close even if flushing raises; an already-closed raw stream simply marks the
+reader closed. Successful initialization resets the reader's base-close flag.
+detach flushes, returns raw at its current physical position, discards unread
+bytes, and makes the wrapper unusable. Abandonment never closes raw.
+
+Computed properties remain an accepted incompatibility: raw is an ordinary
+writable attribute, closed reflects the reader's own base flag, and name/mode
+are omitted. External raw closure does not change reader.closed; cached data
+can still be consumed, but further raw transfers reject the closed stream.
+Line methods/iteration, writer classes, text I/O and builtin open remain deferred.

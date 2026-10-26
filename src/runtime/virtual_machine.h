@@ -148,6 +148,7 @@ namespace cl
             return TValue<ModuleObject>::from_oop(global_builtins_module_);
         }
         TValue<ModuleObject> sys_module() const;
+        TValue<ClassObject> buffered_reader_class() const;
         TValue<Dict> imported_modules() const;
         NativeLibraryHandleCache &native_library_handle_cache();
         void set_global_builtins_module(ModuleObject *module)

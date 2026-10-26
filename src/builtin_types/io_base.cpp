@@ -10,6 +10,7 @@
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
+#include "platform/file_io.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/runtime_helpers.h"
 #include <algorithm>
@@ -21,6 +22,7 @@ namespace cl
 {
     namespace
     {
+        constexpr int64_t default_buffer_size = 128 * 1024;
         // This validates the native prefix without weakening exact-layout
         // casts.
         [[nodiscard]] Expected<TValue<IOBaseObject>> io_receiver(Value self)
@@ -235,6 +237,92 @@ namespace cl
                                     static_cast<size_t>(count), bytes.data());
                     });
             return Value::from_smi(count);
+        }
+
+        Value native_buffered_seek_whence(ThreadState *thread, Value whence)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_read_size(thread, whence));
+            SmiViewStorage storage;
+            int64_t value = CL_TRY(
+                bigint_to_int64(intlike_value_bigint_view(whence, &storage)));
+            if(!platform_file_seek_whence_is_valid(static_cast<int>(value)))
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"unsupported whence value");
+            return Value::from_smi(value);
+        }
+
+        Value native_buffered_set_closed(ThreadState *thread, Value self,
+                                         Value closed)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            auto state = CL_TRY(TValue<Bool>::from_value_or_raise(
+                closed, L"TypeError", L"closed state must be bool"));
+            auto io = CL_TRY(io_receiver(self));
+            io.extract()->base_closed = state;
+            return Value::None();
+        }
+
+        Value native_buffered_copy(ThreadState *thread, Value buffer,
+                                   Value offset, Value count)
+        {
+            Owned<TValue<ByteArray>> source(
+                CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                    buffer, L"TypeError", L"buffer must be bytearray")));
+            auto start = CL_TRY(TValue<SMI>::from_value_or_raise(
+                offset, L"TypeError", L"invalid buffer offset"));
+            auto length = CL_TRY(TValue<SMI>::from_value_or_raise(
+                count, L"TypeError", L"invalid buffer length"));
+            if(start.extract() < 0 || length.extract() < 0 ||
+               static_cast<size_t>(start.extract()) >
+                   source.extract()->size() ||
+               static_cast<size_t>(length.extract()) >
+                   source.extract()->size() -
+                       static_cast<size_t>(start.extract()))
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"invalid buffer range");
+            Owned<TValue<Bytes>> result(
+                thread->make_object_value<Bytes>(length));
+            if(length.extract() != 0)
+                with_bytearray_writable_bytes(
+                    source.value(), [&](std::span<uint8_t> bytes) noexcept {
+                        std::copy_n(bytes.data() + start.extract(),
+                                    static_cast<size_t>(length.extract()),
+                                    result.extract()->data);
+                    });
+            return result.raw_value();
+        }
+
+        Value native_buffered_read_count(ThreadState *thread, Value buffer,
+                                         Value count, Value requested)
+        {
+            auto destination = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                buffer, L"TypeError", L"buffer must be bytearray"));
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested read size"));
+            if(!is_intlike_value(count))
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw readinto() failed");
+            SmiViewStorage storage, zero_storage, bound_storage;
+            auto view = intlike_value_bigint_view(count, &storage);
+            if(bound.extract() < 0 ||
+               compare_bigint(view, smi_bigint_view(0, &zero_storage)) < 0 ||
+               compare_bigint(
+                   view, smi_bigint_view(bound.extract(), &bound_storage)) > 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw readinto() returned an invalid count");
+            int64_t result = CL_TRY(bigint_to_int64(view));
+            if(static_cast<size_t>(result) > destination.extract()->size())
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError",
+                    L"readinto returned a count beyond the resized buffer");
+            return Value::from_smi(result);
+        }
+
+        Value native_buffered_bytes_size(ThreadState *, Value data)
+        {
+            auto bytes = CL_TRY(TValue<Bytes>::from_value_or_raise(
+                data, L"TypeError", L"read() should return bytes"));
+            return bytes.extract()->count.raw_value();
         }
 
         Value native_buffered_write(ThreadState *thread, Value self, Value)
@@ -513,9 +601,27 @@ namespace cl
                 buffered, std::size(buffered)),
             "installing BufferedIOBase methods");
     }
+    int64_t default_io_buffer_size() { return default_buffer_size; }
+
     void install_io_base_helpers(VirtualMachine *vm, ModuleObject *module)
     {
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(
+                interned_string(L"_clover_bufferedio_default_buffer_size"),
+                Value::from_smi(default_buffer_size)),
+            "installing buffered I/O default size");
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bufferedio_seek_whence",
+                                     native_buffered_seek_whence),
+            builtin_intrinsic_method(L"_clover_bufferedio_set_closed",
+                                     native_buffered_set_closed),
+            builtin_intrinsic_method(L"_clover_bufferedio_copy",
+                                     native_buffered_copy),
+            builtin_intrinsic_method(L"_clover_bufferedio_read_count",
+                                     native_buffered_read_count),
+            builtin_intrinsic_method(L"_clover_bufferedio_bytes_size",
+                                     native_buffered_bytes_size),
             builtin_intrinsic_method(L"_clover_bufferedio_validate",
                                      native_buffered_validate),
             builtin_intrinsic_method(L"_clover_bufferedio_read_size",

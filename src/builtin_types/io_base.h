@@ -5,6 +5,7 @@
 #include "object_model/object.h"
 #include "object_model/owned.h"
 #include "object_model/typed_value.h"
+#include <cstdint>
 #include <type_traits>
 
 namespace cl
@@ -80,6 +81,7 @@ namespace cl
     BuiltinClassDefinition make_raw_io_base_class(VirtualMachine *vm);
     BuiltinClassDefinition make_buffered_io_base_class(VirtualMachine *vm);
     void install_io_base_methods(VirtualMachine *vm);
+    int64_t default_io_buffer_size();
     void install_io_base_helpers(VirtualMachine *vm, ModuleObject *module);
     void install_io_base_python_methods(VirtualMachine *vm,
                                         ModuleObject *module);

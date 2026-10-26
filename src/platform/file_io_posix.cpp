@@ -106,6 +106,21 @@ namespace cl
         return {result, result < 0 ? errno : 0};
     }
 
+    bool platform_file_seek_whence_is_valid(int whence)
+    {
+        if(whence == SEEK_SET || whence == SEEK_CUR || whence == SEEK_END)
+            return true;
+#ifdef SEEK_DATA
+        if(whence == SEEK_DATA)
+            return true;
+#endif
+#ifdef SEEK_HOLE
+        if(whence == SEEK_HOLE)
+            return true;
+#endif
+        return false;
+    }
+
     FileResult platform_file_seek(int fd, int64_t offset, int whence)
     {
         static_assert(std::numeric_limits<off_t>::digits >= 63);

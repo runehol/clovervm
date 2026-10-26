@@ -1518,6 +1518,12 @@ namespace cl
             interned_string(L"_clover_io_unsupported"),
             Value::from_oop(
                 thread->class_for_builtin_name(L"UnsupportedOperation")));
+        for(auto entry:
+            {std::pair{L"IOBase", NativeLayoutId::IOBase},
+             std::pair{L"BufferedIOBase", NativeLayoutId::BufferedIOBase}})
+            install_implementation_binding(
+                interned_string(entry.first),
+                Value::from_oop(thread->class_for_native_layout(entry.second)));
         install_io_base_helpers(this, implementation_module);
         install_bytearray_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
@@ -1545,6 +1551,7 @@ namespace cl
                                        L"None",
                                        L"Ellipsis",
                                        L"AttributeError",
+                                       L"RuntimeError",
                                        L"BaseException",
                                        L"OSError"};
         for(const wchar_t *name: seed_names)
@@ -1710,6 +1717,13 @@ namespace cl
         {
             definition.cls->freeze();
         }
+    }
+
+    TValue<ClassObject> VirtualMachine::buffered_reader_class() const
+    {
+        return TValue<ClassObject>::from_value_assumed(
+            builtin_implementation_module_->get_own_property(
+                interned_string(L"BufferedReader")));
     }
 
     TValue<Function> VirtualMachine::enumerate_call_function() const
