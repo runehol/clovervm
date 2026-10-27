@@ -14,6 +14,7 @@ enable_sanitizers(test_clovervm)
 
 target_sources(test_clovervm PRIVATE
 	test_codec.cpp
+	test_incremental_codec.cpp
 	test_codec_c.c
 	test_bytearray.cpp
 	test_bigint.cpp

@@ -26,6 +26,8 @@ configure_file(
 add_library(libclovervm_objects OBJECT
     codecs/codec.cpp
     codecs/codec.h
+    codecs/incremental_codec.cpp
+    codecs/incremental_codec.h
     ${CL_FILE_IO_PLATFORM_SOURCE}
     object_model/attr.cpp
     object_model/attr.h
