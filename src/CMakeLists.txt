@@ -24,6 +24,8 @@ configure_file(
     @ONLY)
 
 add_library(libclovervm_objects OBJECT
+    codecs/codec.cpp
+    codecs/codec.h
     ${CL_FILE_IO_PLATFORM_SOURCE}
     object_model/attr.cpp
     object_model/attr.h
@@ -377,7 +379,7 @@ target_include_directories(
 
 target_link_libraries(
     libclovervm_objects PRIVATE project_options project_warnings
-                               FastFloat::fast_float)
+                               FastFloat::fast_float simdutf::simdutf)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
     target_compile_options(libclovervm_objects PRIVATE -fno-exceptions)
 else()
