@@ -17,6 +17,17 @@ namespace cl
         buffer.append(str->data, size_t(str->count.extract()));
     }
 
+    void StringBuilder::append_hex(uint32_t value, unsigned width)
+    {
+        size_t start = buffer.size();
+        buffer.append(width, L'0');
+        for(unsigned i = width; i != 0; --i)
+        {
+            buffer[start + i - 1] = L"0123456789abcdef"[value & 15];
+            value >>= 4;
+        }
+    }
+
     Value StringBuilder::append_repr(Value value)
     {
         Value str = value_to_repr_string(value);

@@ -64,6 +64,29 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
+FetchContent_Declare(
+  simdutf
+  URL https://codeload.github.com/simdutf/simdutf/tar.gz/refs/tags/v9.3.2
+  URL_HASH SHA256=d92a0a4ce216dcebf18af20fed7ea7279fa535683f790fdaeed39827a234f567
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+# Keep the dependency's library static without changing other project targets.
+block()
+  set(BUILD_SHARED_LIBS OFF)
+  set(SIMDUTF_TESTS OFF CACHE BOOL "" FORCE)
+  set(SIMDUTF_TOOLS OFF CACHE BOOL "" FORCE)
+  set(SIMDUTF_BENCHMARKS OFF CACHE BOOL "" FORCE)
+  set(SIMDUTF_ICONV OFF CACHE BOOL "" FORCE)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  FetchContent_MakeAvailable(simdutf)
+  if(TARGET simdutf-nostdlibcxx)
+    set_target_properties(simdutf-nostdlibcxx PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  endif()
+  install(FILES "${simdutf_SOURCE_DIR}/LICENSE-MIT"
+    DESTINATION share/licenses/clovervm RENAME simdutf-LICENSE-MIT)
+endblock()
+
 block()
   set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
   FetchContent_MakeAvailable(googletest)

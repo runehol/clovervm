@@ -24,6 +24,10 @@ configure_file(
     @ONLY)
 
 add_library(libclovervm_objects OBJECT
+    codecs/codec.cpp
+    codecs/codec.h
+    codecs/incremental_codec.cpp
+    codecs/incremental_codec.h
     ${CL_FILE_IO_PLATFORM_SOURCE}
     object_model/attr.cpp
     object_model/attr.h
@@ -58,6 +62,8 @@ add_library(libclovervm_objects OBJECT
     builtin_types/bigint.h
     builtin_types/bytearray.cpp
     builtin_types/bytearray.h
+    builtin_types/text_codec.cpp
+    builtin_types/text_codec.h
     builtin_types/bytes.cpp
     builtin_types/bytes.h
     builtin_types/dict.cpp
@@ -72,6 +78,8 @@ add_library(libclovervm_objects OBJECT
     api/native_module_api.cpp
     api/native_module_api_internal.h
     runtime/exception_handling.h
+    runtime/unicode_error.cpp
+    runtime/unicode_error.h
     runtime/os_error.cpp
     runtime/os_error.h
     runtime/exception_object.cpp
@@ -377,7 +385,7 @@ target_include_directories(
 
 target_link_libraries(
     libclovervm_objects PRIVATE project_options project_warnings
-                               FastFloat::fast_float)
+                               FastFloat::fast_float simdutf::simdutf)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
     target_compile_options(libclovervm_objects PRIVATE -fno-exceptions)
 else()

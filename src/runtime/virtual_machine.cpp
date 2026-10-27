@@ -23,6 +23,7 @@
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_iterator.h"
+#include "builtin_types/text_codec.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "builtin_types/unicode.h"
@@ -48,6 +49,7 @@
 #include "runtime/os_error.h"
 #include "runtime/protocol_helper_functions.h"
 #include "runtime/thread_state.h"
+#include "runtime/unicode_error.h"
 #include <bit>
 #include <cassert>
 #include <cstdint>
@@ -1135,8 +1137,18 @@ namespace cl
             make_exception_subclass(this, L"TypeError", exception);
         ClassObject *type_error = type_error_definition.cls;
         register_builtin_class(type_error_definition);
-        register_builtin_class(
-            make_exception_subclass(this, L"ValueError", exception));
+        auto value_error_definition =
+            make_exception_subclass(this, L"ValueError", exception);
+        ClassObject *value_error = value_error_definition.cls;
+        register_builtin_class(value_error_definition);
+        auto unicode_error_definition =
+            make_exception_subclass(this, L"UnicodeError", value_error);
+        ClassObject *unicode_error = unicode_error_definition.cls;
+        register_builtin_class(unicode_error_definition);
+        register_builtin_class(make_exception_subclass(
+            this, L"UnicodeEncodeError", unicode_error));
+        register_builtin_class(make_exception_subclass(
+            this, L"UnicodeDecodeError", unicode_error));
         BuiltinClassDefinition arithmetic_error_definition =
             make_exception_subclass(this, L"ArithmeticError", exception);
         ClassObject *arithmetic_error = arithmetic_error_definition.cls;
@@ -1246,6 +1258,7 @@ namespace cl
         install_os_error_methods(this);
         install_str_class_methods(this);
         install_bytes_class_methods(this);
+        install_text_codec_methods(this);
         install_bytearray_class_methods(this);
         install_int_class_methods(this);
         install_bool_class_methods(this);
@@ -1525,6 +1538,7 @@ namespace cl
                 interned_string(entry.first),
                 Value::from_oop(thread->class_for_native_layout(entry.second)));
         install_io_base_helpers(this, implementation_module);
+        install_unicode_error_helpers(this, implementation_module);
         install_bytearray_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
         install_zip_helpers(this, implementation_module);
@@ -1543,6 +1557,8 @@ namespace cl
                                        L"isinstance",
                                        L"TypeError",
                                        L"ValueError",
+                                       L"UnicodeEncodeError",
+                                       L"UnicodeDecodeError",
                                        L"IndexError",
                                        L"StopIteration",
                                        L"NotImplemented",
@@ -1658,6 +1674,7 @@ namespace cl
         bytearray_snapshot_function_ = Optional<TValue<Function>>::some(
             TValue<Function>::from_value_assumed(bytearray_snapshot));
         install_io_base_python_methods(this, implementation_module);
+        install_unicode_error_methods(this, implementation_module);
         install_bytearray_python_methods(this, implementation_module);
         install_dict_python_methods(this, implementation_module);
         install_list_python_methods(this, implementation_module);

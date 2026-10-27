@@ -346,12 +346,59 @@ checks, warning emission, finalization detection, and emergency `MemoryError`
 allocation are absent. Ordinary allocation failure is not converted into the
 new `MemoryError` class.
 
-Remaining families outside this slice are `UnicodeError` and its specialized
-subclasses,
+Remaining families outside this slice are `UnicodeTranslateError`,
 `SystemExit`, `GeneratorExit`, `StopAsyncIteration`, `BaseExceptionGroup`, and
 `ExceptionGroup`. Chaining, full traceback support, and signal handling remain
 separate work. Supplying these classes does not complete specialized exception
 behavior.
+
+### One-shot text codecs are limited to UTF-8 and Latin-1
+
+`str.encode` and `bytes.decode` support UTF-8 and Latin-1, their standard aliases,
+and normalized encoding names. The defaults are `encoding="utf-8"` and
+`errors="strict"`; both options accept keywords. Other error policies explicitly
+raise `NotImplementedError`, even on valid or empty input, rather than silently
+ignoring unsupported handlers. Unknown encoding names raise `LookupError`, apart
+from CPython's empty-bytes decode shortcut which skips encoding lookup. Argument
+types and embedded NULs are still checked before that shortcut.
+
+Strict conversion failures produce `UnicodeEncodeError`/`UnicodeDecodeError`
+with canonical encoding names, absolute source positions, and encoding-specific
+reasons. Adjacent encoding failures share an error span, including across scratch
+boundaries. Errors retain the original immutable input object (including bytes
+subclasses), rather than copying a decode payload as CPython does. Results are
+exact builtin bytes/str values. Conversion measures before allocating the final
+result, then uses bounded native scratch buffers. String storage bridges through
+real `char32_t` objects using `memcpy`; this requires the current 32-bit string
+representation. No `wchar_t`/`char32_t` pointer aliasing is used.
+
+A codec registry, public `codecs`/`encodings` modules, Python incremental wrappers,
+other encodings/error handlers, constructor encoding overloads, and text I/O
+remain deferred.
+
+### Unicode exception fields use ordinary overflow attributes
+
+`UnicodeError` derives from `ValueError`; `UnicodeEncodeError` and
+`UnicodeDecodeError` derive from `UnicodeError`. All three reuse the existing
+`ExceptionObject` layout. The specialized constructors accept five positional
+arguments and store the exact supplied objects in both `args` and the ordinary
+overflow attributes `encoding`, `object`, `start`, `end`, and `reason`.
+Unlike CPython, construction performs no type validation, index conversion,
+range checks, or bytearray snapshotting, and invokes no conversion callbacks.
+Mutable inputs remain shared with the caller. Formatting checks that the payload
+is a string (encode) or bytes (decode), and that positions are stored integers
+within signed platform-size bounds, before reading character or byte storage.
+
+The fields intentionally lack CPython's typed member descriptors: assignment may
+store any value, deletion removes the attribute, and instance dictionaries expose
+the fields. Formatting validates payload and positional fields before accessing
+the input. Fields become present during initialization rather than defaulting to
+CPython's uninitialized native field values after a direct `__new__` call.
+Inherited `args` remains read-only under the existing exception contract;
+`BaseException.__init__` can update it independently of the structured fields.
+The shared [native-subclass descriptor execution limitation](descriptor-execution.md#open-attribute-access-initiated-by-native-code)
+is not changed by these classes. `UnicodeTranslateError`, encoding/decoding
+operations, and automatic production of Unicode exceptions remain deferred.
 
 ### OSError fields use ordinary latent attributes
 
