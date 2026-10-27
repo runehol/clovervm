@@ -23,6 +23,7 @@
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_iterator.h"
+#include "builtin_types/text_codec.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "builtin_types/unicode.h"
@@ -1257,6 +1258,7 @@ namespace cl
         install_os_error_methods(this);
         install_str_class_methods(this);
         install_bytes_class_methods(this);
+        install_text_codec_methods(this);
         install_bytearray_class_methods(this);
         install_int_class_methods(this);
         install_bool_class_methods(this);

@@ -62,6 +62,8 @@ add_library(libclovervm_objects OBJECT
     builtin_types/bigint.h
     builtin_types/bytearray.cpp
     builtin_types/bytearray.h
+    builtin_types/text_codec.cpp
+    builtin_types/text_codec.h
     builtin_types/bytes.cpp
     builtin_types/bytes.h
     builtin_types/dict.cpp

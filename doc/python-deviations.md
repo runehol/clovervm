@@ -352,6 +352,30 @@ Remaining families outside this slice are `UnicodeTranslateError`,
 separate work. Supplying these classes does not complete specialized exception
 behavior.
 
+### One-shot text codecs are limited to UTF-8 and Latin-1
+
+`str.encode` and `bytes.decode` support UTF-8 and Latin-1, their standard aliases,
+and normalized encoding names. The defaults are `encoding="utf-8"` and
+`errors="strict"`; both options accept keywords. Other error policies explicitly
+raise `NotImplementedError`, even on valid or empty input, rather than silently
+ignoring unsupported handlers. Unknown encoding names raise `LookupError`, apart
+from CPython's empty-bytes decode shortcut which skips encoding lookup. Argument
+types and embedded NULs are still checked before that shortcut.
+
+Strict conversion failures produce `UnicodeEncodeError`/`UnicodeDecodeError`
+with canonical encoding names, absolute source positions, and encoding-specific
+reasons. Adjacent encoding failures share an error span, including across scratch
+boundaries. Errors retain the original immutable input object (including bytes
+subclasses), rather than copying a decode payload as CPython does. Results are
+exact builtin bytes/str values. Conversion measures before allocating the final
+result, then uses bounded native scratch buffers. String storage bridges through
+real `char32_t` objects using `memcpy`; this requires the current 32-bit string
+representation. No `wchar_t`/`char32_t` pointer aliasing is used.
+
+A codec registry, public `codecs`/`encodings` modules, Python incremental wrappers,
+other encodings/error handlers, constructor encoding overloads, and text I/O
+remain deferred.
+
 ### Unicode exception fields use ordinary overflow attributes
 
 `UnicodeError` derives from `ValueError`; `UnicodeEncodeError` and
