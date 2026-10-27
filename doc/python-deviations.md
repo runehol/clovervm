@@ -346,12 +346,35 @@ checks, warning emission, finalization detection, and emergency `MemoryError`
 allocation are absent. Ordinary allocation failure is not converted into the
 new `MemoryError` class.
 
-Remaining families outside this slice are `UnicodeError` and its specialized
-subclasses,
+Remaining families outside this slice are `UnicodeTranslateError`,
 `SystemExit`, `GeneratorExit`, `StopAsyncIteration`, `BaseExceptionGroup`, and
 `ExceptionGroup`. Chaining, full traceback support, and signal handling remain
 separate work. Supplying these classes does not complete specialized exception
 behavior.
+
+### Unicode exception fields use ordinary overflow attributes
+
+`UnicodeError` derives from `ValueError`; `UnicodeEncodeError` and
+`UnicodeDecodeError` derive from `UnicodeError`. All three reuse the existing
+`ExceptionObject` layout. The specialized constructors accept five positional
+arguments and store the exact supplied objects in both `args` and the ordinary
+overflow attributes `encoding`, `object`, `start`, `end`, and `reason`.
+Unlike CPython, construction performs no type validation, index conversion,
+range checks, or bytearray snapshotting, and invokes no conversion callbacks.
+Mutable inputs remain shared with the caller. Formatting checks that the payload
+is a string (encode) or bytes (decode), and that positions are stored integers
+within signed platform-size bounds, before reading character or byte storage.
+
+The fields intentionally lack CPython's typed member descriptors: assignment may
+store any value, deletion removes the attribute, and instance dictionaries expose
+the fields. Formatting validates payload and positional fields before accessing
+the input. Fields become present during initialization rather than defaulting to
+CPython's uninitialized native field values after a direct `__new__` call.
+Inherited `args` remains read-only under the existing exception contract;
+`BaseException.__init__` can update it independently of the structured fields.
+The shared [native-subclass descriptor execution limitation](descriptor-execution.md#open-attribute-access-initiated-by-native-code)
+is not changed by these classes. `UnicodeTranslateError`, encoding/decoding
+operations, and automatic production of Unicode exceptions remain deferred.
 
 ### OSError fields use ordinary latent attributes
 

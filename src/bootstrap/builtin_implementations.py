@@ -1495,3 +1495,43 @@ class BufferedWriter(BufferedIOBase):
                     raw.close()
             finally:
                 self._busy = False
+
+
+# Structured Unicode errors retain the ordinary ExceptionObject layout. Managed
+# attribute operations use the interpreter's ordinary attribute path.
+def _clover_unicode_encode_init(self, encoding, obj, start, end, reason, /):
+    if not isinstance(self, UnicodeEncodeError):
+        raise TypeError('UnicodeEncodeError.__init__ requires an encode error')
+    BaseException.__init__(self, encoding, obj, start, end, reason)
+    self.encoding = encoding
+    self.object = obj
+    self.start = start
+    self.end = end
+    self.reason = reason
+
+
+def _clover_unicode_decode_init(self, encoding, obj, start, end, reason, /):
+    if not isinstance(self, UnicodeDecodeError):
+        raise TypeError('UnicodeDecodeError.__init__ requires a decode error')
+    BaseException.__init__(self, encoding, obj, start, end, reason)
+    self.encoding = encoding
+    self.object = obj
+    self.start = start
+    self.end = end
+    self.reason = reason
+
+
+def _clover_unicode_encode_str(self, /):
+    if not isinstance(self, UnicodeEncodeError):
+        raise TypeError('UnicodeEncodeError.__str__ requires an encode error')
+    return _clover_unicode_encode_format(
+        self.encoding, self.object, self.start, self.end, self.reason
+    )
+
+
+def _clover_unicode_decode_str(self, /):
+    if not isinstance(self, UnicodeDecodeError):
+        raise TypeError('UnicodeDecodeError.__str__ requires a decode error')
+    return _clover_unicode_decode_format(
+        self.encoding, self.object, self.start, self.end, self.reason
+    )
