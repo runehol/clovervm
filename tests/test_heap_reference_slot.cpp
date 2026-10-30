@@ -170,20 +170,19 @@ TEST(HeapReferenceSlot, WalksMixedInstanceFieldsAndOnlyInitializedInlineCells)
     size_t zero_count_table_size = thread->zero_count_table_size();
     size_t cells = 0;
     size_t rewrites = 0;
-    visit_ordinary_reference_slots(
-        instance, *span, [&](HeapReferenceSlot slot) {
-            ++cells;
-            HeapObject *child = slot.load_pointer();
-            for(size_t idx = 0; idx < sources.size(); ++idx)
+    visit_strong_reference_slots(instance, [&](HeapReferenceSlot slot) {
+        ++cells;
+        HeapObject *child = slot.load_pointer();
+        for(size_t idx = 0; idx < sources.size(); ++idx)
+        {
+            if(child == sources[idx])
             {
-                if(child == sources[idx])
-                {
-                    slot.rewrite_pointer(targets[idx]);
-                    ++rewrites;
-                    break;
-                }
+                slot.rewrite_pointer(targets[idx]);
+                ++rewrites;
+                break;
             }
-        });
+        }
+    });
 
     EXPECT_EQ(4u, cells);
     EXPECT_EQ(3u, rewrites);
@@ -204,18 +203,17 @@ TEST(HeapReferenceSlot, WalksMixedInstanceFieldsAndOnlyInitializedInlineCells)
                   thread->zero_count_table_contains_for_testing(targets[idx]));
     }
 
-    visit_ordinary_reference_slots(
-        instance, *span, [&](HeapReferenceSlot slot) {
-            HeapObject *child = slot.load_pointer();
-            for(size_t idx = 0; idx < targets.size(); ++idx)
+    visit_strong_reference_slots(instance, [&](HeapReferenceSlot slot) {
+        HeapObject *child = slot.load_pointer();
+        for(size_t idx = 0; idx < targets.size(); ++idx)
+        {
+            if(child == targets[idx])
             {
-                if(child == targets[idx])
-                {
-                    slot.rewrite_pointer(sources[idx]);
-                    break;
-                }
+                slot.rewrite_pointer(sources[idx]);
+                break;
             }
-        });
+        }
+    });
     EXPECT_EQ(original_shape, instance->get_shape());
     EXPECT_EQ(original_overflow.get(), instance->overflow_storage.get());
     EXPECT_EQ(original.raw_value(), instance->inline_slot_base()[0]);

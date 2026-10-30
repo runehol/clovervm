@@ -28,6 +28,8 @@ namespace cl
         // Runs after all managed ownership has been released. Independent of
         // whether the references use an ordinary span or custom release.
         void (*destroy)(HeapObject *);
+        // Supplemental strong slots, independent of release and destruction.
+        void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
 
         static constexpr ReleaseDescriptor
         static_span(uint64_t value_offset_words, uint32_t release_count)
@@ -37,6 +39,7 @@ namespace cl
                                      release_count,
                                      value_offset_words,
                                      0,
+                                     nullptr,
                                      nullptr,
                                      nullptr};
         }
@@ -52,6 +55,7 @@ namespace cl
                                      value_offset_words,
                                      additional_release_count,
                                      nullptr,
+                                     nullptr,
                                      nullptr};
         }
 
@@ -65,6 +69,7 @@ namespace cl
                                      value_offset_words,
                                      additional_release_count,
                                      nullptr,
+                                     nullptr,
                                      nullptr};
         }
 
@@ -77,11 +82,12 @@ namespace cl
                                      0,
                                      0,
                                      custom_release,
+                                     nullptr,
                                      nullptr};
         }
     };
 
-    static_assert(sizeof(ReleaseDescriptor) == 40);
+    static_assert(sizeof(ReleaseDescriptor) == 48);
 
     struct OrdinaryReferenceSpan
     {
@@ -182,6 +188,11 @@ namespace cl
                 if constexpr(requires { T::native_destroy; })
                 {
                     descriptor.destroy = T::native_destroy;
+                }
+                if constexpr(requires { T::native_custom_trace_strong; })
+                {
+                    descriptor.custom_trace_strong =
+                        T::native_custom_trace_strong;
                 }
                 return descriptor;
             }
@@ -297,6 +308,11 @@ namespace cl
                 {
                     return false;
                 }
+                if(descriptors[idx].kind == ReleaseKind::CustomRelease &&
+                   descriptors[idx].custom_trace_strong == nullptr)
+                {
+                    return false;
+                }
             }
             return true;
         }
@@ -355,7 +371,8 @@ namespace cl
         inline constexpr std::array release_descriptors =
             make_release_descriptors();
         static_assert(release_descriptor_table_is_complete(release_descriptors),
-                      "Every native layout ID must have a release descriptor");
+                      "Every native layout ID must support release and strong "
+                      "slot enumeration");
 
         inline constexpr std::array object_size_descriptors =
             make_object_size_descriptors();
@@ -395,6 +412,12 @@ namespace cl
     }
 
     size_t object_size_in_bytes(const HeapObject *obj);
+
+    // Enumerates this object's own strong cells, not its transitive closure.
+    // Ordinary spans and supplemental custom scanning can coexist. Weak cells
+    // are excluded; no reference counts or reclamation state are changed.
+    void visit_strong_reference_slots(HeapObject *object,
+                                      StrongSlotVisitor visitor);
 
 }  // namespace cl
 

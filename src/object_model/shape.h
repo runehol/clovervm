@@ -101,6 +101,12 @@ namespace cl
             }
             Shape *get_next_shape() const { return next_shape.extract(); }
 
+            void visit_strong_reference_slots(StrongSlotVisitor visitor)
+            {
+                visitor(HeapReferenceSlot(&name));
+                visitor(HeapReferenceSlot(&next_shape));
+            }
+
         private:
             Owned<TValue<String>> name;
             ShapeTransitionVerb verb;
@@ -258,9 +264,12 @@ namespace cl
     public:
         static void release_managed_references(HeapObject *obj);
         static void destroy(HeapObject *obj);
+        static void trace_strong_references(HeapObject *obj,
+                                            StrongSlotVisitor visitor);
 
         CL_DECLARE_CUSTOM_RELEASE(Shape, release_managed_references);
         CL_DECLARE_NATIVE_DESTROY(Shape, destroy);
+        CL_DECLARE_CUSTOM_TRACE_STRONG(Shape, trace_strong_references);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Shape, Shape::object_size_in_bytes);
     };
 

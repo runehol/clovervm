@@ -54,9 +54,12 @@ namespace cl::jit
 
         static void release_managed_references(HeapObject *obj);
         static void destroy(HeapObject *obj);
+        static void trace_strong_references(HeapObject *obj,
+                                            StrongSlotVisitor visitor);
 
         CL_DECLARE_CUSTOM_RELEASE(JitCodeObject, release_managed_references);
         CL_DECLARE_NATIVE_DESTROY(JitCodeObject, destroy);
+        CL_DECLARE_CUSTOM_TRACE_STRONG(JitCodeObject, trace_strong_references);
         CL_DECLARE_STATIC_OBJECT_SIZE(JitCodeObject);
 
     private:

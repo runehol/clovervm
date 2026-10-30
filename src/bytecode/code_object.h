@@ -687,9 +687,12 @@ namespace cl
 
         static void release_managed_references(HeapObject *obj);
         static void destroy(HeapObject *obj);
+        static void trace_strong_references(HeapObject *obj,
+                                            StrongSlotVisitor visitor);
 
         CL_DECLARE_CUSTOM_RELEASE(CodeObject, release_managed_references);
         CL_DECLARE_NATIVE_DESTROY(CodeObject, destroy);
+        CL_DECLARE_CUSTOM_TRACE_STRONG(CodeObject, trace_strong_references);
         CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
     };
 

@@ -17,6 +17,24 @@ namespace cl
     {
     }
 
+    void Shape::trace_strong_references(HeapObject *obj,
+                                        StrongSlotVisitor visitor)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        Shape *shape = static_cast<Shape *>(obj);
+        visitor(HeapReferenceSlot(&shape->class_value));
+        // Latent descriptor names remain owned even when absent from lookup.
+        for(uint32_t idx = 0; idx < shape->property_count_; ++idx)
+        {
+            visitor(HeapReferenceSlot(&shape->descriptor_names[idx]));
+        }
+        for(Transition &transition: shape->transitions)
+        {
+            transition.visit_strong_reference_slots(visitor);
+        }
+        // previous_shape is non-owning; repair/clearing belongs to weak work.
+    }
+
     void Shape::release_managed_references(HeapObject *obj)
     {
         assert(obj->native_layout_id() == native_layout);

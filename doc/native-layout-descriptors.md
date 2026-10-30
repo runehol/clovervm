@@ -7,7 +7,7 @@
 | Implementation | Implemented |
 | Scope | Descriptor-driven heap record sizing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | Slice 3a working tree based on `72aae260` (2026-10-30) |
+| Validated against | Slice 3b working tree based on `7ee624a2` (2026-10-30) |
 | Supersedes | N/A |
 
 ## Current Model
@@ -103,8 +103,9 @@ the release phase, before their destructors run. Direct `Member` fields retain
 their existing explicit-release behavior; they do not release on destruction.
 Release and destruction each run once, then reclamation retires the allocation.
 Ordinary spans can have a destruction callback too; custom destruction is not a
-reference-enumeration policy. The extra callback makes `ReleaseDescriptor` 40
-bytes, versus the previous packed 32-byte combined-release descriptor.
+reference-enumeration policy. Independent destruction grew `ReleaseDescriptor`
+from 32 to 40 bytes; the strong-scanning callback added in slice 3b makes it 48
+bytes. These are static table entries, not per-object metadata.
 
 `CustomRelease` is also the default-invalid descriptor encoding:
 `custom_release == nullptr` means the table entry is unfilled. Descriptor table
@@ -120,8 +121,40 @@ result using its existing clear-and-release loop.
 The query describes one contiguous span inside the object's allocation. An
 empty ordinary span is a supported result with a zero count. Custom handling
 returns `std::nullopt`, which does not mean the object has no references.
-Custom scanning remains future work; destruction is already independent of
-reference release, as in the unified descriptor design below.
+Custom scanning and destruction are independent of reference release, as in the
+unified descriptor design below.
+
+`visit_strong_reference_slots(object, visitor)` visits this object's ordinary
+span, if supported, then its optional `custom_trace_strong` callback. The
+borrowed `StrongSlotVisitor` is an `absl::FunctionRef<void(HeapReferenceSlot)>`;
+it is not retained. An ordinary span and a supplemental custom callback may
+coexist. Every registered custom-release layout must supply a custom scanner;
+table validation checks this structural requirement, not semantic completeness
+of the remaining per-layout audit.
+
+The three custom scanners expose:
+
+- `CodeObject`: shape, overflow storage, direct managed members, keyword-remap
+  backing handles, native constant-table entries, and owned keyword names in
+  expanded-call cache plans. VM-array wrappers expose their backing handles;
+  their elements are visited later when those backing objects are scanned.
+- `Shape`: class, every owned descriptor name including latent descriptors,
+  and each transition's owned name and successor shape.
+- `JitCodeObject`: only its tagged constant-pool prefix, not untagged pool data
+  or executable addresses.
+
+Enumeration is not recursive. Distinct cells containing the same pointer are
+visited separately. Raw weak-cache references and `Shape::previous_shape` are
+excluded; weak processing remains pending. Native pointers such as CodeObject's
+`compilation_unit` are not heap-reference cells; roots owned by native runtime
+structures require a separate audit. These scans do not enter production
+reclamation or imply that every layout has completed its tracing audit.
+
+Neither enumeration nor relocation writes adjust refcounts or ZCT membership.
+The visitor must not allocate managed objects, safepoint, execute Python, or
+change container structure during a visit. Object and slot storage stay valid
+until enumeration completes. Tests simulate substitutions and restore the
+ownership graph before refcount teardown.
 
 `visit_ordinary_reference_slots(object, span, visitor)` enumerates each cell of
 a resolved span through a borrowed `HeapReferenceSlot`. This includes immediate
@@ -562,6 +595,7 @@ CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base_type,
                                           own_additional_release_count_expr)
 CL_DECLARE_CUSTOM_RELEASE(type, function)
 CL_DECLARE_NATIVE_DESTROY(type, function)
+CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)
 ```
 
 Object-size declarations:

@@ -4,6 +4,8 @@
 #include "object_model/heap_object.h"
 #include "object_model/value_tags.h"
 
+#include <absl/functional/function_ref.h>
+
 #include <bit>
 #include <cassert>
 #include <cstddef>
@@ -59,6 +61,11 @@ namespace cl
     };
 
     static_assert(sizeof(HeapObject *) == sizeof(uint64_t));
+
+    // Borrowed, synchronous visit. The object and its slot storage must remain
+    // valid: no managed allocation, safepoints, Python execution, or container
+    // mutation during enumeration. Visiting does not transfer ownership.
+    using StrongSlotVisitor = absl::FunctionRef<void(HeapReferenceSlot)>;
 
 }  // namespace cl
 

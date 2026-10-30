@@ -131,6 +131,14 @@ namespace cl::jit
         EXPECT_TRUE(code_object->has_jit_code());
         EXPECT_EQ(jit_code, code_object->get_jit_code());
         EXPECT_EQ(1, jit_code->refcount);
+        size_t jit_references = 0;
+        visit_strong_reference_slots(code_object, [&](HeapReferenceSlot slot) {
+            if(slot.load_pointer() == jit_code)
+            {
+                ++jit_references;
+            }
+        });
+        EXPECT_EQ(1u, jit_references);
     }
 
     TEST(JitCodeObject, TieringBudgetTriggersOnlyOnTransitionToZero)
@@ -145,6 +153,29 @@ namespace cl::jit
         }
         EXPECT_TRUE(code_object->consume_jit_tiering_budget());
         EXPECT_FALSE(code_object->consume_jit_tiering_budget());
+    }
+
+    TEST(JitCodeObject, EmptyTaggedPrefixDoesNotVisitPointerLookingPoolData)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<String>> child(thread->make_object_value<String>(L"raw"));
+        PublishedCode published =
+            publish_test_code(thread->code_cache(), child.raw_value());
+        JitCodeObject *jit_code = thread->make_internal_raw<JitCodeObject>(
+            published.code(), no_interpreter_tail_entry_thunk(),
+            published.constant_pool(), 0, published.encoded_code_size(), 0);
+        size_t cells = 0;
+        visit_strong_reference_slots(jit_code,
+                                     [&](HeapReferenceSlot) { ++cells; });
+        EXPECT_EQ(0u, cells);
+        EXPECT_EQ(1, child.extract()->refcount);
+        incref_heap_ptr(jit_code);
+        decref_heap_ptr(jit_code);
+        context.vm().run_heap_reclamation();
+        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(child.raw_value(), published.tagged_values()[0]);
     }
 
     TEST(JitCodeObject, RetainsAndReleasesOnlyTheTaggedPoolPrefix)
@@ -177,6 +208,25 @@ namespace cl::jit
             allocation.constant_pool(), 1, allocation.encoded_code_size(), 0);
 
         EXPECT_EQ(2, string->refcount);
+        Owned<TValue<String>> replacement(
+            thread->make_object_value<String>(L"replacement"));
+        size_t zct_size = thread->zero_count_table_size();
+        size_t cells = 0;
+        visit_strong_reference_slots(jit_code, [&](HeapReferenceSlot slot) {
+            ++cells;
+            EXPECT_EQ(string, slot.load_pointer());
+            slot.rewrite_pointer(replacement.extract());
+        });
+        EXPECT_EQ(1u, cells);
+        EXPECT_EQ(replacement.raw_value(), pool[0]);
+        // The untagged suffix deliberately contains pointer-looking bits.
+        EXPECT_EQ(retained.value(), pool[1]);
+        EXPECT_EQ(2, string->refcount);
+        EXPECT_EQ(1, replacement.extract()->refcount);
+        EXPECT_EQ(zct_size, thread->zero_count_table_size());
+        visit_strong_reference_slots(jit_code, [&](HeapReferenceSlot slot) {
+            slot.rewrite_pointer(string);
+        });
         incref_heap_ptr(jit_code);
         decref_heap_ptr(jit_code);
         context.vm().run_heap_reclamation();

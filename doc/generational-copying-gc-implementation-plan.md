@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 3a working tree based on `72aae260` (2026-10-30) |
+| Validated against | Slice 3b working tree based on `7ee624a2` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -75,7 +75,7 @@ assumptions; they do not by themselves verify the C++ adapter.
 | 9 | Nursery allocation and evacuation for audited layouts | Tracing |
 | 10 | Wider coverage, refcount/ZCT retirement, and optimization | Tracing |
 
-Stages 1–2 and slice 3a are implemented. The rest of stage 3 and stages 4–10
+Stages 1–2 and slices 3a–3b are implemented. The rest of stage 3 and stages 4–10
 remain pending.
 
 Each stage is a review boundary, not necessarily one commit. Split root sources,
@@ -161,7 +161,23 @@ Implement this stage in bounded slices:
   implemented for `CodeObject`, `Shape`, and `JitCodeObject`; direct phase tests
   check that native destruction does not release managed ownership again.
 - **3b: enumerate and rewrite strong references**, including external owned
-  storage in the three custom layouts.
+  storage in the three custom layouts. Add a non-owning `StrongSlotVisitor`
+  (`absl::FunctionRef<void(HeapReferenceSlot)>`) and a common
+  `visit_strong_reference_slots(object, visitor)` entry point. Extend the
+  existing descriptor with an optional `custom_trace_strong` callback,
+  independent of release and destruction. Visit ordinary spans and then
+  supplemental custom slots. CodeObject's native constant table and owned
+  expanded-call keyword names are visited directly; its VM array wrappers
+  expose their backing handles, whose elements are scanned separately through
+  the backing objects. Shape exposes class, all descriptor names (including
+  latent descriptors), and owned transition names and successors. JitCodeObject
+  exposes only its tagged pool prefix. Leave raw weak-cache references and
+  `Shape::previous_shape` for 3c. Visits do not recurse, allocate managed
+  objects, safepoint, execute Python, mutate container structure, or alter
+  refcounts/ZCT state. No production collector or reclamation changes belong
+  to this slice. This slice is implemented; regression tests exercise ordinary
+  lazy spans, custom enumeration, repeated aliases, external backing-handle
+  rewriting, latent descriptor names, and tagged-only JIT pool rewriting.
 - **3c: audit remaining layouts and implement weak processing**, keeping
   coherent cache repair separate from strong tracing.
 

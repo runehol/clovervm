@@ -75,6 +75,42 @@ namespace cl
         }
     }
 
+    void CodeObject::trace_strong_references(HeapObject *obj,
+                                             StrongSlotVisitor visitor)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        CodeObject *code = static_cast<CodeObject *>(obj);
+        visitor(HeapReferenceSlot(&code->shape));
+        visitor(HeapReferenceSlot(&code->overflow_storage));
+        visitor(HeapReferenceSlot(&code->defining_module));
+        visitor(HeapReferenceSlot(&code->local_scope));
+        visitor(HeapReferenceSlot(&code->name));
+        visitor(HeapReferenceSlot(&code->docstring));
+        visitor(HeapReferenceSlot(&code->jit_code));
+        code->function_keyword_remap.keyword_bindable_names
+            .visit_strong_reference_slots(visitor);
+        code->function_keyword_remap.keyword_bindable_parameter_indexes
+            .visit_strong_reference_slots(visitor);
+        for(Owned<Value> &constant: code->constant_table)
+        {
+            visitor(HeapReferenceSlot(&constant));
+        }
+        // Cache guards and resolved targets are weak. Only the cached binding
+        // plan's explicitly owned keyword names contribute strong slots here.
+        for(ExpandedCallInlineCache &cache:
+            code->inline_caches.expanded_call_caches)
+        {
+            if(cache.binding_plan != nullptr)
+            {
+                for(Owned<TValue<String>> &name:
+                    cache.binding_plan->keyword_names)
+                {
+                    visitor(HeapReferenceSlot(&name));
+                }
+            }
+        }
+    }
+
     void CodeObject::release_managed_references(HeapObject *obj)
     {
         assert(obj->native_layout_id() == native_layout);

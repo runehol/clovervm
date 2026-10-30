@@ -1,7 +1,7 @@
 #ifndef CL_NATIVE_LAYOUT_DECLARATIONS_H
 #define CL_NATIVE_LAYOUT_DECLARATIONS_H
 
-#include "object_model/heap_object.h"
+#include "memory/heap_reference_slot.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -149,6 +149,9 @@ namespace cl
 
 #define CL_DECLARE_NATIVE_DESTROY(type, function)                              \
     static constexpr auto native_destroy = function;
+
+#define CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)                         \
+    static constexpr auto native_custom_trace_strong = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \
     static constexpr ObjectSizeKind native_object_size_kind =                  \
