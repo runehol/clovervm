@@ -194,7 +194,7 @@ The current descriptors establish the expected distribution:
 - `OverflowSlots` uses `native_layout_aux_count` for release and its own
   capacity field for object size;
 - most existing custom size helpers are `base + count * stride` formulas;
-- only `CodeObject` and `Shape` currently have custom deallocators.
+- `CodeObject`, `Shape`, and `JitCodeObject` currently have custom deallocators.
 
 The common representation should preserve those LUT and arithmetic paths:
 
@@ -438,6 +438,15 @@ exposing partially valid cache state.
 refcounting remains. `destroy` runs C++ destructors and releases native
 resources after managed references have been cleared.
 
+Reference enumeration and destruction are independent capabilities. An ordinary
+strong span, additional custom strong scanning, and custom destruction may all
+be present on the same layout. The current custom-deallocator layouts
+`CodeObject`, `Shape`, and `JitCodeObject` must each expose their strong
+references for scanning and rewriting, plus separate weak processing where
+applicable. Their eventual non-moving placement does not exempt references to
+movable objects from repair. For `JitCodeObject`, scanning includes the tagged
+constant-pool slots outside the object's own allocation.
+
 `relocate` is used only when an object resides in a moving space. A null
 callback means the collector copies `initialized_size` bytes into the already
 allocated destination. A non-null callback constructs the live destination in
@@ -574,6 +583,7 @@ mechanics; the registry remains the exhaustive source of registered IDs.
 | `String` | `StaticSpan` | custom from character count |
 | `Instance` | `DynamicAuxSpan` via `SlotObject` | custom from shape inline capacity |
 | `CodeObject` | `CustomDealloc` | static |
+| `JitCodeObject` | `CustomDealloc` | static |
 | `ClassObject` | `StaticSpan` via `SlotObject` | static |
 | `ValidityCell` | empty `StaticSpan` | static |
 | `Scope` | `StaticSpan` | static |

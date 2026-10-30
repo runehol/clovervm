@@ -93,6 +93,11 @@ An unsupported custom layout must not be represented as an empty ordinary
 span. This first slice does not require introducing the entire unified
 descriptor table or all future callbacks.
 
+This extracts ordinary span resolution from the current release machinery;
+`ReleaseKind` does not become the future scanning classification. A custom
+deallocator says how current reclamation handles the layout, not whether it
+has references or can support scanning and rewriting.
+
 Completion: existing reclamation behavior passes unchanged, with focused
 coverage of static spans, both dynamic count sources, empty spans, and lazy
 `Instance` storage. The query must not read uninitialized capacity.
@@ -118,6 +123,19 @@ Audit every native layout, including references in C++ containers, backing
 records, compiled code, and caches. Separate strong-slot enumeration, weak
 processing, managed-reference release, and native destruction. Existing custom
 deallocators are evidence to inspect, not a complete inventory of tracing needs.
+
+The current custom layouts are `CodeObject`, `Shape`, and `JitCodeObject`.
+All three must support complete strong-reference scanning and rewriting,
+separate weak processing where applicable, managed-reference release while
+refcounting remains, and independent native destruction. `JitCodeObject`'s
+tagged constant-pool slots are included even though they live outside its own
+allocation.
+
+Ordinary strong spans, additional custom scanning, and custom destruction may
+coexist in one descriptor. Custom destruction neither implies an empty strong
+span nor prevents scanning. These layouts eventually live in non-moving
+storage, but their outgoing references to movable objects must still be traced
+and rewritten.
 
 Use the unified layout design in
 [Native Layout Descriptors](native-layout-descriptors.md) as the target. Migrate
