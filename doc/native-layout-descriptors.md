@@ -114,6 +114,20 @@ returns `std::nullopt`, which does not mean the object has no references.
 Custom scanning and destruction remain independent capabilities in the future
 descriptor design below.
 
+`visit_ordinary_reference_slots(object, span, visitor)` enumerates each cell of
+a resolved span through a borrowed `HeapReferenceSlot`. This includes immediate
+values and null pointers: `load_pointer()` returns null for those cells.
+Tagged references and raw heap pointers use the same pointer bits in the current
+representation. The view uses byte copies rather than accessing raw fields as
+`Value &` or invoking wrapper assignment operators.
+
+`rewrite_pointer()` is a collector-only operation on an existing reference. Its
+non-null replacement must preserve pointer storage class and logical identity.
+It performs no refcount operations, barriers, allocation, or safepoints. The
+supplied span must describe initialized storage within the object, and that
+storage must remain valid throughout enumeration. Custom scanners may later
+use the same view for references outside the ordinary span.
+
 ## Dynamic Counts
 
 Dynamic spans use one of two count sources:

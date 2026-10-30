@@ -1,6 +1,7 @@
 #ifndef CL_NATIVE_LAYOUT_DESCRIPTOR_H
 #define CL_NATIVE_LAYOUT_DESCRIPTOR_H
 
+#include "memory/heap_reference_slot.h"
 #include "memory/native_layout_declarations.h"
 #include "memory/native_layout_id.h"
 #include "memory/native_layout_registry.h"
@@ -11,6 +12,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 namespace cl
@@ -65,6 +67,23 @@ namespace cl
         uint64_t value_offset_words;
         uint64_t value_count;
     };
+
+    // The supplied object and span storage must remain valid throughout the
+    // visit. Every initialized cell is visited, including immediates and nulls.
+    template <typename Visitor>
+    void visit_ordinary_reference_slots(HeapObject *object,
+                                        OrdinaryReferenceSpan span,
+                                        Visitor &&visitor)
+    {
+        assert(object != nullptr);
+        std::byte *address = reinterpret_cast<std::byte *>(object) +
+                             span.value_offset_words * sizeof(uint64_t);
+        for(uint64_t idx = 0; idx < span.value_count; ++idx)
+        {
+            std::invoke(visitor, HeapReferenceSlot(address));
+            address += sizeof(uint64_t);
+        }
+    }
 
     // Resolves one contiguous in-object span without reading its reference
     // cells. Custom handling is unsupported, distinct from a supported empty

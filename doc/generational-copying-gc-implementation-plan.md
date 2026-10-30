@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Stage 1 working tree based on `8dac05a7` (2026-10-30) |
+| Validated against | Stage 2 working tree based on `7bb9d38f` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -75,7 +75,7 @@ assumptions; they do not by themselves verify the C++ adapter.
 | 9 | Nursery allocation and evacuation for audited layouts | Tracing |
 | 10 | Wider coverage, refcount/ZCT retirement, and optimization | Tracing |
 
-Stage 1 is implemented. Stages 2–10 remain pending.
+Stages 1–2 are implemented. Stages 3–10 remain pending.
 
 Each stage is a review boundary, not necessarily one commit. Split root sources,
 layout families, and store families into bounded slices. Stages 1–7 can land
@@ -121,6 +121,25 @@ A collector rewrite changes the address of an existing logical reference. It
 preserves the required encoding and performs no incref, decref, mutator write
 barrier, allocation, or safepoint. Ordinary mutator assignments retain their
 ownership behavior.
+
+Implemented by the borrowed `HeapReferenceSlot` view in
+`src/memory/heap_reference_slot.h` and the templated
+`visit_ordinary_reference_slots(object, span, visitor)` walker alongside the
+span resolver. The walker visits every initialized cell in the supplied span.
+`load_pointer()` returns null for immediates and null pointers;
+`rewrite_pointer()` requires an existing reference and a non-null replacement
+in the same pointer storage class.
+
+Tagged references and raw heap pointers currently share their pointer bits,
+including the address bits identifying refcounted or interned storage. The
+view uses byte copies to access a cell, including storage inside `Member`
+wrappers, without treating every field as a `Value &` or invoking assignment
+operators. Slot storage must remain valid throughout the visit. Custom scanners
+can reuse the view for individual external or disjoint cells in stage 3.
+
+Tests perform simulated replacements and restore owned references before
+ordinary refcount teardown. This stage does not relocate VM objects or connect
+the primitives to a production collector.
 
 Completion: tests rewrite references between controlled test objects, preserve
 immediates and nulls, leave refcounts and ZCT membership unchanged, and never
