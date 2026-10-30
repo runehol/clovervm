@@ -295,9 +295,12 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
   Assemble thread and VM roots once in `VirtualMachine::run_heap_reclamation`;
   the memory-layer `run_heap_reclamation(threads, roots)` consumes that explicit
   root set. Keep intern tables, pointer-keyed maps, and JIT execution internals
-  out of this slice. Test field coverage, lazy cache population, restored
-  getter-visible rewrites, untouched dispatch metadata, and production
-  reclamation integration.
+  out of this slice. Audit managed VM fields against the visitor for
+  completeness. Tests check cache presence/reuse, restored getter-visible
+  rewrites, untouched dispatch metadata, and production reclamation liveness.
+  Do not reconstruct a complete pointer inventory or assert visitation order,
+  counts, backing capacities, or offsets: logical views can share cells, and
+  duplicate visits need not affect observable correctness.
 - **4b.3: Read-only builtin-class roots.** Add
   `VirtualMachine::for_each_builtin_class(visitor) const`, walking values in
   `builtin_classes_by_name_` without changing entries or keys. Its names and
