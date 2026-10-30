@@ -470,6 +470,10 @@ policy is not stored in the object or native-layout descriptor.
 
 ### Refactor Sequence
 
+The [GC implementation plan](generational-copying-gc-implementation-plan.md)
+breaks this target into incremental runtime stages, starting with ordinary
+span resolution consumed by reclamation before consolidating the full table.
+
 1. Introduce `NativeLayoutInfo`, affine count and extent formulas, and one
    `NativeLayoutDescriptor` table.
 2. Generate static LUT entries from the existing declaration macros.
