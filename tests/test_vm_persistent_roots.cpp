@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 using namespace cl;
@@ -84,11 +85,9 @@ TEST(VMPersistentRoots, CoversEveryFixedCellIncludingNullsAndAliases)
     {
         const OperatorDispatchTable &table = vm.operator_dispatch_table_by_id(
             static_cast<uint32_t>(table_index));
-        // The backing array has six initialized rows even for shorter tables.
-        for(size_t row = 0; row < 6; ++row)
-            expected.push_back(table.steps == nullptr
-                                   ? nullptr
-                                   : table.steps[row].dunder_name);
+        for(size_t row = 0; row < table.n_steps; ++row)
+            expected.push_back(
+                table.step(static_cast<uint8_t>(row)).dunder_name);
     }
     for(Shape *shape:
         {vm.smi_shape(), vm.bool_shape(), vm.none_shape(),
@@ -122,12 +121,18 @@ TEST(VMPersistentRoots, CoversEveryFixedCellIncludingNullsAndAliases)
     expected.push_back(vm.sys_module().extract());
     expected.push_back(vm.imported_modules().extract());
 
-    EXPECT_EQ(8 + table_count * 6 + 10 + layout_count +
-                  MaxCloverFunctionEntryAdapterArgs + 1 + 20 + 4,
-              expected.size());
-    EXPECT_EQ(expected, vm_roots(vm));
+    auto actual = vm_roots(vm);
+    // Unused backing rows are initialized null cells, not extra references.
+    // Compare reference multiplicities without depending on private capacity
+    // or visitation order; the active tables describe the meaningful rows.
+    EXPECT_GE(actual.size(), expected.size());
+    EXPECT_GT(std::count(actual.begin(), actual.end(), nullptr), 0);
+    std::erase(expected, nullptr);
+    std::erase(actual, nullptr);
+    std::sort(expected.begin(), expected.end(), std::less<HeapObject *>{});
+    std::sort(actual.begin(), actual.end(), std::less<HeapObject *>{});
+    EXPECT_EQ(expected, actual);
     EXPECT_GT(std::count(expected.begin(), expected.end(), vm.str_class()), 1);
-    EXPECT_GT(std::count(expected.begin(), expected.end(), nullptr), 0);
 }
 
 TEST(VMPersistentRoots, LazyCachesReplaceTheirPreviouslyEmptyCells)
@@ -140,6 +145,7 @@ TEST(VMPersistentRoots, LazyCachesReplaceTheirPreviouslyEmptyCells)
         vm.clover_function_entry_adapter(MaxCloverFunctionEntryAdapterArgs);
     ASSERT_FALSE(adapter.has_exception());
     auto with_adapter = vm_roots(vm);
+    ASSERT_EQ(before.size(), with_adapter.size());
     EXPECT_EQ(0, std::count(before.begin(), before.end(), adapter.value()));
     EXPECT_EQ(1, std::count(with_adapter.begin(), with_adapter.end(),
                             adapter.value()));
@@ -160,6 +166,16 @@ TEST(VMPersistentRoots, LazyCachesReplaceTheirPreviouslyEmptyCells)
                             errno_map.value().extract()));
     auto after = vm_roots(vm);
     ASSERT_EQ(before.size(), after.size());
+    EXPECT_EQ(after, vm_roots(vm));
+    // Snapshot first, then warm the remaining adapters to identify cache
+    // referents through the API rather than guessing their root-slot offsets.
+    std::vector<CodeObject *> adapters;
+    for(uint32_t arity = 0; arity <= MaxCloverFunctionEntryAdapterArgs; ++arity)
+    {
+        auto cached = vm.clover_function_entry_adapter(arity);
+        ASSERT_FALSE(cached.has_exception());
+        adapters.push_back(cached.value());
+    }
     size_t changed = 0;
     for(size_t index = 0; index < before.size(); ++index)
     {
@@ -171,21 +187,14 @@ TEST(VMPersistentRoots, LazyCachesReplaceTheirPreviouslyEmptyCells)
         {
             // Building the errno dictionary can call managed helpers and
             // populate additional entry adapters. Only those cells may change.
-            constexpr size_t adapter_begin =
-                8 + table_count * 6 + 10 + layout_count;
-            ASSERT_GE(index, adapter_begin);
-            ASSERT_LE(index - adapter_begin, MaxCloverFunctionEntryAdapterArgs);
-            auto warmed = vm.clover_function_entry_adapter(
-                static_cast<uint32_t>(index - adapter_begin));
-            ASSERT_FALSE(warmed.has_exception());
-            EXPECT_EQ(warmed.value(), after[index]);
+            EXPECT_NE(adapters.end(), std::find(adapters.begin(),
+                                                adapters.end(), after[index]));
         }
     }
     EXPECT_GE(changed, 1u);
     EXPECT_EQ(1, std::count(after.begin(), after.end(), adapter.value()));
     EXPECT_EQ(
         1, std::count(after.begin(), after.end(), errno_map.value().extract()));
-    EXPECT_EQ(after, vm_roots(vm));
 }
 
 TEST(VMPersistentRoots, CachedHelperRewritesAreGetterVisibleAndRCNeutral)
@@ -290,13 +299,14 @@ TEST(VMPersistentRoots, DispatchNameRewritesPreserveNativePointersAndScalars)
         vm.get_or_create_interned_string_value(L"__relocated_add__");
     auto originals = vm_roots(vm);
     std::array<OperatorDispatchTable, table_count> tables;
-    std::array<std::array<OperatorStep, 6>, table_count> rows;
+    std::array<std::vector<OperatorStep>, table_count> rows;
     for(size_t index = 0; index < table_count; ++index)
     {
         tables[index] =
             vm.operator_dispatch_table_by_id(static_cast<uint32_t>(index));
-        for(size_t row = 0; row < 6; ++row)
-            rows[index][row] = tables[index].steps[row];
+        for(size_t row = 0; row < tables[index].n_steps; ++row)
+            rows[index].push_back(
+                tables[index].step(static_cast<uint8_t>(row)));
     }
     size_t rewrites = 0;
     vm.visit_persistent_root_slots([&](HeapReferenceSlot slot) {
@@ -316,7 +326,7 @@ TEST(VMPersistentRoots, DispatchNameRewritesPreserveNativePointersAndScalars)
             vm.operator_dispatch_table_by_id(static_cast<uint32_t>(index));
         EXPECT_EQ(tables[index].steps, table.steps);
         EXPECT_EQ(tables[index].n_steps, table.n_steps);
-        for(size_t row = 0; row < 6; ++row)
+        for(size_t row = 0; row < rows[index].size(); ++row)
         {
             const OperatorStep &before = rows[index][row];
             const OperatorStep &after = table.steps[row];
