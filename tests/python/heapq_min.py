@@ -157,8 +157,8 @@ def test_call_contract():
     assert heapq.__all__ == ["heapify", "heappush", "heappop",
                              "heapreplace", "heappushpop", "heapify_max",
                              "heappush_max", "heappop_max", "heapreplace_max",
-                             "heappushpop_max", "nlargest", "nsmallest"]
-    assert not hasattr(heapq, "merge")
+                             "heappushpop_max", "nlargest", "nsmallest", "merge"]
+    assert hasattr(heapq, "merge")
 
 
 class Duck:
