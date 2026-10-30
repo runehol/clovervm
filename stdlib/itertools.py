@@ -1,7 +1,7 @@
 """Lazy iteration building blocks supported by CloverVM.
 
 The supported subset provides chain, repeat, islice, starmap, compress,
-filterfalse, takewhile, dropwhile, pairwise, count, accumulate, and batched.
+filterfalse, takewhile, dropwhile, pairwise, count, accumulate, batched, and zip_longest.
 Integer bounds use operator.index's builtin-int/bool support; custom __index__
 is not supported yet. Limits match the VM's current signed 64-bit platforms.
 count accepts builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
@@ -13,6 +13,8 @@ bound methods are not supported. Inputs use existing VM iterable types.
 Repr, pickling, copy, and CPython's tuple recycling are outside this subset.
 batched builds batches incrementally rather than preallocating n tuple slots;
 CPython's eager allocation failures and their timing are not reproduced.
+zip_longest keeps final exhaustion sticky across input reentry, rather than
+reproducing CPython 3.14.5's unsafe reentrant exhaustion and counter underflow.
 """
 
 from builtins import bool as _bool, float as _float, int as _int
@@ -24,7 +26,7 @@ from operator import index as _index
 __all__ = (
     "chain", "repeat", "islice", "starmap",
     "compress", "filterfalse", "takewhile", "dropwhile",
-    "pairwise", "count", "accumulate", "batched",
+    "pairwise", "count", "accumulate", "batched", "zip_longest",
 )
 
 _missing = object()
@@ -425,3 +427,50 @@ class batched:
             remaining -= 1
         # Keep the local source alive across reentrant closure of this object.
         return _tuple(batch)
+
+
+class zip_longest:
+    def __init__(self, *iterables, fillvalue=None):
+        iterators = []
+        for iterable in iterables:
+            iterators.append(_iter(iterable))
+        self._iterators = iterators
+        self._active = len(iterators)
+        self._fillvalue = fillvalue
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._active == 0:
+            raise StopIteration
+        iterators = self._iterators
+        row = []
+        index = 0
+        while index < len(iterators):
+            iterator = iterators[index]
+            if iterator is None:
+                item = self._fillvalue
+            else:
+                try:
+                    item = _next(iterator)
+                except StopIteration:
+                    # Nested advancement may already have closed this object.
+                    # Keep exhaustion sticky instead of underflowing the count.
+                    if self._active == 0:
+                        raise StopIteration
+                    self._active -= 1
+                    if self._active == 0:
+                        # Like CPython, retain the final source on closure.
+                        raise StopIteration
+                    iterators[index] = None
+                    item = self._fillvalue
+                except:
+                    # Earlier items in this row are consumed, not retried.
+                    self._active = 0
+                    raise
+            row.append(item)
+            index += 1
+        # Local references retain sources and partial rows across reentry.
+        # An outer call may finish its row after a nested call closes self.
+        return _tuple(row)
