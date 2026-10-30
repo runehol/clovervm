@@ -96,6 +96,8 @@ assert mapping.get("alpha") is None
 assert operator.concat((1, 2), (3,))[2] == 3
 assert operator.iconcat([1], [2])[1] == 2
 assert operator.iadd(2, 3) == 5
+assert operator.iadd(a=2, b=3) == 5
+assert operator.__imul__(a=3, b=4) == 12
 assert operator.isub(9, 2) == 7
 assert operator.imul(3, 4) == 12
 assert operator.ifloordiv(8, 3) == 2

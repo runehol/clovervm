@@ -70,11 +70,13 @@ def gt(a, b):
 
 
 def iadd(a, b):
-    return a + b
+    a += b
+    return a
 
 
 def iand(a, b):
-    return a & b
+    a &= b
+    return a
 
 
 def iconcat(a, b):
@@ -82,23 +84,28 @@ def iconcat(a, b):
 
 
 def ifloordiv(a, b):
-    return a // b
+    a //= b
+    return a
 
 
 def ilshift(a, b):
-    return a << b
+    a <<= b
+    return a
 
 
 def imatmul(a, b):
-    return a @ b
+    a @= b
+    return a
 
 
 def imod(a, b):
-    return a % b
+    a %= b
+    return a
 
 
 def imul(a, b):
-    return a * b
+    a *= b
+    return a
 
 
 def index(a):
@@ -125,15 +132,18 @@ def invert(a):
 
 
 def ior(a, b):
-    return a | b
+    a |= b
+    return a
 
 
 def ipow(a, b):
-    return a**b
+    a **= b
+    return a
 
 
 def irshift(a, b):
-    return a >> b
+    a >>= b
+    return a
 
 
 def is_(a, b):
@@ -153,15 +163,18 @@ def is_not_none(a):
 
 
 def isub(a, b):
-    return a - b
+    a -= b
+    return a
 
 
 def itruediv(a, b):
-    return a / b
+    a /= b
+    return a
 
 
 def ixor(a, b):
-    return a ^ b
+    a ^= b
+    return a
 
 
 def le(a, b):
