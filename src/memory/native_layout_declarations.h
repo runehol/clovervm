@@ -31,13 +31,13 @@ namespace cl
 #define CL_DECLARE_EMPTY_VALUE_SPAN(type)                                      \
     static constexpr ReleaseKind native_release_kind =                         \
         ReleaseKind::StaticSpan;                                               \
-    static constexpr uint32_t native_value_offset_in_words() { return 0; }     \
+    static constexpr uint64_t native_value_offset_in_words() { return 0; }     \
     static constexpr uint64_t native_static_release_count() { return 0; }
 
 #define CL_DECLARE_STATIC_VALUE_SPAN(type, first_value_member, count_expr)     \
     static constexpr ReleaseKind native_release_kind =                         \
         ReleaseKind::StaticSpan;                                               \
-    static constexpr uint32_t native_value_offset_in_words()                   \
+    static constexpr uint64_t native_value_offset_in_words()                   \
     {                                                                          \
         static_assert(                                                         \
             CL_OFFSETOF(type, first_value_member) % sizeof(uint64_t) == 0,     \
@@ -55,7 +55,7 @@ namespace cl
                   "base span");                                                \
     static constexpr ReleaseKind native_release_kind =                         \
         ReleaseKind::StaticSpan;                                               \
-    static constexpr uint32_t native_value_offset_in_words()                   \
+    static constexpr uint64_t native_value_offset_in_words()                   \
     {                                                                          \
         return base_type::native_value_offset_in_words();                      \
     }                                                                          \
@@ -74,7 +74,7 @@ namespace cl
                       "Native dynamic value count must be word aligned");      \
         return CL_OFFSETOF(type, count_member) / sizeof(uint64_t);             \
     }                                                                          \
-    static constexpr uint32_t native_value_offset_in_words()                   \
+    static constexpr uint64_t native_value_offset_in_words()                   \
     {                                                                          \
         static_assert(                                                         \
             CL_OFFSETOF(type, first_value_member) % sizeof(uint64_t) == 0,     \
@@ -99,7 +99,7 @@ namespace cl
                       "Native dynamic value count must be word aligned");      \
         return CL_OFFSETOF(type, count_member) / sizeof(uint64_t);             \
     }                                                                          \
-    static constexpr uint32_t native_value_offset_in_words()                   \
+    static constexpr uint64_t native_value_offset_in_words()                   \
     {                                                                          \
         return base_type::native_value_offset_in_words();                      \
     }                                                                          \
@@ -113,7 +113,7 @@ namespace cl
                                           additional_release_count_expr)       \
     static constexpr ReleaseKind native_release_kind =                         \
         ReleaseKind::DynamicAuxSpan;                                           \
-    static constexpr uint32_t native_value_offset_in_words()                   \
+    static constexpr uint64_t native_value_offset_in_words()                   \
     {                                                                          \
         static_assert(                                                         \
             CL_OFFSETOF(type, first_value_member) % sizeof(uint64_t) == 0,     \
@@ -132,7 +132,7 @@ namespace cl
                   "base span");                                                \
     static constexpr ReleaseKind native_release_kind =                         \
         ReleaseKind::DynamicAuxSpan;                                           \
-    static constexpr uint32_t native_value_offset_in_words()                   \
+    static constexpr uint64_t native_value_offset_in_words()                   \
     {                                                                          \
         return base_type::native_value_offset_in_words();                      \
     }                                                                          \

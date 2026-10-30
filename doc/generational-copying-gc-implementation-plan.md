@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | `b737c2fd` (2026-10-30) |
+| Validated against | Stage 1 working tree based on `8dac05a7` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -75,6 +75,8 @@ assumptions; they do not by themselves verify the C++ adapter.
 | 9 | Nursery allocation and evacuation for audited layouts | Tracing |
 | 10 | Wider coverage, refcount/ZCT retirement, and optimization | Tracing |
 
+Stage 1 is implemented. Stages 2–10 remain pending.
+
 Each stage is a review boundary, not necessarily one commit. Split root sources,
 layout families, and store families into bounded slices. Stages 1–7 can land
 without moving live VM objects. The isolated collector and its model can be
@@ -97,6 +99,13 @@ This extracts ordinary span resolution from the current release machinery;
 `ReleaseKind` does not become the future scanning classification. A custom
 deallocator says how current reclamation handles the layout, not whether it
 has references or can support scanning and rewriting.
+
+Implemented by `OrdinaryReferenceSpan` and
+`resolve_ordinary_reference_span(object, descriptor)` in
+`src/memory/native_layout_descriptor.h`, consumed by reclamation. A supported
+empty span has a zero count; `std::nullopt` explicitly means custom handling is
+required. The result describes one contiguous in-object span and does not
+enumerate external storage or disjoint spans.
 
 Completion: existing reclamation behavior passes unchanged, with focused
 coverage of static spans, both dynamic count sources, empty spans, and lazy
@@ -321,8 +330,8 @@ tests, and run release checks at the exact HEAD before pushing. Documentation
 and Lean-only changes use their relevant content or proof checks instead of
 unrelated VM rebuilds.
 
-The first code slice is stage 1: ordinary reference-span resolution consumed by
-existing reclamation. Subsequent API details, header representation, native
-rooting, failure behavior, and the lifetime cutover receive their own bounded
-reviews. The staged direction is accepted; those material implementation
+The first code slice implements stage 1: ordinary reference-span resolution
+consumed by existing reclamation. Subsequent API details, header representation,
+native rooting, failure behavior, and the lifetime cutover receive their own
+bounded reviews. The staged direction is accepted; those material implementation
 decisions are not silently settled by this plan.

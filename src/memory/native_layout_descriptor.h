@@ -11,20 +11,21 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace cl
 {
     struct ReleaseDescriptor
     {
         ReleaseKind kind;
-        uint16_t value_offset_words;
+        uint64_t value_offset_words;
         uint32_t static_release_count;
         uint16_t count_offset_words;
         uint32_t additional_release_count;
         void (*custom_dealloc)(HeapObject *);
 
         static constexpr ReleaseDescriptor
-        static_span(uint16_t value_offset_words, uint32_t release_count)
+        static_span(uint64_t value_offset_words, uint32_t release_count)
         {
             return ReleaseDescriptor{ReleaseKind::StaticSpan,
                                      value_offset_words,
@@ -36,7 +37,7 @@ namespace cl
 
         static constexpr ReleaseDescriptor
         dynamic_smi_span(uint16_t count_offset_words,
-                         uint16_t value_offset_words,
+                         uint64_t value_offset_words,
                          uint32_t additional_release_count)
         {
             return ReleaseDescriptor{
@@ -45,7 +46,7 @@ namespace cl
         }
 
         static constexpr ReleaseDescriptor
-        dynamic_aux_span(uint16_t value_offset_words,
+        dynamic_aux_span(uint64_t value_offset_words,
                          uint32_t additional_release_count)
         {
             return ReleaseDescriptor{ReleaseKind::DynamicAuxSpan,
@@ -63,6 +64,51 @@ namespace cl
                 ReleaseKind::CustomDealloc, 0, 0, 0, 0, custom_dealloc};
         }
     };
+
+    struct OrdinaryReferenceSpan
+    {
+        uint64_t value_offset_words;
+        uint64_t value_count;
+    };
+
+    // Resolves one contiguous in-object span without reading its reference
+    // cells. Custom handling is unsupported, distinct from a supported empty
+    // span.
+    inline std::optional<OrdinaryReferenceSpan>
+    resolve_ordinary_reference_span(const HeapObject *object,
+                                    const ReleaseDescriptor &descriptor)
+    {
+        assert(object != nullptr);
+        switch(descriptor.kind)
+        {
+            case ReleaseKind::StaticSpan:
+                return OrdinaryReferenceSpan{descriptor.value_offset_words,
+                                             descriptor.static_release_count};
+            case ReleaseKind::DynamicSmiSpan:
+                {
+                    Value count_value =
+                        *(reinterpret_cast<const Value *>(object) +
+                          descriptor.count_offset_words);
+                    assert(count_value.is_smi());
+                    int64_t dynamic_count = count_value.get_smi();
+                    assert(dynamic_count >= 0);
+                    return OrdinaryReferenceSpan{
+                        descriptor.value_offset_words,
+                        static_cast<uint64_t>(dynamic_count) +
+                            descriptor.additional_release_count};
+                }
+            case ReleaseKind::DynamicAuxSpan:
+                return OrdinaryReferenceSpan{
+                    descriptor.value_offset_words,
+                    static_cast<uint64_t>(
+                        object->native_layout_aux_count_value()) +
+                        descriptor.additional_release_count};
+            case ReleaseKind::CustomDealloc:
+                return std::nullopt;
+        }
+        assert(false && "invalid release descriptor kind");
+        __builtin_unreachable();
+    }
 
     struct ObjectSizeDescriptor
     {

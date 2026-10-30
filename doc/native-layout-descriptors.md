@@ -102,6 +102,18 @@ before invoking custom deallocators, so they may use ordinary `decref()`.
 validation requires every real native layout except `TestOnly` to have valid
 release and object-size descriptors.
 
+`resolve_ordinary_reference_span(object, descriptor)` resolves the three
+ordinary forms to an `OrdinaryReferenceSpan` containing a 64-bit
+`value_offset_words` and a 64-bit `value_count`. It reads count metadata without
+reading, clearing, or releasing the reference cells. Reclamation consumes the
+result using its existing clear-and-release loop.
+
+The query describes one contiguous span inside the object's allocation. An
+empty ordinary span is a supported result with a zero count. Custom handling
+returns `std::nullopt`, which does not mean the object has no references.
+Custom scanning and destruction remain independent capabilities in the future
+descriptor design below.
+
 ## Dynamic Counts
 
 Dynamic spans use one of two count sources:
@@ -179,7 +191,7 @@ struct NativeLayoutInfo
     size_t allocated_size;
     size_t initialized_size;
 
-    uint32_t value_offset_words;
+    uint64_t value_offset_words;
     uint32_t strong_value_count;
 };
 ```
@@ -230,7 +242,7 @@ struct ExtentDescriptor
 
 struct StrongSpanDescriptor
 {
-    uint16_t value_offset_words;
+    uint64_t value_offset_words;
     CountFormula count;
 };
 ```

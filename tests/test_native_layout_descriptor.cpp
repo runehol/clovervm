@@ -82,6 +82,75 @@ TEST(NativeLayoutDescriptor, CustomDeallocDeclarationBuildsDescriptor)
     EXPECT_EQ(CustomDeallocTestObject::dealloc, release.custom_dealloc);
 }
 
+TEST(NativeLayoutDescriptor, ResolvesOrdinaryStaticReferenceSpan)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Float *object = context.thread()->make_object_raw<Float>(1.5);
+    int32_t refcount = object->refcount;
+    auto span = resolve_ordinary_reference_span(
+        object, release_descriptor_for(Float::native_layout));
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(Object::native_value_offset_in_words(), span->value_offset_words);
+    EXPECT_EQ(Object::native_static_release_count(), span->value_count);
+    EXPECT_EQ(refcount, object->refcount);
+}
+
+TEST(NativeLayoutDescriptor, EmptyOrdinarySpanIsSupported)
+{
+    RawArrayBacking backing(0);
+    auto span = resolve_ordinary_reference_span(
+        &backing, release_descriptor_for(RawArrayBacking::native_layout));
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(0u, span->value_offset_words);
+    EXPECT_EQ(0u, span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, OrdinarySpanPreservesLargeStartingOffset)
+{
+    // Resolve metadata only; no storage at this offset needs to be accessed.
+    HeapObject header(NativeLayoutId::TestOnly);
+    uint64_t offset = uint64_t{UINT32_MAX} + 1;
+    ReleaseDescriptor descriptor = ReleaseDescriptor::static_span(offset, 0);
+    auto span = resolve_ordinary_reference_span(&header, descriptor);
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(offset, span->value_offset_words);
+    EXPECT_EQ(0u, span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, ResolvesSmiReferenceCountWithoutNarrowing)
+{
+    // The query reads only the stored count, not the unallocated trailing
+    // cells.
+    uint64_t count = uint64_t{UINT32_MAX} + 1;
+    ValueArrayBacking backing(count);
+    auto span = resolve_ordinary_reference_span(
+        &backing, release_descriptor_for(ValueArrayBacking::native_layout));
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
+              span->value_offset_words);
+    EXPECT_EQ(count, span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, CustomDeallocDoesNotResolveAsAnEmptySpan)
+{
+    for(NativeLayoutId layout:
+        {NativeLayoutId::CodeObject, NativeLayoutId::Shape,
+         NativeLayoutId::JitCodeObject})
+    {
+        SCOPED_TRACE(static_cast<uint32_t>(layout));
+        // Custom handling must not inspect payload fields or run a deallocator.
+        HeapObject header(layout);
+        EXPECT_FALSE(resolve_ordinary_reference_span(
+                         &header, release_descriptor_for(layout))
+                         .has_value());
+    }
+}
+
 TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
 {
     EXPECT_EQ(Object::native_static_release_count() +
@@ -587,6 +656,12 @@ TEST(NativeLayoutDescriptor, CompactTupleDynamicSmiReleaseSpanUsesStoredCount)
               release.value_offset_words);
     EXPECT_EQ(Tuple::native_additional_release_count(),
               release.additional_release_count);
+
+    auto span = resolve_ordinary_reference_span(tuple, release);
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(Object::native_value_offset_in_words(), span->value_offset_words);
+    EXPECT_EQ(3u + Object::native_static_release_count() + 1,
+              span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
@@ -651,6 +726,24 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
               release.value_offset_words);
     EXPECT_EQ(Instance::native_additional_release_count(),
               release.additional_release_count);
+
+    for(Instance *instance: {small, large})
+    {
+        auto span = resolve_ordinary_reference_span(instance, release);
+        ASSERT_TRUE(span.has_value());
+        EXPECT_EQ(Object::native_value_offset_in_words(),
+                  span->value_offset_words);
+        EXPECT_EQ(InlineSlotObject::native_static_release_count(),
+                  span->value_count);
+    }
+
+    ASSERT_TRUE(
+        large->set_own_property(small_name, Value::from_smi(1)).value());
+    auto span = resolve_ordinary_reference_span(large, release);
+    ASSERT_TRUE(span.has_value());
+    // Seven cells are reserved, but only the initialized cell joins the span.
+    EXPECT_EQ(InlineSlotObject::native_static_release_count() + 1,
+              span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesShapeCapacity)
@@ -811,6 +904,12 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeReleaseSpanUsesCapacity)
               release.value_offset_words);
     EXPECT_EQ(0u, release.additional_release_count);
     EXPECT_EQ(5u, overflow_slots->native_layout_aux_count_value());
+
+    auto span = resolve_ordinary_reference_span(overflow_slots, release);
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(OverflowSlots::native_value_offset_in_words(),
+              span->value_offset_words);
+    EXPECT_EQ(5u, span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)

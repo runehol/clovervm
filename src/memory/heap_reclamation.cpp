@@ -28,37 +28,16 @@ namespace cl
                 const ReleaseDescriptor &descriptor =
                     release_descriptor_for(obj->native_layout_id());
 
-                switch(descriptor.kind)
+                if(auto span = resolve_ordinary_reference_span(obj, descriptor))
                 {
-                    case ReleaseKind::StaticSpan:
-                        reclaim_object_value_slots(
-                            obj, descriptor.value_offset_words,
-                            descriptor.static_release_count);
-                        break;
-                    case ReleaseKind::DynamicSmiSpan:
-                        {
-                            Value count_value =
-                                *(reinterpret_cast<Value *>(obj) +
-                                  descriptor.count_offset_words);
-                            assert(count_value.is_smi());
-                            int64_t dynamic_count = count_value.get_smi();
-                            assert(dynamic_count >= 0);
-                            reclaim_object_value_slots(
-                                obj, descriptor.value_offset_words,
-                                static_cast<uint64_t>(dynamic_count) +
-                                    descriptor.additional_release_count);
-                            break;
-                        }
-                    case ReleaseKind::DynamicAuxSpan:
-                        reclaim_object_value_slots(
-                            obj, descriptor.value_offset_words,
-                            obj->native_layout_aux_count_value() +
-                                descriptor.additional_release_count);
-                        break;
-                    case ReleaseKind::CustomDealloc:
-                        assert(descriptor.custom_dealloc != nullptr);
-                        descriptor.custom_dealloc(obj);
-                        break;
+                    reclaim_object_value_slots(obj, span->value_offset_words,
+                                               span->value_count);
+                }
+                else
+                {
+                    assert(descriptor.kind == ReleaseKind::CustomDealloc);
+                    assert(descriptor.custom_dealloc != nullptr);
+                    descriptor.custom_dealloc(obj);
                 }
 
                 finish_reclaim_object(obj);
@@ -115,7 +94,7 @@ namespace cl
             }
 
             void reclaim_object_value_slots(HeapObject *obj,
-                                            uint16_t value_offset_words,
+                                            uint64_t value_offset_words,
                                             uint64_t value_count)
             {
                 Value *slots =
