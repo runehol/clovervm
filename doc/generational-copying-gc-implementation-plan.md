@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4a working tree based on `63aacacc` (2026-10-30) |
+| Validated against | Slice 4b.1 working tree based on `f46b5600` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -277,8 +277,22 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
 
 #### Remaining Root Slices
 
-- **4b: Persistent roots.** Enumerate thread/VM fields, caches, pending
-  exceptions, and native containers; distinguish roots from owned heap edges.
+- **4b.1: Thread persistent roots.**
+  `ThreadState::visit_persistent_root_slots(StrongSlotVisitor)` enumerates the
+  native-layout class array, five exact-shape caches, and both initialized
+  pending-exception cells. Visit all physical aliases without RC operations.
+  The method is non-const because it exposes writable member cells; current
+  reclamation takes a mutable thread reference and consumes these cells through
+  the same read-only adapter as scoped native roots. Do not treat ZCT entries,
+  native pointers, mixed JIT storage, or saved interpreter state as persistent
+  roots. Verify coverage, getter-visible rewrites with restored substitutions,
+  unchanged ownership, and reclamation visibility.
+- **4b.2: VM persistent fields.** Enumerate builtin identities, helper
+  functions, modules, shapes, and entry adapters.
+- **4b.3: Native containers and immortal owners.** Cover intern tables,
+  pointer-keyed maps, and outgoing references from immortal objects. Settle key
+  repair without invalidating hash-table placement; distinguish roots from
+  owned heap edges.
 - **4c: Published interpreter state.** Expose writable accumulator publication,
   protect saved publication state across native reentry, and reload before
   dispatch resumes. Keeping code objects non-moving does not remove their

@@ -113,6 +113,10 @@ namespace cl
         // managed allocation, safepoints, or reentry during enumeration.
         void visit_native_root_slots(StrongSlotVisitor visitor) const;
 
+        // Cached classes/shapes and pending-exception cells only. Interpreter
+        // state and scoped native roots have separate enumeration paths.
+        void visit_persistent_root_slots(StrongSlotVisitor visitor);
+
         void refresh_class_for_native_layout_cache();
         void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls);
         void cache_exact_dict_shapes(Shape *string_key_shape,

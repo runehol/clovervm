@@ -45,7 +45,7 @@ namespace cl
     using ThreadStateList = std::vector<std::unique_ptr<ThreadState>>;
 
     void collect_reclamation_roots_from_thread(ReclamationRootSet &roots,
-                                               const ThreadState &thread);
+                                               ThreadState &thread);
     ReclamationRootSet
     collect_reclamation_roots_from_threads(const ThreadStateList &threads);
 #ifndef NDEBUG

@@ -43,6 +43,21 @@ namespace cl
         }
     }
 
+    void ThreadState::visit_persistent_root_slots(StrongSlotVisitor visitor)
+    {
+        for(ClassObject *&cls: class_for_native_layouts)
+        {
+            visitor(HeapReferenceSlot(&cls));
+        }
+        visitor(HeapReferenceSlot(&exact_string_shape_));
+        visitor(HeapReferenceSlot(&exact_tuple_shape_));
+        visitor(HeapReferenceSlot(&exact_list_shape_));
+        visitor(HeapReferenceSlot(&exact_dict_string_key_shape_));
+        visitor(HeapReferenceSlot(&exact_dict_general_shape_));
+        visitor(HeapReferenceSlot(&pending_exception.object));
+        visitor(HeapReferenceSlot(&pending_exception.stop_iteration_value));
+    }
+
     PendingException::PendingException()
         : object(Optional<TValue<Exception>>::none()),
           stop_iteration_value(Value::not_present())
