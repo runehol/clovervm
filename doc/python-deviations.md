@@ -105,7 +105,8 @@ CPython allocation/population split.
 `bytearray` supports empty/zero-filled construction, stored bytes/bytearray
 copies, integer iterables, length/truth, indexing and slicing, item/slice
 assignment and deletion, `append`, `extend`, `clear`, `pop`, `insert`, `remove`,
-`reverse`, `copy`, repr/str, all six comparisons
+`reverse`, `copy`, `find`, `rfind`, `index`, `rindex`, `count`, `startswith`,
+`endswith`, repr/str, all six comparisons
 with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
 an independent immutable bytes object; bytes immutability and hashing are unchanged.
 
@@ -129,6 +130,21 @@ general `__index__` objects are rejected without callbacks. `reverse()` mutates
 in place and `copy()` returns an independent exact bytearray, including for empty
 inputs. Mutators retain the existing live-iterator cursor behavior and permanent
 exhaustion. Native argument/receiver diagnostics may differ in wording.
+
+Search methods accept stored bytes/bytes-subclass and bytearray payloads;
+`find`, `rfind`, `index`, `rindex`, and `count` also accept stored integer/bool
+byte needles in `0..255`. `startswith` and `endswith` accept tuples of these
+binary payloads, trying entries in order until a match; an invalid entry raises
+only when reached. Stored tuple, bytes, and integer subclass hooks are bypassed.
+All seven methods are positional-only, validate start then end before needles,
+and accept `None` and arbitrarily large stored integer bounds with clipping.
+Starts beyond the end and reversed ranges remain no-match ranges, including
+for empty needles. Counts are non-overlapping. Custom `__index__` and general
+buffer inputs remain unsupported without callbacks; native diagnostic wording
+may differ. Search retains owners and borrows spans only during synchronous
+scans without allocation, callbacks, safepoints, or mutation.
+Run `python3 tests/host/test_bytearray_search.py [path/to/clovervm]` with
+CPython 3.14.5 for the reproducible native-method differential trace.
 
 Item access, assignment, and deletion enter native code, with trusted handlers
 for SMI and slice keys. Slice assignment inspects the replacement on every

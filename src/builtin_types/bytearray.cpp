@@ -3,6 +3,7 @@
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
 #include "builtin_types/module_object.h"
+#include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
@@ -609,12 +610,177 @@ namespace cl
     }
 
     // Callers prove a stored byte payload before entering this unchecked view.
-    static std::span<const uint8_t> comparison_view(Value value)
+    static std::span<const uint8_t> stored_byte_view(Value value)
     {
         if(has_native_layout<ByteArray>(value))
             return value.get_ptr<ByteArray>()->view();
         assert(has_native_layout<Bytes>(value));
         return bytes_view(TValue<Bytes>::from_value_assumed(value));
+    }
+
+    enum class ByteArraySearch
+    {
+        Find,
+        RFind,
+        Index,
+        RIndex,
+        Count
+    };
+
+    // Pure synchronous scans: no allocation, callbacks, mutation, reclamation,
+    // or safepoints while either stored payload is borrowed. Only scalars
+    // escape.
+    template <ByteArraySearch Operation>
+    static int64_t search_bytes(std::span<const uint8_t> source,
+                                std::span<const uint8_t> needle, size_t start,
+                                size_t end)
+    {
+        constexpr bool counting = Operation == ByteArraySearch::Count;
+        constexpr bool reverse = Operation == ByteArraySearch::RFind ||
+                                 Operation == ByteArraySearch::RIndex;
+        if(start > end)
+            return counting ? 0 : -1;
+        if(needle.empty())
+            return static_cast<int64_t>(counting  ? end - start + 1
+                                        : reverse ? end
+                                                  : start);
+        if(needle.size() > end - start)
+            return counting ? 0 : -1;
+        auto range = source.subspan(start, end - start);
+        if constexpr(counting)
+        {
+            int64_t count = 0;
+            while(range.size() >= needle.size())
+            {
+                auto found = std::search(range.begin(), range.end(),
+                                         needle.begin(), needle.end());
+                if(found == range.end())
+                    break;
+                ++count;
+                range = range.subspan(
+                    static_cast<size_t>(found - range.begin()) + needle.size());
+            }
+            return count;
+        }
+        else
+        {
+            auto found = reverse ? std::find_end(range.begin(), range.end(),
+                                                 needle.begin(), needle.end())
+                                 : std::search(range.begin(), range.end(),
+                                               needle.begin(), needle.end());
+            return found == range.end()
+                       ? -1
+                       : static_cast<int64_t>(start + (found - range.begin()));
+        }
+    }
+
+    template <ByteArraySearch Operation>
+    static Value native_search(ThreadState *thread, Value self, Value needle,
+                               Value start_value, Value end_value)
+    {
+        constexpr const wchar_t *method =
+            Operation == ByteArraySearch::Find     ? L"find"
+            : Operation == ByteArraySearch::RFind  ? L"rfind"
+            : Operation == ByteArraySearch::Index  ? L"index"
+            : Operation == ByteArraySearch::RIndex ? L"rindex"
+                                                   : L"count";
+        Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
+        Owned<Value> needle_owner(needle);
+        size_t start, end;
+        CL_PROPAGATE_EXCEPTION(normalize_search_range(
+            static_cast<int64_t>(source.extract()->size()), start_value,
+            end_value, start, end));
+        int64_t result;
+        if(is_intlike_value(needle))
+        {
+            uint8_t byte = CL_TRY(byte_value(needle));
+            result = search_bytes<Operation>(source.extract()->view(),
+                                             {&byte, 1}, start, end);
+        }
+        else
+        {
+            if(!has_native_layout<Bytes>(needle) &&
+               !has_native_layout<ByteArray>(needle))
+                return active_thread()->set_pending_builtin_exception_string(
+                    L"TypeError",
+                    L"argument should be integer or bytes-like object");
+            result = search_bytes<Operation>(
+                source.extract()->view(), stored_byte_view(needle), start, end);
+        }
+        if constexpr(Operation == ByteArraySearch::Index ||
+                     Operation == ByteArraySearch::RIndex)
+        {
+            if(result < 0)
+                return active_thread()->set_pending_builtin_exception_string(
+                    L"ValueError", L"subsection not found");
+        }
+        return CL_TRY(int_value_from_int64(thread, result));
+    }
+
+    enum class ByteArrayTail
+    {
+        Prefix,
+        Suffix
+    };
+
+    template <ByteArrayTail Tail>
+    static bool match_tail(std::span<const uint8_t> source,
+                           std::span<const uint8_t> needle, size_t start,
+                           size_t end)
+    {
+        if(start > end || needle.size() > end - start)
+            return false;
+        if(needle.empty())
+            return true;
+        size_t offset =
+            Tail == ByteArrayTail::Prefix ? start : end - needle.size();
+        return std::equal(needle.begin(), needle.end(),
+                          source.begin() + static_cast<ptrdiff_t>(offset));
+    }
+
+    template <ByteArrayTail Tail>
+    static Value native_tailmatch(ThreadState *, Value self, Value candidate,
+                                  Value start_value, Value end_value)
+    {
+        constexpr const wchar_t *method =
+            Tail == ByteArrayTail::Prefix ? L"startswith" : L"endswith";
+        Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
+        Owned<Value> candidate_owner(candidate);
+        size_t start, end;
+        CL_PROPAGATE_EXCEPTION(normalize_search_range(
+            static_cast<int64_t>(source.extract()->size()), start_value,
+            end_value, start, end));
+        // Read stored tuple elements directly, bypassing subclass hooks.
+        // Validate each candidate only when reached, even when the range cannot
+        // match.
+        if(has_native_layout<Tuple>(candidate))
+        {
+            auto tuple = TValue<Tuple>::from_value_assumed(candidate);
+            for(size_t i = 0; i < tuple.extract()->size(); ++i)
+            {
+                Value item = tuple.extract()->item_unchecked(i);
+                if(!has_native_layout<Bytes>(item) &&
+                   !has_native_layout<ByteArray>(item))
+                    return active_thread()
+                        ->set_pending_builtin_exception_string(
+                            L"TypeError", L"a bytes-like object is required");
+                if(match_tail<Tail>(source.extract()->view(),
+                                    stored_byte_view(item), start, end))
+                    return Value::True();
+            }
+            return Value::False();
+        }
+        if(!has_native_layout<Bytes>(candidate) &&
+           !has_native_layout<ByteArray>(candidate))
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                Tail == ByteArrayTail::Prefix
+                    ? L"startswith first arg must be bytes or a tuple of bytes"
+                    : L"endswith first arg must be bytes or a tuple of bytes");
+        return match_tail<Tail>(source.extract()->view(),
+                                stored_byte_view(candidate), start, end)
+                   ? Value::True()
+                   : Value::False();
     }
 
     static std::strong_ordering
@@ -693,7 +859,7 @@ namespace cl
         if(!has_native_layout<ByteArray>(other) &&
            !has_native_layout<Bytes>(other))
             return Value::NotImplemented();
-        return ComparisonOp{}(array.extract()->view(), comparison_view(other))
+        return ComparisonOp{}(array.extract()->view(), stored_byte_view(other))
                    ? Value::True()
                    : Value::False();
     }
@@ -701,7 +867,7 @@ namespace cl
     template <typename ComparisonOp>
     static Value trusted_compare(ThreadState *, Value left, Value right)
     {
-        return ComparisonOp{}(comparison_view(left), comparison_view(right))
+        return ComparisonOp{}(stored_byte_view(left), stored_byte_view(right))
                    ? Value::True()
                    : Value::False();
     }
@@ -842,6 +1008,10 @@ namespace cl
             vm->get_default_thread()->make_object_value<Tuple>(1));
         pop_defaults.extract()->initialize_item_unchecked(0,
                                                           Value::from_smi(-1));
+        Owned<TValue<Tuple>> search_defaults(
+            vm->get_default_thread()->make_object_value<Tuple>(2));
+        search_defaults.extract()->initialize_item_unchecked(0, Value::None());
+        search_defaults.extract()->initialize_item_unchecked(1, Value::None());
         vm->register_trusted_handler(trusted_compare<ByteArrayEqOperator>,
                                      TrustedHandlerEffects::None);
         vm->register_trusted_handler(trusted_compare<ByteArrayNeOperator>,
@@ -922,7 +1092,31 @@ namespace cl
             builtin_intrinsic_method(L"insert", native_insert),
             builtin_intrinsic_method(L"remove", native_remove),
             builtin_intrinsic_method(L"reverse", native_reverse),
-            builtin_intrinsic_method(L"copy", native_copy)};
+            builtin_intrinsic_method(L"copy", native_copy),
+            with_defaults(builtin_intrinsic_method(
+                              L"find", native_search<ByteArraySearch::Find>),
+                          search_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"rfind", native_search<ByteArraySearch::RFind>),
+                          search_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"index", native_search<ByteArraySearch::Index>),
+                          search_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"rindex", native_search<ByteArraySearch::RIndex>),
+                search_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"count", native_search<ByteArraySearch::Count>),
+                          search_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"startswith", native_tailmatch<ByteArrayTail::Prefix>),
+                search_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"endswith", native_tailmatch<ByteArrayTail::Suffix>),
+                search_defaults.value())};
         unwrap_bootstrap_expected(
             vm,
             install_builtin_intrinsic_methods(vm, vm->bytearray_class(),
