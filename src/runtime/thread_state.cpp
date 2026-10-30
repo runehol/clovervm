@@ -8,6 +8,7 @@
 #include "compiler/parser.h"
 #include "compiler/tokenizer.h"
 #include "memory/heap_reclamation.h"
+#include "memory/scoped_root.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -32,6 +33,15 @@ namespace cl
     static_assert(std::has_single_bit(FrameAlignmentBytes));
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
+
+    void ThreadState::visit_native_root_slots(StrongSlotVisitor visitor) const
+    {
+        for(const ScopedRoot *root = native_roots_; root != nullptr;
+            root = root->previous_)
+        {
+            visitor(root->slot_);
+        }
+    }
 
     PendingException::PendingException()
         : object(Optional<TValue<Exception>>::none()),

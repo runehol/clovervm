@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 3c working tree based on `aaf57767` (2026-10-30) |
+| Validated against | Slice 4a working tree based on `63aacacc` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -257,6 +257,44 @@ execution can subsequently read.
 Completion: root visitors can perform controlled rewrite tests, and resumed
 execution reads the rewritten locations. No potentially movable reference
 survives solely through conservative discovery or a positive refcount.
+
+#### 4a. Scoped Native Root Cells
+
+Introduce `ScopedRoot(ThreadState &, HeapReferenceSlot)` as an allocation-free,
+non-copyable, non-movable LIFO registration of one initialized native cell.
+`ThreadState::visit_native_root_slots(StrongSlotVisitor)` visits the actual
+writable cells, including distinct cells aliasing the same object. Registration
+borrows storage and performs no retain/release operations. The cell and thread
+must outlive registration; the cell must remain writable and address-stable.
+Enumeration cannot mutate the chain, allocate managed objects, or reenter.
+
+Callers must reload the registered cell after safepoints rather than retaining
+an extracted raw pointer. Existing `Owned<T>` ownership remains independent;
+registration does not automatically apply to all owners. Integrate the explicit
+cells read-only into current reclamation, leaving the conservative stack scan
+and refcounting operational. Test scope cleanup, aliases, per-thread isolation,
+controlled RC-neutral rewrites, and zero-count liveness across reclamation.
+
+#### Remaining Root Slices
+
+- **4b: Persistent roots.** Enumerate thread/VM fields, caches, pending
+  exceptions, and native containers; distinguish roots from owned heap edges.
+- **4c: Published interpreter state.** Expose writable accumulator publication,
+  protect saved publication state across native reentry, and reload before
+  dispatch resumes. Keeping code objects non-moving does not remove their
+  tracing requirement.
+- **4d: Precise frame roots.** Distinguish parameters, locals, temporaries,
+  saved code objects, and continuation operands from native PCs, frame pointers,
+  padding, and scalar metadata.
+- **4e: Native handles and callers.** Migrate safepoint-crossing native locals
+  and settle handle-cell address stability, overflow chunks, and interior
+  pointers.
+- **4f: JIT boundaries and closure audit.** Cover supported JIT safepoints and
+  test complete root coverage. Preserve transition execution's no-safepoint
+  contract; do not introduce loop-backedge safepoints in this work.
+
+Each remaining slice requires its own readiness review. Slice 4a does not enable
+movement or remove conservative root discovery.
 
 ### 5. Introduce Barriers Alongside Refcounting
 

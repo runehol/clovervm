@@ -213,6 +213,14 @@ namespace cl
 
         roots.add_conservative_value(record.accumulator_or_not_present);
         roots.add_conservative_value(record.active_code_object_or_not_present);
+        thread.visit_native_root_slots([&](HeapReferenceSlot slot) {
+            if(HeapObject *object = slot.load_pointer())
+            {
+                Value value;
+                value.as.ptr = object;
+                roots.add_conservative_value(value);
+            }
+        });
     }
 
     ReclamationRootSet

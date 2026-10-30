@@ -253,6 +253,7 @@ add_library(libclovervm_objects OBJECT
     runtime/runtime_helpers.h
     memory/heap_reclamation.cpp
     memory/heap_reclamation.h
+    memory/scoped_root.h
     object_model/shape.cpp
     object_model/shape.h
     object_model/slot_dict.cpp

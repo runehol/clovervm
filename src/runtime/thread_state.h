@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "jit/transition_executor.h"
+#include "memory/heap_reference_slot.h"
 #include "memory/thread_local_heap.h"
 #include "object_model/owned.h"
 #include "object_model/shape.h"
@@ -35,6 +36,7 @@ namespace cl
     class CodeObject;
     class ThreadState;
     class ReclamationRootSet;
+    class ScopedRoot;
 
     void process_thread_reclamation_epoch(ThreadState &thread,
                                           const ReclamationRootSet &roots);
@@ -106,6 +108,10 @@ namespace cl
         };
 
         ThreadState(VirtualMachine *_machine);
+
+        // Synchronous visit of registered native cells. No chain mutation,
+        // managed allocation, safepoints, or reentry during enumeration.
+        void visit_native_root_slots(StrongSlotVisitor visitor) const;
 
         void refresh_class_for_native_layout_cache();
         void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls);
@@ -412,6 +418,8 @@ namespace cl
         static constexpr size_t transition_execution_context_offset();
 
     private:
+        friend class ScopedRoot;
+
         ThreadState(VirtualMachine *_machine, jit::CodeCache *_code_cache);
 
         [[nodiscard]] Value
@@ -451,6 +459,7 @@ namespace cl
         std::vector<HeapObject *> zero_count_table;
         PendingException pending_exception;
         SafepointScanRecord safepoint_scan_record_;
+        ScopedRoot *native_roots_ = nullptr;
         bool trace_interpreter_instructions_ = false;
         Value *trace_interpreter_frame_ptr_ = nullptr;
         // This thread's Clover frame frontier during native execution: the
