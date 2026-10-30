@@ -113,7 +113,9 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
                            "tests/python/itertools_pairwise.py",
                            "tests/python/itertools_count.py",
                            "tests/python/itertools_count_mixed_numbers.py",
-                           "tests/python/itertools_count_reentry.py"})
+                           "tests/python/itertools_count_reentry.py",
+                           "tests/python/itertools_accumulate.py",
+                           "tests/python/itertools_batched.py"})
     {
         SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);
