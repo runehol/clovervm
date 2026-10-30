@@ -8,11 +8,14 @@ uses ordinary checked indexing rather than the C accelerator's size guards.
 Length results support int, bool, and int subclasses within 64-bit size bounds;
 non-integer results requiring custom __index__ dispatch remain unsupported.
 
-Selection uses the existing iterable and callable protocol subset. General
+Selection and merge use the existing iterable and callable protocol subset. General
 custom __index__, sequence-only iteration, length hints, callable instances and
 first-class bound-method callbacks remain unsupported. Bounded selection uses
 SMI-sized range bounds; the n == 1 and known-size sorting shortcuts run first.
-merge and native acceleration are not implemented.
+merge is a managed iterator, without generator send/throw/close or introspection.
+Source advancement uses next(iterator), so later __next__ replacement can differ
+from CPython's cached bound methods. Exact generator-frame retention and exception
+chaining are not reproduced. Native acceleration is not implemented.
 """
 
 # Algorithms adapted from CPython's Lib/heapq.py at v3.14.5.
@@ -22,7 +25,7 @@ merge and native acceleration are not implemented.
 
 __all__ = ["heapify", "heappush", "heappop", "heapreplace", "heappushpop",
            "heapify_max", "heappush_max", "heappop_max", "heapreplace_max",
-           "heappushpop_max", "nlargest", "nsmallest"]
+           "heappushpop_max", "nlargest", "nsmallest", "merge"]
 
 # The VM's current targets use 64-bit platform sizes. As in operator.py, avoid
 # sys.maxsize here because it currently exposes the narrower SMI limit.
@@ -374,3 +377,133 @@ def nsmallest(n, iterable, key=None):
     for entry in result:
         selected.append(entry[2])
     return selected
+
+
+def merge(*iterables, key=None, reverse=False):
+    """Lazily merge sorted inputs; key and reverse are keyword-only.
+
+    Inputs must already be sorted in the requested direction. Equal keys keep
+    source order, including for reverse merges. Sources are untouched until
+    the first advancement.
+    """
+    return _MergeIterator(iterables, key, reverse)
+
+
+class _MergeIterator:
+    def __init__(self, iterables, key, reverse):
+        self._iterables = iterables
+        self._key = key
+        self._reverse = reverse
+        self._heap = []
+        self._started = False
+        self._pending = False
+        self._tail_mode = False
+        self._tail = None
+        self._running = False
+        self._done = False
+        self._heapify = None
+        self._heappop = None
+        self._heapreplace = None
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._done:
+            raise StopIteration
+        if self._running:
+            raise ValueError("generator already executing")
+        self._running = True
+        try:
+            result = self._advance()
+        except StopIteration:
+            # Only explicit source exhaustion is normal termination. A stray
+            # StopIteration escaping the algorithm has generator semantics.
+            normal_end = self._done
+            self._done = True
+            if not normal_end:
+                raise RuntimeError("generator raised StopIteration")
+            raise StopIteration
+        except BaseException:
+            self._done = True
+            raise
+        finally:
+            self._running = False
+            if self._done:
+                self._iterables = None
+                self._key = None
+                self._reverse = None
+                self._heap = None
+                self._tail = None
+                self._heapify = None
+                self._heappop = None
+                self._heapreplace = None
+        return result
+
+    def _advance(self):
+        heap = self._heap
+        key = self._key
+        if not self._started:
+            # Freeze heap functions before source callbacks, as CPython does.
+            direction = 1
+            if self._reverse:
+                self._heapify = heapify_max
+                self._heappop = heappop_max
+                self._heapreplace = heapreplace_max
+                direction = -1
+            else:
+                self._heapify = heapify
+                self._heappop = heappop
+                self._heapreplace = heapreplace
+            order = 0
+            for iterable in self._iterables:
+                # CPython's map(iter, iterables) ends setup if acquisition
+                # raises StopIteration, without visiting later sources.
+                try:
+                    iterator = iter(iterable)
+                except StopIteration:
+                    break
+                try:
+                    value = next(iterator)
+                    priority = value
+                    if key is not None:
+                        priority = key(value)
+                    heap.append([priority, order, value, iterator])
+                except StopIteration:
+                    pass
+                order += direction
+            self._heapify(heap)
+            self._started = True
+
+        if self._pending:
+            row = heap[0]
+            if self._tail_mode:
+                # yield-from reacquires the remaining iterator after yielding
+                # its buffered head, and never evaluates its key again.
+                if self._tail is None:
+                    self._tail = iter(row[3])
+                try:
+                    value = next(self._tail)
+                except StopIteration:
+                    self._done = True
+                    raise StopIteration
+                return value
+            try:
+                value = next(row[3])
+                priority = value
+                if key is not None:
+                    priority = key(value)
+                row[0] = priority
+                row[2] = value
+                self._heapreplace(heap, row)
+            except StopIteration:
+                # This deliberately also catches key/comparison StopIteration,
+                # but an exception from the pop itself must escape.
+                self._heappop(heap)
+
+        if not heap:
+            self._done = True
+            raise StopIteration
+        self._pending = True
+        self._tail_mode = len(heap) == 1
+        return heap[0][2]

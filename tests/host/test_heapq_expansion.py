@@ -52,9 +52,81 @@ class ExpansionTests(unittest.TestCase):
 
     def test_vm_regressions_on_production_source(self):
         with patch.dict(sys.modules, heapq=self.production):
-            for name in ("heapq_min", "heapq_max", "heapq_selection"):
+            for name in ("heapq_min", "heapq_max", "heapq_selection", "heapq_merge"):
                 with self.subTest(name=name):
                     runpy.run_path(str(ROOT / "tests" / "python" / (name + ".py")))
+
+    def test_merge_oracles(self):
+        rng = random.Random(9123)
+        for reverse in (False, True):
+            for keyed in (False, True):
+                for size in range(30):
+                    rows = [[rng.randrange(20) for _ in range(rng.randrange(15))]
+                            for _ in range(size)]
+                    rows = [sorted(row, reverse=reverse) for row in rows]
+                    results = []
+                    for module in (self.reference, self.production):
+                        calls = []
+                        def key(value):
+                            calls.append(value)
+                            return value
+                        iterator = module.merge(*rows, reverse=reverse,
+                                                key=key if keyed else None)
+                        results.append((list(iterator), calls))
+                    self.assertEqual(*results)
+
+    def test_merge_fault_traces(self):
+        for origin in ("iter", "next", "key", "eq", "lt", "reverse"):
+            for fail_at in (1, 2, 4, 7):
+                for error_type in (StopIteration, ValueError, KeyboardInterrupt):
+                    results = []
+                    for module in (self.reference, self.production):
+                        log = []
+                        counts = {}
+                        def event(where, value):
+                            log.append((where, value))
+                            counts[where] = counts.get(where, 0) + 1
+                            if where == origin and counts[where] == fail_at:
+                                raise error_type("injected")
+                        class Item:
+                            def __init__(self, value):
+                                self.value = value
+                            def __eq__(self, other):
+                                event("eq", (self.value, other.value))
+                                return self.value == other.value
+                            def __lt__(self, other):
+                                event("lt", (self.value, other.value))
+                                return self.value < other.value
+                        class Source:
+                            def __init__(self, name, values):
+                                self.name = name
+                                self.values = iter(values)
+                            def __iter__(self):
+                                event("iter", self.name)
+                                return self
+                            def __next__(self):
+                                event("next", self.name)
+                                return Item(next(self.values))
+                        class Reverse:
+                            def __bool__(self):
+                                event("reverse", None)
+                                return False
+                        def key(value):
+                            event("key", value.value)
+                            return value
+                        iterator = module.merge(Source("a", [1, 3, 5]),
+                                                Source("b", [2, 4, 6]),
+                                                key=key, reverse=Reverse())
+                        output = []
+                        for unused in range(9):
+                            try:
+                                output.append(("value", next(iterator).value))
+                            except BaseException as error:
+                                output.append((type(error).__name__, str(error)))
+                        results.append((output, log))
+                    with self.subTest(origin=origin, fail_at=fail_at,
+                                      error=error_type.__name__):
+                        self.assertEqual(*results)
 
     def test_selection_oracles(self):
         rng = random.Random(1701)
