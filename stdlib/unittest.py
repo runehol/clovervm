@@ -10,6 +10,11 @@ assertRaises are not supported. Test methods must be ordinary Python methods;
 attribute reads do not yet produce bound-method callback objects. Failure/error
 entries are (test, exception) pairs, without traceback formatting. successes is
 a CloverVM extension.
+
+Assertions use minimal messages: failures pass msg unchanged to fail(), even
+for invalid container arguments. There are no generated diffs, longMessage or
+maxDiff handling. Typed list/tuple equality shares a private helper; generic
+assertSequenceEqual is not provided.
 """
 
 
@@ -116,6 +121,55 @@ class TestCase:
         if not first != second:
             self.fail(msg)
 
+    def assertLess(self, a, b, msg=None):
+        if not a < b:
+            self.fail(msg)
+
+    def assertLessEqual(self, a, b, msg=None):
+        if not a <= b:
+            self.fail(msg)
+
+    def assertGreater(self, a, b, msg=None):
+        if not a > b:
+            self.fail(msg)
+
+    def assertGreaterEqual(self, a, b, msg=None):
+        if not a >= b:
+            self.fail(msg)
+
+    def _assertTypedSequenceEqual(self, seq1, seq2, seq_type, msg):
+        if not isinstance(seq1, seq_type):
+            self.fail(msg)
+        if not isinstance(seq2, seq_type):
+            self.fail(msg)
+        # Like CPython, check lengths before invoking sequence equality.
+        # Rich diagnostic indexing and formatting are outside this subset.
+        try:
+            len(seq1)
+            len(seq2)
+        except TypeError:
+            self.fail(msg)
+            return
+        except NotImplementedError:
+            self.fail(msg)
+            return
+        if not seq1 == seq2:
+            self.fail(msg)
+
+    def assertListEqual(self, list1, list2, msg=None):
+        self._assertTypedSequenceEqual(list1, list2, list, msg)
+
+    def assertTupleEqual(self, tuple1, tuple2, msg=None):
+        self._assertTypedSequenceEqual(tuple1, tuple2, tuple, msg)
+
+    def assertDictEqual(self, d1, d2, msg=None):
+        if not isinstance(d1, dict):
+            self.fail(msg)
+        if not isinstance(d2, dict):
+            self.fail(msg)
+        if d1 != d2:
+            self.fail(msg)
+
     def assertIs(self, first, second, msg=None):
         if first is not second:
             self.fail(msg)
@@ -142,6 +196,10 @@ class TestCase:
 
     def assertIsInstance(self, obj, cls, msg=None):
         if not isinstance(obj, cls):
+            self.fail(msg)
+
+    def assertNotIsInstance(self, obj, cls, msg=None):
+        if isinstance(obj, cls):
             self.fail(msg)
 
     def assertRaises(self, expected_exception, *args, **kwargs):
