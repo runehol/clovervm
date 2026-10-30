@@ -30,6 +30,7 @@ namespace cl
         void (*destroy)(HeapObject *);
         // Supplemental strong slots, independent of release and destruction.
         void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
+        void (*process_weak)(HeapObject *, WeakTargetResolver);
 
         static constexpr ReleaseDescriptor
         static_span(uint64_t value_offset_words, uint32_t release_count)
@@ -39,6 +40,7 @@ namespace cl
                                      release_count,
                                      value_offset_words,
                                      0,
+                                     nullptr,
                                      nullptr,
                                      nullptr,
                                      nullptr};
@@ -56,6 +58,7 @@ namespace cl
                                      additional_release_count,
                                      nullptr,
                                      nullptr,
+                                     nullptr,
                                      nullptr};
         }
 
@@ -68,6 +71,7 @@ namespace cl
                                      0,
                                      value_offset_words,
                                      additional_release_count,
+                                     nullptr,
                                      nullptr,
                                      nullptr,
                                      nullptr};
@@ -83,11 +87,12 @@ namespace cl
                                      0,
                                      custom_release,
                                      nullptr,
+                                     nullptr,
                                      nullptr};
         }
     };
 
-    static_assert(sizeof(ReleaseDescriptor) == 48);
+    static_assert(sizeof(ReleaseDescriptor) == 56);
 
     struct OrdinaryReferenceSpan
     {
@@ -193,6 +198,10 @@ namespace cl
                 {
                     descriptor.custom_trace_strong =
                         T::native_custom_trace_strong;
+                }
+                if constexpr(requires { T::native_process_weak; })
+                {
+                    descriptor.process_weak = T::native_process_weak;
                 }
                 return descriptor;
             }
@@ -418,6 +427,13 @@ namespace cl
     // are excluded; no reference counts or reclamation state are changed.
     void visit_strong_reference_slots(HeapObject *object,
                                       StrongSlotVisitor visitor);
+
+    // Caller establishes strong closure first. Dead weak targets do not become
+    // strong. Clearing a cache can release its owned native plan's references,
+    // but must not run reclamation, Python code, or a safepoint.
+    // With RC enabled, install an active thread for any resulting ZCT enqueue.
+    void process_weak_references(HeapObject *object,
+                                 WeakTargetResolver resolver);
 
 }  // namespace cl
 

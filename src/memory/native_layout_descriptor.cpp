@@ -83,6 +83,18 @@ namespace cl
         }
     }
 
+    void process_weak_references(HeapObject *object,
+                                 WeakTargetResolver resolver)
+    {
+        assert(object != nullptr);
+        const ReleaseDescriptor &descriptor =
+            release_descriptor_for(object->native_layout_id());
+        if(descriptor.process_weak != nullptr)
+        {
+            descriptor.process_weak(object, resolver);
+        }
+    }
+
     size_t object_size_in_bytes(const HeapObject *obj)
     {
         assert(obj != nullptr);

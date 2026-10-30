@@ -67,6 +67,12 @@ namespace cl
     // mutation during enumeration. Visiting does not transfer ownership.
     using StrongSlotVisitor = absl::FunctionRef<void(HeapReferenceSlot)>;
 
+    // After strong closure: return the surviving address, or null for a dead
+    // target. Unmoved/uncollected objects return their original address. The
+    // resolver must preserve object type/storage class and must not mark,
+    // dereference dead inputs, allocate managed objects, or reenter the VM.
+    using WeakTargetResolver = absl::FunctionRef<HeapObject *(HeapObject *)>;
+
 }  // namespace cl
 
 #endif  // CL_HEAP_REFERENCE_SLOT_H

@@ -17,6 +17,26 @@ namespace cl
     {
     }
 
+    void Shape::process_weak_references(HeapObject *obj,
+                                        WeakTargetResolver resolver)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        Shape *shape = static_cast<Shape *>(obj);
+        if(shape->previous_shape != nullptr)
+        {
+            HeapObject *replacement = resolver(shape->previous_shape);
+            if(replacement == nullptr)
+            {
+                shape->previous_shape = nullptr;
+            }
+            else
+            {
+                HeapReferenceSlot(&shape->previous_shape)
+                    .rewrite_pointer(replacement);
+            }
+        }
+    }
+
     void Shape::trace_strong_references(HeapObject *obj,
                                         StrongSlotVisitor visitor)
     {

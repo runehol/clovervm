@@ -5,9 +5,9 @@
 | Document type | Architecture contract |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Descriptor-driven heap record sizing, reference release, and teardown |
+| Scope | Descriptor-driven heap record sizing, strong scanning, weak processing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | Slice 3b working tree based on `7ee624a2` (2026-10-30) |
+| Validated against | Slice 3c working tree based on `aaf57767` (2026-10-30) |
 | Supersedes | N/A |
 
 ## Current Model
@@ -104,8 +104,9 @@ their existing explicit-release behavior; they do not release on destruction.
 Release and destruction each run once, then reclamation retires the allocation.
 Ordinary spans can have a destruction callback too; custom destruction is not a
 reference-enumeration policy. Independent destruction grew `ReleaseDescriptor`
-from 32 to 40 bytes; the strong-scanning callback added in slice 3b makes it 48
-bytes. These are static table entries, not per-object metadata.
+from 32 to 40 bytes, strong scanning made it 48 bytes, and slice 3c's weak
+callback makes it 56 bytes. These are static table entries, not per-object
+metadata.
 
 `CustomRelease` is also the default-invalid descriptor encoding:
 `custom_release == nullptr` means the table entry is unfilled. Descriptor table
@@ -130,7 +131,7 @@ borrowed `StrongSlotVisitor` is an `absl::FunctionRef<void(HeapReferenceSlot)>`;
 it is not retained. An ordinary span and a supplemental custom callback may
 coexist. Every registered custom-release layout must supply a custom scanner;
 table validation checks this structural requirement, not semantic completeness
-of the remaining per-layout audit.
+of per-layout reference coverage.
 
 The three custom scanners expose:
 
@@ -145,16 +146,37 @@ The three custom scanners expose:
 
 Enumeration is not recursive. Distinct cells containing the same pointer are
 visited separately. Raw weak-cache references and `Shape::previous_shape` are
-excluded; weak processing remains pending. Native pointers such as CodeObject's
-`compilation_unit` are not heap-reference cells; roots owned by native runtime
+excluded and handled by separate weak processing. Native pointers such as
+CodeObject's `compilation_unit` are not heap-reference cells; roots owned by native runtime
 structures require a separate audit. These scans do not enter production
-reclamation or imply that every layout has completed its tracing audit.
+reclamation or imply relocation safety. The per-layout field inventory and
+remaining movement prerequisites are recorded in the
+[Native Layout Reference Audit](native-layout-reference-audit.md).
 
 Neither enumeration nor relocation writes adjust refcounts or ZCT membership.
 The visitor must not allocate managed objects, safepoint, execute Python, or
 change container structure during a visit. Object and slot storage stay valid
 until enumeration completes. Tests simulate substitutions and restore the
 ownership graph before refcount teardown.
+
+`process_weak_references(object, resolver)` invokes an optional descriptor weak
+callback after the caller has established strong closure. The borrowed
+`WeakTargetResolver` returns a surviving address, identity for an unmoved or
+uncollected object, or null for a dead target. It must not mark or dereference
+dead inputs, allocate managed objects, or reenter the VM. The callbacks do not
+run production collection or reclamation.
+
+Shape repairs or clears its non-owning back-link. CodeObject processes every
+cache family, respecting optional nulls, tagged immediates, invalid/inline shape
+keys, and active plan fields. Any dead active component resets the whole entry;
+native handler pointers and scalar plans are not sent to the resolver. Successful
+pointer repair is RC-neutral. Clearing an expanded-call entry releases its owned
+keyword-name plan through ordinary ownership rules: with RC enabled an active
+thread must be installed, and zero-count children may enter the ZCT, but no
+reclamation runs inside the callback. Those names already participated in
+strong closure. Tests use fake liveness maps with physically live objects;
+Python-visible weakref objects and production collector integration are not
+part of this API implementation.
 
 `visit_ordinary_reference_slots(object, span, visitor)` enumerates each cell of
 a resolved span through a borrowed `HeapReferenceSlot`. This includes immediate
@@ -596,6 +618,7 @@ CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base_type,
 CL_DECLARE_CUSTOM_RELEASE(type, function)
 CL_DECLARE_NATIVE_DESTROY(type, function)
 CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)
+CL_DECLARE_PROCESS_WEAK(type, function)
 ```
 
 Object-size declarations:

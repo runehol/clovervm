@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 3b working tree based on `7ee624a2` (2026-10-30) |
+| Validated against | Slice 3c working tree based on `aaf57767` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -75,8 +75,8 @@ assumptions; they do not by themselves verify the C++ adapter.
 | 9 | Nursery allocation and evacuation for audited layouts | Tracing |
 | 10 | Wider coverage, refcount/ZCT retirement, and optimization | Tracing |
 
-Stages 1–2 and slices 3a–3b are implemented. The rest of stage 3 and stages 4–10
-remain pending.
+Stages 1–3's layout/weak-processing primitives and audit are implemented.
+Production collector integration and stages 4–10 remain pending.
 
 Each stage is a review boundary, not necessarily one commit. Split root sources,
 layout families, and store families into bounded slices. Stages 1–7 can land
@@ -179,7 +179,26 @@ Implement this stage in bounded slices:
   lazy spans, custom enumeration, repeated aliases, external backing-handle
   rewriting, latent descriptor names, and tagged-only JIT pool rewriting.
 - **3c: audit remaining layouts and implement weak processing**, keeping
-  coherent cache repair separate from strong tracing.
+  coherent cache repair separate from strong tracing. Use a non-owning
+  `WeakTargetResolver` (`absl::FunctionRef<HeapObject *(HeapObject *)>`) and
+  an optional descriptor `process_weak` callback behind
+  `process_weak_references(object, resolver)`. Run only after strong closure;
+  the resolver returns a surviving address (including identity for uncollected
+  storage) or null for a dead target, without marking or dereferencing dead
+  inputs. Shape repairs/clears its back-link. CodeObject repairs all raw cache
+  references, respecting shape-key sentinels and active union arms, or resets
+  an entire entry if a target dies. Include keyword-call caches in full cache
+  clearing. Successful repairs are RC-neutral; resetting an expanded-call
+  entry releases its strongly owned keyword-name plan through normal ownership
+  rules. Those names have already participated in strong closure. Use fake
+  liveness/forwarding maps with physically live objects in tests, restoring
+  successful substitutions before RC teardown. Audit each registered layout's
+  strong, weak and native-only storage without changing production reclamation
+  or adding Python weakref objects. The callbacks and fake-liveness tests are
+  implemented. The exhaustive
+  [Native Layout Reference Audit](native-layout-reference-audit.md) records
+  ownership, weak fields, native-only state, and unresolved relocation
+  prerequisites (including transferred array-backing extent metadata).
 
 Audit every native layout, including references in C++ containers, backing
 records, compiled code, and caches. Separate strong-slot enumeration, weak

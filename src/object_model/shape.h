@@ -266,10 +266,13 @@ namespace cl
         static void destroy(HeapObject *obj);
         static void trace_strong_references(HeapObject *obj,
                                             StrongSlotVisitor visitor);
+        static void process_weak_references(HeapObject *obj,
+                                            WeakTargetResolver resolver);
 
         CL_DECLARE_CUSTOM_RELEASE(Shape, release_managed_references);
         CL_DECLARE_NATIVE_DESTROY(Shape, destroy);
         CL_DECLARE_CUSTOM_TRACE_STRONG(Shape, trace_strong_references);
+        CL_DECLARE_PROCESS_WEAK(Shape, process_weak_references);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Shape, Shape::object_size_in_bytes);
     };
 
