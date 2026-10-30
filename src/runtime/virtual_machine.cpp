@@ -717,10 +717,13 @@ namespace cl
 
         auto install_binary_arithmetic_operator_table =
             [this](OperatorDispatchTableId table_id, String *normal_dunder,
-                   String *reflected_dunder) {
-                std::array<OperatorStep, 6> &steps =
+                   String *reflected_dunder, String *inplace_dunder) {
+                auto &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps = {{
+                    OperatorStep::call_binary(
+                        inplace_dunder,
+                        OperatorStepApplicability::IfMethodFound),
                     OperatorStep::call_binary_reflected(
                         reflected_dunder,
                         OperatorStepApplicability::
@@ -741,14 +744,15 @@ namespace cl
                 }};
 
                 operator_dispatch_tables_[static_cast<size_t>(table_id)] =
-                    OperatorDispatchTable{steps.data(),
-                                          static_cast<uint8_t>(steps.size())};
+                    OperatorDispatchTable{steps.data() + 1, 6};
+                operator_dispatch_tables_[static_cast<size_t>(table_id) + 1] =
+                    OperatorDispatchTable{steps.data(), 7};
             };
 
         auto install_ternary_arithmetic_operator_table =
             [this](OperatorDispatchTableId table_id, String *normal_dunder,
                    String *reflected_dunder) {
-                std::array<OperatorStep, 6> &steps =
+                auto &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps = {{
                     OperatorStep::call_ternary_reflected(
@@ -771,8 +775,7 @@ namespace cl
                 }};
 
                 operator_dispatch_tables_[static_cast<size_t>(table_id)] =
-                    OperatorDispatchTable{steps.data(),
-                                          static_cast<uint8_t>(steps.size())};
+                    OperatorDispatchTable{steps.data(), 6};
             };
 
         register_truthiness_dispatch_handlers(*this);
@@ -794,7 +797,7 @@ namespace cl
 
         auto install_unary_operator_table =
             [this](OperatorDispatchTableId table_id, String *dunder) {
-                std::array<OperatorStep, 6> &steps =
+                auto &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps[0] = OperatorStep::call_unary(
                     dunder, OperatorStepApplicability::IfMethodFound);
@@ -806,7 +809,7 @@ namespace cl
 
         auto install_receiver_binary_operator_table =
             [this](OperatorDispatchTableId table_id, String *dunder) {
-                std::array<OperatorStep, 6> &steps =
+                auto &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps[0] = OperatorStep::call_binary(
                     dunder, OperatorStepApplicability::IfMethodFound);
@@ -818,7 +821,7 @@ namespace cl
 
         auto install_receiver_ternary_operator_table =
             [this](OperatorDispatchTableId table_id, String *dunder) {
-                std::array<OperatorStep, 6> &steps =
+                auto &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps[0] = OperatorStep::call_ternary(
                     dunder, OperatorStepApplicability::IfMethodFound);
@@ -831,7 +834,7 @@ namespace cl
         auto install_membership_operator_table =
             [this](OperatorDispatchTableId table_id, String *dunder,
                    String *dunder_iter, String *dunder_getitem) {
-                std::array<OperatorStep, 6> &steps =
+                auto &steps =
                     operator_dispatch_steps_[static_cast<size_t>(table_id)];
                 steps[0] = OperatorStep::call_binary(
                     dunder, OperatorStepApplicability::IfMethodFound);
@@ -845,35 +848,48 @@ namespace cl
                     OperatorDispatchTable{steps.data(), 4};
             };
 
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::Add,
-                                                 dunder_add, dunder_radd);
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::Sub,
-                                                 dunder_sub, dunder_rsub);
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::Mul,
-                                                 dunder_mul, dunder_rmul);
         install_binary_arithmetic_operator_table(
-            OperatorDispatchTableId::MatMul, dunder_matmul, dunder_rmatmul);
+            OperatorDispatchTableId::Add, dunder_add, dunder_radd,
+            get_or_create_interned_string_raw(L"__iadd__"));
         install_binary_arithmetic_operator_table(
-            OperatorDispatchTableId::BinaryPow, dunder_pow, dunder_rpow);
+            OperatorDispatchTableId::Sub, dunder_sub, dunder_rsub,
+            get_or_create_interned_string_raw(L"__isub__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::Mul, dunder_mul, dunder_rmul,
+            get_or_create_interned_string_raw(L"__imul__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::MatMul, dunder_matmul, dunder_rmatmul,
+            get_or_create_interned_string_raw(L"__imatmul__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::BinaryPow, dunder_pow, dunder_rpow,
+            get_or_create_interned_string_raw(L"__ipow__"));
         install_ternary_arithmetic_operator_table(
             OperatorDispatchTableId::TernaryPow, dunder_pow, dunder_rpow);
         install_binary_arithmetic_operator_table(
-            OperatorDispatchTableId::TrueDiv, dunder_truediv, dunder_rtruediv);
+            OperatorDispatchTableId::TrueDiv, dunder_truediv, dunder_rtruediv,
+            get_or_create_interned_string_raw(L"__itruediv__"));
         install_binary_arithmetic_operator_table(
             OperatorDispatchTableId::FloorDiv, dunder_floordiv,
-            dunder_rfloordiv);
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::Mod,
-                                                 dunder_mod, dunder_rmod);
+            dunder_rfloordiv,
+            get_or_create_interned_string_raw(L"__ifloordiv__"));
         install_binary_arithmetic_operator_table(
-            OperatorDispatchTableId::LShift, dunder_lshift, dunder_rlshift);
+            OperatorDispatchTableId::Mod, dunder_mod, dunder_rmod,
+            get_or_create_interned_string_raw(L"__imod__"));
         install_binary_arithmetic_operator_table(
-            OperatorDispatchTableId::RShift, dunder_rshift, dunder_rrshift);
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::And,
-                                                 dunder_and, dunder_rand);
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::Xor,
-                                                 dunder_xor, dunder_rxor);
-        install_binary_arithmetic_operator_table(OperatorDispatchTableId::Or,
-                                                 dunder_or, dunder_ror);
+            OperatorDispatchTableId::LShift, dunder_lshift, dunder_rlshift,
+            get_or_create_interned_string_raw(L"__ilshift__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::RShift, dunder_rshift, dunder_rrshift,
+            get_or_create_interned_string_raw(L"__irshift__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::And, dunder_and, dunder_rand,
+            get_or_create_interned_string_raw(L"__iand__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::Xor, dunder_xor, dunder_rxor,
+            get_or_create_interned_string_raw(L"__ixor__"));
+        install_binary_arithmetic_operator_table(
+            OperatorDispatchTableId::Or, dunder_or, dunder_ror,
+            get_or_create_interned_string_raw(L"__ior__"));
         install_unary_operator_table(OperatorDispatchTableId::Neg, dunder_neg);
         install_unary_operator_table(OperatorDispatchTableId::Pos, dunder_pos);
         install_unary_operator_table(OperatorDispatchTableId::Invert,
@@ -893,7 +909,7 @@ namespace cl
                                               String *normal_dunder,
                                               String *reflected_dunder,
                                               OperatorStep fallback) {
-            std::array<OperatorStep, 6> &steps =
+            auto &steps =
                 operator_dispatch_steps_[static_cast<size_t>(table_id)];
             steps = {{
                 OperatorStep::call_binary_reflected(

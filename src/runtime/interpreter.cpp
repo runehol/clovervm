@@ -3344,7 +3344,9 @@ namespace cl
         DispatchTableEntry next_dispatch_fun =
             dispatch_cached_reflectable_binary_operator(
                 thread, fp, pc, dispatch, code_object, accumulator,
-                OperatorDispatchTableId::Add, cache_idx, a, b, pc + 3, pc + 4);
+                static_cast<OperatorDispatchTableId>(
+                    uint32_t(OperatorDispatchTableId::Add) + (pc[0] & 1)),
+                cache_idx, a, b, pc + 3, pc + 4);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
@@ -3357,7 +3359,9 @@ namespace cl
         DispatchTableEntry next_dispatch_fun =
             dispatch_cached_reflectable_binary_operator(
                 thread, fp, pc, dispatch, code_object, accumulator,
-                OperatorDispatchTableId::Add, cache_idx, a, b, pc + 3, pc + 4);
+                static_cast<OperatorDispatchTableId>(
+                    uint32_t(OperatorDispatchTableId::Add) + (pc[0] & 1)),
+                cache_idx, a, b, pc + 3, pc + 4);
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
@@ -3371,8 +3375,10 @@ namespace cl
         DispatchTableEntry next_dispatch_fun =                                 \
             dispatch_cached_reflectable_binary_operator(                       \
                 thread, fp, pc, dispatch, code_object, accumulator,            \
-                OperatorDispatchTableId::table_id, cache_idx, a, b, pc + 3,    \
-                pc + 4);                                                       \
+                static_cast<OperatorDispatchTableId>(                          \
+                    uint32_t(OperatorDispatchTableId::table_id) +              \
+                    (pc[0] & 1)),                                              \
+                cache_idx, a, b, pc + 3, pc + 4);                              \
         MUSTTAIL return next_dispatch_fun(ARGS);                               \
     }
 
@@ -3385,8 +3391,10 @@ namespace cl
         DispatchTableEntry next_dispatch_fun =                                 \
             dispatch_cached_reflectable_binary_operator(                       \
                 thread, fp, pc, dispatch, code_object, accumulator,            \
-                OperatorDispatchTableId::table_id, cache_idx, a, b, pc + 3,    \
-                pc + 4);                                                       \
+                static_cast<OperatorDispatchTableId>(                          \
+                    uint32_t(OperatorDispatchTableId::table_id) +              \
+                    (pc[0] & 1)),                                              \
+                cache_idx, a, b, pc + 3, pc + 4);                              \
         MUSTTAIL return next_dispatch_fun(ARGS);                               \
     }
 
@@ -6830,30 +6838,54 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LdaFalse, op_lda_false);
         SET_TABLE_ENTRY(Bytecode::LdaNone, op_lda_none);
         SET_TABLE_ENTRY(Bytecode::Add, op_add);
+        SET_TABLE_ENTRY(Bytecode::InPlaceAdd, op_add);
         SET_TABLE_ENTRY(Bytecode::AddSmi, op_add_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceAddSmi, op_add_smi);
         SET_TABLE_ENTRY(Bytecode::Sub, op_sub);
+        SET_TABLE_ENTRY(Bytecode::InPlaceSub, op_sub);
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceSubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
+        SET_TABLE_ENTRY(Bytecode::InPlaceMul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceMulSmi, op_mul_smi);
         SET_TABLE_ENTRY(Bytecode::MatMul, op_matmul);
+        SET_TABLE_ENTRY(Bytecode::InPlaceMatMul, op_matmul);
         SET_TABLE_ENTRY(Bytecode::BinaryPow, op_binary_pow);
+        SET_TABLE_ENTRY(Bytecode::InPlaceBinaryPow, op_binary_pow);
         SET_TABLE_ENTRY(Bytecode::BinaryPowSmi, op_binary_pow_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceBinaryPowSmi, op_binary_pow_smi);
         SET_TABLE_ENTRY(Bytecode::TernaryPow, op_ternary_pow);
         SET_TABLE_ENTRY(Bytecode::TrueDiv, op_truediv_dispatch);
+        SET_TABLE_ENTRY(Bytecode::InPlaceTrueDiv, op_truediv_dispatch);
         SET_TABLE_ENTRY(Bytecode::FloorDiv, op_floordiv);
+        SET_TABLE_ENTRY(Bytecode::InPlaceFloorDiv, op_floordiv);
         SET_TABLE_ENTRY(Bytecode::FloorDivSmi, op_floordiv_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceFloorDivSmi, op_floordiv_smi);
         SET_TABLE_ENTRY(Bytecode::Mod, op_mod);
+        SET_TABLE_ENTRY(Bytecode::InPlaceMod, op_mod);
         SET_TABLE_ENTRY(Bytecode::ModSmi, op_mod_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceModSmi, op_mod_smi);
         SET_TABLE_ENTRY(Bytecode::LShift, op_lshift);
+        SET_TABLE_ENTRY(Bytecode::InPlaceLShift, op_lshift);
         SET_TABLE_ENTRY(Bytecode::LShiftSmi, op_lshift_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceLShiftSmi, op_lshift_smi);
         SET_TABLE_ENTRY(Bytecode::RShift, op_rshift);
+        SET_TABLE_ENTRY(Bytecode::InPlaceRShift, op_rshift);
         SET_TABLE_ENTRY(Bytecode::RShiftSmi, op_rshift_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceRShiftSmi, op_rshift_smi);
         SET_TABLE_ENTRY(Bytecode::Or, op_or);
+        SET_TABLE_ENTRY(Bytecode::InPlaceOr, op_or);
         SET_TABLE_ENTRY(Bytecode::OrSmi, op_or_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceOrSmi, op_or_smi);
         SET_TABLE_ENTRY(Bytecode::And, op_and);
+        SET_TABLE_ENTRY(Bytecode::InPlaceAnd, op_and);
         SET_TABLE_ENTRY(Bytecode::AndSmi, op_and_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceAndSmi, op_and_smi);
         SET_TABLE_ENTRY(Bytecode::Xor, op_xor);
+        SET_TABLE_ENTRY(Bytecode::InPlaceXor, op_xor);
         SET_TABLE_ENTRY(Bytecode::XorSmi, op_xor_smi);
+        SET_TABLE_ENTRY(Bytecode::InPlaceXorSmi, op_xor_smi);
 
         SET_TABLE_ENTRY(Bytecode::TestIs, op_is);
         SET_TABLE_ENTRY(Bytecode::TestIsNot, op_is_not);

@@ -65,34 +65,107 @@ CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod3, SpecialMethodCall, Sequential, None)
 
-CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(Sub, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(Mul, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(MatMul, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(TrueDiv, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(FloorDiv, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(BinaryPow, RegisterOperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
+// Keep the paired arithmetic blocks even-aligned. Ternary pow is unpaired.
 CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
             Sequential,
             TernaryOperator)
+
+CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceAdd, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(Sub, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceSub, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(Mul, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceMul, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(MatMul, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceMatMul, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(TrueDiv, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceTrueDiv, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(FloorDiv, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceFloorDiv, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(BinaryPow, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceBinaryPow, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
 CL_BYTECODE(LShift, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceLShift, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(RShift, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
+CL_BYTECODE(InPlaceRShift, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
 CL_BYTECODE(Mod, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceMod, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(Or, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
+CL_BYTECODE(InPlaceOr, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
 CL_BYTECODE(And, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
+CL_BYTECODE(InPlaceAnd, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
 CL_BYTECODE(Xor, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceXor, RegisterOperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+
+CL_BYTECODE(AddSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceAddSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(SubSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceSubSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(MulSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceMulSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(FloorDivSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceFloorDivSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(BinaryPowSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceBinaryPowSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(LShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceLShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(RShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceRShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(ModSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceModSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(OrSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceOrSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(AndSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceAndSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Sequential,
+            BinaryOperator)
+CL_BYTECODE(InPlaceXorSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 
 CL_BYTECODE(TestEqual, RegisterOperatorCacheWithContinuation, Sequential,
@@ -115,29 +188,6 @@ CL_BYTECODE(CheckOperatorNotImplemented, NoOperands, Sequential,
             BinaryOperatorContinuation)
 CL_BYTECODE(CheckTernaryOperatorNotImplemented, NoOperands, Sequential,
             TernaryOperatorContinuation)
-
-CL_BYTECODE(AddSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(SubSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(MulSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(FloorDivSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(BinaryPowSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(LShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(RShiftSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(ModSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(OrSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(AndSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
-CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Sequential,
-            BinaryOperator)
 
 CL_BYTECODE(ToBool, OperatorCacheWithContinuation, Sequential, Truthiness)
 CL_BYTECODE(FinishTruthiness, NoOperands, Sequential, TruthinessContinuation)

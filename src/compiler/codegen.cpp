@@ -16,6 +16,12 @@
 namespace cl
 {
 
+    enum class ArithmeticMode
+    {
+        Ordinary,
+        Augmented,
+    };
+
     struct OpTableEntry
     {
         constexpr OpTableEntry()
@@ -288,9 +294,21 @@ namespace cl
 
         constexpr static OpTable operator_table = make_table();
 
-        constexpr static OpTableEntry get_operator_entry(AstOperatorKind ok)
+        constexpr static OpTableEntry
+        get_operator_entry(AstOperatorKind ok,
+                           ArithmeticMode mode = ArithmeticMode::Ordinary)
         {
-            return operator_table.table[size_t(ok)];
+            OpTableEntry entry = operator_table.table[size_t(ok)];
+            if(mode == ArithmeticMode::Augmented)
+            {
+                assert(entry.bytecode_format ==
+                       OperatorBytecodeFormat::WithCacheAndNotImplementedCheck);
+                entry.standard = Bytecode(uint8_t(entry.standard) + 1);
+                if(entry.binary_acc_smi != Bytecode::Invalid)
+                    entry.binary_acc_smi =
+                        Bytecode(uint8_t(entry.binary_acc_smi) + 1);
+            }
+            return entry;
         }
 
         static bool is_membership_operator(AstOperatorKind ok)
@@ -594,12 +612,13 @@ namespace cl
 
         // used for both regular binary expressions and augmented assignment, so
         // pull out
-        Expected<void> codegen_binary_expression(int32_t node_idx)
+        Expected<void> codegen_binary_expression(
+            int32_t node_idx, ArithmeticMode mode = ArithmeticMode::Ordinary)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
-            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            OpTableEntry entry = get_operator_entry(kind.operator_kind, mode);
             if(is_membership_operator(kind.operator_kind))
             {
                 ScopedRegister lhs_reg =
@@ -1931,7 +1950,8 @@ namespace cl
                 CL_TRY(codegen_node_into_a_register(lhs_children[0]));
             ScopedRegister key_reg =
                 CL_TRY(codegen_node_into_a_register(lhs_children[1]));
-            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            OpTableEntry entry = get_operator_entry(kind.operator_kind,
+                                                    ArithmeticMode::Augmented);
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
@@ -2007,7 +2027,8 @@ namespace cl
 
             ScopedRegister receiver_reg =
                 CL_TRY(codegen_node_into_a_register(lhs_children[0]));
-            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            OpTableEntry entry = get_operator_entry(kind.operator_kind,
+                                                    ArithmeticMode::Augmented);
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
@@ -3033,7 +3054,8 @@ namespace cl
                         // augmented assignment
                         if(kind.operator_kind != AstOperatorKind::NOP)
                         {
-                            CL_TRY(codegen_binary_expression(node_idx));
+                            CL_TRY(codegen_binary_expression(
+                                node_idx, ArithmeticMode::Augmented));
                         }
                         else
                         {

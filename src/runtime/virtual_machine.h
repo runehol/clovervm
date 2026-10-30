@@ -468,7 +468,7 @@ namespace cl
         ClassObject *not_implemented_type_class_ = nullptr;
         ClassObject *ellipsis_type_class_ = nullptr;
         String *dunder_class_name_ = nullptr;
-        std::array<std::array<OperatorStep, 6>,
+        std::array<std::array<OperatorStep, 7>,
                    static_cast<size_t>(OperatorDispatchTableId::Count)>
             operator_dispatch_steps_ = {};
         std::array<OperatorDispatchTable,

@@ -398,6 +398,52 @@ namespace cl
                                               : "<unknown>";
     }
 
+    // Arithmetic opcode pairs share handlers; the low bit selects dispatch.
+    static_assert([] {
+        struct Pair
+        {
+            Bytecode ordinary;
+            Bytecode augmented;
+        };
+        constexpr Pair pairs[] = {
+            {Bytecode::Add, Bytecode::InPlaceAdd},
+            {Bytecode::Sub, Bytecode::InPlaceSub},
+            {Bytecode::Mul, Bytecode::InPlaceMul},
+            {Bytecode::MatMul, Bytecode::InPlaceMatMul},
+            {Bytecode::TrueDiv, Bytecode::InPlaceTrueDiv},
+            {Bytecode::FloorDiv, Bytecode::InPlaceFloorDiv},
+            {Bytecode::BinaryPow, Bytecode::InPlaceBinaryPow},
+            {Bytecode::LShift, Bytecode::InPlaceLShift},
+            {Bytecode::RShift, Bytecode::InPlaceRShift},
+            {Bytecode::Mod, Bytecode::InPlaceMod},
+            {Bytecode::Or, Bytecode::InPlaceOr},
+            {Bytecode::And, Bytecode::InPlaceAnd},
+            {Bytecode::Xor, Bytecode::InPlaceXor},
+            {Bytecode::AddSmi, Bytecode::InPlaceAddSmi},
+            {Bytecode::SubSmi, Bytecode::InPlaceSubSmi},
+            {Bytecode::MulSmi, Bytecode::InPlaceMulSmi},
+            {Bytecode::FloorDivSmi, Bytecode::InPlaceFloorDivSmi},
+            {Bytecode::BinaryPowSmi, Bytecode::InPlaceBinaryPowSmi},
+            {Bytecode::LShiftSmi, Bytecode::InPlaceLShiftSmi},
+            {Bytecode::RShiftSmi, Bytecode::InPlaceRShiftSmi},
+            {Bytecode::ModSmi, Bytecode::InPlaceModSmi},
+            {Bytecode::OrSmi, Bytecode::InPlaceOrSmi},
+            {Bytecode::AndSmi, Bytecode::InPlaceAndSmi},
+            {Bytecode::XorSmi, Bytecode::InPlaceXorSmi},
+        };
+        for(Pair pair: pairs)
+        {
+            if((uint8_t(pair.ordinary) & 1) != 0 ||
+               uint8_t(pair.augmented) != uint8_t(pair.ordinary) + 1 ||
+               bytecode_info(pair.ordinary).format !=
+                   bytecode_info(pair.augmented).format ||
+               bytecode_info(pair.ordinary).compound_role !=
+                   bytecode_info(pair.augmented).compound_role)
+                return false;
+        }
+        return true;
+    }());
+
     static_assert(BytecodeTableSize <= 256);
     static_assert(size_t(Bytecode::Ldar15) - size_t(Bytecode::Ldar0) + 1 ==
                   size_t(n_fastpath_ldar_star));
