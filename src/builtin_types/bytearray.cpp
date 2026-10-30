@@ -5,6 +5,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
+#include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
 #include "runtime/exception_propagation.h"
@@ -220,6 +221,59 @@ namespace cl
     {
         CL_TRY(receiver(self, L"clear")).extract()->items.clear();
         return Value::None();
+    }
+
+    // Unlike item access, pop/insert report platform-index overflow as
+    // OverflowError. Preserve the stored-integer-only bytearray boundary.
+    static Expected<int64_t> method_index(Value index)
+    {
+        if(index.is_smi())
+            return Expected<int64_t>::ok(index.get_smi());
+        if(!is_intlike_value(index))
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"index must be an integer");
+        SmiViewStorage storage;
+        return bigint_to_int64(intlike_value_bigint_view(index, &storage));
+    }
+
+    static Value native_insert(ThreadState *, Value self, Value index,
+                               Value item)
+    {
+        auto array = CL_TRY(receiver(self, L"insert"));
+        int64_t pos = CL_TRY(method_index(index));
+        uint8_t byte = CL_TRY(byte_value(item));
+        size_t old_size = array.extract()->size();
+        if(pos < 0)
+            pos = std::max<int64_t>(0, pos + static_cast<int64_t>(old_size));
+        size_t offset = std::min(static_cast<size_t>(pos), old_size);
+        (void)CL_TRY(checked_size(old_size + 1));
+        array.extract()->items.push_back(byte);
+        for(size_t n = old_size; n > offset; --n)
+            array.extract()->items[n] = array.extract()->items[n - 1];
+        array.extract()->items[offset] = byte;
+        return Value::None();
+    }
+
+    static Value native_reverse(ThreadState *, Value self)
+    {
+        auto array = CL_TRY(receiver(self, L"reverse"));
+        size_t size = array.extract()->size();
+        for(size_t n = 0; n < size / 2; ++n)
+            std::swap(array.extract()->items[n],
+                      array.extract()->items[size - n - 1]);
+        return Value::None();
+    }
+
+    static Value native_copy(ThreadState *thread, Value self)
+    {
+        Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, L"copy")));
+        Owned<TValue<ByteArray>> result(thread->make_object_value<ByteArray>());
+        result.extract()->items.resize(source.extract()->size());
+        // Acquire storage only after allocation; no Python callbacks or
+        // safepoints occur during this copy.
+        for(size_t n = 0; n < source.extract()->size(); ++n)
+            result.extract()->items[n] = source.extract()->items[n];
+        return result.raw_value();
     }
 
     static Value get_index(TValue<ByteArray> array, int64_t index)
@@ -453,6 +507,37 @@ namespace cl
             array.extract()->items[n - 1] = array.extract()->items[n];
         array.extract()->items.resize(old_size - 1);
         return Value::None();
+    }
+
+    static Value native_pop(ThreadState *thread, Value self, Value index)
+    {
+        auto array = CL_TRY(receiver(self, L"pop"));
+        int64_t pos = CL_TRY(method_index(index));
+        size_t size = array.extract()->size();
+        if(size == 0)
+            return thread->set_pending_builtin_exception_string(
+                L"IndexError", L"pop from empty bytearray");
+        if(pos < 0)
+            pos += static_cast<int64_t>(size);
+        if(pos < 0 || static_cast<uint64_t>(pos) >= size)
+            return thread->set_pending_builtin_exception_string(
+                L"IndexError", L"pop index out of range");
+        uint8_t byte = array.extract()->items[static_cast<size_t>(pos)];
+        CL_PROPAGATE_EXCEPTION(del_index(array, pos));
+        return Value::from_smi(byte);
+    }
+
+    static Value native_remove(ThreadState *thread, Value self, Value value)
+    {
+        auto array = CL_TRY(receiver(self, L"remove"));
+        uint8_t byte = CL_TRY(byte_value(value));
+        for(size_t n = 0; n < array.extract()->size(); ++n)
+        {
+            if(array.extract()->items[n] == byte)
+                return del_index(array, static_cast<int64_t>(n));
+        }
+        return thread->set_pending_builtin_exception_string(
+            L"ValueError", L"value not found in bytearray");
     }
 
     static Value del_slice(TValue<ByteArray> array, Value index)
@@ -753,6 +838,10 @@ namespace cl
     }
     void install_bytearray_class_methods(VirtualMachine *vm)
     {
+        Owned<TValue<Tuple>> pop_defaults(
+            vm->get_default_thread()->make_object_value<Tuple>(1));
+        pop_defaults.extract()->initialize_item_unchecked(0,
+                                                          Value::from_smi(-1));
         vm->register_trusted_handler(trusted_compare<ByteArrayEqOperator>,
                                      TrustedHandlerEffects::None);
         vm->register_trusted_handler(trusted_compare<ByteArrayNeOperator>,
@@ -827,7 +916,13 @@ namespace cl
                                          native_compare<ByteArrayGeOperator>),
                 resolve_compare<ByteArrayGeOperator, ByteArrayLeOperator>),
             builtin_intrinsic_method(L"append", native_append),
-            builtin_intrinsic_method(L"clear", native_clear)};
+            builtin_intrinsic_method(L"clear", native_clear),
+            with_defaults(builtin_intrinsic_method(L"pop", native_pop),
+                          pop_defaults.value()),
+            builtin_intrinsic_method(L"insert", native_insert),
+            builtin_intrinsic_method(L"remove", native_remove),
+            builtin_intrinsic_method(L"reverse", native_reverse),
+            builtin_intrinsic_method(L"copy", native_copy)};
         unwrap_bootstrap_expected(
             vm,
             install_builtin_intrinsic_methods(vm, vm->bytearray_class(),
