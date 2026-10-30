@@ -17,3 +17,7 @@ clovervm_add_native_module(_errno
 clovervm_add_native_module(_json
     SOURCES
         native_modules/json_module.c)
+
+clovervm_add_native_module(_binascii
+    SOURCES
+        native_modules/binascii_module.c)

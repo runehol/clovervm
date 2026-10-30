@@ -28,6 +28,8 @@ set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
 
 set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_bool_from_bool
+    clover_byteslike_size
+    clover_byteslike_with_readonly_data
     clover_dict_check
     clover_dict_check_exact
     clover_dict_clear
@@ -56,6 +58,7 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_int_from_uint64
     clover_int_as_int64
     clover_int_as_uint64
+    clover_int_as_uint32_mask
     clover_is
     clover_none
     clover_propagate_error

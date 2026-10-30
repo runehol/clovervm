@@ -61,6 +61,7 @@ target_sources(test_clovervm PRIVATE
 	test_machine_address.cpp
 	test_machine_code_emitter.cpp
 	test_native_module_build.cpp
+	test_extension_bytes.cpp
 	test_clover_api.cpp
 	test_file_io.cpp
 	test_python_source_files.cpp
@@ -90,6 +91,7 @@ target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
 clovervm_export_symbols(test_clovervm EXTENSION_API)
 add_dependencies(test_clovervm clovervm
+                             clovervm_native_module__binascii
                              clovervm_native_module__json
                              clovervm_native_module__math
                              clovervm_native_module__os

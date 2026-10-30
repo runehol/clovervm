@@ -1,8 +1,11 @@
 #include "api/extension_handle.h"
 
 #include "builtin_types/bigint.h"
+#include "builtin_types/bytearray.h"
+#include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
 #include "builtin_types/float.h"
+#include "builtin_types/int.h"
 #include "builtin_types/list.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
@@ -13,7 +16,10 @@
 #include "runtime/os_error.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 
 namespace cl
@@ -44,6 +50,31 @@ namespace cl
                     L"native extension value handle is invalid");
             }
             return false;
+        }
+
+        [[nodiscard]] Expected<Value> unwrap_byteslike(clover_context *ctx,
+                                                       clover_handle handle)
+        {
+            if constexpr(native_handle_detail::cl_indirect_handles)
+            {
+                if(handle == 0)
+                {
+                    return Expected<Value>::raise_exception(
+                        L"TypeError", L"native extension value handle is null");
+                }
+            }
+            Value value;
+            if(!unwrap_extension_value(ctx, handle, value))
+            {
+                return Expected<Value>::propagate_exception();
+            }
+            if(!has_native_layout<Bytes>(value) &&
+               !has_native_layout<ByteArray>(value))
+            {
+                return Expected<Value>::raise_exception(
+                    L"TypeError", L"a bytes-like object is required");
+            }
+            return Expected<Value>::ok(value);
         }
 
         Dict *unwrap_dict(clover_context *ctx, clover_handle handle)
@@ -477,6 +508,102 @@ extern "C" CL_EXPORT clover_status clover_int_as_uint64(clover_context *ctx,
         return CLOVER_STATUS_ERROR;
     }
     *out = result.value();
+    return CLOVER_STATUS_OK;
+}
+
+extern "C" CL_EXPORT clover_status clover_int_as_uint32_mask(
+    clover_context *ctx, clover_handle value, uint32_t *out)
+{
+    if(out == nullptr)
+    {
+        return cl::set_extension_api_error(ctx, L"ValueError",
+                                           L"integer output must not be null");
+    }
+    *out = 0;
+    if constexpr(cl::native_handle_detail::cl_indirect_handles)
+    {
+        if(value == 0)
+        {
+            return cl::set_extension_api_error(
+                ctx, L"TypeError", L"native extension value handle is null");
+        }
+    }
+    cl::Value unwrapped;
+    if(!cl::unwrap_extension_value(ctx, value, unwrapped))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(!cl::is_intlike_value(unwrapped))
+    {
+        return cl::set_extension_api_error(ctx, L"TypeError",
+                                           L"value cannot be converted to int");
+    }
+    cl::SmiViewStorage storage;
+    cl::ConstBigIntView view =
+        cl::intlike_value_bigint_view(unwrapped, &storage);
+    static_assert(cl::kDigitBits == 32);
+    uint32_t low = view.n_digits == 0 ? 0 : view.digits[0];
+    // Unsigned subtraction implements negative values modulo 2**32.
+    *out = view.signum < 0 ? uint32_t{0} - low : low;
+    return CLOVER_STATUS_OK;
+}
+
+extern "C" CL_EXPORT clover_status clover_byteslike_size(clover_context *ctx,
+                                                         clover_handle value,
+                                                         size_t *out)
+{
+    if(out == nullptr)
+    {
+        return cl::set_extension_api_error(ctx, L"ValueError",
+                                           L"size output must not be null");
+    }
+    *out = 0;
+    auto result = cl::unwrap_byteslike(ctx, value);
+    if(result.has_exception())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    cl::Value payload = result.value();
+    *out =
+        cl::has_native_layout<cl::Bytes>(payload)
+            ? static_cast<size_t>(payload.get_ptr<cl::Bytes>()->count.extract())
+            : payload.get_ptr<cl::ByteArray>()->size();
+    return CLOVER_STATUS_OK;
+}
+
+extern "C" CL_EXPORT clover_status clover_byteslike_with_readonly_data(
+    clover_context *ctx, clover_handle value,
+    clover_readonly_bytes_callback callback, void *state)
+{
+    if(callback == nullptr)
+    {
+        return cl::set_extension_api_error(ctx, L"ValueError",
+                                           L"bytes callback must not be null");
+    }
+    auto result = cl::unwrap_byteslike(ctx, value);
+    if(result.has_exception())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    // The caller's input handle is rooted throughout this synchronous call.
+    // Ownership also preserves lifetime under the current refcounting scheme.
+    // No VM work or collection is permitted inside either borrow below.
+    cl::Value payload = result.value();
+    if(cl::has_native_layout<cl::Bytes>(payload))
+    {
+        cl::Owned<cl::TValue<cl::Bytes>> owner(
+            cl::TValue<cl::Bytes>::from_value_assumed(payload));
+        auto bytes = cl::bytes_view(owner.value());
+        callback(bytes.data(), bytes.size(), state);
+    }
+    else
+    {
+        cl::with_bytearray_writable_bytes(
+            cl::TValue<cl::ByteArray>::from_value_assumed(payload),
+            [&](std::span<uint8_t> bytes) noexcept {
+                callback(bytes.data(), bytes.size(), state);
+            });
+    }
     return CLOVER_STATUS_OK;
 }
 
