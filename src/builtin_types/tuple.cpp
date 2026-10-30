@@ -1,4 +1,5 @@
 #include "builtin_types/tuple.h"
+#include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/slice.h"
@@ -16,12 +17,80 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
+#include <bit>
 #include <cassert>
+#include <cstdint>
 #include <iterator>
 #include <utility>
 
 namespace cl
 {
+    [[nodiscard]] static Value tuple_hash(ThreadState *thread,
+                                          TValue<Tuple> tuple)
+    {
+        // Use the 64-bit tuple mixer from CPython 3.14.5, reducing the final
+        // result to Clover's canonical hash representation. Do not cache it:
+        // element hashing may run arbitrary Python and invalidate its methods.
+        constexpr uint64_t prime1 = 11400714785074694791ULL;
+        constexpr uint64_t prime2 = 14029467366897019727ULL;
+        constexpr uint64_t prime5 = 2870177450012600261ULL;
+        Owned<TValue<Tuple>> owner(tuple);
+        const size_t size = owner.extract()->size();
+        uint64_t accumulator = prime5;
+        for(size_t index = 0; index < size; ++index)
+        {
+            Owned<Value> item(owner.extract()->item_unchecked(index));
+            TValue<SMI> hash = CL_TRY(thread->hash_value(item.value()));
+            accumulator += static_cast<uint64_t>(hash.extract()) * prime2;
+            accumulator = std::rotl(accumulator, 31);
+            accumulator *= prime1;
+        }
+        accumulator += static_cast<uint64_t>(size) ^ (prime5 ^ 3527539ULL);
+        return canonicalize_nonnegative_raw_hash(accumulator).raw_value();
+    }
+
+    [[nodiscard]] static Value native_tuple_hash(ThreadState *thread,
+                                                 Value self)
+    {
+        if(!has_native_layout<Tuple>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple.__hash__ expects a tuple receiver");
+        }
+        return tuple_hash(thread, TValue<Tuple>::from_value_assumed(self));
+    }
+
+    [[nodiscard]] static Value trusted_tuple_hash(ThreadState *thread,
+                                                  Value self)
+    {
+        return tuple_hash(thread, TValue<Tuple>::from_value_assumed(self));
+    }
+
+    using TupleHashHandler = TrustedHandlerDefinition<
+        trusted_tuple_hash,
+        TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Safepoint |
+            TrustedHandlerEffects::Raise | TrustedHandlerEffects::CallPython>;
+
+    class TupleHashResolver final
+        : public TrustedHandlerResolverBase<TupleHashHandler>
+    {
+    public:
+        static TrustedResolution resolve(VirtualMachine *vm, ShapeKey receiver,
+                                         ShapeKey unused,
+                                         TrustedHandlerOperandOrder order,
+                                         TrustedHandlerArity arity)
+        {
+            (void)unused;
+            if(arity != TrustedHandlerArity::Unary ||
+               order != TrustedHandlerOperandOrder::Normal ||
+               vm->shape_for_key(receiver)->get_class() != vm->tuple_class())
+            {
+                return TrustedResolution::no_trusted_handler_call_untrusted();
+            }
+            return TupleHashHandler::resolution();
+        }
+    };
+
     static Value native_tuple_repr(ThreadState *thread, Value self)
     {
         if(!has_native_layout<Tuple>(self))
@@ -317,6 +386,9 @@ namespace cl
     void install_tuple_class_methods(VirtualMachine *vm)
     {
         BuiltinIntrinsicMethod methods[] = {
+            with_trusted_handler_resolver<TupleHashResolver>(
+                vm, builtin_intrinsic_method(L"__hash__", native_tuple_hash,
+                                             L"Return hash(self).")),
             builtin_intrinsic_method(L"__str__", native_tuple_repr,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_tuple_repr,
