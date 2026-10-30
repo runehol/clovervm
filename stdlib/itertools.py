@@ -1,27 +1,30 @@
 """Lazy iteration building blocks supported by CloverVM.
 
 The supported subset provides chain, repeat, islice, starmap, compress,
-filterfalse, takewhile, dropwhile, pairwise, and count. Integer bounds use
-operator.index's builtin-int/bool support; custom __index__ is not supported
-yet. Limits match the VM's current signed 64-bit platforms. count accepts
-builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
+filterfalse, takewhile, dropwhile, pairwise, count, accumulate, and batched.
+Integer bounds use operator.index's builtin-int/bool support; custom __index__
+is not supported yet. Limits match the VM's current signed 64-bit platforms.
+count accepts builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
 Floating steps use repeated addition, including its rounding error.
 chain.from_iterable is callable on the class only: classmethod binding and
 subclass-preserving construction are deferred. starmap uses the VM's existing
 call support, as do predicate iterators; callable instances and first-class
 bound methods are not supported. Inputs use existing VM iterable types.
 Repr, pickling, copy, and CPython's tuple recycling are outside this subset.
+batched builds batches incrementally rather than preallocating n tuple slots;
+CPython's eager allocation failures and their timing are not reproduced.
 """
 
 from builtins import bool as _bool, float as _float, int as _int
 from builtins import isinstance as _isinstance, iter as _iter, next as _next
+from builtins import tuple as _tuple
 from operator import index as _index
 
 
 __all__ = (
     "chain", "repeat", "islice", "starmap",
     "compress", "filterfalse", "takewhile", "dropwhile",
-    "pairwise", "count",
+    "pairwise", "count", "accumulate", "batched",
 )
 
 _missing = object()
@@ -343,3 +346,82 @@ class count:
         self._value = following
         self._fast_integer = False
         return value
+
+
+class accumulate:
+    def __init__(self, iterable, func=None, *, initial=None):
+        self._iterator = _iter(iterable)
+        self._function = func
+        self._initial = initial
+        self._total = None
+        self._has_total = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._initial is not None:
+            self._total = self._initial
+            self._initial = None
+            self._has_total = True
+            return self._total
+        item = _next(self._iterator)
+        # Input advancement may reenter and establish or update the total.
+        if not self._has_total:
+            self._total = item
+            self._has_total = True
+            return item
+        total = self._total
+        function = self._function
+        if function is None:
+            following = total + item
+        else:
+            following = function(total, item)
+        # A failed operation consumes item but does not overwrite the total,
+        # including any update made by a nested call. None is valid data.
+        self._total = following
+        return following
+
+
+class batched:
+    def __init__(self, iterable, n, *, strict=False):
+        size = _index(n)
+        if size < _SSIZE_MIN or size > _SSIZE_MAX:
+            raise OverflowError("Python int too large to convert to C ssize_t")
+        # Argument Clinic converts strict before validating n's positivity.
+        strict = _bool(strict)
+        if size < 1:
+            raise ValueError("n must be at least one")
+        self._iterator = _iter(iterable)
+        self._size = size
+        self._strict = strict
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        iterator = self._iterator
+        if iterator is None:
+            raise StopIteration
+        batch = []
+        # range's VM bounds are narrower than the signed platform-size limit.
+        remaining = self._size
+        while remaining > 0:
+            try:
+                item = _next(iterator)
+            except StopIteration:
+                if not batch:
+                    self._iterator = None
+                    raise StopIteration
+                if self._strict:
+                    self._iterator = None
+                    raise ValueError("batched(): incomplete batch")
+                # A short non-strict batch does not close a resumable source.
+                break
+            except:
+                self._iterator = None
+                raise
+            batch.append(item)
+            remaining -= 1
+        # Keep the local source alive across reentrant closure of this object.
+        return _tuple(batch)
