@@ -158,7 +158,7 @@ Release descriptors describe one of:
 
 Object-size descriptors provide the cold
 `object_size_in_bytes(const HeapObject *)` query. Allocation itself remains
-type-directed through `sizeof(T)` for static layouts or `T::size_for(...)` for
+type-directed through `sizeof(T)` for static layouts or `T::allocation_size_for(...)` for
 dynamic layouts.
 
 Some internal non-`Object` records still have native fields and custom value
@@ -184,7 +184,7 @@ Arbitrary-size integer representation and SMI transitions are documented in
 `Object` with a VM-owned `bytes` class and `NativeLayoutId::Bytes`. Its byte
 count is a traced SMI member and its raw bytes occupy untraced inline tail
 storage; the count, not a terminator, is authoritative. Allocation uses
-`Bytes::size_for(...)`, and the native layout descriptor reports the same custom
+`Bytes::allocation_size_for(...)`, and the native layout descriptor reports the same custom
 extent for reclamation and heap inspection.
 
 Call-scoped native helpers expose payloads as `std::span<const uint8_t>`.

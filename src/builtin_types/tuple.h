@@ -78,27 +78,28 @@ namespace cl
                 TupleFromFrameArgumentsTag{}, fp, first_arg_reg, n_args);
         }
 
-        static size_t size_for(size_t size)
+        static size_t allocation_size_for(size_t size)
         {
             size_t storage_count = storage_count_for(size);
             return sizeof(Tuple) + (storage_count - 1) * sizeof(Value);
         }
-        static size_t size_for(BootstrapObjectTag, size_t size)
+        static size_t allocation_size_for(BootstrapObjectTag, size_t size)
         {
-            return size_for(size);
+            return allocation_size_for(size);
         }
-        static size_t size_for(ClassObject *, size_t size)
+        static size_t allocation_size_for(ClassObject *, size_t size)
         {
-            return size_for(size);
+            return allocation_size_for(size);
         }
-        static size_t size_for(ClassObject *, TupleFromFrameArgumentsTag,
-                               Value *, int8_t, uint32_t n_args)
+        static size_t allocation_size_for(ClassObject *,
+                                          TupleFromFrameArgumentsTag, Value *,
+                                          int8_t, uint32_t n_args)
         {
-            return size_for(n_args);
+            return allocation_size_for(n_args);
         }
         static size_t object_size_in_bytes(const Tuple *tuple)
         {
-            return size_for(tuple->size());
+            return allocation_size_for(tuple->size());
         }
 
         CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(Tuple, Object, size_value, 1);

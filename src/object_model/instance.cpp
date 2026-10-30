@@ -17,7 +17,8 @@ namespace cl
 
     size_t Instance::object_size_in_bytes(const Instance *instance)
     {
-        return size_for(instance->get_shape()->get_inline_slot_capacity());
+        return allocation_size_for(
+            instance->get_shape()->get_inline_slot_capacity());
     }
 
     uint32_t Instance::inline_slot_count_for_class(ClassObject *cls)

@@ -20,14 +20,14 @@ namespace cl
 
         explicit Instance(ClassObject *cls);
 
-        static size_t size_for(uint32_t dynamic_inline_slot_count)
+        static size_t allocation_size_for(uint32_t dynamic_inline_slot_count)
         {
             assert(dynamic_inline_slot_count <= UINT16_MAX);
             return sizeof(Instance) + sizeof(Value) * dynamic_inline_slot_count;
         }
-        static size_t size_for(ClassObject *cls)
+        static size_t allocation_size_for(ClassObject *cls)
         {
-            return size_for(inline_slot_count_for_class(cls));
+            return allocation_size_for(inline_slot_count_for_class(cls));
         }
         static size_t object_size_in_bytes(const Instance *instance);
 

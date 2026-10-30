@@ -95,8 +95,8 @@ contracts and declaration macros.
 Allocation size is computed by concrete type:
 
 ```cpp
-sizeof(T)          // static-size layouts
-T::size_for(...)   // dynamic/custom-size layouts
+sizeof(T)                     // static-size layouts
+T::allocation_size_for(...)   // dynamic/custom-size layouts
 ```
 
 For already-allocated opaque objects, the runtime can call:

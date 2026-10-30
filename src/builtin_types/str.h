@@ -167,45 +167,46 @@ namespace cl
         Member<TValue<SMI>> count;
         cl_wchar data[1];
 
-        static size_t size_for(const std::wstring &str)
+        static size_t allocation_size_for(const std::wstring &str)
         {
             return sizeof(String) + str.size() * sizeof(cl_wchar);
         }
-        static size_t size_for(std::wstring_view str)
+        static size_t allocation_size_for(std::wstring_view str)
         {
             return sizeof(String) + str.size() * sizeof(cl_wchar);
         }
-        static size_t size_for(const cl_wchar *str)
+        static size_t allocation_size_for(const cl_wchar *str)
         {
             return sizeof(String) + wcslen(str) * sizeof(cl_wchar);
         }
-        static size_t size_for(size_t n_chars)
+        static size_t allocation_size_for(size_t n_chars)
         {
             return sizeof(String) + n_chars * sizeof(cl_wchar);
         }
-        static size_t size_for(TValue<SMI> count)
+        static size_t allocation_size_for(TValue<SMI> count)
         {
-            return size_for(size_t(count.extract()));
+            return allocation_size_for(size_t(count.extract()));
         }
-        static size_t size_for(ClassObject *, TValue<SMI> count)
+        static size_t allocation_size_for(ClassObject *, TValue<SMI> count)
         {
-            return size_for(count);
+            return allocation_size_for(count);
         }
-        static size_t size_for(ClassObject *, const cl_wchar *str)
+        static size_t allocation_size_for(ClassObject *, const cl_wchar *str)
         {
-            return size_for(str);
+            return allocation_size_for(str);
         }
-        static size_t size_for(ClassObject *, const std::wstring &str)
+        static size_t allocation_size_for(ClassObject *,
+                                          const std::wstring &str)
         {
-            return size_for(str);
+            return allocation_size_for(str);
         }
-        static size_t size_for(ClassObject *, std::wstring_view str)
+        static size_t allocation_size_for(ClassObject *, std::wstring_view str)
         {
-            return size_for(str);
+            return allocation_size_for(str);
         }
         static size_t object_size_in_bytes(const String *str)
         {
-            return size_for(size_t(str->count.extract()));
+            return allocation_size_for(size_t(str->count.extract()));
         }
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(String, Object, 1);

@@ -93,7 +93,7 @@ Classification must be performed using the final aligned allocation size, not th
 
 - object header size
 - alignment padding
-- dynamic payload bytes from type-local `size_for(...)` helpers
+- dynamic payload bytes from type-local `allocation_size_for(...)` helpers
 
 ### Purpose
 

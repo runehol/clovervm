@@ -23,21 +23,21 @@ namespace cl
             return static_cast<uint16_t>(capacity);
         }
 
-        static size_t size_for(uint32_t capacity)
+        static size_t allocation_size_for(uint32_t capacity)
         {
             return sizeof(OverflowSlots) +
                    sizeof(Value) * std::max<uint32_t>(capacity, 1) -
                    sizeof(Value);
         }
-        static size_t size_for(uint32_t size, uint32_t capacity)
+        static size_t allocation_size_for(uint32_t size, uint32_t capacity)
         {
             (void)size;
-            return size_for(capacity);
+            return allocation_size_for(capacity);
         }
 
         static size_t object_size_in_bytes(const OverflowSlots *overflow_slots)
         {
-            return size_for(overflow_slots->get_capacity());
+            return allocation_size_for(overflow_slots->get_capacity());
         }
 
         uint32_t get_size() const { return size; }

@@ -134,7 +134,7 @@ cells.
 Object-size descriptors answer a separate question:
 
 ```text
-How many bytes does this already-allocated heap object occupy?
+How many bytes does this object's current layout require, including spare capacity?
 ```
 
 The opaque query is:
@@ -152,12 +152,17 @@ Allocation does not use the opaque descriptor dispatch. Allocation sites know
 the concrete C++ type and use:
 
 ```cpp
-sizeof(T)          // static-size layouts
-T::size_for(...)   // dynamic/custom-size layouts
+sizeof(T)                     // static-size layouts
+T::allocation_size_for(...)   // dynamic/custom-size layouts
 ```
 
 This keeps allocation type-directed while still allowing validation, accounting,
 debugging, and slab policy code to query opaque object extents.
+
+These queries describe the allocation requirement of the current layout. They
+do not report allocator rounding, an older oversized reservation retained after
+a future capacity shrink, or the initialized prefix safe to copy. Collector
+policy chooses any different evacuation destination size separately.
 
 ## Unified Layout Query Design
 
@@ -310,8 +315,8 @@ tracing a shape's outgoing references merely to determine an instance's extent.
 
 `Instance` retains lazy inline-slot initialization:
 
-- allocation calls `Instance::size_for(ClassObject *)`, which obtains inline
-  capacity from the class's instance root `Shape`;
+- allocation calls `Instance::allocation_size_for(ClassObject *)`, which obtains
+  inline capacity from the class's instance root `Shape`;
 - `Instance::object_size_in_bytes()` uses the instance's current shape's inline
   capacity;
 - the auxiliary count grows as inline slots are lazily initialized,
@@ -472,7 +477,7 @@ policy is not stored in the object or native-layout descriptor.
    indirect query calls.
 4. Move reclamation from `ReleaseDescriptor` to `strong_value_count` plus
    custom release and destruction.
-5. Move opaque allocation-size queries from `ObjectSizeDescriptor` to
+5. Move opaque object-size queries from `ObjectSizeDescriptor` to
    `allocated_size`.
 6. Audit allocated, initialized, and strong count sources for every native ID;
    retain lazy instance initialization and its shape-derived allocated size,

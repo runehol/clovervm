@@ -1038,7 +1038,7 @@ extent.
 Disproof attempts:
 
 The audit checked whether callers pre-align sizes. They do not: allocation size
-is the concrete `sizeof(T)` or dynamic `T::size_for(...)`, and the slab
+is the concrete `sizeof(T)` or dynamic `T::allocation_size_for(...)`, and the slab
 allocator owns alignment. Dedicated slab sizing also uses the unrounded size.
 Existing debug, release, and focused sanitizer tests pass because they validate
 payload behavior, not the internal cursor value.

@@ -133,7 +133,7 @@ def fail(source):
         ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
         Tuple *tuple = native_cast<Tuple>(result.value());
         EXPECT_NE(context.vm().tuple_class(), tuple->get_shape()->get_class());
-        EXPECT_EQ(Tuple::size_for(1), object_size_in_bytes(tuple));
+        EXPECT_EQ(Tuple::allocation_size_for(1), object_size_in_bytes(tuple));
         EXPECT_EQ(child.raw_value(), tuple->item_unchecked(0));
         EXPECT_EQ(3, child.extract()->refcount);
 
