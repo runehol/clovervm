@@ -18,21 +18,17 @@ namespace cl
     struct ReleaseDescriptor
     {
         ReleaseKind kind;
-        uint64_t value_offset_words;
-        uint32_t static_release_count;
         uint16_t count_offset_words;
+        uint32_t static_release_count;
+        uint64_t value_offset_words;
         uint32_t additional_release_count;
         void (*custom_dealloc)(HeapObject *);
 
         static constexpr ReleaseDescriptor
         static_span(uint64_t value_offset_words, uint32_t release_count)
         {
-            return ReleaseDescriptor{ReleaseKind::StaticSpan,
-                                     value_offset_words,
-                                     release_count,
-                                     0,
-                                     0,
-                                     nullptr};
+            return ReleaseDescriptor{ReleaseKind::StaticSpan, 0, release_count,
+                                     value_offset_words,      0, nullptr};
         }
 
         static constexpr ReleaseDescriptor
@@ -41,20 +37,17 @@ namespace cl
                          uint32_t additional_release_count)
         {
             return ReleaseDescriptor{
-                ReleaseKind::DynamicSmiSpan, value_offset_words,       0,
-                count_offset_words,          additional_release_count, nullptr};
+                ReleaseKind::DynamicSmiSpan, count_offset_words,       0,
+                value_offset_words,          additional_release_count, nullptr};
         }
 
         static constexpr ReleaseDescriptor
         dynamic_aux_span(uint64_t value_offset_words,
                          uint32_t additional_release_count)
         {
-            return ReleaseDescriptor{ReleaseKind::DynamicAuxSpan,
-                                     value_offset_words,
-                                     0,
-                                     0,
-                                     additional_release_count,
-                                     nullptr};
+            return ReleaseDescriptor{
+                ReleaseKind::DynamicAuxSpan, 0,      0, value_offset_words,
+                additional_release_count,    nullptr};
         }
 
         static constexpr ReleaseDescriptor
@@ -64,6 +57,8 @@ namespace cl
                 ReleaseKind::CustomDealloc, 0, 0, 0, 0, custom_dealloc};
         }
     };
+
+    static_assert(sizeof(ReleaseDescriptor) == 32);
 
     struct OrdinaryReferenceSpan
     {
