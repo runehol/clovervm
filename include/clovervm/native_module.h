@@ -129,6 +129,31 @@ extern "C"
     CL_EXPORT clover_status clover_int_as_uint64(clover_context *ctx,
                                                  clover_handle value,
                                                  uint64_t *out);
+    /* Builtin int/bool payload modulo 2**32; no Python conversion hooks. */
+    CL_EXPORT clover_status clover_int_as_uint32_mask(clover_context *ctx,
+                                                      clover_handle value,
+                                                      uint32_t *out);
+
+    /* Stored bytes/bytearray payloads only, including supported subclasses. */
+    CL_EXPORT clover_status clover_byteslike_size(clover_context *ctx,
+                                                  clover_handle value,
+                                                  size_t *out);
+    typedef void (*clover_readonly_bytes_callback)(const uint8_t *data,
+                                                   size_t size, void *state);
+    /*
+     * Synchronous read-only borrow; no copy or buffer export. The input stays
+     * live for the callback. The callback must not allocate VM objects, call
+     * VM APIs or Python, poll safepoints, mutate/resize the payload through any
+     * alias, throw, or retain the pointer. Native execution must remain
+     * exclusive throughout the borrow. Empty payloads must not be dereferenced.
+     *
+     * Current pointer stability uses the no-collection contract, not pinning.
+     * Future pinning can be implemented inside this boundary. Box results only
+     * after return. A null state is allowed; a null callback is an error.
+     */
+    CL_EXPORT clover_status clover_byteslike_with_readonly_data(
+        clover_context *ctx, clover_handle value,
+        clover_readonly_bytes_callback callback, void *state);
     CL_EXPORT clover_status clover_is(clover_context *ctx, clover_handle left,
                                       clover_handle right, bool *out);
 

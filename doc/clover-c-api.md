@@ -285,6 +285,17 @@ clover_status clover_int_as_int64(clover_context *ctx,
 clover_status clover_int_as_uint64(clover_context *ctx,
                                    clover_handle value,
                                    uint64_t *out);
+clover_status clover_int_as_uint32_mask(clover_context *ctx,
+                                       clover_handle value,
+                                       uint32_t *out);
+clover_status clover_byteslike_size(clover_context *ctx,
+                                   clover_handle value,
+                                   size_t *out);
+typedef void (*clover_readonly_bytes_callback)(const uint8_t *data,
+                                              size_t size, void *state);
+clover_status clover_byteslike_with_readonly_data(
+    clover_context *ctx, clover_handle value,
+    clover_readonly_bytes_callback callback, void *state);
 clover_status clover_is(clover_context *ctx,
                         clover_handle left,
                         clover_handle right,
@@ -331,6 +342,41 @@ Conversion helpers set a pending exception on failure and return
 `clover_is` compares the underlying managed values for Python `is`
 identity. It must not compare handle storage addresses once handles become
 indirect.
+
+### Masked integer conversion and read-only byte borrowing
+
+`clover_int_as_uint32_mask` accepts stored builtin int/bool values, including
+integer subclasses, and writes their value modulo 2**32. Negative and arbitrary-size
+integers do not raise overflow. It calls no Python conversion hooks; custom
+`__index__` objects are rejected with `TypeError`. The existing range-checked
+integer converters retain their behavior.
+
+`clover_byteslike_size` and `clover_byteslike_with_readonly_data` accept stored
+bytes/bytearray payloads, including supported subclasses, without calling Python
+length, indexing or conversion hooks. They provide no general buffer protocol.
+The size query validates input before other argument conversions when ordering
+matters, as for CRC seeds.
+
+The read-only callback runs synchronously exactly once on success, including for
+an empty payload, and is never called for invalid arguments. `state` may be null.
+No input copy is made. The caller's input handle remains rooted for the call;
+the API retains payload lifetime while the callback executes. The pointer is
+valid only during the callback. Do not dereference an empty payload.
+
+The callback must not call VM APIs or Python, allocate VM objects, poll safepoints,
+mutate or resize the payload through any alias, throw, or retain its pointer.
+Native execution must remain exclusive throughout the borrow. Current pointer
+stability relies on this no-collection contract, not a pin. Future pinning belongs
+inside the API boundary, without requiring changes to callback callers. Save
+scalar results in caller state and box them only after the API returns.
+
+These APIs return `CLOVER_STATUS_ERROR` with a pending exception on failure.
+Wrong payload/seed types and sentinel handles are rejected; null handles are
+rejected in indirect-handle mode. An existing pending exception carried by an
+error marker is preserved. Null output pointers or a null callback raise
+`ValueError`. Non-null outputs are initialized
+to zero before conversion. Non-null handles must be valid live API handles;
+arbitrary integer addresses are not validated.
 
 ### Dictionary API
 
