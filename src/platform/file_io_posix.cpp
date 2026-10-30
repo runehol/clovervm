@@ -1,6 +1,8 @@
 #include "platform/file_io.h"
 
+#include <algorithm>
 #include <cerrno>
+#include <climits>
 #include <fcntl.h>
 #include <limits>
 #include <sys/stat.h>
@@ -8,6 +10,16 @@
 
 namespace cl
 {
+    namespace
+    {
+        // Match CPython's platform-specific per-syscall read bound.
+#ifdef __APPLE__
+        constexpr size_t max_read_size = static_cast<size_t>(INT_MAX);
+#else
+        constexpr size_t max_read_size = static_cast<size_t>(SSIZE_MAX);
+#endif
+    }  // namespace
+
     FileResult platform_file_close(int fd)
     {
         // Never retry close: the descriptor number may already be reusable.
@@ -73,6 +85,7 @@ namespace cl
 
     FileResult platform_file_read(int fd, void *data, size_t size)
     {
+        size = std::min(size, max_read_size);
         ssize_t result;
         do
         {
@@ -91,6 +104,21 @@ namespace cl
         }
         while(result < 0 && errno == EINTR);
         return {result, result < 0 ? errno : 0};
+    }
+
+    bool platform_file_seek_whence_is_valid(int whence)
+    {
+        if(whence == SEEK_SET || whence == SEEK_CUR || whence == SEEK_END)
+            return true;
+#ifdef SEEK_DATA
+        if(whence == SEEK_DATA)
+            return true;
+#endif
+#ifdef SEEK_HOLE
+        if(whence == SEEK_HOLE)
+            return true;
+#endif
+        return false;
     }
 
     FileResult platform_file_seek(int fd, int64_t offset, int whence)

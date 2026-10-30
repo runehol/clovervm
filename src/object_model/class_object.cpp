@@ -190,13 +190,12 @@ namespace cl
             }
             if(is_io_base_layout(layout) && is_io_base_layout(selected.layout))
             {
-                // The native prefix chain is IOBase -> RawIOBase -> FileIO.
-                auto rank = [](NativeLayoutId id) {
-                    return id == NativeLayoutId::FileIO      ? 2
-                           : id == NativeLayoutId::RawIOBase ? 1
-                                                             : 0;
-                };
-                if(rank(layout) > rank(selected.layout))
+                // RawIOBase and BufferedIOBase add no storage to IOBase.
+                // Either can provide their shared prefix in a mixed MRO;
+                // FileIO requires the larger descriptor-bearing layout.
+                if(layout == NativeLayoutId::FileIO ||
+                   (selected.layout == NativeLayoutId::IOBase &&
+                    layout != NativeLayoutId::IOBase))
                     selected = {ancestor, layout,
                                 ancestor->get_instance_inline_slot_capacity()};
                 continue;
@@ -890,7 +889,9 @@ namespace cl
         {
             if((instance_native_layout_id() == NativeLayoutId::OSError ||
                 instance_native_layout_id() == NativeLayoutId::IOBase ||
-                instance_native_layout_id() == NativeLayoutId::RawIOBase) &&
+                instance_native_layout_id() == NativeLayoutId::RawIOBase ||
+                instance_native_layout_id() ==
+                    NativeLayoutId::BufferedIOBase) &&
                new_descriptor.is_cacheable() &&
                init_descriptor.is_cacheable() &&
                new_descriptor.plan.kind !=

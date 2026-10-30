@@ -66,6 +66,10 @@ This repository contains clovervm, a Python VM.
 
 # Code style
 - This is a C++20 code base.
+- Prefer `enum class` over `bool` for function parameters and non-type template
+  parameters that select a behavior or mode. Use named enum values at call sites
+  and in template arguments instead of bare `true`/`false` flags, e.g.
+  `ItemKeyKind::Slice` rather than `true`.
 - Prefer include guards over `#pragma once` in headers.
 - Name include guards consistently. Follow the existing repository convention, e.g. `CL_SLAB_ALLOCATOR_H`.
 - For fixed-width integer and size types, include `<cstdint>` or `<cstdlib>`/`<cstddef>` as needed and use unqualified names like `int64_t` and `size_t`.

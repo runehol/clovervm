@@ -1,5 +1,6 @@
 #include "builtin_types/file_io.h"
 
+#include "builtin_types/bytearray.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/int.h"
 #include "builtin_types/str.h"
@@ -294,6 +295,36 @@ namespace cl
                 .raw_value();
         }
 
+        Value native_file_readinto(ThreadState *thread, Value self, Value data)
+        {
+            Owned<TValue<FileIOObject>> file(CL_TRY(file_receiver(self)));
+            // Like CPython's writable-buffer argument binding, validate the
+            // destination before checking the descriptor's state or mode.
+            Owned<TValue<ByteArray>> destination(
+                CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                    data, L"TypeError",
+                    L"FileIO.readinto expects a bytearray")));
+            if(file.extract()->fd < 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"I/O operation on closed file");
+            if(!(file.extract()->access_flags & FileReadable))
+                return thread->set_pending_builtin_exception_string(
+                    L"UnsupportedOperation", L"File not open for reading");
+            FileResult result{};
+            with_bytearray_writable_bytes(
+                destination.value(), [&](std::span<uint8_t> bytes) noexcept {
+                    // No VM allocation, callbacks, safepoints, or resizing
+                    // while this span is borrowed, including for empty buffers.
+                    result = platform_file_read(file.extract()->fd,
+                                                bytes.data(), bytes.size());
+                });
+            if(result.error == EAGAIN || result.error == EWOULDBLOCK)
+                return Value::None();
+            if(result.error)
+                return file_os_error(thread, result.error);
+            return CL_TRY(int_value_from_int64(thread, result.value));
+        }
+
         Value native_file_write(ThreadState *thread, Value self, Value data)
         {
             Owned<TValue<FileIOObject>> file(CL_TRY(open_file_receiver(self)));
@@ -456,6 +487,7 @@ namespace cl
             builtin_intrinsic_method(L"fileno", native_file_fileno),
             with_defaults(builtin_intrinsic_method(L"read", native_file_read),
                           read_defaults.value()),
+            builtin_intrinsic_method(L"readinto", native_file_readinto),
             builtin_intrinsic_method(L"write", native_file_write),
             with_defaults(builtin_intrinsic_method(L"seek", native_file_seek),
                           seek_defaults.value()),

@@ -128,7 +128,8 @@ TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
 TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
 {
     for(const char *path:
-        {"tests/python/file_io.py", "tests/python/file_io_subclasses.py"})
+        {"tests/python/file_io.py", "tests/python/file_io_subclasses.py",
+         "tests/python/file_io_readinto.py"})
     {
         std::wstring source = read_source_file(path);
         cl::test::VmTestContext context;
@@ -144,6 +145,116 @@ TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
         {"tests/python/io_base.py", "tests/python/io_context_exit.py",
          "tests/python/io_capability_checks.py"})
     {
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(PythonSourceFiles, RawIOReadsSurviveEverySafepointReclamation)
+{
+    for(const char *path:
+        {"tests/python/rawio_read.py", "tests/python/rawio_read_validation.py",
+         "tests/python/rawio_read_callbacks.py",
+         "tests/python/rawio_readall.py",
+         "tests/python/rawio_readall_errors.py",
+         "tests/python/rawio_read_resized_buffer.py",
+         "tests/python/file_io_readall.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(PythonSourceFiles, BufferedIOBaseSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/buffered_io_base.py",
+                           "tests/python/buffered_io_readinto.py",
+                           "tests/python/buffered_io_mro.py",
+                           "tests/python/buffered_io_resized_buffer.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(PythonSourceFiles, BufferedReaderSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/buffered_reader.py",
+                           "tests/python/buffered_reader_nonblocking.py",
+                           "tests/python/buffered_reader_position.py",
+                           "tests/python/buffered_reader_callbacks.py",
+                           "tests/python/buffered_reader_errors.py",
+                           "tests/python/buffered_reader_reinitialize.py",
+                           "tests/python/buffered_reader_lifecycle.py",
+                           "tests/python/buffered_reader_reentry.py",
+                           "tests/python/buffered_reader_mixed.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(PythonSourceFiles, BufferedWriterSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/buffered_writer.py",
+                           "tests/python/buffered_writer_nonblocking.py",
+                           "tests/python/buffered_writer_zero.py",
+                           "tests/python/buffered_writer_callbacks.py",
+                           "tests/python/buffered_writer_position.py",
+                           "tests/python/buffered_writer_lifecycle.py",
+                           "tests/python/buffered_writer_reentry.py",
+                           "tests/python/buffered_writer_mixed.py",
+                           "tests/python/buffered_writer_boundaries.py",
+                           "tests/python/buffered_writer_reinitialize.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(TextCodecReclamation, OneShotConversionAndErrors)
+{
+    for(const char *path:
+        {"tests/python/text_codec.py", "tests/python/text_codec_errors.py",
+         "tests/python/text_codec_calls.py",
+         "tests/python/text_codec_options.py",
+         "tests/python/text_codec_boundaries.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(UnicodeErrorReclamation, ConstructorAndOverflowAttributes)
+{
+    for(const char *path: {"tests/python/unicode_error.py",
+                           "tests/python/unicode_error_attributes.py",
+                           "tests/python/unicode_error_callbacks.py"})
+    {
+        SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);
         cl::test::VmTestContext context;
         context.vm().set_fire_every_safepoint_for_testing(true);

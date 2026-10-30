@@ -1,18 +1,29 @@
 #include "builtin_types/io_base.h"
 
+#include "builtin_types/bytearray.h"
+#include "builtin_types/bytes.h"
 #include "builtin_types/dict.h"
+#include "builtin_types/int.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
 #include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
+#include "platform/file_io.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/runtime_helpers.h"
+#include <algorithm>
+#include <cerrno>
+#include <climits>
+#include <cstring>
+#include <iterator>
 
 namespace cl
 {
     namespace
     {
+        constexpr int64_t default_buffer_size = 128 * 1024;
         // This validates the native prefix without weakening exact-layout
         // casts.
         [[nodiscard]] Expected<TValue<IOBaseObject>> io_receiver(Value self)
@@ -149,14 +160,328 @@ namespace cl
             return thread->call_clovervm_method(self,
                                                 interned_string(L"close"));
         }
-        Value native_raw_unimplemented(ThreadState *thread, Value self, Value)
+        Value native_raw_validate(ThreadState *thread, Value self)
         {
-            if(!self.is_ptr() || (self.get_ptr<Object>()->native_layout_id() !=
-                                      NativeLayoutId::RawIOBase &&
-                                  self.get_ptr<Object>()->native_layout_id() !=
-                                      NativeLayoutId::FileIO))
+            if(!self.is_ptr() ||
+               !is_io_base_layout(self.get_ptr<Object>()->native_layout_id()) ||
+               !is_instance_of(
+                   self.get_ptr<Object>(),
+                   thread->class_for_native_layout(NativeLayoutId::RawIOBase)))
                 return thread->set_pending_builtin_exception_string(
                     L"TypeError", L"RawIOBase method requires a raw stream");
+            return Value::None();
+        }
+
+        Value native_buffered_validate(ThreadState *thread, Value self)
+        {
+            if(!self.is_ptr() ||
+               !is_io_base_layout(self.get_ptr<Object>()->native_layout_id()) ||
+               !is_instance_of(self.get_ptr<Object>(),
+                               thread->class_for_native_layout(
+                                   NativeLayoutId::BufferedIOBase)))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError",
+                    L"BufferedIOBase method requires a buffered stream");
+            return Value::None();
+        }
+
+        Value native_buffered_read_size(ThreadState *thread, Value size)
+        {
+            if(!is_intlike_value(size))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"read size must be an integer");
+            SmiViewStorage storage;
+            int64_t count = CL_TRY(
+                bigint_to_int64(intlike_value_bigint_view(size, &storage)));
+            // The abstract stubs use C int, unlike raw read's index-sized size.
+            if(count < INT_MIN || count > INT_MAX)
+                return thread->set_pending_builtin_exception_string(
+                    L"OverflowError",
+                    L"Python int too large to convert to C int");
+            return Value::None();
+        }
+
+        Value native_buffered_readinto_size(ThreadState *thread, Value self,
+                                            Value buffer)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            auto destination = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                buffer, L"TypeError",
+                L"readinto destination must be bytearray"));
+            return Value::from_smi(
+                static_cast<int64_t>(destination.extract()->size()));
+        }
+
+        Value native_buffered_finish_readinto(ThreadState *thread, Value buffer,
+                                              Value data, Value requested)
+        {
+            Owned<TValue<ByteArray>> destination(
+                CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                    buffer, L"TypeError",
+                    L"readinto destination must be bytearray")));
+            Owned<TValue<Bytes>> source(
+                CL_TRY(TValue<Bytes>::from_value_or_raise(
+                    data, L"TypeError", L"read() should return bytes")));
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested read size"));
+            int64_t count = source.extract()->count.value().extract();
+            if(count > bound.extract() ||
+               static_cast<size_t>(count) > destination.extract()->size())
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"read() returned more bytes than the "
+                                   L"destination can hold");
+            if(count != 0)
+                with_bytearray_writable_bytes(
+                    destination.value(),
+                    [&](std::span<uint8_t> bytes) noexcept {
+                        std::copy_n(source.extract()->data,
+                                    static_cast<size_t>(count), bytes.data());
+                    });
+            return Value::from_smi(count);
+        }
+
+        Value native_buffered_seek_whence(ThreadState *thread, Value whence)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_read_size(thread, whence));
+            SmiViewStorage storage;
+            int64_t value = CL_TRY(
+                bigint_to_int64(intlike_value_bigint_view(whence, &storage)));
+            if(!platform_file_seek_whence_is_valid(static_cast<int>(value)))
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"unsupported whence value");
+            return Value::from_smi(value);
+        }
+
+        Value native_buffered_set_closed(ThreadState *thread, Value self,
+                                         Value closed)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            auto state = CL_TRY(TValue<Bool>::from_value_or_raise(
+                closed, L"TypeError", L"closed state must be bool"));
+            auto io = CL_TRY(io_receiver(self));
+            io.extract()->base_closed = state;
+            return Value::None();
+        }
+
+        Value native_buffered_copy(ThreadState *thread, Value buffer,
+                                   Value offset, Value count)
+        {
+            Owned<TValue<ByteArray>> source(
+                CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                    buffer, L"TypeError", L"buffer must be bytearray")));
+            auto start = CL_TRY(TValue<SMI>::from_value_or_raise(
+                offset, L"TypeError", L"invalid buffer offset"));
+            auto length = CL_TRY(TValue<SMI>::from_value_or_raise(
+                count, L"TypeError", L"invalid buffer length"));
+            if(start.extract() < 0 || length.extract() < 0 ||
+               static_cast<size_t>(start.extract()) >
+                   source.extract()->size() ||
+               static_cast<size_t>(length.extract()) >
+                   source.extract()->size() -
+                       static_cast<size_t>(start.extract()))
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"invalid buffer range");
+            Owned<TValue<Bytes>> result(
+                thread->make_object_value<Bytes>(length));
+            if(length.extract() != 0)
+                with_bytearray_writable_bytes(
+                    source.value(), [&](std::span<uint8_t> bytes) noexcept {
+                        std::copy_n(bytes.data() + start.extract(),
+                                    static_cast<size_t>(length.extract()),
+                                    result.extract()->data);
+                    });
+            return result.raw_value();
+        }
+
+        Value native_buffered_copy_into(ThreadState *thread, Value buffer,
+                                        Value offset, Value data,
+                                        Value source_offset, Value count)
+        {
+            auto destination = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                buffer, L"TypeError", L"destination must be bytearray"));
+            auto source = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                data, L"TypeError", L"source must be bytearray"));
+            auto start = CL_TRY(TValue<SMI>::from_value_or_raise(
+                offset, L"TypeError", L"invalid destination offset"));
+            auto source_start = CL_TRY(TValue<SMI>::from_value_or_raise(
+                source_offset, L"TypeError", L"invalid source offset"));
+            auto length = CL_TRY(TValue<SMI>::from_value_or_raise(
+                count, L"TypeError", L"invalid copy length"));
+            if(start.extract() < 0 || source_start.extract() < 0 ||
+               length.extract() < 0 ||
+               static_cast<size_t>(start.extract()) >
+                   destination.extract()->size() ||
+               static_cast<size_t>(length.extract()) >
+                   destination.extract()->size() -
+                       static_cast<size_t>(start.extract()) ||
+               static_cast<size_t>(source_start.extract()) >
+                   source.extract()->size() ||
+               static_cast<size_t>(length.extract()) >
+                   source.extract()->size() -
+                       static_cast<size_t>(source_start.extract()))
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"invalid readinto buffer range");
+            if(length.extract() != 0)
+                with_bytearray_writable_bytes(
+                    destination, [&](std::span<uint8_t> bytes) noexcept {
+                        // No allocation or callback can invalidate either
+                        // payload. memmove also permits an aliased scratch.
+                        std::memmove(bytes.data() + start.extract(),
+                                     source.extract()->view().data() +
+                                         source_start.extract(),
+                                     static_cast<size_t>(length.extract()));
+                    });
+            return Value::None();
+        }
+
+        Value native_buffered_read_count(ThreadState *thread, Value buffer,
+                                         Value count, Value requested)
+        {
+            auto destination = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                buffer, L"TypeError", L"buffer must be bytearray"));
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested read size"));
+            if(!is_intlike_value(count))
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw readinto() failed");
+            SmiViewStorage storage, zero_storage, bound_storage;
+            auto view = intlike_value_bigint_view(count, &storage);
+            if(bound.extract() < 0 ||
+               compare_bigint(view, smi_bigint_view(0, &zero_storage)) < 0 ||
+               compare_bigint(
+                   view, smi_bigint_view(bound.extract(), &bound_storage)) > 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw readinto() returned an invalid count");
+            int64_t result = CL_TRY(bigint_to_int64(view));
+            if(static_cast<size_t>(result) > destination.extract()->size())
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError",
+                    L"readinto returned a count beyond the resized buffer");
+            return Value::from_smi(result);
+        }
+
+        Value native_buffered_bytes_size(ThreadState *, Value data)
+        {
+            auto bytes = CL_TRY(TValue<Bytes>::from_value_or_raise(
+                data, L"TypeError", L"read() should return bytes"));
+            return bytes.extract()->count.raw_value();
+        }
+
+        Value native_buffered_write_bytes(ThreadState *thread, Value data)
+        {
+            if(has_native_layout<Bytes>(data))
+                return data;
+            if(has_native_layout<ByteArray>(data))
+            {
+                auto buffer = TValue<ByteArray>::from_value_assumed(data);
+                return native_buffered_copy(
+                    thread, data, Value::from_smi(0),
+                    Value::from_smi(
+                        static_cast<int64_t>(buffer.extract()->size())));
+            }
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"write() requires bytes or bytearray");
+        }
+
+        Value native_buffered_write_count(ThreadState *thread, Value count,
+                                          Value requested)
+        {
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested write size"));
+            if(!is_intlike_value(count))
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw write() returned an invalid count");
+            SmiViewStorage storage, zero_storage, bound_storage;
+            auto view = intlike_value_bigint_view(count, &storage);
+            if(bound.extract() < 0 ||
+               compare_bigint(view, smi_bigint_view(0, &zero_storage)) < 0 ||
+               compare_bigint(
+                   view, smi_bigint_view(bound.extract(), &bound_storage)) > 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"OSError", L"raw write() returned an invalid count");
+            return Value::from_smi(CL_TRY(bigint_to_int64(view)));
+        }
+
+        Value native_buffered_write(ThreadState *thread, Value self, Value)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            return thread->set_pending_builtin_exception_string(
+                L"UnsupportedOperation", L"write");
+        }
+        Value native_buffered_detach(ThreadState *thread, Value self)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            return thread->set_pending_builtin_exception_string(
+                L"UnsupportedOperation", L"detach");
+        }
+
+        Value native_raw_read_size(ThreadState *thread, Value size)
+        {
+            if(!is_intlike_value(size))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"read size must be an integer");
+            SmiViewStorage storage;
+            int64_t count = CL_TRY(
+                bigint_to_int64(intlike_value_bigint_view(size, &storage)));
+            // Canonicalize stored payloads so int-subclass comparison hooks
+            // cannot affect the managed negative-size dispatch.
+            return CL_TRY(int_value_from_int64(thread, count));
+        }
+
+        Value native_raw_finish_read(ThreadState *thread, Value buffer,
+                                     Value count, Value requested)
+        {
+            Owned<TValue<ByteArray>> destination(
+                CL_TRY(TValue<ByteArray>::from_value_or_raise(
+                    buffer, L"TypeError",
+                    L"read destination must be bytearray")));
+            auto bound = CL_TRY(TValue<SMI>::from_value_or_raise(
+                requested, L"TypeError", L"invalid requested read size"));
+            if(!is_intlike_value(count))
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"readinto result must be an integer");
+            SmiViewStorage count_storage, zero_storage, bound_storage;
+            auto view = intlike_value_bigint_view(count, &count_storage);
+            if(bound.extract() < 0 ||
+               compare_bigint(view, smi_bigint_view(0, &zero_storage)) < 0 ||
+               compare_bigint(
+                   view, smi_bigint_view(bound.extract(), &bound_storage)) > 0)
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError", L"readinto returned a count outside the "
+                                   L"requested buffer size");
+            int64_t filled = CL_TRY(bigint_to_int64(view));
+            if(static_cast<size_t>(filled) > destination.extract()->size())
+                return thread->set_pending_builtin_exception_string(
+                    L"ValueError",
+                    L"readinto returned a count beyond the resized buffer");
+            // Allocate before borrowing either payload. No Python callbacks or
+            // allocations occur while copying from the current bytearray view.
+            Owned<TValue<Bytes>> result(thread->make_object_value<Bytes>(
+                TValue<SMI>::from_smi(filled)));
+            if(filled != 0)
+                with_bytearray_writable_bytes(
+                    destination.value(),
+                    [&](std::span<uint8_t> bytes) noexcept {
+                        std::copy_n(bytes.data(), static_cast<size_t>(filled),
+                                    result.extract()->data);
+                    });
+            return result.raw_value();
+        }
+
+        Value native_raw_errno_is_eintr(ThreadState *, Value code)
+        {
+            if(!is_intlike_value(code))
+                return Value::False();
+            SmiViewStorage storage, eintr_storage;
+            return compare_bigint(intlike_value_bigint_view(code, &storage),
+                                  smi_bigint_view(EINTR, &eintr_storage)) == 0
+                       ? Value::True()
+                       : Value::False();
+        }
+
+        Value native_raw_unimplemented(ThreadState *thread, Value self, Value)
+        {
+            CL_PROPAGATE_EXCEPTION(native_raw_validate(thread, self));
             return thread->set_pending_builtin_exception_string(
                 L"NotImplementedError", L"raw stream operation");
         }
@@ -175,10 +500,13 @@ namespace cl
                 return thread
                     ->make_internal_value<RawIOBaseObject>(cls.extract())
                     .raw_value();
+            case NativeLayoutId::BufferedIOBase:
+                return thread
+                    ->make_internal_value<BufferedIOBaseObject>(cls.extract())
+                    .raw_value();
             default:
                 return thread->set_pending_builtin_exception_string(
-                    L"TypeError",
-                    L"IOBase.__new__ requires an IOBase or RawIOBase class");
+                    L"TypeError", L"IOBase.__new__ requires an IOBase layout");
         }
     }
 
@@ -195,18 +523,34 @@ namespace cl
         return result.is_exception_marker() ? result : Value::None();
     }
 
-    static BuiltinClassDefinition make_base(VirtualMachine *vm, bool raw)
+    static BuiltinClassDefinition make_base(VirtualMachine *vm,
+                                            NativeLayoutId layout)
     {
-        ClassObject *cls =
-            raw ? ClassObject::make_builtin_class<RawIOBaseObject>(
-                      vm->get_or_create_interned_string_value(L"RawIOBase"), 1,
-                      nullptr, 0,
-                      active_thread()->class_for_native_layout(
-                          NativeLayoutId::IOBase),
-                      SubclassPolicy::Allowed)
-                : ClassObject::make_builtin_class<IOBaseObject>(
-                      vm->get_or_create_interned_string_value(L"IOBase"), 1,
-                      nullptr, 0, vm->object_class(), SubclassPolicy::Allowed);
+        ClassObject *cls = nullptr;
+        switch(layout)
+        {
+            case NativeLayoutId::IOBase:
+                cls = ClassObject::make_builtin_class<IOBaseObject>(
+                    vm->get_or_create_interned_string_value(L"IOBase"), 1,
+                    nullptr, 0, vm->object_class(), SubclassPolicy::Allowed);
+                break;
+            case NativeLayoutId::RawIOBase:
+                cls = ClassObject::make_builtin_class<RawIOBaseObject>(
+                    vm->get_or_create_interned_string_value(L"RawIOBase"), 1,
+                    nullptr, 0,
+                    vm->class_for_native_layout(NativeLayoutId::IOBase),
+                    SubclassPolicy::Allowed);
+                break;
+            case NativeLayoutId::BufferedIOBase:
+                cls = ClassObject::make_builtin_class<BufferedIOBaseObject>(
+                    vm->get_or_create_interned_string_value(L"BufferedIOBase"),
+                    1, nullptr, 0,
+                    vm->class_for_native_layout(NativeLayoutId::IOBase),
+                    SubclassPolicy::Allowed);
+                break;
+            default:
+                fatal("invalid I/O base layout");
+        }
         auto readonly = descriptor_flag(DescriptorFlag::StableSlot) |
                         descriptor_flag(DescriptorFlag::ReadOnly);
         BuiltinInstanceShapeBuilder(
@@ -221,17 +565,29 @@ namespace cl
         assert(installed);
         (void)installed;
         static constexpr NativeLayoutId io[] = {NativeLayoutId::IOBase};
-        static constexpr NativeLayoutId raw_io[] = {NativeLayoutId::RawIOBase};
-        return builtin_class_definition(cls, raw ? raw_io : io,
-                                        BuiltinsVisibility::Internal);
+        static constexpr NativeLayoutId raw[] = {NativeLayoutId::RawIOBase};
+        static constexpr NativeLayoutId buffered[] = {
+            NativeLayoutId::BufferedIOBase};
+        return layout == NativeLayoutId::IOBase
+                   ? builtin_class_definition(cls, io,
+                                              BuiltinsVisibility::Internal)
+               : layout == NativeLayoutId::RawIOBase
+                   ? builtin_class_definition(cls, raw,
+                                              BuiltinsVisibility::Internal)
+                   : builtin_class_definition(cls, buffered,
+                                              BuiltinsVisibility::Internal);
     }
     BuiltinClassDefinition make_io_base_class(VirtualMachine *vm)
     {
-        return make_base(vm, false);
+        return make_base(vm, NativeLayoutId::IOBase);
     }
     BuiltinClassDefinition make_raw_io_base_class(VirtualMachine *vm)
     {
-        return make_base(vm, true);
+        return make_base(vm, NativeLayoutId::RawIOBase);
+    }
+    BuiltinClassDefinition make_buffered_io_base_class(VirtualMachine *vm)
+    {
+        return make_base(vm, NativeLayoutId::BufferedIOBase);
     }
 
     void install_io_base_methods(VirtualMachine *vm)
@@ -272,8 +628,6 @@ namespace cl
         zero.extract()->initialize_item_unchecked(0, Value::from_smi(0));
         Owned<TValue<Tuple>> none(thread->make_object_value<Tuple>(1));
         none.extract()->initialize_item_unchecked(0, Value::None());
-        Owned<TValue<Tuple>> negative(thread->make_object_value<Tuple>(1));
-        negative.extract()->initialize_item_unchecked(0, Value::from_smi(-1));
         BuiltinIntrinsicMethod methods[] = {
             builtin_intrinsic_method(L"close", close_io_base),
             builtin_intrinsic_method(L"flush", native_io_flush),
@@ -303,9 +657,6 @@ namespace cl
                                       vm, io, methods, std::size(methods)),
                                   "installing IOBase methods");
         BuiltinIntrinsicMethod raw[] = {
-            with_defaults(
-                builtin_intrinsic_method(L"read", native_raw_unimplemented),
-                negative.value()),
             builtin_intrinsic_method(L"readinto", native_raw_unimplemented),
             builtin_intrinsic_method(L"write", native_raw_unimplemented),
         };
@@ -315,5 +666,127 @@ namespace cl
                 vm, thread->class_for_native_layout(NativeLayoutId::RawIOBase),
                 raw, std::size(raw)),
             "installing RawIOBase methods");
+        BuiltinIntrinsicMethod buffered[] = {
+            builtin_intrinsic_method(L"write", native_buffered_write),
+            builtin_intrinsic_method(L"detach", native_buffered_detach),
+        };
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(
+                vm,
+                thread->class_for_native_layout(NativeLayoutId::BufferedIOBase),
+                buffered, std::size(buffered)),
+            "installing BufferedIOBase methods");
+    }
+    int64_t default_io_buffer_size() { return default_buffer_size; }
+
+    void install_io_base_helpers(VirtualMachine *vm, ModuleObject *module)
+    {
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(
+                interned_string(L"_clover_bufferedio_default_buffer_size"),
+                Value::from_smi(default_buffer_size)),
+            "installing buffered I/O default size");
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(interned_string(L"_clover_io_eagain"),
+                                     Value::from_smi(EAGAIN)),
+            "installing buffered I/O would-block errno");
+        BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bufferedio_write_bytes",
+                                     native_buffered_write_bytes),
+            builtin_intrinsic_method(L"_clover_bufferedio_write_count",
+                                     native_buffered_write_count),
+            builtin_intrinsic_method(L"_clover_bufferedio_seek_whence",
+                                     native_buffered_seek_whence),
+            builtin_intrinsic_method(L"_clover_bufferedio_set_closed",
+                                     native_buffered_set_closed),
+            builtin_intrinsic_method(L"_clover_bufferedio_copy",
+                                     native_buffered_copy),
+            builtin_intrinsic_method(L"_clover_bufferedio_copy_into",
+                                     native_buffered_copy_into),
+            builtin_intrinsic_method(L"_clover_bufferedio_read_count",
+                                     native_buffered_read_count),
+            builtin_intrinsic_method(L"_clover_bufferedio_bytes_size",
+                                     native_buffered_bytes_size),
+            builtin_intrinsic_method(L"_clover_bufferedio_validate",
+                                     native_buffered_validate),
+            builtin_intrinsic_method(L"_clover_bufferedio_read_size",
+                                     native_buffered_read_size),
+            builtin_intrinsic_method(L"_clover_bufferedio_readinto_size",
+                                     native_buffered_readinto_size),
+            builtin_intrinsic_method(L"_clover_bufferedio_finish_readinto",
+                                     native_buffered_finish_readinto),
+            builtin_intrinsic_method(L"_clover_rawio_validate",
+                                     native_raw_validate),
+            builtin_intrinsic_method(L"_clover_rawio_read_size",
+                                     native_raw_read_size),
+            builtin_intrinsic_method(L"_clover_rawio_finish_read",
+                                     native_raw_finish_read),
+            builtin_intrinsic_method(L"_clover_rawio_errno_is_eintr",
+                                     native_raw_errno_is_eintr),
+        };
+        for(const auto &helper: helpers)
+        {
+            auto function = unwrap_bootstrap_expected(
+                vm, make_intrinsic_function(vm, helper),
+                "creating raw I/O helper");
+            unwrap_bootstrap_expected(
+                vm,
+                module->set_own_property(
+                    vm->get_or_create_interned_string_value(helper.name),
+                    function.raw_value()),
+                "installing raw I/O helper");
+        }
+        // Keep the actual native read, independent of public module bindings or
+        // Python subclass overrides. This callable receives self explicitly.
+        Value read = vm->class_for_native_layout(NativeLayoutId::FileIO)
+                         ->get_own_property(interned_string(L"read"));
+        assert(has_native_layout<Function>(read));
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(
+                interned_string(L"_clover_fileio_native_read"), read),
+            "retaining FileIO native read");
+    }
+
+    void install_io_base_python_methods(VirtualMachine *vm,
+                                        ModuleObject *module)
+    {
+        struct Binding
+        {
+            NativeLayoutId layout;
+            const wchar_t *name;
+            const wchar_t *helper;
+        };
+        const Binding bindings[] = {
+            {NativeLayoutId::BufferedIOBase, L"read",
+             L"_clover_bufferedio_read"},
+            {NativeLayoutId::BufferedIOBase, L"read1",
+             L"_clover_bufferedio_read1"},
+            {NativeLayoutId::BufferedIOBase, L"readinto",
+             L"_clover_bufferedio_readinto"},
+            {NativeLayoutId::BufferedIOBase, L"readinto1",
+             L"_clover_bufferedio_readinto1"},
+            {NativeLayoutId::RawIOBase, L"read", L"_clover_rawio_read"},
+            {NativeLayoutId::RawIOBase, L"readall", L"_clover_rawio_readall"},
+            {NativeLayoutId::FileIO, L"readall", L"_clover_fileio_readall"},
+        };
+        for(const auto &binding: bindings)
+        {
+            Value function =
+                module->get_own_property(interned_string(binding.helper));
+            if(!has_native_layout<Function>(function))
+                fatal("missing managed raw I/O method");
+            bool stored =
+                vm->class_for_native_layout(binding.layout)
+                    ->define_own_property(
+                        interned_string(binding.name), function,
+                        descriptor_flag(DescriptorFlag::ReadOnly) |
+                            descriptor_flag(DescriptorFlag::StableSlot));
+            assert(stored);
+            (void)stored;
+        }
     }
 }  // namespace cl

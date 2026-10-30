@@ -1,6 +1,7 @@
 #include "import_system/import_system.h"
 
 #include "builtin_types/dict.h"
+#include "builtin_types/io_base.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_loader_object.h"
 #include "builtin_types/module_object.h"
@@ -360,7 +361,9 @@ namespace cl
                     interned_string(thread, L"__file__"));
                 for(auto entry:
                     {std::pair{L"IOBase", NativeLayoutId::IOBase},
-                     std::pair{L"RawIOBase", NativeLayoutId::RawIOBase}})
+                     std::pair{L"RawIOBase", NativeLayoutId::RawIOBase},
+                     std::pair{L"BufferedIOBase",
+                               NativeLayoutId::BufferedIOBase}})
                 {
                     CL_TRY(io.extract()->set_own_property(
                         machine->get_or_create_interned_string_value(
@@ -368,6 +371,18 @@ namespace cl
                         Value::from_oop(
                             thread->class_for_native_layout(entry.second))));
                 }
+                CL_TRY(io.extract()->set_own_property(
+                    machine->get_or_create_interned_string_value(
+                        L"BufferedReader"),
+                    machine->buffered_reader_class().raw_value()));
+                CL_TRY(io.extract()->set_own_property(
+                    machine->get_or_create_interned_string_value(
+                        L"BufferedWriter"),
+                    machine->buffered_writer_class().raw_value()));
+                CL_TRY(io.extract()->set_own_property(
+                    machine->get_or_create_interned_string_value(
+                        L"DEFAULT_BUFFER_SIZE"),
+                    Value::from_smi(default_io_buffer_size())));
                 CL_TRY(io.extract()->set_own_property(
                     machine->get_or_create_interned_string_value(L"FileIO"),
                     Value::from_oop(thread->class_for_native_layout(

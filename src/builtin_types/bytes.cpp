@@ -1,4 +1,5 @@
 #include "builtin_types/bytes.h"
+#include "builtin_types/bytearray.h"
 
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
@@ -166,6 +167,13 @@ namespace cl
             TValue<SMI> count = CL_TRY(bytes_count_to_smi(source));
             return allocate_zero_filled_bytes(thread, cls, count).raw_value();
         }
+        if(has_native_layout<ByteArray>(source))
+        {
+            return thread
+                ->make_internal_value<Bytes>(
+                    cls.extract(), source.get_ptr<ByteArray>()->view())
+                .raw_value();
+        }
         if(has_native_layout<Bytes>(source))
         {
             return thread
@@ -210,6 +218,12 @@ namespace cl
                        thread,
                        TValue<ClassObject>::from_value_assumed(cls_value),
                        count)
+                .raw_value();
+        }
+        if(has_native_layout<ByteArray>(source))
+        {
+            return thread
+                ->make_object_value<Bytes>(source.get_ptr<ByteArray>()->view())
                 .raw_value();
         }
         if(has_native_layout<Bytes>(source))

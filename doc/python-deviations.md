@@ -100,6 +100,47 @@ while the combined `__new__`/`__init__` protocol remains incomplete.
 To close: implement the full combined constructor protocol, then restore the
 CPython allocation/population split.
 
+### `bytearray` provides a bounded mutable byte container
+
+`bytearray` supports empty/zero-filled construction, stored bytes/bytearray
+copies, integer iterables, length/truth, indexing and slicing, item/slice
+assignment and deletion, `append`, `extend`, `clear`, repr/str, all six comparisons
+with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
+an independent immutable bytes object; bytes immutability and hashing are unchanged.
+
+Like the existing dict boundary, construction is implemented by a Python-backed
+`__new__` that returns a populated object. Direct `__new__` therefore differs
+from CPython, `__init__`/reinitialization is unavailable, and bytearray subclassing
+is rejected. Encoded-string constructors, arbitrary buffer objects, general
+user-defined `__index__`, concatenation/repetition and other bytes-like
+methods remain deferred. Iterable conversion uses the existing iterator subset:
+there is no sequence-only fallback or length-hint callback. Stored integer/bool
+payloads (including supported integer subclasses) are accepted. Counts and
+growth are checked against the VM's SMI storage limit; heap exhaustion retains
+the existing fatal VM heap policy rather than recoverable `MemoryError`.
+
+Item access, assignment, and deletion enter native code, with trusted handlers
+for SMI and slice keys. Slice assignment inspects the replacement on every
+cached call: bytes and distinct bytearrays copy directly into the destination,
+reusing spare capacity; self-assignment snapshots before modifying storage.
+Only the iterable fallback enters the managed snapshot loop.
+
+`extend` copies stored bytes/bytearray payloads directly, reusing spare capacity
+and handling self-extension without a snapshot. Arbitrary iterable extension
+and iterable slice assignment validate a private snapshot before committing;
+mutations performed by input callbacks remain visible on failure.
+Slices are validated before input consumption and normalized against the current
+length after callbacks. Iterators follow current contents through backing
+replacement, release their source on exhaustion, and remain exhausted after
+later mutations of that source.
+
+The internal `with_bytearray_writable_bytes` API permits only a synchronous,
+exclusive native operation without allocation, callbacks, safepoints,
+reclamation, resizing, alias mutation or retained pointers. It preserves owner
+lifetime, not pinning. This is not a buffer protocol, memoryview, or persistent
+export. FileIO `readinto` integration is separate; concurrent/moving collection,
+Python signal callbacks and asynchronous I/O must reassess this contract.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object
@@ -305,12 +346,59 @@ checks, warning emission, finalization detection, and emergency `MemoryError`
 allocation are absent. Ordinary allocation failure is not converted into the
 new `MemoryError` class.
 
-Remaining families outside this slice are `UnicodeError` and its specialized
-subclasses,
+Remaining families outside this slice are `UnicodeTranslateError`,
 `SystemExit`, `GeneratorExit`, `StopAsyncIteration`, `BaseExceptionGroup`, and
 `ExceptionGroup`. Chaining, full traceback support, and signal handling remain
 separate work. Supplying these classes does not complete specialized exception
 behavior.
+
+### One-shot text codecs are limited to UTF-8 and Latin-1
+
+`str.encode` and `bytes.decode` support UTF-8 and Latin-1, their standard aliases,
+and normalized encoding names. The defaults are `encoding="utf-8"` and
+`errors="strict"`; both options accept keywords. Other error policies explicitly
+raise `NotImplementedError`, even on valid or empty input, rather than silently
+ignoring unsupported handlers. Unknown encoding names raise `LookupError`, apart
+from CPython's empty-bytes decode shortcut which skips encoding lookup. Argument
+types and embedded NULs are still checked before that shortcut.
+
+Strict conversion failures produce `UnicodeEncodeError`/`UnicodeDecodeError`
+with canonical encoding names, absolute source positions, and encoding-specific
+reasons. Adjacent encoding failures share an error span, including across scratch
+boundaries. Errors retain the original immutable input object (including bytes
+subclasses), rather than copying a decode payload as CPython does. Results are
+exact builtin bytes/str values. Conversion measures before allocating the final
+result, then uses bounded native scratch buffers. String storage bridges through
+real `char32_t` objects using `memcpy`; this requires the current 32-bit string
+representation. No `wchar_t`/`char32_t` pointer aliasing is used.
+
+A codec registry, public `codecs`/`encodings` modules, Python incremental wrappers,
+other encodings/error handlers, constructor encoding overloads, and text I/O
+remain deferred.
+
+### Unicode exception fields use ordinary overflow attributes
+
+`UnicodeError` derives from `ValueError`; `UnicodeEncodeError` and
+`UnicodeDecodeError` derive from `UnicodeError`. All three reuse the existing
+`ExceptionObject` layout. The specialized constructors accept five positional
+arguments and store the exact supplied objects in both `args` and the ordinary
+overflow attributes `encoding`, `object`, `start`, `end`, and `reason`.
+Unlike CPython, construction performs no type validation, index conversion,
+range checks, or bytearray snapshotting, and invokes no conversion callbacks.
+Mutable inputs remain shared with the caller. Formatting checks that the payload
+is a string (encode) or bytes (decode), and that positions are stored integers
+within signed platform-size bounds, before reading character or byte storage.
+
+The fields intentionally lack CPython's typed member descriptors: assignment may
+store any value, deletion removes the attribute, and instance dictionaries expose
+the fields. Formatting validates payload and positional fields before accessing
+the input. Fields become present during initialization rather than defaulting to
+CPython's uninitialized native field values after a direct `__new__` call.
+Inherited `args` remains read-only under the existing exception contract;
+`BaseException.__init__` can update it independently of the structured fields.
+The shared [native-subclass descriptor execution limitation](descriptor-execution.md#open-attribute-access-initiated-by-native-code)
+is not changed by these classes. `UnicodeTranslateError`, encoding/decoding
+operations, and automatic production of Unicode exceptions remain deferred.
 
 ### OSError fields use ordinary latent attributes
 
@@ -349,16 +437,27 @@ construction. Explicit close and context-manager exit release owned descriptors;
 construction failures close descriptors opened during that attempt. Abandoned
 streams are intentionally not closed by reclamation or VM teardown.
 
-Native IOBase/RawIOBase now form the FileIO base hierarchy. Their first slice
-provides close/flush, capabilities, context management and state checks; generic
-raw read/readall fallbacks and line iteration remain deferred. Base subclasses
-support custom Python initializers with the inherited native allocator. Closed
+Native IOBase/RawIOBase form the FileIO base hierarchy; native BufferedIOBase
+is a sibling of RawIOBase with no additional fields. Its readinto/readinto1
+fallbacks support bytearray destinations only. The common base provides
+close/flush, capabilities, context management and state checks; generic
+raw read/readall fallbacks and FileIO.readall are available; line iteration remains
+deferred. RawIOBase.read rejects a count exceeding a callback-resized buffer's
+current length rather than copying beyond it. Base subclasses support custom
+Python initializers with the inherited native allocator. Closed
 attributes use native read-only slots rather than getset descriptors. Descriptor
 isatty and truncate remain unsupported; inherited isatty returns False.
-Buffering, text I/O and builtin open remain
-unimplemented. FileIO accepts string paths and stored integer descriptors; bytes
-paths, path/index protocols, general write buffers, unbounded reads, custom FileIO
-initializers and reinitialization are deferred. FileIO subclasses inherit the native constructor
+Managed BufferedReader and BufferedWriter provide binary buffering. Their raw
+attributes are writable, closed uses a local base flag rather than following
+external raw closure, and
+name/mode are omitted pending computed properties. Line methods/iteration,
+truncate, text I/O and builtin open remain unimplemented. FileIO.readinto accepts
+bytearray destinations using a synchronous
+native borrow; general writable-buffer inputs remain deferred. FileIO accepts
+string paths and stored integer descriptors; bytes
+paths, path/index protocols, general write buffers, unbounded FileIO.read, custom
+FileIO initializers and reinitialization are deferred. FileIO subclasses inherit
+the native constructor
 and can override methods and store additional attributes. See
 [Native FileIO](file-io.md) for operation, validation, attribute-introspection and
 platform boundaries.

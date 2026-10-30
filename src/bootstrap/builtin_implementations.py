@@ -827,3 +827,711 @@ def _clover_zip_next(self, /):
             "zip() argument " + str(j + 1) + " is longer than argument" + suffix
         )
     raise StopIteration
+
+
+# bytearray uses the same new-only construction boundary as dict. Native
+# storage operations never enter Python; callbacks live in these managed loops.
+def _clover_bytearray_new(cls, /, source=()):
+    result = _clover_bytearray_allocate(cls)
+    if _clover_bytearray_initialize_native(result, source):
+        return result
+    for item in source:
+        _clover_bytearray_append(result, item)
+    return result
+
+
+def _clover_bytearray_snapshot(source):
+    result = _clover_bytearray_allocate(bytearray)
+    if _clover_bytearray_copy_native(result, source):
+        return result
+    for item in source:
+        _clover_bytearray_append(result, item)
+    return result
+
+
+def _clover_bytearray_extend(self, source, /):
+    if _clover_bytearray_extend_native(self, source):
+        return
+    staged = _clover_bytearray_snapshot(source)
+    _clover_bytearray_extend_native(self, staged)
+
+
+# Shared by the generic raw loop and the FileIO wrapper. Raw readall observes
+# each read override; FileIO readall calls only the retained native primitive.
+_clover_rawio_chunk_size = 128 * 1024
+
+
+def _clover_rawio_index(value):
+    if isinstance(value, int):
+        return value
+    return __clover_call_special__(
+        value, "__index__", TypeError, "object cannot be interpreted as an integer"
+    )
+
+
+def _clover_rawio_read(self, size=-1, /):
+    _clover_rawio_validate(self)
+    size = _clover_rawio_read_size(_clover_rawio_index(size))
+    if size < 0:
+        return self.readall()
+    buffer = bytearray(size)
+    count = self.readinto(buffer)
+    if count is None:
+        return None
+    return _clover_rawio_finish_read(buffer, _clover_rawio_index(count), size)
+
+
+def _clover_rawio_is_eintr(error):
+    try:
+        return _clover_rawio_errno_is_eintr(_clover_rawio_index(error.errno))
+    except BaseException:
+        # Match the reference trap: failed errno conversion must not replace
+        # the original I/O error being considered for retry.
+        return False
+
+
+def _clover_rawio_readall(self, /):
+    _clover_rawio_validate(self)
+    result = bytearray()
+    while True:
+        try:
+            chunk = self.read(_clover_rawio_chunk_size)
+        except OSError as error:
+            if _clover_rawio_is_eintr(error):
+                continue
+            raise
+        if chunk is None:
+            if bytearray.__len__(result) == 0:
+                return None
+            return bytes(result)
+        if not isinstance(chunk, bytes):
+            raise TypeError('read() should return bytes')
+        if bytes.__len__(chunk) == 0:
+            return bytes(result)
+        bytearray.extend(result, chunk)
+
+
+def _clover_fileio_readall(self, /):
+    result = bytearray()
+    while True:
+        chunk = _clover_fileio_native_read(self, _clover_rawio_chunk_size)
+        if chunk is None:
+            if bytearray.__len__(result) == 0:
+                return None
+            return bytes(result)
+        if bytes.__len__(chunk) == 0:
+            return bytes(result)
+        bytearray.extend(result, chunk)
+
+
+# BufferedIOBase's transfer fallbacks contain no buffering policy.
+def _clover_bufferedio_read(self, size=-1, /):
+    _clover_bufferedio_validate(self)
+    _clover_bufferedio_read_size(_clover_rawio_index(size))
+    raise _clover_io_unsupported('read')
+
+
+def _clover_bufferedio_read1(self, size=-1, /):
+    _clover_bufferedio_validate(self)
+    _clover_bufferedio_read_size(_clover_rawio_index(size))
+    raise _clover_io_unsupported('read1')
+
+
+def _clover_bufferedio_readinto(self, buffer, /):
+    size = _clover_bufferedio_readinto_size(self, buffer)
+    data = self.read(size)
+    return _clover_bufferedio_finish_readinto(buffer, data, size)
+
+
+def _clover_bufferedio_readinto1(self, buffer, /):
+    size = _clover_bufferedio_readinto_size(self, buffer)
+    data = self.read1(size)
+    return _clover_bufferedio_finish_readinto(buffer, data, size)
+
+
+class BufferedReader(BufferedIOBase):
+    __module__ = '_io'
+
+    def __init__(self, raw, buffer_size=_clover_bufferedio_default_buffer_size):
+        if hasattr(self, '_busy') and self._busy:
+            raise RuntimeError('reentrant call inside BufferedReader')
+        size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
+        self.raw = None
+        self._busy = True
+        self._pos = 0
+        self._end = 0
+        try:
+            if not raw.readable():
+                raise _clover_io_unsupported('File or stream is not readable')
+            if size <= 0:
+                raise ValueError('buffer size must be strictly positive')
+            buffer = bytearray(size)
+            self._buffer_size = size
+            self._buffer = buffer
+            self.raw = raw
+            _clover_bufferedio_set_closed(self, False)
+        finally:
+            self._busy = False
+
+    def _check_open(self):
+        if self.raw is None:
+            raise ValueError('raw stream has been detached')
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+
+    def _begin(self):
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedReader')
+        self._check_open()
+        self._busy = True
+        return self.raw
+
+    def _raw_open(self, raw):
+        if raw.closed:
+            raise ValueError('I/O operation on closed file')
+
+    def _take(self, size):
+        data = _clover_bufferedio_copy(self._buffer, self._pos, size)
+        self._pos += size
+        return data
+
+    def _raw_into(self, raw, buffer, size):
+        self._raw_open(raw)
+        while True:
+            try:
+                count = raw.readinto(buffer)
+            except OSError as error:
+                if _clover_rawio_is_eintr(error):
+                    continue
+                raise
+            if count is None:
+                return None
+            try:
+                count = _clover_rawio_index(count)
+            except BaseException:
+                raise OSError('raw readinto() failed')
+            return _clover_bufferedio_read_count(buffer, count, size)
+
+    def _fill(self, raw):
+        # No unread data remains. Replace a scratch buffer resized by a prior
+        # raw callback before issuing another full-capacity request.
+        self._pos = 0
+        self._end = 0
+        if bytearray.__len__(self._buffer) != self._buffer_size:
+            self._buffer = bytearray(self._buffer_size)
+        count = self._raw_into(raw, self._buffer, self._buffer_size)
+        if count is not None:
+            self._end = count
+        return count
+
+    def _read_sized(self, raw, size):
+        if size == 0:
+            return b''
+        available = self._end - self._pos
+        if size <= available:
+            return self._take(size)
+        result = bytearray()
+        if available:
+            bytearray.extend(result, self._take(available))
+        remaining = size - available
+        while remaining > 0:
+            if remaining >= self._buffer_size:
+                wanted = (remaining // self._buffer_size) * self._buffer_size
+                buffer = bytearray(wanted)
+                count = self._raw_into(raw, buffer, wanted)
+                if count is None:
+                    if bytearray.__len__(result) == 0:
+                        return None
+                    break
+                if count == 0:
+                    break
+                bytearray.extend(result, _clover_bufferedio_copy(buffer, 0, count))
+                remaining -= count
+            else:
+                count = self._fill(raw)
+                if count is None:
+                    if bytearray.__len__(result) == 0:
+                        return None
+                    break
+                if count == 0:
+                    break
+                take = remaining
+                if take > count:
+                    take = count
+                bytearray.extend(result, self._take(take))
+                remaining -= take
+        return bytes(result)
+
+    def _read_all(self, raw):
+        result = bytearray()
+        available = self._end - self._pos
+        if available:
+            bytearray.extend(result, self._take(available))
+        self._raw_open(raw)
+        if hasattr(raw, 'readall'):
+            chunk = raw.readall()
+            if chunk is None:
+                if bytearray.__len__(result) == 0:
+                    return None
+                return bytes(result)
+            _clover_bufferedio_bytes_size(chunk)
+            if bytearray.__len__(result) == 0:
+                return chunk
+            bytearray.extend(result, chunk)
+            return bytes(result)
+        while True:
+            try:
+                chunk = raw.read()
+            except OSError as error:
+                if _clover_rawio_is_eintr(error):
+                    continue
+                raise
+            if chunk is None:
+                if bytearray.__len__(result) == 0:
+                    return None
+                break
+            if _clover_bufferedio_bytes_size(chunk) == 0:
+                break
+            bytearray.extend(result, chunk)
+        return bytes(result)
+
+    def read(self, size=-1, /):
+        if size is None:
+            size = -1
+        size = _clover_rawio_read_size(_clover_rawio_index(size))
+        raw = self._begin()
+        try:
+            if size < -1:
+                raise ValueError('read length must be non-negative or -1')
+            if size < 0:
+                return self._read_all(raw)
+            return self._read_sized(raw, size)
+        finally:
+            self._busy = False
+
+    def read1(self, size=-1, /):
+        size = _clover_rawio_read_size(_clover_rawio_index(size))
+        raw = self._begin()
+        try:
+            if size < 0:
+                size = self._buffer_size
+            available = self._end - self._pos
+            if available:
+                if size > available:
+                    size = available
+                return self._take(size)
+            if size == 0:
+                return b''
+            buffer = bytearray(size)
+            count = self._raw_into(raw, buffer, size)
+            if count is None:
+                return b''
+            return _clover_bufferedio_copy(buffer, 0, count)
+        finally:
+            self._busy = False
+
+    def peek(self, size=0, /):
+        _clover_rawio_read_size(_clover_rawio_index(size))
+        raw = self._begin()
+        try:
+            if self._pos == self._end:
+                self._fill(raw)
+            return _clover_bufferedio_copy(self._buffer, self._pos, self._end - self._pos)
+        finally:
+            self._busy = False
+
+    def _read_into(self, raw, buffer, size, one_raw):
+        written = 0
+        while written < size:
+            available = self._end - self._pos
+            if available:
+                take = size - written
+                if take > available:
+                    take = available
+                _clover_bufferedio_copy_into(buffer, written, self._buffer, self._pos, take)
+                self._pos += take
+                written += take
+                if written == size:
+                    break
+            remaining = size - written
+            if remaining > self._buffer_size:
+                scratch = bytearray(remaining)
+                count = self._raw_into(raw, scratch, remaining)
+                if count is not None and count > 0:
+                    _clover_bufferedio_copy_into(buffer, written, scratch, 0, count)
+                    written += count
+            elif one_raw and written:
+                break
+            else:
+                count = self._fill(raw)
+                if count is not None and count > 0:
+                    # Commit this successful transfer before another callback
+                    # can fail, including callbacks in a later loop iteration.
+                    take = remaining
+                    if take > count:
+                        take = count
+                    _clover_bufferedio_copy_into(buffer, written, self._buffer, self._pos, take)
+                    self._pos += take
+                    written += take
+            if count is None:
+                if written == 0:
+                    return None
+                break
+            if count == 0 or one_raw:
+                break
+        return written
+
+    def readinto(self, buffer, /):
+        size = _clover_bufferedio_readinto_size(self, buffer)
+        raw = self._begin()
+        try:
+            return self._read_into(raw, buffer, size, False)
+        finally:
+            self._busy = False
+
+    def readinto1(self, buffer, /):
+        size = _clover_bufferedio_readinto_size(self, buffer)
+        raw = self._begin()
+        try:
+            return self._read_into(raw, buffer, size, True)
+        finally:
+            self._busy = False
+
+    def tell(self):
+        raw = self._begin()
+        try:
+            position = _clover_rawio_read_size(_clover_rawio_index(raw.tell()))
+            if position < 0:
+                raise OSError('tell() returned an invalid position')
+            position -= self._end - self._pos
+            if position < 0:
+                return 0
+            return position
+        finally:
+            self._busy = False
+
+    def seek(self, offset, whence=0, /):
+        offset = _clover_rawio_read_size(_clover_rawio_index(offset))
+        whence = _clover_bufferedio_seek_whence(_clover_rawio_index(whence))
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            if not raw.seekable():
+                raise _clover_io_unsupported('File or stream is not seekable')
+            if whence == 1:
+                offset -= self._end - self._pos
+            position = _clover_rawio_read_size(_clover_rawio_index(raw.seek(offset, whence)))
+            if position < 0:
+                raise OSError('seek() returned an invalid position')
+            self._pos = 0
+            self._end = 0
+            return position
+        finally:
+            self._busy = False
+
+    def readable(self):
+        self._check_open()
+        return self.raw.readable()
+
+    def writable(self):
+        return False
+
+    def seekable(self):
+        self._check_open()
+        return self.raw.seekable()
+
+    def fileno(self):
+        self._check_open()
+        return self.raw.fileno()
+
+    def isatty(self):
+        self._check_open()
+        return self.raw.isatty()
+
+    def flush(self):
+        # Stateless delegation: IOBase.close invokes this while close owns the
+        # operation guard. Reads/seeks remain protected during that callback.
+        self._check_open()
+        return self.raw.flush()
+
+    def close(self):
+        if self.raw is None:
+            raise ValueError('raw stream has been detached')
+        if self.closed:
+            return None
+        raw = self._begin()
+        try:
+            if raw.closed:
+                _clover_bufferedio_set_closed(self, True)
+                return None
+            try:
+                IOBase.close(self)
+            finally:
+                raw.close()
+        finally:
+            self._busy = False
+
+    def detach(self):
+        raw = self._begin()
+        try:
+            self.flush()
+            self.raw = None
+            self._pos = 0
+            self._end = 0
+            return raw
+        finally:
+            self._busy = False
+
+
+class BufferedWriter(BufferedIOBase):
+    __module__ = '_io'
+
+    def __init__(self, raw, buffer_size=_clover_bufferedio_default_buffer_size):
+        if hasattr(self, '_busy') and self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
+        self.raw = None
+        self._busy = True
+        try:
+            if not raw.writable():
+                raise _clover_io_unsupported('File or stream is not writable')
+            if size <= 0:
+                raise ValueError('buffer size must be strictly positive')
+            self._buffer_size = size
+            self._buffer = bytearray()
+            self._start = 0
+            self.raw = raw
+            _clover_bufferedio_set_closed(self, False)
+        finally:
+            self._busy = False
+
+    def _check_open(self):
+        if self.raw is None:
+            raise ValueError('raw stream has been detached')
+        if self.closed:
+            raise ValueError('I/O operation on closed file')
+
+    def _begin(self):
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        self._check_open()
+        self._busy = True
+        return self.raw
+
+    def _raw_open(self, raw):
+        if raw.closed:
+            raise ValueError('I/O operation on closed file')
+
+    def _pending(self):
+        return bytearray.__len__(self._buffer) - self._start
+
+    def _append(self, data, start, count):
+        if count:
+            bytearray.extend(self._buffer, bytes.__getitem__(data, slice(start, start + count)))
+
+    def _raw_write(self, raw, data):
+        self._raw_open(raw)
+        size = _clover_bufferedio_bytes_size(data)
+        while True:
+            try:
+                count = raw.write(data)
+            except OSError as error:
+                if _clover_rawio_is_eintr(error):
+                    continue
+                raise
+            if count is None:
+                return None
+            try:
+                count = _clover_rawio_index(count)
+            except BaseException:
+                raise OSError('raw write() returned an invalid count')
+            return _clover_bufferedio_write_count(count, size)
+
+    def _blocked(self, accepted):
+        return BlockingIOError(_clover_io_eagain,
+                               'write could not complete without blocking', accepted)
+
+    def _flush_buffer(self, raw):
+        while self._pending():
+            size = self._pending()
+            data = _clover_bufferedio_copy(self._buffer, self._start, size)
+            count = self._raw_write(raw, data)
+            if count is None:
+                raise self._blocked(0)
+            # Zero is valid in CPython: retry the same suffix without progress.
+            self._start += count
+        bytearray.clear(self._buffer)
+        self._start = 0
+
+    def write(self, data, /):
+        data = _clover_bufferedio_write_bytes(data)
+        size = _clover_bufferedio_bytes_size(data)
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            if size < self._buffer_size and size <= self._buffer_size - bytearray.__len__(self._buffer):
+                self._append(data, 0, size)
+                return size
+            try:
+                self._flush_buffer(raw)
+            except BlockingIOError as error:
+                # Reclaim a consumed prefix only after trying the old suffix.
+                # Its physical tail, not logical pending size, gates fast writes.
+                if self._start:
+                    del self._buffer[:self._start]
+                    self._start = 0
+                accepted = self._buffer_size - self._pending()
+                if accepted > size:
+                    accepted = size
+                self._append(data, 0, accepted)
+                if accepted == size:
+                    return size
+                raise BlockingIOError(error.errno, error.strerror, accepted)
+            written = 0
+            while size - written >= self._buffer_size:
+                chunk = bytes.__getitem__(data, slice(written, size))
+                count = self._raw_write(raw, chunk)
+                if count is None:
+                    accepted = self._buffer_size
+                    self._append(data, written, accepted)
+                    written += accepted
+                    if written == size:
+                        return size
+                    raise self._blocked(written)
+                written += count
+            self._append(data, written, size - written)
+            return size
+        finally:
+            self._busy = False
+
+    def flush(self):
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            self._flush_buffer(raw)
+        finally:
+            self._busy = False
+
+    def tell(self):
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            position = _clover_rawio_read_size(_clover_rawio_index(raw.tell()))
+            if position < 0:
+                raise OSError('tell() returned an invalid position')
+            return position + self._pending()
+        finally:
+            self._busy = False
+
+    def seek(self, offset, whence=0, /):
+        offset = _clover_rawio_read_size(_clover_rawio_index(offset))
+        whence = _clover_bufferedio_seek_whence(_clover_rawio_index(whence))
+        raw = self._begin()
+        try:
+            self._raw_open(raw)
+            if not raw.seekable():
+                raise _clover_io_unsupported('File or stream is not seekable')
+            self._flush_buffer(raw)
+            position = _clover_rawio_read_size(_clover_rawio_index(raw.seek(offset, whence)))
+            if position < 0:
+                raise OSError('seek() returned an invalid position')
+            return position
+        finally:
+            self._busy = False
+
+    def readable(self):
+        return False
+
+    def writable(self):
+        self._check_open()
+        return self.raw.writable()
+
+    def seekable(self):
+        self._check_open()
+        return self.raw.seekable()
+
+    def fileno(self):
+        self._check_open()
+        return self.raw.fileno()
+
+    def isatty(self):
+        self._check_open()
+        return self.raw.isatty()
+
+    def detach(self):
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        self._check_open()
+        # flush may be overridden; do not hold its own operation guard here.
+        self.flush()
+        raw = self._begin()
+        try:
+            self.raw = None
+            bytearray.clear(self._buffer)
+            self._start = 0
+            return raw
+        finally:
+            self._busy = False
+
+    def close(self):
+        if self.raw is None:
+            raise ValueError('raw stream has been detached')
+        if self.closed:
+            return None
+        if self._busy:
+            raise RuntimeError('reentrant call inside BufferedWriter')
+        if self.raw.closed:
+            _clover_bufferedio_set_closed(self, True)
+            return None
+        try:
+            # Match the public override boundary: flush takes its own guard.
+            self.flush()
+        finally:
+            raw = self.raw
+            self._busy = True
+            try:
+                _clover_bufferedio_set_closed(self, True)
+                if raw is not None:
+                    raw.close()
+            finally:
+                self._busy = False
+
+
+# Structured Unicode errors retain the ordinary ExceptionObject layout. Managed
+# attribute operations use the interpreter's ordinary attribute path.
+def _clover_unicode_encode_init(self, encoding, obj, start, end, reason, /):
+    if not isinstance(self, UnicodeEncodeError):
+        raise TypeError('UnicodeEncodeError.__init__ requires an encode error')
+    BaseException.__init__(self, encoding, obj, start, end, reason)
+    self.encoding = encoding
+    self.object = obj
+    self.start = start
+    self.end = end
+    self.reason = reason
+
+
+def _clover_unicode_decode_init(self, encoding, obj, start, end, reason, /):
+    if not isinstance(self, UnicodeDecodeError):
+        raise TypeError('UnicodeDecodeError.__init__ requires a decode error')
+    BaseException.__init__(self, encoding, obj, start, end, reason)
+    self.encoding = encoding
+    self.object = obj
+    self.start = start
+    self.end = end
+    self.reason = reason
+
+
+def _clover_unicode_encode_str(self, /):
+    if not isinstance(self, UnicodeEncodeError):
+        raise TypeError('UnicodeEncodeError.__str__ requires an encode error')
+    return _clover_unicode_encode_format(
+        self.encoding, self.object, self.start, self.end, self.reason
+    )
+
+
+def _clover_unicode_decode_str(self, /):
+    if not isinstance(self, UnicodeDecodeError):
+        raise TypeError('UnicodeDecodeError.__str__ requires a decode error')
+    return _clover_unicode_decode_format(
+        self.encoding, self.object, self.start, self.end, self.reason
+    )
