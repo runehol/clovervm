@@ -275,9 +275,37 @@ cached reflectable binary dispatch prepare the native-call frame frontier before
 invoking a trusted handler, keeping reentrant helper frames below live caller
 slots.
 
-Tuple subclass construction remains an existing limitation, as does calling
-`tuple()` itself; tests use tuple literals and reflected element comparisons
-without changing allocation.
+Tuple construction and native subclass allocation use the existing constructor
+thunks described in [constructor-thunks.md](constructor-thunks.md).
+
+## Tuple Hashing
+
+`tuple.__hash__` hashes the immutable stored payload, including for tuple
+subclasses whose length, indexing, or iteration methods are overridden. Ordinary
+special-method dispatch honors subclass hash overrides. Exact tuples use a unary
+trusted handler with allocation, safepoint, exception, and Python-call effects;
+existing lookup validity cells guard cached dispatch.
+
+The native implementation retains the receiver and current element across each
+`ThreadState::hash_value` call. Element hashes use the existing special-method
+protocol and canonicalization, preserving equal supported numeric values' hash
+compatibility and propagating element exceptions. Independent local accumulator
+state supports callback reentry and callbacks that discard external references.
+The unsigned 64-bit mixer follows CPython 3.14.5's tuple mixing and reduces its
+result through Clover's existing canonical hash representation. Numeric hash
+outputs need not match CPython. There is no tuple layout change or cached hash:
+unlike CPython 3.14.5, repeated hashing invokes element hash methods again.
+
+Empty and nested tuples can be dictionary keys when their elements are hashable.
+General descriptor/callable support and recursion limits retain their existing
+boundaries; tuple hashing adds no protocol or recursion machinery.
+
+The existing class-creation policy does not implicitly set `__hash__ = None`
+when a subclass defines `__eq__` without defining `__hash__`. Such subclasses
+continue to inherit hashing in CloverVM, whereas CPython makes them unhashable.
+This applies to other hashable builtin bases as well and remains a separate
+class-policy repair. Explicit `__hash__ = None` and explicit hash overrides are
+honored by the existing dispatch path.
 
 ## List Sorting
 

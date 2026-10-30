@@ -1,4 +1,5 @@
 #include "builtin_types/bigint.h"
+#include "builtin_types/dict.h"
 #include "builtin_types/hash.h"
 #include "builtin_types/str.h"
 #include "object_model/attr.h"
@@ -178,4 +179,137 @@ TEST(Hash, StringHashNormalizedFitsSmi)
     EXPECT_GT(raw, uint64_t(value_smi_max));
     EXPECT_GE(normalized.extract(), 0);
     EXPECT_LT(normalized.extract(), clover_hash_modulus);
+}
+
+TEST(Hash, TupleHashResolverGuardsReceiverOrderAndArity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Value method = load_attr(Value::from_oop(context.vm().tuple_class()),
+                             interned_string(L"__hash__"));
+    ASSERT_TRUE(has_native_layout<Function>(method));
+    CodeObject *code = method.get_ptr<Function>()->code_object.extract();
+    ASSERT_NE(nullptr, code->trusted_handler_resolver);
+    Owned<TValue<Tuple>> tuple(context.thread()->make_object_value<Tuple>(0));
+    ShapeKey key = ShapeKey::from_value(tuple.raw_value());
+    ShapeKey unused = ShapeKey::from_value(Value::not_present());
+    TrustedResolution resolution = code->trusted_handler_resolver(
+        &context.vm(), key, unused, TrustedHandlerOperandOrder::Normal,
+        TrustedHandlerArity::Unary);
+    ASSERT_TRUE(resolution.has_trusted_handler());
+    EXPECT_EQ(TrustedHandlerArity::Unary, resolution.arity);
+    auto metadata = context.vm().trusted_handler_metadata(
+        erase_trusted_handler_target(resolution.unary));
+    ASSERT_TRUE(metadata.has_value());
+    EXPECT_EQ(TrustedHandlerArity::Unary, metadata->arity);
+    EXPECT_EQ(
+        TrustedHandlerEffects::Allocate | TrustedHandlerEffects::Safepoint |
+            TrustedHandlerEffects::Raise | TrustedHandlerEffects::CallPython,
+        metadata->effects);
+    EXPECT_EQ(TrustedHandlerSemantics::Generic, metadata->semantics);
+    Value hash = resolution.unary(context.thread(), tuple.raw_value());
+    ASSERT_TRUE(hash.is_smi());
+    EXPECT_GE(hash.get_smi(), 0);
+    EXPECT_LT(hash.get_smi(), clover_hash_modulus);
+    auto protocol_hash = context.thread()->hash_value(tuple.raw_value());
+    ASSERT_TRUE(protocol_hash.has_value());
+    EXPECT_EQ(hash, protocol_hash.value().raw_value());
+
+    Owned<Value> subclass(
+        context.run_file(L"class T(tuple):\n    pass\nT((1,))\n"));
+    ASSERT_TRUE(has_native_layout<Tuple>(subclass.value()));
+    for(ShapeKey rejected: {ShapeKey::from_value(Value::from_smi(0)),
+                            ShapeKey::from_value(Value::None()),
+                            ShapeKey::from_value(subclass.value())})
+    {
+        EXPECT_FALSE(
+            code->trusted_handler_resolver(&context.vm(), rejected, unused,
+                                           TrustedHandlerOperandOrder::Normal,
+                                           TrustedHandlerArity::Unary)
+                .has_trusted_handler());
+    }
+    EXPECT_FALSE(
+        code->trusted_handler_resolver(&context.vm(), key, unused,
+                                       TrustedHandlerOperandOrder::Reflected,
+                                       TrustedHandlerArity::Unary)
+            .has_trusted_handler());
+    EXPECT_FALSE(
+        code->trusted_handler_resolver(&context.vm(), key, unused,
+                                       TrustedHandlerOperandOrder::Normal,
+                                       TrustedHandlerArity::Binary)
+            .has_trusted_handler());
+}
+
+TEST(Hash, TupleHashRecomputesElementsAndPropagatesDirectReceiverError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context
+                     .run_file(LR"PY(
+class Element:
+    def __hash__(self):
+        return self.result
+item = Element()
+item.result = 3
+value = (item,)
+def hash_one(x):
+    return hash(x)
+for i in range(4):
+    assert hash_one(value) == hash_one((3,))
+item.result = 5
+for i in range(4):
+    assert hash_one(value) == hash_one((5,))
+def replacement(self):
+    return 7
+Element.__hash__ = replacement
+for i in range(4):
+    assert hash_one(value) == hash_one((7,))
+)PY")
+                     .is_exception_marker());
+    EXPECT_TRUE(context.run_file(L"tuple.__hash__(1)\n").is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"tuple.__hash__ expects a tuple receiver");
+}
+
+TEST(Hash, TupleKeysUseNativeDictionaryHashProtocolDuringReclamation)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Owned<Value> keys(context.run_file(LR"PY(
+class Element:
+    def __init__(self, value):
+        self.value = value
+    def __hash__(self):
+        garbage = []
+        for i in range(20):
+            garbage.append([i])
+        return self.value
+    def __eq__(self, other):
+        return self.value == other.value
+((Element(5),), (Element(5),), ([],))
+)PY"));
+    ASSERT_TRUE(has_native_layout<Tuple>(keys.value()));
+    Owned<TValue<Dict>> dict(thread->make_object_value<Dict>());
+    Value first = keys.value().get_ptr<Tuple>()->item_unchecked(0);
+    Value equal = keys.value().get_ptr<Tuple>()->item_unchecked(1);
+    Value invalid = keys.value().get_ptr<Tuple>()->item_unchecked(2);
+    ASSERT_FALSE(dict.extract()
+                     ->set_item(thread, first, Value::from_smi(31))
+                     .has_exception());
+    auto found = dict.extract()->get_item(thread, equal);
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(Value::from_smi(31), found.value());
+    auto contains = dict.extract()->contains(thread, equal);
+    ASSERT_TRUE(contains.has_value());
+    EXPECT_TRUE(contains.value());
+    ASSERT_FALSE(dict.extract()->del_item(thread, equal).has_exception());
+    EXPECT_TRUE(dict.extract()
+                    ->set_item(thread, invalid, Value::None())
+                    .has_exception());
+    expect_pending_exception(thread, L"TypeError", L"object is unhashable");
 }

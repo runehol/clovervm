@@ -335,6 +335,8 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         PythonSourceFile{"tests/python/test_json_tuple_rows.py"},
         PythonSourceFile{"tests/python/tuple_subclass_integration.py"},
+        PythonSourceFile{"tests/python/tuple_hash.py"},
+        PythonSourceFile{"tests/python/tuple_hash_callbacks.py"},
         PythonSourceFile{"tests/python/sequence_ordering_subclasses.py"}),
     source_file_test_name);
 
