@@ -42,7 +42,9 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
                            "tests/python/builtin_bytearray_slices.py",
                            "tests/python/builtin_bytearray_limits.py",
                            "tests/python/builtin_bytearray_methods.py",
-                           "tests/python/builtin_bytearray_methods_limits.py"})
+                           "tests/python/builtin_bytearray_methods_limits.py",
+                           "tests/python/builtin_bytearray_search.py",
+                           "tests/python/builtin_bytearray_search_limits.py"})
     {
         SCOPED_TRACE(path);
         std::ifstream input(path);
