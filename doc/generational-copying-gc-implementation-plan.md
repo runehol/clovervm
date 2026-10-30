@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4b.2 working tree based on `3ab062d6` (2026-10-30) |
+| Validated against | Slice 4b.3 working tree based on `b3dfa048` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -298,10 +298,25 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
   out of this slice. Test field coverage, lazy cache population, restored
   getter-visible rewrites, untouched dispatch metadata, and production
   reclamation integration.
-- **4b.3: Native containers and immortal owners.** Cover intern tables,
-  pointer-keyed maps, and outgoing references from immortal objects. Settle key
-  repair without invalidating hash-table placement; distinguish roots from
-  owned heap edges.
+- **4b.3: Read-only builtin-class roots.** Add
+  `VirtualMachine::for_each_builtin_class(visitor) const`, walking values in
+  `builtin_classes_by_name_` without changing entries or keys. Its names and
+  classes are immortal and non-moving: return class pointers by value, not
+  writable map cells. Full tracing seeds those classes alongside existing
+  VM/thread roots, then follows their outgoing cells through
+  `visit_strong_reference_slots` with normal visited-object tracking. Reachable
+  immortal owners do not move, but their references to movable children can be
+  repaired. Do not enumerate all immortal-heap allocations as implicit roots.
+
+  Skip the interned-string table: interned strings have no unique movable
+  children, and their non-moving shape/class are accessible from the VM.
+  No string/map relocation, rehashing, heap-wide walk, or new lifetime policy.
+  Expose the builtin-class root walk and test-only graph traversal; do not add
+  a production tracer or change current RC reclamation. Verify canonical roots
+  survive public builtin rebinding/deletion, traversal handles cycles and
+  reaches child objects, and restored child-cell rewrites leave class/name
+  identities and map lookups unchanged. Nursery collections use remembered
+  owners; initialization and mutation barriers remain in stage 5.
 - **4c: Published interpreter state.** Expose writable accumulator publication,
   protect saved publication state across native reentry, and reload before
   dispatch resumes. Keeping code objects non-moving does not remove their

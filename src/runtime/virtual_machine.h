@@ -176,6 +176,16 @@ namespace cl
             return found->second;
         }
 
+        // Read-only roots for full tracing. Names/classes are immortal and
+        // non-moving; the tracer follows outgoing references from each class.
+        // No map mutation, managed allocation, or reentry during the visit.
+        template <typename Visitor>
+        void for_each_builtin_class(Visitor &&visitor) const
+        {
+            for(const auto &entry: builtin_classes_by_name_)
+                visitor(entry.second);
+        }
+
         ClassObject *class_for_native_layout(NativeLayoutId id) const
         {
             return class_for_native_layouts[static_cast<size_t>(id)];
