@@ -40,7 +40,9 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
                            "tests/python/builtin_bytearray_errors.py",
                            "tests/python/builtin_bytearray_copies.py",
                            "tests/python/builtin_bytearray_slices.py",
-                           "tests/python/builtin_bytearray_limits.py"})
+                           "tests/python/builtin_bytearray_limits.py",
+                           "tests/python/builtin_bytearray_methods.py",
+                           "tests/python/builtin_bytearray_methods_limits.py"})
     {
         SCOPED_TRACE(path);
         std::ifstream input(path);
@@ -431,5 +433,75 @@ TEST(ByteArray, AllComparisonCachesAndReflectedHandlersPreserveOrdering)
                 EXPECT_EQ(TrustedHandlerEffects::None, metadata->effects);
             }
         }
+    }
+}
+
+TEST(ByteArray, ConvenienceMutationsReuseBackingWithoutHeapAllocation)
+{
+    for(int operation = 0; operation < 4; ++operation)
+    {
+        SCOPED_TRACE(operation);
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<ByteArray>> target(thread->make_object_value<ByteArray>());
+        target.extract()->items.reserve(64);
+        auto name = context.vm().get_or_create_interned_string_value(
+            operation == 0   ? L"pop"
+            : operation == 1 ? L"insert"
+            : operation == 2 ? L"remove"
+                             : L"reverse");
+        auto reset = [&]() {
+            target.extract()->items.resize(3);
+            target.extract()->items[0] = 'A';
+            target.extract()->items[1] = 'B';
+            target.extract()->items[2] = 'C';
+        };
+        auto mutate = [&]() -> Value {
+            if(operation == 0)
+                return thread->call_clovervm_method(target.raw_value(), name);
+            if(operation == 1)
+                return thread->call_clovervm_method(target.raw_value(), name,
+                                                    Value::from_smi(1),
+                                                    Value::from_smi('X'));
+            if(operation == 2)
+                return thread->call_clovervm_method(target.raw_value(), name,
+                                                    Value::from_smi('B'));
+            return thread->call_clovervm_method(target.raw_value(), name);
+        };
+        reset();
+        ASSERT_FALSE(mutate().is_exception_marker());
+        reset();
+        context.vm().clear_safepoint_request();
+        auto &heap = context.vm().get_refcounted_global_heap();
+        auto &interned = context.vm().get_interned_global_heap();
+        uint64_t objects_before = heap.count_valid_objects_slow();
+        uint64_t interned_before = interned.count_valid_objects_slow();
+        const void *backing = target.extract()->view().data();
+        size_t safepoints = 0;
+        context.vm().set_safepoint_callback_for_testing(
+            [](void *state, ThreadState *, Value, Value *, CodeObject *,
+               uint32_t, const SafepointScanRecord &) {
+                ++*static_cast<size_t *>(state);
+            },
+            &safepoints);
+        Value result = mutate();
+        context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+        ASSERT_FALSE(result.is_exception_marker());
+        EXPECT_EQ(operation == 0 ? Value::from_smi('C') : Value::None(),
+                  result);
+        EXPECT_EQ(0u, safepoints);
+        EXPECT_EQ(objects_before, heap.count_valid_objects_slow());
+        EXPECT_EQ(interned_before, interned.count_valid_objects_slow());
+        EXPECT_EQ(backing, target.extract()->view().data());
+        EXPECT_EQ(64u, target.extract()->items.capacity());
+        std::string expected = operation == 0   ? "AB"
+                               : operation == 1 ? "AXBC"
+                               : operation == 2 ? "AC"
+                                                : "CBA";
+        EXPECT_EQ(expected.size(), target.extract()->size());
+        EXPECT_TRUE(std::equal(expected.begin(), expected.end(),
+                               target.extract()->view().begin(),
+                               target.extract()->view().end()));
     }
 }

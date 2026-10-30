@@ -104,7 +104,8 @@ CPython allocation/population split.
 
 `bytearray` supports empty/zero-filled construction, stored bytes/bytearray
 copies, integer iterables, length/truth, indexing and slicing, item/slice
-assignment and deletion, `append`, `extend`, `clear`, repr/str, all six comparisons
+assignment and deletion, `append`, `extend`, `clear`, `pop`, `insert`, `remove`,
+`reverse`, `copy`, repr/str, all six comparisons
 with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
 an independent immutable bytes object; bytes immutability and hashing are unchanged.
 
@@ -118,6 +119,16 @@ there is no sequence-only fallback or length-hint callback. Stored integer/bool
 payloads (including supported integer subclasses) are accepted. Counts and
 growth are checked against the VM's SMI storage limit; heap exhaustion retains
 the existing fatal VM heap policy rather than recoverable `MemoryError`.
+
+`pop(index=-1, /)` and `insert(index, item, /)` validate stored integer indices
+against signed 64-bit platform bounds before empty/bounds checks or byte
+validation; overflowing indices raise `OverflowError`. Insertion clips valid
+indices to the ends. `remove(value, /)` validates a byte and removes its first
+occurrence without equality callbacks. Integer-subclass overrides are bypassed;
+general `__index__` objects are rejected without callbacks. `reverse()` mutates
+in place and `copy()` returns an independent exact bytearray, including for empty
+inputs. Mutators retain the existing live-iterator cursor behavior and permanent
+exhaustion. Native argument/receiver diagnostics may differ in wording.
 
 Item access, assignment, and deletion enter native code, with trusted handlers
 for SMI and slice keys. Slice assignment inspects the replacement on every
@@ -140,6 +151,24 @@ reclamation, resizing, alias mutation or retained pointers. It preserves owner
 lifetime, not pinning. This is not a buffer protocol, memoryview, or persistent
 export. FileIO `readinto` integration is separate; concurrent/moving collection,
 Python signal callbacks and asynchronous I/O must reassess this contract.
+
+### Bytes splitting accepts stored binary payloads and integer limits
+
+`bytes.split` and `bytes.rsplit` implement separator/default-None splitting,
+ASCII whitespace and signed platform-size `maxsplit` limits, checked against
+CPython 3.14.5. `sep` and `maxsplit` accept keywords. `partition` and
+`rpartition` accept a positional-only separator and return three-tuples.
+A successful partition preserves the separator object (including bytearray);
+a failed partition preserves the original receiver, including bytes subclasses.
+Split pieces and newly constructed partition pieces are exact bytes.
+
+Separators accept stored bytes/bytes-subclass payloads and bytearray, bypassing
+subclass conversion, length, indexing and search hooks. General buffer inputs
+remain unsupported. Limits accept stored int/bool/int-subclass payloads without
+custom `__index__` callbacks. Out-of-platform-range integers raise OverflowError;
+native argument error wording can differ from CPython. Bytearray subclassing
+remains unavailable. No changes to interpreter, codegen, JIT, layout, cache or
+buffer protocols are involved.
 
 ## Methods And Attribute Access
 

@@ -103,6 +103,15 @@ TEST(PythonSourceFiles, AugmentedArithmeticSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
+{
+    std::wstring source = read_source_file("tests/python/bytes_split.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
 TEST(PythonSourceFiles, IntegerBaseFormattingSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/builtin_int_bases.py");
@@ -118,7 +127,9 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
                            "tests/python/itertools_pairwise.py",
                            "tests/python/itertools_count.py",
                            "tests/python/itertools_count_mixed_numbers.py",
-                           "tests/python/itertools_count_reentry.py"})
+                           "tests/python/itertools_count_reentry.py",
+                           "tests/python/itertools_accumulate.py",
+                           "tests/python/itertools_batched.py"})
     {
         SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);
