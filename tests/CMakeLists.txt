@@ -30,6 +30,7 @@ target_sources(test_clovervm PRIVATE
 	test_heap_reference_slot.cpp
 	test_scoped_root.cpp
 	test_persistent_roots.cpp
+	test_vm_persistent_roots.cpp
 	test_strong_reference_slots.cpp
 	test_weak_reference_processing.cpp
 	test_import_system.cpp

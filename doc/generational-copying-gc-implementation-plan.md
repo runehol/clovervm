@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4b.1 working tree based on `f46b5600` (2026-10-30) |
+| Validated against | Slice 4b.2 working tree based on `3ab062d6` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -288,7 +288,16 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
   roots. Verify coverage, getter-visible rewrites with restored substitutions,
   unchanged ownership, and reclamation visibility.
 - **4b.2: VM persistent fields.** Enumerate builtin identities, helper
-  functions, modules, shapes, and entry adapters.
+  functions, modules, shapes, and entry adapters through the non-const
+  `VirtualMachine::visit_persistent_root_slots(StrongSlotVisitor)`. Include the
+  actual `OperatorStep::dunder_name` cells, not native table-storage pointers.
+  Visit initialized null/inline cells and every alias without RC operations.
+  Assemble thread and VM roots once in `VirtualMachine::run_heap_reclamation`;
+  the memory-layer `run_heap_reclamation(threads, roots)` consumes that explicit
+  root set. Keep intern tables, pointer-keyed maps, and JIT execution internals
+  out of this slice. Test field coverage, lazy cache population, restored
+  getter-visible rewrites, untouched dispatch metadata, and production
+  reclamation integration.
 - **4b.3: Native containers and immortal owners.** Cover intern tables,
   pointer-keyed maps, and outgoing references from immortal objects. Settle key
   repair without invalidating hash-table placement; distinguish roots from

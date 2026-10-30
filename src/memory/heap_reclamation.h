@@ -52,7 +52,9 @@ namespace cl
     void
     validate_zero_count_tables_for_reclamation(const ThreadStateList &threads);
 #endif
-    void run_heap_reclamation(const ThreadStateList &threads);
+    // The caller supplies the complete root set before any object is reclaimed.
+    void run_heap_reclamation(const ThreadStateList &threads,
+                              const ReclamationRootSet &roots);
 
 }  // namespace cl
 

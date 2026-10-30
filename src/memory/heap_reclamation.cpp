@@ -287,13 +287,12 @@ namespace cl
         reclamation_context.release_empty_candidate_slabs();
     }
 
-    void run_heap_reclamation(const ThreadStateList &threads)
+    void run_heap_reclamation(const ThreadStateList &threads,
+                              const ReclamationRootSet &roots)
     {
 #ifndef NDEBUG
         validate_zero_count_tables_for_reclamation(threads);
 #endif
-        ReclamationRootSet roots =
-            collect_reclamation_roots_from_threads(threads);
         for(const std::unique_ptr<ThreadState> &thread: threads)
         {
             process_thread_reclamation_epoch(*thread, roots);
