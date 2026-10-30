@@ -100,7 +100,7 @@ TEST(Codegen, assignment2)
         "    0 LdaSmi 4\n"
         "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
         "    5 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    8 AddSmi 7, operator_ic[0]\n"
+        "    8 InPlaceAddSmi 7, operator_ic[0]\n"
         "   12 StaGlobal c[0], module_global_mutation_ic[1]\n"
         "   15 Return\n"
         "Constant 0: \"a\"\n";
@@ -108,6 +108,60 @@ TEST(Codegen, assignment2)
                                                 "a += 7\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen,
+     augmented_arithmetic_selects_paired_register_and_immediate_opcodes)
+{
+    struct Case
+    {
+        const wchar_t *symbol;
+        const char *reg;
+        const char *immediate;
+    };
+    const Case cases[] = {
+        {L"+", "Add", "AddSmi"},
+        {L"-", "Sub", "SubSmi"},
+        {L"*", "Mul", "MulSmi"},
+        {L"@", "MatMul", nullptr},
+        {L"/", "TrueDiv", nullptr},
+        {L"//", "FloorDiv", "FloorDivSmi"},
+        {L"**", "BinaryPow", "BinaryPowSmi"},
+        {L"<<", "LShift", "LShiftSmi"},
+        {L">>", "RShift", "RShiftSmi"},
+        {L"%", "Mod", "ModSmi"},
+        {L"|", "Or", "OrSmi"},
+        {L"&", "And", "AndSmi"},
+        {L"^", "Xor", "XorSmi"},
+    };
+    for(const Case &test: cases)
+    {
+        SCOPED_TRACE(test.reg);
+        std::wstring source = L"def f(a, b):\n    a ";
+        source += test.symbol;
+        source += L"= b\n    a ";
+        source += test.symbol;
+        source += L"= 3\n    return a ";
+        source += test.symbol;
+        source += L" b\n";
+        std::string actual = bytecode_str_from_file(source.c_str());
+        EXPECT_NE(std::string::npos,
+                  actual.find(std::string(" InPlace") + test.reg + " "));
+        EXPECT_NE(std::string::npos,
+                  actual.find(std::string(" ") + test.reg + " "));
+        if(test.immediate != nullptr)
+            EXPECT_NE(std::string::npos, actual.find(std::string(" InPlace") +
+                                                     test.immediate + " 3,"));
+    }
+}
+
+TEST(Codegen, attribute_augmented_assignment_selects_both_paired_forms)
+{
+    std::string actual = bytecode_str_from_file(L"def f(obj, rhs):\n"
+                                                L"    obj.value += rhs\n"
+                                                L"    obj.value += 3\n");
+    EXPECT_NE(std::string::npos, actual.find(" InPlaceAdd "));
+    EXPECT_NE(std::string::npos, actual.find(" InPlaceAddSmi 3,"));
 }
 
 TEST(Codegen, interactive_expression_returns_value)
@@ -474,7 +528,7 @@ TEST(Codegen, while_else)
         "   10 LdaGlobal c[0], module_global_read_ic[0]\n"
         "   13 JumpIfFalse operator_ic[0], 36\n"
         "   18 LdaGlobal c[0], module_global_read_ic[1]\n"
-        "   21 SubSmi 1, operator_ic[1]\n"
+        "   21 InPlaceSubSmi 1, operator_ic[1]\n"
         "   25 StaGlobal c[0], module_global_mutation_ic[2]\n"
         "   28 LdaGlobal c[0], module_global_read_ic[2]\n"
         "   31 JumpIfTrue operator_ic[2], 18\n"
@@ -1592,7 +1646,7 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
         "    2 GetItem p0, operator_ic[0]\n"
-        "    5 AddSmi 1, operator_ic[1]\n"
+        "    5 InPlaceAddSmi 1, operator_ic[1]\n"
         "    9 Star0\n"
         "   10 Ldar p1\n"
         "   12 SetItem p0, r0, operator_ic[2]\n"
@@ -1621,7 +1675,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
         "   23 LdaGlobal c[0], module_global_read_ic[1]\n"
         "   26 Star3\n"
         "   27 LdaGlobal c[2], module_global_read_ic[2]\n"
-        "   30 Add r3, operator_ic[0]\n"
+        "   30 InPlaceAdd r3, operator_ic[0]\n"
         "   34 StaGlobal c[0], module_global_mutation_ic[2]\n"
         "   37 Jump 16\n"
         "   40 Mov r4, r1\n"
@@ -1635,7 +1689,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
         "   68 LdaGlobal c[0], module_global_read_ic[3]\n"
         "   71 Star3\n"
         "   72 LdaGlobal c[2], module_global_read_ic[4]\n"
-        "   75 Add r3, operator_ic[3]\n"
+        "   75 InPlaceAdd r3, operator_ic[3]\n"
         "   79 StaGlobal c[0], module_global_mutation_ic[4]\n"
         "   82 Jump 56\n"
         "   85 LdaConstant c[8]\n"
@@ -1673,9 +1727,10 @@ TEST(Codegen, local_augmented_assignment_in_loop_uses_dominating_binding)
                                                 L"        acc += i\n"
                                                 L"    return acc\n");
 
-    EXPECT_NE(std::string::npos, actual.find("   19 Ldar1\n"
-                                             "   20 Add r0, operator_ic[0]\n"
-                                             "   24 Star0\n"));
+    EXPECT_NE(std::string::npos,
+              actual.find("   19 Ldar1\n"
+                          "   20 InPlaceAdd r0, operator_ic[0]\n"
+                          "   24 Star0\n"));
     EXPECT_EQ(std::string::npos, actual.find("LoadLocalChecked r0"));
 }
 

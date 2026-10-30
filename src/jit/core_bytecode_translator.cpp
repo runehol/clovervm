@@ -202,7 +202,9 @@ namespace cl::jit
                 break;
 
             case Bytecode::Add:
+            case Bytecode::InPlaceAdd:
             case Bytecode::AddSmi:
+            case Bytecode::InPlaceAddSmi:
                 if(!lower_binary_arithmetic(
                        block, instruction,
                        BinaryArithmeticSMIWithSnapshotSubkind::AddSMI, inputs,
@@ -213,7 +215,9 @@ namespace cl::jit
                 break;
 
             case Bytecode::Sub:
+            case Bytecode::InPlaceSub:
             case Bytecode::SubSmi:
+            case Bytecode::InPlaceSubSmi:
                 if(!lower_binary_arithmetic(
                        block, instruction,
                        BinaryArithmeticSMIWithSnapshotSubkind::SubSMI, inputs,
@@ -224,7 +228,9 @@ namespace cl::jit
                 break;
 
             case Bytecode::Mul:
+            case Bytecode::InPlaceMul:
             case Bytecode::MulSmi:
+            case Bytecode::InPlaceMulSmi:
                 if(!lower_binary_arithmetic(
                        block, instruction,
                        BinaryArithmeticSMIWithSnapshotSubkind::MulSMI, inputs,
@@ -235,7 +241,9 @@ namespace cl::jit
                 break;
 
             case Bytecode::And:
+            case Bytecode::InPlaceAnd:
             case Bytecode::AndSmi:
+            case Bytecode::InPlaceAndSmi:
                 if(!lower_binary_logical(block, instruction,
                                          BinaryLogicalSMISubkind::AndSMI,
                                          inputs, state, outputs))
@@ -245,7 +253,9 @@ namespace cl::jit
                 break;
 
             case Bytecode::Or:
+            case Bytecode::InPlaceOr:
             case Bytecode::OrSmi:
+            case Bytecode::InPlaceOrSmi:
                 if(!lower_binary_logical(block, instruction,
                                          BinaryLogicalSMISubkind::OrrSMI,
                                          inputs, state, outputs))
@@ -255,7 +265,9 @@ namespace cl::jit
                 break;
 
             case Bytecode::Xor:
+            case Bytecode::InPlaceXor:
             case Bytecode::XorSmi:
+            case Bytecode::InPlaceXorSmi:
                 if(!lower_binary_logical(block, instruction,
                                          BinaryLogicalSMISubkind::EorSMI,
                                          inputs, state, outputs))

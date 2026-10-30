@@ -1462,6 +1462,47 @@ def delete_equality():
                        static_cast<uint64_t>(Value::from_smi(2).as.integer)}));
     }
 
+    TEST(AArch64Execution, PublishedAugmentedArithmeticResumesInPlaceDispatch)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(LR"(
+class Operand:
+    def __iadd__(self, other):
+        return other + 100
+    def __add__(self, other):
+        raise AssertionError("ordinary addition after augmented JIT exit")
+def make_operand():
+    return Operand()
+def augmented(a, b):
+    a += b
+    return a
+def augmented_immediate(a):
+    a += 3
+    return a
+)");
+        ASSERT_FALSE(fixture.thread()->has_pending_exception());
+        ASSERT_TRUE(fixture.jit_compile(L"augmented"));
+        ASSERT_TRUE(fixture.jit_compile(L"augmented_immediate"));
+        ASSERT_TRUE(fixture.is_jit_compiled(L"augmented"));
+        ASSERT_TRUE(fixture.is_jit_compiled(L"augmented_immediate"));
+        EXPECT_EQ(Value::from_smi(22),
+                  fixture.call(L"augmented", Value::from_smi(19),
+                               Value::from_smi(3)));
+        EXPECT_EQ(Value::from_smi(22),
+                  fixture.call(L"augmented_immediate", Value::from_smi(19)));
+        Owned<Value> operand(fixture.call(L"make_operand"));
+        ASSERT_FALSE(operand.value().is_exception_marker());
+        fixture.thread()->get_machine()->set_fire_every_safepoint_for_testing(
+            true);
+        fixture.request_safepoint();
+        EXPECT_EQ(
+            Value::from_smi(103),
+            fixture.call(L"augmented", operand.value(), Value::from_smi(3)));
+        EXPECT_EQ(Value::from_smi(103),
+                  fixture.call(L"augmented_immediate", operand.value()));
+        EXPECT_FALSE(fixture.thread()->has_pending_exception());
+    }
+
     TEST(AArch64Execution, CompilesPythonIdentityFunction)
     {
         PythonJitExecutionFixture fixture;

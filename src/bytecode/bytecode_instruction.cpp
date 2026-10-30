@@ -347,18 +347,31 @@ namespace cl
                 break;
 
             case Bytecode::Add:
+            case Bytecode::InPlaceAdd:
             case Bytecode::Sub:
+            case Bytecode::InPlaceSub:
             case Bytecode::Mul:
+            case Bytecode::InPlaceMul:
             case Bytecode::MatMul:
+            case Bytecode::InPlaceMatMul:
             case Bytecode::TrueDiv:
+            case Bytecode::InPlaceTrueDiv:
             case Bytecode::FloorDiv:
+            case Bytecode::InPlaceFloorDiv:
             case Bytecode::BinaryPow:
+            case Bytecode::InPlaceBinaryPow:
             case Bytecode::LShift:
+            case Bytecode::InPlaceLShift:
             case Bytecode::RShift:
+            case Bytecode::InPlaceRShift:
             case Bytecode::Mod:
+            case Bytecode::InPlaceMod:
             case Bytecode::Or:
+            case Bytecode::InPlaceOr:
             case Bytecode::And:
+            case Bytecode::InPlaceAnd:
             case Bytecode::Xor:
+            case Bytecode::InPlaceXor:
             case Bytecode::TestEqual:
             case Bytecode::TestNotEqual:
             case Bytecode::TestLess:
@@ -381,16 +394,27 @@ namespace cl
                 break;
 
             case Bytecode::AddSmi:
+            case Bytecode::InPlaceAddSmi:
             case Bytecode::SubSmi:
+            case Bytecode::InPlaceSubSmi:
             case Bytecode::MulSmi:
+            case Bytecode::InPlaceMulSmi:
             case Bytecode::FloorDivSmi:
+            case Bytecode::InPlaceFloorDivSmi:
             case Bytecode::BinaryPowSmi:
+            case Bytecode::InPlaceBinaryPowSmi:
             case Bytecode::LShiftSmi:
+            case Bytecode::InPlaceLShiftSmi:
             case Bytecode::RShiftSmi:
+            case Bytecode::InPlaceRShiftSmi:
             case Bytecode::ModSmi:
+            case Bytecode::InPlaceModSmi:
             case Bytecode::OrSmi:
+            case Bytecode::InPlaceOrSmi:
             case Bytecode::AndSmi:
+            case Bytecode::InPlaceAndSmi:
             case Bytecode::XorSmi:
+            case Bytecode::InPlaceXorSmi:
             case Bytecode::ToBool:
             case Bytecode::FinishTruthiness:
             case Bytecode::FinishTruthinessNot:

@@ -642,6 +642,34 @@ is missing or returns `NotImplemented`, control enters the same branched binary
 dispatch shape used by ordinary `Binary<Verb>`, using the current operand
 objects and current lookup state.
 
+The encoded arithmetic opcodes occur in ordinary/augmented pairs: the ordinary
+opcode is even and its augmented partner is the following odd value. Register
+and SMI-immediate forms have separate pairs with identical formats and compound
+roles, enforced by compile-time assertions. Both entries dispatch to the same
+interpreter handler. Successful SMI fast paths do not inspect the mode; slow
+paths select the ordinary table ID plus the opcode's low bit. Table IDs are
+adjacent ordinary/augmented pairs too, although table-ID parity is irrelevant.
+
+Each binary arithmetic family owns seven backing steps. Its augmented table
+views all seven; its ordinary table views the final six. Branch skips and saved
+continuation indices are relative to the selected view. The continuation keeps
+the selected table ID and both operands, so a result need not alias either input.
+Ternary `pow` retains its separate six-step table.
+
+Codegen keeps ordinary opcode bases in its operator lookup table. Augmented
+assignment requests `ArithmeticMode::Augmented` when looking up an entry; the
+lookup returns a copy with valid register/immediate opcode values advanced by
+one, preserving an unavailable immediate form as `Bytecode::Invalid`. Variable,
+attribute, and subscript assignments retain their existing evaluation and
+writeback structure. An exception prevents writeback; any other result,
+including `None`, is written to the target.
+
+The core JIT translator handles augmented variants alongside existing ordinary
+SMI translations. Guards and snapshots retain the augmented bytecode PC for
+interpreter resumption; unsupported arithmetic retains the existing exit policy.
+This dispatch support does not add builtin in-place methods or change the
+`operator.i*` wrappers, which require separate work.
+
 ### Ternary Pow
 
 Ternary `pow(base, exponent, modulus)` uses operand0 as the base, operand1 as

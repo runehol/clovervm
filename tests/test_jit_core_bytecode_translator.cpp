@@ -209,6 +209,149 @@ namespace cl::jit
         EXPECT_EQ(constants[1].id(), is_not.rhs().instruction_id());
     }
 
+    TEST(JitCoreBytecodeTranslator, AugmentedSMIPathsRetainGuardsAndResumePC)
+    {
+        struct Case
+        {
+            Bytecode reg;
+            Bytecode immediate;
+            InstructionKind kind;
+        };
+        constexpr Case cases[] = {
+            {Bytecode::InPlaceAdd, Bytecode::InPlaceAddSmi,
+             InstructionKind::AddSMI},
+            {Bytecode::InPlaceSub, Bytecode::InPlaceSubSmi,
+             InstructionKind::SubSMI},
+            {Bytecode::InPlaceMul, Bytecode::InPlaceMulSmi,
+             InstructionKind::MulSMI},
+            {Bytecode::InPlaceAnd, Bytecode::InPlaceAndSmi,
+             InstructionKind::AndSMI},
+            {Bytecode::InPlaceOr, Bytecode::InPlaceOrSmi,
+             InstructionKind::OrrSMI},
+            {Bytecode::InPlaceXor, Bytecode::InPlaceXorSmi,
+             InstructionKind::EorSMI},
+        };
+        for(const Case &test: cases)
+        {
+            for(Bytecode opcode: {test.reg, test.immediate})
+            {
+                SCOPED_TRACE(bytecode_name(opcode));
+                TranslatorFixture fixture;
+                uint32_t operator_pc;
+                {
+                    CodeObjectBuilder::TemporaryReg temporary(
+                        fixture.code_builder, 1);
+                    fixture.code_builder.emit_lda_smi(0, 19).value();
+                    fixture.code_builder.emit_star(0, temporary).value();
+                    if(opcode == test.immediate)
+                    {
+                        operator_pc =
+                            fixture.code_builder
+                                .emit_operator_smi(
+                                    0, opcode, 3,
+                                    OperatorBytecodeFormat::
+                                        WithCacheAndNotImplementedCheck)
+                                .value();
+                    }
+                    else
+                    {
+                        fixture.code_builder.emit_lda_smi(0, 3).value();
+                        operator_pc =
+                            fixture.code_builder
+                                .emit_operator_reg(
+                                    0, opcode, temporary,
+                                    OperatorBytecodeFormat::
+                                        WithCacheAndNotImplementedCheck)
+                                .value();
+                    }
+                    fixture.code_builder.emit_return(0).value();
+                }
+                ControlFlowGraph *graph = fixture.translate();
+                Block *entry = graph->normal_entry_block();
+                EXPECT_EQ(1u, instructions_of_kind(entry, test.kind).size());
+                auto snapshots =
+                    instructions_of_kind(entry, InstructionKind::Snapshot);
+                ASSERT_EQ(1u, snapshots.size());
+                EXPECT_EQ(operator_pc, snapshots.front()
+                                           .as<SnapshotInstruction>()
+                                           .resume_pc_offset());
+                EXPECT_EQ(
+                    opcode == test.immediate ? 1u : 2u,
+                    instructions_of_kind(entry, InstructionKind::InlineTagGuard)
+                        .size());
+                EXPECT_TRUE(instructions_of_kind(
+                                entry, InstructionKind::ResumeInInterpreter)
+                                .empty());
+            }
+        }
+    }
+
+    TEST(JitCoreBytecodeTranslator, AugmentedCacheExitsResumeAtOriginalOpcode)
+    {
+        for(Bytecode opcode:
+            {Bytecode::InPlaceAdd,         Bytecode::InPlaceSub,
+             Bytecode::InPlaceMul,         Bytecode::InPlaceMatMul,
+             Bytecode::InPlaceTrueDiv,     Bytecode::InPlaceFloorDiv,
+             Bytecode::InPlaceBinaryPow,   Bytecode::InPlaceLShift,
+             Bytecode::InPlaceRShift,      Bytecode::InPlaceMod,
+             Bytecode::InPlaceOr,          Bytecode::InPlaceAnd,
+             Bytecode::InPlaceXor,         Bytecode::InPlaceAddSmi,
+             Bytecode::InPlaceSubSmi,      Bytecode::InPlaceMulSmi,
+             Bytecode::InPlaceFloorDivSmi, Bytecode::InPlaceBinaryPowSmi,
+             Bytecode::InPlaceLShiftSmi,   Bytecode::InPlaceRShiftSmi,
+             Bytecode::InPlaceModSmi,      Bytecode::InPlaceOrSmi,
+             Bytecode::InPlaceAndSmi,      Bytecode::InPlaceXorSmi})
+        {
+            SCOPED_TRACE(bytecode_name(opcode));
+            TranslatorFixture fixture;
+            uint32_t operator_pc;
+            {
+                CodeObjectBuilder::TemporaryReg temporary(fixture.code_builder,
+                                                          1);
+                fixture.code_builder.emit_lda_smi(0, 19).value();
+                fixture.code_builder.emit_star(0, temporary).value();
+                if(bytecode_info(opcode).format ==
+                   BytecodeFormat::Smi8OperatorCacheWithContinuation)
+                    operator_pc = fixture.code_builder
+                                      .emit_operator_smi(
+                                          0, opcode, 3,
+                                          OperatorBytecodeFormat::
+                                              WithCacheAndNotImplementedCheck)
+                                      .value();
+                else
+                {
+                    fixture.code_builder.emit_lda_smi(0, 3).value();
+                    operator_pc = fixture.code_builder
+                                      .emit_operator_reg(
+                                          0, opcode, temporary,
+                                          OperatorBytecodeFormat::
+                                              WithCacheAndNotImplementedCheck)
+                                      .value();
+                }
+                fixture.code_builder.emit_return(0).value();
+            }
+            CodeObject *code_object = fixture.code_builder.finalize().value();
+            code_object->inline_caches.operator_caches[0]
+                .populate_binary_shapes(
+                    ShapeKey::from_value(Value::from_smi(19)),
+                    ShapeKey::from_value(Value::from_smi(3)));
+            CoreBytecodeTranslator translator(
+                fixture.context.vm(), *code_object, fixture.graph_builder);
+            ControlFlowGraph *graph = translator.translate();
+            Block *entry = graph->normal_entry_block();
+            auto snapshots =
+                instructions_of_kind(entry, InstructionKind::Snapshot);
+            ASSERT_EQ(1u, snapshots.size());
+            EXPECT_EQ(
+                operator_pc,
+                snapshots.front().as<SnapshotInstruction>().resume_pc_offset());
+            EXPECT_EQ(1u, instructions_of_kind(
+                              entry, InstructionKind::ResumeInInterpreter)
+                              .size());
+            EXPECT_EQ(opcode, Bytecode(code_object->code[operator_pc]));
+        }
+    }
+
     TEST(JitCoreBytecodeTranslator, LowersAddWithAnEmptyCacheToGuardedSMIAdd)
     {
         TranslatorFixture fixture;

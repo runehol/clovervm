@@ -124,6 +124,58 @@ namespace cl
     {
         switch(table_id)
         {
+            case OperatorDispatchTableId::InPlaceAdd:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for +=");
+
+            case OperatorDispatchTableId::InPlaceSub:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for -=");
+
+            case OperatorDispatchTableId::InPlaceMul:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for *=");
+
+            case OperatorDispatchTableId::InPlaceMatMul:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for @=");
+
+            case OperatorDispatchTableId::InPlaceTrueDiv:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for /=");
+
+            case OperatorDispatchTableId::InPlaceFloorDiv:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for //=");
+
+            case OperatorDispatchTableId::InPlaceBinaryPow:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for **=");
+
+            case OperatorDispatchTableId::InPlaceLShift:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for <<=");
+
+            case OperatorDispatchTableId::InPlaceRShift:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for >>=");
+
+            case OperatorDispatchTableId::InPlaceMod:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for %=");
+
+            case OperatorDispatchTableId::InPlaceOr:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for |=");
+
+            case OperatorDispatchTableId::InPlaceAnd:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for &=");
+
+            case OperatorDispatchTableId::InPlaceXor:
+                return operator_walk_raise_type_error(
+                    thread, L"unsupported operand type(s) for ^=");
+
             case OperatorDispatchTableId::Add:
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type(s) for +");

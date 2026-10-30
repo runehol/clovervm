@@ -538,18 +538,31 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::Add:
+            case cl::Bytecode::InPlaceAdd:
             case cl::Bytecode::Sub:
+            case cl::Bytecode::InPlaceSub:
             case cl::Bytecode::Mul:
+            case cl::Bytecode::InPlaceMul:
             case cl::Bytecode::MatMul:
+            case cl::Bytecode::InPlaceMatMul:
             case cl::Bytecode::TrueDiv:
+            case cl::Bytecode::InPlaceTrueDiv:
             case cl::Bytecode::FloorDiv:
+            case cl::Bytecode::InPlaceFloorDiv:
             case cl::Bytecode::BinaryPow:
+            case cl::Bytecode::InPlaceBinaryPow:
             case cl::Bytecode::LShift:
+            case cl::Bytecode::InPlaceLShift:
             case cl::Bytecode::RShift:
+            case cl::Bytecode::InPlaceRShift:
             case cl::Bytecode::Mod:
+            case cl::Bytecode::InPlaceMod:
             case cl::Bytecode::Or:
+            case cl::Bytecode::InPlaceOr:
             case cl::Bytecode::And:
+            case cl::Bytecode::InPlaceAnd:
             case cl::Bytecode::Xor:
+            case cl::Bytecode::InPlaceXor:
             case cl::Bytecode::TestEqual:
             case cl::Bytecode::TestNotEqual:
             case cl::Bytecode::TestLess:
@@ -578,16 +591,27 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::AddSmi:
+            case cl::Bytecode::InPlaceAddSmi:
             case cl::Bytecode::SubSmi:
+            case cl::Bytecode::InPlaceSubSmi:
             case cl::Bytecode::MulSmi:
+            case cl::Bytecode::InPlaceMulSmi:
             case cl::Bytecode::FloorDivSmi:
+            case cl::Bytecode::InPlaceFloorDivSmi:
             case cl::Bytecode::BinaryPowSmi:
+            case cl::Bytecode::InPlaceBinaryPowSmi:
             case cl::Bytecode::LShiftSmi:
+            case cl::Bytecode::InPlaceLShiftSmi:
             case cl::Bytecode::RShiftSmi:
+            case cl::Bytecode::InPlaceRShiftSmi:
             case cl::Bytecode::ModSmi:
+            case cl::Bytecode::InPlaceModSmi:
             case cl::Bytecode::OrSmi:
+            case cl::Bytecode::InPlaceOrSmi:
             case cl::Bytecode::AndSmi:
+            case cl::Bytecode::InPlaceAndSmi:
             case cl::Bytecode::XorSmi:
+            case cl::Bytecode::InPlaceXorSmi:
                 fmt::format_to(out, " ");
                 disassemble_smi8(code_obj, out, pc++);
                 fmt::format_to(out, ", ");

@@ -87,19 +87,32 @@ namespace cl
         CompareGt,
         CompareGe,
         Add,
+        InPlaceAdd,
         Sub,
+        InPlaceSub,
         Mul,
+        InPlaceMul,
         MatMul,
+        InPlaceMatMul,
         TrueDiv,
+        InPlaceTrueDiv,
         FloorDiv,
+        InPlaceFloorDiv,
         BinaryPow,
+        InPlaceBinaryPow,
         TernaryPow,
         Mod,
+        InPlaceMod,
         LShift,
+        InPlaceLShift,
         RShift,
+        InPlaceRShift,
         And,
+        InPlaceAnd,
         Xor,
+        InPlaceXor,
         Or,
+        InPlaceOr,
         Neg,
         Pos,
         Invert,
@@ -110,6 +123,33 @@ namespace cl
         Truthiness,
         Count,
     };
+
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceAdd) ==
+                  uint32_t(OperatorDispatchTableId::Add) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceSub) ==
+                  uint32_t(OperatorDispatchTableId::Sub) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceMul) ==
+                  uint32_t(OperatorDispatchTableId::Mul) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceMatMul) ==
+                  uint32_t(OperatorDispatchTableId::MatMul) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceTrueDiv) ==
+                  uint32_t(OperatorDispatchTableId::TrueDiv) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceFloorDiv) ==
+                  uint32_t(OperatorDispatchTableId::FloorDiv) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceBinaryPow) ==
+                  uint32_t(OperatorDispatchTableId::BinaryPow) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceLShift) ==
+                  uint32_t(OperatorDispatchTableId::LShift) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceRShift) ==
+                  uint32_t(OperatorDispatchTableId::RShift) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceMod) ==
+                  uint32_t(OperatorDispatchTableId::Mod) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceOr) ==
+                  uint32_t(OperatorDispatchTableId::Or) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceAnd) ==
+                  uint32_t(OperatorDispatchTableId::And) + 1);
+    static_assert(uint32_t(OperatorDispatchTableId::InPlaceXor) ==
+                  uint32_t(OperatorDispatchTableId::Xor) + 1);
 
     struct OperatorStep
     {
