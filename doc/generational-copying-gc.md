@@ -170,6 +170,22 @@ remains, released as the same ownership set. Weak references are enumerated
 separately after strong closure; an ordinary weak object still retains its
 strong `shape` slot.
 
+`Instance` retains lazy inline-slot initialization. Its allocated-size query
+uses the current shape's inline capacity, while the existing auxiliary
+header count continues to describe only the initialized inline prefix.
+Shape-derived queries require forwarding-safe metadata access before
+ordinary slot repair; see the layout document's
+[extent source contract](native-layout-descriptors.md#extent-source-invariant).
+
+A later optimization may shrink a class's generous initial inline capacity to
+the maximum inline-slot frontier reached by its instances at the shrink point.
+Existing inline locations remain unchanged, and subsequent growth beyond the
+reduced capacity uses overflow storage. Evacuation can reclaim excess reserved
+bytes from surviving young instances by allocating the reduced extent and
+copying their initialized prefix. Profiling policy and shape-transition updates
+are future work, detailed under
+[instance capacity shrinking](native-layout-descriptors.md#future-instance-capacity-shrinking).
+
 The GC-specific object state needed for ordinary copied objects is much smaller:
 
 - normal versus forwarded state;

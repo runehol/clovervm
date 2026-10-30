@@ -512,7 +512,7 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-    EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
+    EXPECT_EQ(Instance::size_for(uint32_t{4}), object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
@@ -645,28 +645,32 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
               release.additional_release_count);
 }
 
-TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesInitializedInlineSlots)
+TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesShapeCapacity)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
-    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 4, context.vm().object_class(), NativeLayoutId::Instance);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(Instance::native_layout);
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
-    EXPECT_EQ(0u, instance->native_layout_aux_count_value());
-    EXPECT_EQ(Instance::size_for(uint32_t{0}),
-              object_size.custom_size_in_bytes(instance));
-    EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
+    for(uint32_t capacity: {0u, 1u, 4u})
+    {
+        ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+            cls_name, capacity, context.vm().object_class(),
+            NativeLayoutId::Instance);
+        Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+        EXPECT_EQ(0u, instance->native_layout_aux_count_value());
+        EXPECT_EQ(Instance::size_for(capacity),
+                  object_size.custom_size_in_bytes(instance));
+        EXPECT_EQ(Instance::size_for(capacity), object_size_in_bytes(instance));
+    }
 }
 
-TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
+TEST(NativeLayoutDescriptor, InstanceSizeStaysFixedAsInitializedSlotsChange)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -682,9 +686,12 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
         cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
+    size_t allocated_size = Instance::size_for(uint32_t{1});
     ASSERT_EQ(0u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
     ASSERT_TRUE(instance->set_own_property(a_name, Value::from_smi(1)).value());
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
     ASSERT_TRUE(instance->set_own_property(b_name, Value::from_smi(2)).value());
     ASSERT_TRUE(instance->set_own_property(c_name, Value::from_smi(3)).value());
 
@@ -692,6 +699,15 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
     EXPECT_EQ(Value::from_smi(3), instance->get_own_property(c_name));
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
+
+    ASSERT_TRUE(instance->delete_own_property(a_name));
+    ASSERT_TRUE(instance->delete_own_property(b_name));
+    EXPECT_TRUE(instance->inline_slot_base()[0].is_not_present());
+    EXPECT_TRUE(instance->get_own_property(a_name).is_not_present());
+    EXPECT_TRUE(instance->get_own_property(b_name).is_not_present());
+    EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor,

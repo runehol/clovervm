@@ -120,9 +120,10 @@ by the release loop. There is no per-layout scale factor in reclamation. Backing
 records that store arrays of structs must store the physical `Value` cell count,
 not the number of logical elements.
 
-For `Instance`, the auxiliary count is the physical inline-slot allocation
-count. `Shape` remains the semantic authority for which attributes exist and
-which storage locations they use.
+For `Instance`, the auxiliary count is the initialized inline-slot prefix.
+Unused inline capacity remains uninitialized. The instance's current `Shape`
+describes inline capacity and attribute storage locations; its slot frontier
+also describes the initialized inline prefix after a completed mutation.
 
 For backing records whose ownership has been transferred during growth, the old
 backing's auxiliary count is set to zero so reclamation does not release moved
@@ -183,7 +184,10 @@ The current descriptors establish the expected distribution:
 - most layouts have a static object size and static strong span;
 - `Tuple`, `ValueArrayBacking`, and `HeapPtrArrayBacking` read a dynamic count
   from an SMI field;
-- `Instance` and `OverflowSlots` use `native_layout_aux_count`;
+- `Instance` uses its shape for allocated capacity and
+  `native_layout_aux_count` for its initialized inline prefix and release count;
+- `OverflowSlots` uses `native_layout_aux_count` for release and its own
+  capacity field for object size;
 - most existing custom size helpers are `base + count * stride` formulas;
 - only `CodeObject` and `Shape` currently have custom deallocators.
 
@@ -297,41 +301,71 @@ element sizes uses the rare custom query.
 
 ### Extent Source Invariant
 
-Physical extent metadata must be recoverable from the object header, a field in
-the object allocation, or the descriptor LUT. The query must not dereference a
-different movable object such as `Shape` or `ClassObject`.
+Extent metadata may come from the object, the descriptor LUT, or the object's
+shape. Shape-derived layout queries must work before ordinary strong-reference
+repair: source metadata must remain readable during evacuation, including when
+the shape has already been forwarded. The collector's forwarding representation
+and metadata access must preserve this contract. It must not require recursively
+tracing a shape's outgoing references merely to determine an instance's extent.
 
-This is required by copying order. The collector needs the source object's
-extent before it can copy the object and before its managed fields have been
-traced or rewritten. Following an unrepaired `shape` pointer to recover physical
-capacity creates a relocation dependency cycle.
-
-`Instance` currently exposes this layout debt:
+`Instance` retains lazy inline-slot initialization:
 
 - allocation calls `Instance::size_for(ClassObject *)`, which obtains inline
   capacity from the class's instance root `Shape`;
-- `Instance::object_size_in_bytes()` instead uses
-  `native_layout_aux_count_value()`;
-- that auxiliary count currently grows as inline slots are lazily initialized,
+- `Instance::object_size_in_bytes()` uses the instance's current shape's inline
+  capacity;
+- the auxiliary count grows as inline slots are lazily initialized,
   so it records initialized usage rather than physical allocation capacity.
 
-The current opaque size query therefore reports an initialized extent for
-`Instance`, while the physical allocated extent remains recoverable only by
-following class and shape metadata. That representation is not nursery-safe.
+The allocated-size helper reports full capacity from construction onward, while
+reference release uses only the initialized inline prefix. The future unified
+query will preserve that distinction for copying:
 
-The simplest repair is to store the selected physical capacity in
-`native_layout_aux_count`, initialize every allocated inline slot to
-`not_present`, and use the same capacity for allocated, initialized, and strong
-counts. This trades eager slot clearing for one local count and safe full-span
-copying and tracing. If that cost is unacceptable, `Instance` needs two local
-counts: immutable allocation capacity and initialized usage. Capacity must not
-remain solely in `Shape`.
+```text
+allocated_size   = sizeof(Instance) + sizeof(Value) * shape.inline_capacity
+initialized_size = sizeof(Instance) + sizeof(Value) * aux_count
+strong_count     = inherited strong cells + aux_count
+```
+
+After a completed mutation, `aux_count` agrees with
+`min(shape.next_slot_index, shape.inline_capacity)`. Deleted slots remain
+initialized as `not_present`; deletion does not reduce the frontier. A shape
+change and initialization of a newly claimed slot must not expose an invalid
+initialized span at a collection safepoint.
+
+### Future Instance Capacity Shrinking
+
+A class may initially reserve generous inline capacity, then use allocation
+profiling to choose a smaller capacity. At the shrink point, the new capacity
+must cover the maximum inline-slot frontier already reached by its instances.
+Every existing inline storage location therefore remains inline. Subsequent
+attribute growth beyond the reduced capacity uses overflow storage.
+
+The reduced capacity must govern subsequent shape transitions, including
+transitions used by instances allocated before the shrink. Cached transitions
+must not allow those instances to claim discarded inline capacity. The exact
+profiling threshold and shape-update mechanism remain future implementation
+work.
+
+Existing allocations can retain their excess bytes until evacuation. A copying
+collector then allocates the reduced extent and copies only the initialized
+prefix; no existing values need to move between inline and overflow storage.
+Allocator accounting or source-space walking must distinguish the original
+reservation from the reduced destination extent when necessary. Shrinking
+must be an explicit evacuation policy, rather than silently conflating those
+two sizes in the ordinary layout query.
+
+Lazy initialization remains the initial policy. Once capacity shrinking exists,
+measure whether clearing the full, usually smaller capacity is cheap enough to
+simplify initialized-prefix tracking.
+
+### Layout Audit
 
 The layout audit should flag any native ID with:
 
-- physical extent derived from another managed object;
-- allocation capacity that is no longer locally recoverable;
-- unused capacity containing uninitialized bytes;
+- managed metadata dependencies without a defined forwarding-safe query path;
+- allocation capacity that cannot be recovered through its declared source;
+- uninitialized capacity included in a copied or traced span;
 - logical size conflated with physical capacity;
 - a count mutated during backing ownership transfer;
 - a count that cannot fit in `native_layout_aux_count`;
@@ -441,8 +475,8 @@ policy is not stored in the object or native-layout descriptor.
 5. Move opaque allocation-size queries from `ObjectSizeDescriptor` to
    `allocated_size`.
 6. Audit allocated, initialized, and strong count sources for every native ID;
-   fix object-local metadata where the answers currently depend on `Shape` or
-   other movable state.
+   retain lazy instance initialization and its shape-derived allocated size,
+   and establish forwarding-safe access to layout metadata.
 7. Populate and test `initialized_size` without changing allocation or copying
    behavior.
 8. Add non-moving trace/update validation over the ordinary spans.
@@ -529,7 +563,7 @@ mechanics; the registry remains the exhaustive source of registered IDs.
 | `Function` | `StaticSpan` via `SlotObject` | static |
 | `Dict` | `StaticSpan` | static |
 | `String` | `StaticSpan` | custom from character count |
-| `Instance` | `DynamicAuxSpan` via `SlotObject` | custom from aux count |
+| `Instance` | `DynamicAuxSpan` via `SlotObject` | custom from shape inline capacity |
 | `CodeObject` | `CustomDealloc` | static |
 | `ClassObject` | `StaticSpan` via `SlotObject` | static |
 | `ValidityCell` | empty `StaticSpan` | static |

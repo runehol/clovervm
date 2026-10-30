@@ -29,10 +29,7 @@ namespace cl
         {
             return size_for(inline_slot_count_for_class(cls));
         }
-        static size_t object_size_in_bytes(const Instance *instance)
-        {
-            return size_for(instance->native_layout_aux_count_value());
-        }
+        static size_t object_size_in_bytes(const Instance *instance);
 
         static uint32_t inline_slot_count_for_class(ClassObject *cls);
 
