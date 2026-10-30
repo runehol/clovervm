@@ -17,7 +17,9 @@
 #include <cassert>
 #include <compare>
 #include <cstring>
+#include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace cl
@@ -831,6 +833,274 @@ namespace cl
             .raw_value();
     }
 
+    enum class BytesSplitDirection
+    {
+        Left,
+        Right
+    };
+
+    struct BytesSplitPiece
+    {
+        size_t start;
+        size_t size;
+    };
+
+    static Expected<int64_t> bytes_maxsplit(Value value)
+    {
+        if(!is_intlike_value(value))
+        {
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"maxsplit must be an integer");
+        }
+        SmiViewStorage storage;
+        int64_t count =
+            CL_TRY(bigint_to_int64(intlike_value_bigint_view(value, &storage)));
+        if(count < std::numeric_limits<ptrdiff_t>::min() ||
+           count > std::numeric_limits<ptrdiff_t>::max())
+        {
+            return Expected<int64_t>::raise_exception(
+                L"OverflowError", L"maxsplit exceeds platform index range");
+        }
+        return Expected<int64_t>::ok(count);
+    }
+
+    static Value require_bytes_separator(Value value)
+    {
+        if(has_native_layout<Bytes>(value) ||
+           has_native_layout<ByteArray>(value))
+        {
+            return Value::None();
+        }
+        return active_thread()->set_pending_builtin_exception_string(
+            L"TypeError", L"separator must be bytes or bytearray");
+    }
+
+    // Views are used only during the synchronous scan, without VM allocation,
+    // callbacks, mutation, or safepoints. Only offsets survive result
+    // allocation.
+    static std::string_view bytes_split_view(Value value)
+    {
+        auto view = has_native_layout<Bytes>(value)
+                        ? bytes_view(TValue<Bytes>::from_value_assumed(value))
+                        : value.get_ptr<ByteArray>()->view();
+        return {reinterpret_cast<const char *>(view.data()), view.size()};
+    }
+
+    static bool is_bytes_split_space(char ch)
+    {
+        return ch == ' ' || (ch >= '\t' && ch <= '\r');
+    }
+
+    static TValue<Bytes> copy_bytes_piece(TValue<Bytes> source,
+                                          BytesSplitPiece piece)
+    {
+        Owned<TValue<Bytes>> owner(source);
+        auto result = active_thread()->make_object_value<Bytes>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(piece.size)));
+        // Acquire the payload after allocation, and finish copying before any
+        // further allocation or managed operation.
+        if(piece.size != 0)
+        {
+            std::memcpy(result.extract()->data,
+                        owner.extract()->data + piece.start, piece.size);
+        }
+        return result;
+    }
+
+    static Value split_bytes(Value self, Value separator, Value limit,
+                             BytesSplitDirection direction)
+    {
+        int64_t maxsplit = CL_TRY(bytes_maxsplit(limit));
+        if(!separator.is_none())
+        {
+            CL_PROPAGATE_EXCEPTION(require_bytes_separator(separator));
+        }
+        Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
+        Owned<Value> separator_owner(separator);
+        std::vector<BytesSplitPiece> pieces;
+        {
+            auto view = bytes_split_view(source.raw_value());
+            size_t start = 0;
+            size_t end = view.size();
+            if(separator.is_none())
+            {
+                while(start < end)
+                {
+                    if(direction == BytesSplitDirection::Left)
+                    {
+                        while(start < end && is_bytes_split_space(view[start]))
+                            ++start;
+                    }
+                    else
+                    {
+                        while(end > start &&
+                              is_bytes_split_space(view[end - 1]))
+                            --end;
+                    }
+                    if(start == end)
+                        break;
+                    if(maxsplit == 0)
+                    {
+                        pieces.push_back({start, end - start});
+                        break;
+                    }
+                    if(direction == BytesSplitDirection::Left)
+                    {
+                        size_t stop = start;
+                        while(stop < end && !is_bytes_split_space(view[stop]))
+                            ++stop;
+                        pieces.push_back({start, stop - start});
+                        start = stop;
+                    }
+                    else
+                    {
+                        size_t stop = end;
+                        while(stop > start &&
+                              !is_bytes_split_space(view[stop - 1]))
+                            --stop;
+                        pieces.push_back({stop, end - stop});
+                        end = stop;
+                    }
+                    if(maxsplit > 0)
+                        --maxsplit;
+                }
+            }
+            else
+            {
+                auto sep = bytes_split_view(separator_owner.value());
+                if(sep.empty())
+                    return active_thread()
+                        ->set_pending_builtin_exception_string(
+                            L"ValueError", L"empty separator");
+                while(maxsplit != 0)
+                {
+                    auto remaining = view.substr(start, end - start);
+                    size_t found = direction == BytesSplitDirection::Left
+                                       ? remaining.find(sep)
+                                       : remaining.rfind(sep);
+                    if(found == std::string_view::npos)
+                        break;
+                    found += start;
+                    if(direction == BytesSplitDirection::Left)
+                    {
+                        pieces.push_back({start, found - start});
+                        start = found + sep.size();
+                    }
+                    else
+                    {
+                        pieces.push_back(
+                            {found + sep.size(), end - found - sep.size()});
+                        end = found;
+                    }
+                    if(maxsplit > 0)
+                        --maxsplit;
+                }
+                pieces.push_back({start, end - start});
+            }
+        }
+        if(direction == BytesSplitDirection::Right)
+            std::reverse(pieces.begin(), pieces.end());
+        Owned<TValue<List>> result(active_thread()->make_object_value<List>());
+        for(auto piece: pieces)
+        {
+            if(piece.start == 0 &&
+               piece.size == size_t(source.extract()->count.extract()) &&
+               source.extract()->get_shape()->get_class() ==
+                   active_thread()->get_machine()->bytes_class())
+            {
+                result.extract()->append(source.raw_value());
+            }
+            else
+            {
+                Owned<TValue<Bytes>> part(
+                    copy_bytes_piece(source.value(), piece));
+                result.extract()->append(part.raw_value());
+            }
+        }
+        return result.raw_value();
+    }
+
+    static Value native_bytes_split(ThreadState *, Value self, Value separator,
+                                    Value maxsplit)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"split"));
+        return split_bytes(self, separator, maxsplit,
+                           BytesSplitDirection::Left);
+    }
+
+    static Value native_bytes_rsplit(ThreadState *, Value self, Value separator,
+                                     Value maxsplit)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"rsplit"));
+        return split_bytes(self, separator, maxsplit,
+                           BytesSplitDirection::Right);
+    }
+
+    static Value partition_bytes(Value self, Value separator,
+                                 BytesSplitDirection direction)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_separator(separator));
+        Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
+        Owned<Value> separator_owner(separator);
+        size_t found;
+        size_t sep_size;
+        size_t source_size;
+        {
+            auto view = bytes_split_view(source.raw_value());
+            auto sep = bytes_split_view(separator_owner.value());
+            if(sep.empty())
+                return active_thread()->set_pending_builtin_exception_string(
+                    L"ValueError", L"empty separator");
+            source_size = view.size();
+            sep_size = sep.size();
+            found = direction == BytesSplitDirection::Left ? view.find(sep)
+                                                           : view.rfind(sep);
+        }
+        Owned<TValue<Tuple>> result(
+            active_thread()->make_object_value<Tuple>(3));
+        if(found == std::string_view::npos)
+        {
+            size_t original = direction == BytesSplitDirection::Left ? 0 : 2;
+            for(size_t idx = 0; idx < 3; ++idx)
+            {
+                if(idx == original)
+                    result.extract()->initialize_item_unchecked(
+                        idx, source.raw_value());
+                else
+                    result.extract()->initialize_item_unchecked(
+                        idx,
+                        copy_bytes_piece(source.value(), {0, 0}).raw_value());
+            }
+        }
+        else
+        {
+            result.extract()->initialize_item_unchecked(
+                0, copy_bytes_piece(source.value(), {0, found}).raw_value());
+            result.extract()->initialize_item_unchecked(
+                1, separator_owner.value());
+            result.extract()->initialize_item_unchecked(
+                2, copy_bytes_piece(
+                       source.value(),
+                       {found + sep_size, source_size - found - sep_size})
+                       .raw_value());
+        }
+        return result.raw_value();
+    }
+
+    static Value native_bytes_partition(ThreadState *, Value self,
+                                        Value separator)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"partition"));
+        return partition_bytes(self, separator, BytesSplitDirection::Left);
+    }
+
+    static Value native_bytes_rpartition(ThreadState *, Value self,
+                                         Value separator)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"rpartition"));
+        return partition_bytes(self, separator, BytesSplitDirection::Right);
+    }
+
     static Value native_bytes_replace(ThreadState *thread, Value self,
                                       Value old_value, Value new_value,
                                       Value count_value)
@@ -1407,6 +1677,13 @@ namespace cl
             active_thread()->make_object_value<Tuple>(1));
         bytes_replace_defaults.extract()->initialize_item_unchecked(
             0, Value::from_smi(-1));
+        Owned<TValue<Tuple>> bytes_split_defaults(
+            active_thread()->make_object_value<Tuple>(2));
+        bytes_split_defaults.extract()->initialize_item_unchecked(
+            0, Value::None());
+        bytes_split_defaults.extract()->initialize_item_unchecked(
+            1, Value::from_smi(-1));
+        static constexpr const wchar_t *split_names[] = {L"sep", L"maxsplit"};
         static constexpr const wchar_t *prefix_start_end_names[] = {
             L"prefix", L"start", L"end"};
         static constexpr const wchar_t *suffix_start_end_names[] = {
@@ -1418,6 +1695,18 @@ namespace cl
         static constexpr const wchar_t *replace_names[] = {L"old", L"new",
                                                            L"count"};
         BuiltinIntrinsicMethod methods[] = {
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(L"split", native_bytes_split),
+                    bytes_split_defaults.value()),
+                split_names, 2, 1),
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(L"rsplit", native_bytes_rsplit),
+                    bytes_split_defaults.value()),
+                split_names, 2, 1),
+            builtin_intrinsic_method(L"partition", native_bytes_partition),
+            builtin_intrinsic_method(L"rpartition", native_bytes_rpartition),
             with_defaults(builtin_intrinsic_method(L"__new__", native_bytes_new,
                                                    L"Create a bytes object."),
                           bytes_new_defaults.value()),

@@ -141,6 +141,24 @@ lifetime, not pinning. This is not a buffer protocol, memoryview, or persistent
 export. FileIO `readinto` integration is separate; concurrent/moving collection,
 Python signal callbacks and asynchronous I/O must reassess this contract.
 
+### Bytes splitting accepts stored binary payloads and integer limits
+
+`bytes.split` and `bytes.rsplit` implement separator/default-None splitting,
+ASCII whitespace and signed platform-size `maxsplit` limits, checked against
+CPython 3.14.5. `sep` and `maxsplit` accept keywords. `partition` and
+`rpartition` accept a positional-only separator and return three-tuples.
+A successful partition preserves the separator object (including bytearray);
+a failed partition preserves the original receiver, including bytes subclasses.
+Split pieces and newly constructed partition pieces are exact bytes.
+
+Separators accept stored bytes/bytes-subclass payloads and bytearray, bypassing
+subclass conversion, length, indexing and search hooks. General buffer inputs
+remain unsupported. Limits accept stored int/bool/int-subclass payloads without
+custom `__index__` callbacks. Out-of-platform-range integers raise OverflowError;
+native argument error wording can differ from CPython. Bytearray subclassing
+remains unavailable. No changes to interpreter, codegen, JIT, layout, cache or
+buffer protocols are involved.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object
