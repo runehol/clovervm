@@ -7,7 +7,7 @@
 | Implementation | Implemented |
 | Scope | Descriptor-driven heap record sizing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | `6d661a8` (2026-07-11) |
+| Validated against | Slice 3a working tree based on `72aae260` (2026-10-30) |
 | Supersedes | N/A |
 
 ## Current Model
@@ -78,7 +78,7 @@ The release table is keyed by `NativeLayoutId` and uses these forms:
 
 ```cpp
 enum class ReleaseKind : uint8_t {
-    CustomDealloc,
+    CustomRelease,
     StaticSpan,
     DynamicSmiSpan,
     DynamicAuxSpan,
@@ -91,14 +91,23 @@ word-aligned `Value` span. The reclamation loop copies each cell, clears it to
 reclamation context. It does not call ordinary hot-path `decref()` or look up
 the active thread through TLS.
 
-`CustomDealloc` is a cold escape hatch for layouts that cannot honestly be
-represented as a contiguous `Value` span. A custom deallocator owns the full
-`tp_dealloc`-style operation: release VM references in the right order and run
-any native payload teardown. Reclamation installs the reclaimed thread as active
-before invoking custom deallocators, so they may use ordinary `decref()`.
+`CustomRelease` is a cold escape hatch for layouts that cannot honestly be
+represented as a contiguous `Value` span. Its `custom_release` callback releases
+managed ownership. Reclamation installs the reclaimed thread as active before
+invoking it, so it may use ordinary `decref()`.
 
-`CustomDealloc` is also the default-invalid descriptor encoding:
-`custom_dealloc == nullptr` means the table entry is unfilled. Descriptor table
+The descriptor's independent, optional `destroy` callback tears down native
+resources after ordinary or custom reference release. It must not release any
+further managed references. Owning C++ containers must therefore be emptied by
+the release phase, before their destructors run. Direct `Member` fields retain
+their existing explicit-release behavior; they do not release on destruction.
+Release and destruction each run once, then reclamation retires the allocation.
+Ordinary spans can have a destruction callback too; custom destruction is not a
+reference-enumeration policy. The extra callback makes `ReleaseDescriptor` 40
+bytes, versus the previous packed 32-byte combined-release descriptor.
+
+`CustomRelease` is also the default-invalid descriptor encoding:
+`custom_release == nullptr` means the table entry is unfilled. Descriptor table
 validation requires every real native layout except `TestOnly` to have valid
 release and object-size descriptors.
 
@@ -111,8 +120,8 @@ result using its existing clear-and-release loop.
 The query describes one contiguous span inside the object's allocation. An
 empty ordinary span is a supported result with a zero count. Custom handling
 returns `std::nullopt`, which does not mean the object has no references.
-Custom scanning and destruction remain independent capabilities in the future
-descriptor design below.
+Custom scanning remains future work; destruction is already independent of
+reference release, as in the unified descriptor design below.
 
 `visit_ordinary_reference_slots(object, span, visitor)` enumerates each cell of
 a resolved span through a borrowed `HeapReferenceSlot`. This includes immediate
@@ -220,7 +229,8 @@ The current descriptors establish the expected distribution:
 - `OverflowSlots` uses `native_layout_aux_count` for release and its own
   capacity field for object size;
 - most existing custom size helpers are `base + count * stride` formulas;
-- `CodeObject`, `Shape`, and `JitCodeObject` currently have custom deallocators.
+- `CodeObject`, `Shape`, and `JitCodeObject` have custom reference release and
+  separate native destruction.
 
 The common representation should preserve those LUT and arithmetic paths:
 
@@ -550,7 +560,8 @@ CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first_value_member,
                                   additional_release_count_expr)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base_type,
                                           own_additional_release_count_expr)
-CL_DECLARE_CUSTOM_DEALLOC(type, function)
+CL_DECLARE_CUSTOM_RELEASE(type, function)
+CL_DECLARE_NATIVE_DESTROY(type, function)
 ```
 
 Object-size declarations:
@@ -608,12 +619,12 @@ mechanics; the registry remains the exhaustive source of registered IDs.
 | `Dict` | `StaticSpan` | static |
 | `String` | `StaticSpan` | custom from character count |
 | `Instance` | `DynamicAuxSpan` via `SlotObject` | custom from shape inline capacity |
-| `CodeObject` | `CustomDealloc` | static |
-| `JitCodeObject` | `CustomDealloc` | static |
+| `CodeObject` | `CustomRelease` | static |
+| `JitCodeObject` | `CustomRelease` | static |
 | `ClassObject` | `StaticSpan` via `SlotObject` | static |
 | `ValidityCell` | empty `StaticSpan` | static |
 | `Scope` | `StaticSpan` | static |
-| `Shape` | `CustomDealloc` | custom from property count |
+| `Shape` | `CustomRelease` | custom from property count |
 | `OverflowSlots` | `DynamicAuxSpan` | custom from capacity |
 | `RawArrayBacking` | empty `StaticSpan` | custom from storage bytes |
 | `ValueArrayBacking` | `DynamicAuxSpan` | custom from value-cell count |
@@ -626,9 +637,10 @@ mechanics; the registry remains the exhaustive source of registered IDs.
   values.
 - Static and dynamic span release uses the current reclamation context's direct
   zero-count-table path.
-- Custom deallocators run cold with an active thread installed.
-- C++ destructors should stay context-free; custom deallocators should drain VM
-  references before invoking destructors that might otherwise release VM values.
+- Custom release callbacks run cold with an active thread installed.
+- Optional native destruction runs after release for either ordinary or custom
+  layouts. C++ destructors remain context-free: custom release drains owned VM
+  references in containers before destruction, avoiding a second release.
 - Descriptor release and bitmap/discovery are separate concerns: slab walking
   discovers object headers, while native layout descriptors release owned
   references after an object has already been selected for reclamation.
@@ -637,6 +649,6 @@ mechanics; the registry remains the exhaustive source of registered IDs.
 
 Public C-extension compatibility may eventually need an explicit extension
 descriptor kind or bridge around CPython-style `tp_dealloc`. That is not the
-same as today's internal `CustomDealloc` support. The future bridge must define
+same as today's internal `CustomRelease` support. The future bridge must define
 resurrection, finalizer, weakref, and thread-state behavior explicitly before it
 can run arbitrary extension teardown.

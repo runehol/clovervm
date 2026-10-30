@@ -12,7 +12,7 @@ namespace cl
 
     enum class ReleaseKind : uint8_t
     {
-        CustomDealloc,
+        CustomRelease,
         StaticSpan,
         DynamicSmiSpan,
         DynamicAuxSpan,
@@ -142,10 +142,13 @@ namespace cl
                own_additional_release_count_expr;                              \
     }
 
-#define CL_DECLARE_CUSTOM_DEALLOC(type, function)                              \
+#define CL_DECLARE_CUSTOM_RELEASE(type, function)                              \
     static constexpr ReleaseKind native_release_kind =                         \
-        ReleaseKind::CustomDealloc;                                            \
-    static constexpr auto native_dealloc = function;
+        ReleaseKind::CustomRelease;                                            \
+    static constexpr auto native_custom_release = function;
+
+#define CL_DECLARE_NATIVE_DESTROY(type, function)                              \
+    static constexpr auto native_destroy = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \
     static constexpr ObjectSizeKind native_object_size_kind =                  \

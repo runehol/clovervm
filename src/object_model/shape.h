@@ -256,9 +256,11 @@ namespace cl
         Value descriptor_names[1];
 
     public:
-        static void dealloc(HeapObject *obj);
+        static void release_managed_references(HeapObject *obj);
+        static void destroy(HeapObject *obj);
 
-        CL_DECLARE_CUSTOM_DEALLOC(Shape, dealloc);
+        CL_DECLARE_CUSTOM_RELEASE(Shape, release_managed_references);
+        CL_DECLARE_NATIVE_DESTROY(Shape, destroy);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Shape, Shape::object_size_in_bytes);
     };
 

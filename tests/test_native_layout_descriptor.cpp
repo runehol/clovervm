@@ -34,12 +34,22 @@ using namespace cl;
 
 namespace
 {
-    class CustomDeallocTestObject : public HeapObject
+    class CustomReleaseTestObject : public HeapObject
     {
     public:
-        static void dealloc(HeapObject *) {}
+        static void release_managed_references(HeapObject *) {}
 
-        CL_DECLARE_CUSTOM_DEALLOC(CustomDeallocTestObject, dealloc);
+        CL_DECLARE_CUSTOM_RELEASE(CustomReleaseTestObject,
+                                  release_managed_references);
+    };
+
+    class StaticReleaseWithDestroyTestObject : public HeapObject
+    {
+    public:
+        static void destroy(HeapObject *) {}
+
+        CL_DECLARE_EMPTY_VALUE_SPAN(StaticReleaseWithDestroyTestObject);
+        CL_DECLARE_NATIVE_DESTROY(StaticReleaseWithDestroyTestObject, destroy);
     };
 
     struct TwoValueCells
@@ -58,6 +68,8 @@ namespace
                   release.value_offset_words);
         EXPECT_EQ(T::native_static_release_count(),
                   release.static_release_count);
+        EXPECT_EQ(nullptr, release.custom_release);
+        EXPECT_EQ(nullptr, release.destroy);
 
         const ObjectSizeDescriptor &object_size =
             object_size_descriptor_for(T::native_layout);
@@ -72,14 +84,27 @@ TEST(NativeLayoutDescriptor, ListUsesNativeStaticReleaseDescriptor)
     expect_static_native_layout_descriptor<List>();
 }
 
-TEST(NativeLayoutDescriptor, CustomDeallocDeclarationBuildsDescriptor)
+TEST(NativeLayoutDescriptor, CustomReleaseDeclarationBuildsDescriptor)
 {
     const ReleaseDescriptor release =
         native_layout_descriptor_detail::NativeLayoutReleaseDescriptorBuilder<
-            CustomDeallocTestObject>::build();
+            CustomReleaseTestObject>::build();
 
-    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
-    EXPECT_EQ(CustomDeallocTestObject::dealloc, release.custom_dealloc);
+    EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
+    EXPECT_EQ(CustomReleaseTestObject::release_managed_references,
+              release.custom_release);
+    EXPECT_EQ(nullptr, release.destroy);
+}
+
+TEST(NativeLayoutDescriptor, OrdinaryReleaseCanHaveIndependentDestruction)
+{
+    const ReleaseDescriptor release =
+        native_layout_descriptor_detail::NativeLayoutReleaseDescriptorBuilder<
+            StaticReleaseWithDestroyTestObject>::build();
+
+    EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
+    EXPECT_EQ(nullptr, release.custom_release);
+    EXPECT_EQ(StaticReleaseWithDestroyTestObject::destroy, release.destroy);
 }
 
 TEST(NativeLayoutDescriptor, ResolvesOrdinaryStaticReferenceSpan)
@@ -136,7 +161,7 @@ TEST(NativeLayoutDescriptor, ResolvesSmiReferenceCountWithoutNarrowing)
     EXPECT_EQ(count, span->value_count);
 }
 
-TEST(NativeLayoutDescriptor, CustomDeallocDoesNotResolveAsAnEmptySpan)
+TEST(NativeLayoutDescriptor, CustomReleaseDoesNotResolveAsAnEmptySpan)
 {
     for(NativeLayoutId layout:
         {NativeLayoutId::CodeObject, NativeLayoutId::Shape,
@@ -832,13 +857,14 @@ TEST(NativeLayoutDescriptor,
     EXPECT_EQ(0u, instance->native_layout_aux_count_value());
 }
 
-TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
+TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(CodeObject::native_layout);
 
-    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
-    EXPECT_EQ(CodeObject::dealloc, release.custom_dealloc);
+    EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
+    EXPECT_EQ(CodeObject::release_managed_references, release.custom_release);
+    EXPECT_EQ(CodeObject::destroy, release.destroy);
 
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(CodeObject::native_layout);
@@ -847,13 +873,14 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
     EXPECT_EQ(sizeof(CodeObject), object_size.static_size_in_bytes);
 }
 
-TEST(NativeLayoutDescriptor, ShapeUsesCustomDeallocAndCustomObjectSize)
+TEST(NativeLayoutDescriptor, ShapeUsesCustomReleaseAndCustomObjectSize)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(Shape::native_layout);
 
-    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
-    EXPECT_EQ(Shape::dealloc, release.custom_dealloc);
+    EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
+    EXPECT_EQ(Shape::release_managed_references, release.custom_release);
+    EXPECT_EQ(Shape::destroy, release.destroy);
 
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(Shape::native_layout);

@@ -35,9 +35,14 @@ namespace cl
                 }
                 else
                 {
-                    assert(descriptor.kind == ReleaseKind::CustomDealloc);
-                    assert(descriptor.custom_dealloc != nullptr);
-                    descriptor.custom_dealloc(obj);
+                    assert(descriptor.kind == ReleaseKind::CustomRelease);
+                    assert(descriptor.custom_release != nullptr);
+                    descriptor.custom_release(obj);
+                }
+
+                if(descriptor.destroy != nullptr)
+                {
+                    descriptor.destroy(obj);
                 }
 
                 finish_reclaim_object(obj);

@@ -61,7 +61,7 @@ TEST(FileIO, SharedLayoutHasFivePythonSlotsAndNoCleanupHook)
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
     EXPECT_EQ(InlineSlotObject::native_static_release_count() + 5,
               release.static_release_count);
-    EXPECT_EQ(nullptr, release.custom_dealloc);
+    EXPECT_EQ(nullptr, release.custom_release);
     EXPECT_EQ(sizeof(FileIOObject),
               object_size_descriptor_for(NativeLayoutId::FileIO)
                   .static_size_in_bytes);
@@ -84,7 +84,7 @@ TEST(IOBase, NativePrefixMetadataAndMostDerivedStorage)
         EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
         EXPECT_EQ(InlineSlotObject::native_static_release_count() + 1,
                   release.static_release_count);
-        EXPECT_EQ(nullptr, release.custom_dealloc);
+        EXPECT_EQ(nullptr, release.custom_release);
         EXPECT_TRUE(native_inline_slot_capacity_is_valid(layout, 1));
         EXPECT_FALSE(native_inline_slot_capacity_is_valid(layout, 2));
     }

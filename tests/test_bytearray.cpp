@@ -21,7 +21,7 @@ TEST(ByteArray, LayoutTracesOwnerBackingAndIterator)
     EXPECT_EQ(Object::native_static_release_count() +
                   RawArray<uint8_t>::embedded_value_count,
               release.static_release_count);
-    EXPECT_EQ(nullptr, release.custom_dealloc);
+    EXPECT_EQ(nullptr, release.custom_release);
     EXPECT_EQ(sizeof(ByteArray),
               object_size_descriptor_for(NativeLayoutId::ByteArray)
                   .static_size_in_bytes);

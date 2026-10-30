@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Stage 2 working tree based on `7bb9d38f` (2026-10-30) |
+| Validated against | Slice 3a working tree based on `72aae260` (2026-10-30) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -75,7 +75,8 @@ assumptions; they do not by themselves verify the C++ adapter.
 | 9 | Nursery allocation and evacuation for audited layouts | Tracing |
 | 10 | Wider coverage, refcount/ZCT retirement, and optimization | Tracing |
 
-Stages 1–2 are implemented. Stages 3–10 remain pending.
+Stages 1–2 and slice 3a are implemented. The rest of stage 3 and stages 4–10
+remain pending.
 
 Each stage is a review boundary, not necessarily one commit. Split root sources,
 layout families, and store families into bounded slices. Stages 1–7 can land
@@ -146,6 +147,23 @@ immediates and nulls, leave refcounts and ZCT membership unchanged, and never
 visit unused inline storage. No VM objects move yet.
 
 ### 3. Cover Custom Layouts and Weak References
+
+Implement this stage in bounded slices:
+
+- **3a: separate managed-reference release from native destruction.** Replace
+  the combined custom deallocator with independent `custom_release` and
+  `destroy` callbacks. Reclamation releases ordinary or custom references,
+  invokes optional native destruction, then retires the allocation. Empty
+  owning C++ containers during release so destruction cannot release managed
+  references a second time. Direct `Member` fields retain their existing
+  explicit-release behavior. No scanners, weak processing, movement, or
+  ownership-wrapper conversion are part of this slice. This slice is
+  implemented for `CodeObject`, `Shape`, and `JitCodeObject`; direct phase tests
+  check that native destruction does not release managed ownership again.
+- **3b: enumerate and rewrite strong references**, including external owned
+  storage in the three custom layouts.
+- **3c: audit remaining layouts and implement weak processing**, keeping
+  coherent cache repair separate from strong tracing.
 
 Audit every native layout, including references in C++ containers, backing
 records, compiled code, and caches. Separate strong-slot enumeration, weak

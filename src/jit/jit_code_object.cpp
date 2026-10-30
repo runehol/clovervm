@@ -31,7 +31,7 @@ namespace cl::jit
         }
     }
 
-    void JitCodeObject::dealloc(HeapObject *obj)
+    void JitCodeObject::release_managed_references(HeapObject *obj)
     {
         assert(obj->native_layout_id() == native_layout);
         JitCodeObject *jit_code = static_cast<JitCodeObject *>(obj);
@@ -40,6 +40,12 @@ namespace cl::jit
             decref(value);
             value = Value::not_present();
         }
+    }
+
+    void JitCodeObject::destroy(HeapObject *obj)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        JitCodeObject *jit_code = static_cast<JitCodeObject *>(obj);
         jit_code->~JitCodeObject();
     }
 

@@ -17,7 +17,7 @@ namespace cl
     {
     }
 
-    void Shape::dealloc(HeapObject *obj)
+    void Shape::release_managed_references(HeapObject *obj)
     {
         assert(obj->native_layout_id() == native_layout);
         Shape *shape = static_cast<Shape *>(obj);
@@ -31,7 +31,12 @@ namespace cl
             shape->descriptor_names[idx] = Value::not_present();
             decref(name);
         }
+    }
 
+    void Shape::destroy(HeapObject *obj)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        Shape *shape = static_cast<Shape *>(obj);
         shape->~Shape();
     }
 

@@ -24,13 +24,21 @@ namespace cl
         uint32_t static_release_count;
         uint64_t value_offset_words;
         uint32_t additional_release_count;
-        void (*custom_dealloc)(HeapObject *);
+        void (*custom_release)(HeapObject *);
+        // Runs after all managed ownership has been released. Independent of
+        // whether the references use an ordinary span or custom release.
+        void (*destroy)(HeapObject *);
 
         static constexpr ReleaseDescriptor
         static_span(uint64_t value_offset_words, uint32_t release_count)
         {
-            return ReleaseDescriptor{ReleaseKind::StaticSpan, 0, release_count,
-                                     value_offset_words,      0, nullptr};
+            return ReleaseDescriptor{ReleaseKind::StaticSpan,
+                                     0,
+                                     release_count,
+                                     value_offset_words,
+                                     0,
+                                     nullptr,
+                                     nullptr};
         }
 
         static constexpr ReleaseDescriptor
@@ -38,29 +46,42 @@ namespace cl
                          uint64_t value_offset_words,
                          uint32_t additional_release_count)
         {
-            return ReleaseDescriptor{
-                ReleaseKind::DynamicSmiSpan, count_offset_words,       0,
-                value_offset_words,          additional_release_count, nullptr};
+            return ReleaseDescriptor{ReleaseKind::DynamicSmiSpan,
+                                     count_offset_words,
+                                     0,
+                                     value_offset_words,
+                                     additional_release_count,
+                                     nullptr,
+                                     nullptr};
         }
 
         static constexpr ReleaseDescriptor
         dynamic_aux_span(uint64_t value_offset_words,
                          uint32_t additional_release_count)
         {
-            return ReleaseDescriptor{
-                ReleaseKind::DynamicAuxSpan, 0,      0, value_offset_words,
-                additional_release_count,    nullptr};
+            return ReleaseDescriptor{ReleaseKind::DynamicAuxSpan,
+                                     0,
+                                     0,
+                                     value_offset_words,
+                                     additional_release_count,
+                                     nullptr,
+                                     nullptr};
         }
 
         static constexpr ReleaseDescriptor
-        custom(void (*custom_dealloc)(HeapObject *))
+        custom(void (*custom_release)(HeapObject *))
         {
-            return ReleaseDescriptor{
-                ReleaseKind::CustomDealloc, 0, 0, 0, 0, custom_dealloc};
+            return ReleaseDescriptor{ReleaseKind::CustomRelease,
+                                     0,
+                                     0,
+                                     0,
+                                     0,
+                                     custom_release,
+                                     nullptr};
         }
     };
 
-    static_assert(sizeof(ReleaseDescriptor) == 32);
+    static_assert(sizeof(ReleaseDescriptor) == 40);
 
     struct OrdinaryReferenceSpan
     {
@@ -117,7 +138,7 @@ namespace cl
                     static_cast<uint64_t>(
                         object->native_layout_aux_count_value()) +
                         descriptor.additional_release_count};
-            case ReleaseKind::CustomDealloc:
+            case ReleaseKind::CustomRelease:
                 return std::nullopt;
         }
         assert(false && "invalid release descriptor kind");
@@ -157,6 +178,17 @@ namespace cl
         {
             static constexpr ReleaseDescriptor build()
             {
+                ReleaseDescriptor descriptor = build_release();
+                if constexpr(requires { T::native_destroy; })
+                {
+                    descriptor.destroy = T::native_destroy;
+                }
+                return descriptor;
+            }
+
+        private:
+            static constexpr ReleaseDescriptor build_release()
+            {
                 if constexpr(T::native_release_kind == ReleaseKind::StaticSpan)
                 {
                     return ReleaseDescriptor::static_span(
@@ -180,7 +212,7 @@ namespace cl
                 }
                 else
                 {
-                    return ReleaseDescriptor::custom(T::native_dealloc);
+                    return ReleaseDescriptor::custom(T::native_custom_release);
                 }
             }
         };
@@ -227,8 +259,8 @@ namespace cl
         {
             switch(descriptor.kind)
             {
-                case ReleaseKind::CustomDealloc:
-                    return descriptor.custom_dealloc != nullptr;
+                case ReleaseKind::CustomRelease:
+                    return descriptor.custom_release != nullptr;
                 case ReleaseKind::StaticSpan:
                 case ReleaseKind::DynamicSmiSpan:
                 case ReleaseKind::DynamicAuxSpan:

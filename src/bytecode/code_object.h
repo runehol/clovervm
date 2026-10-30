@@ -685,9 +685,11 @@ namespace cl
             return nullptr;
         }
 
-        static void dealloc(HeapObject *obj);
+        static void release_managed_references(HeapObject *obj);
+        static void destroy(HeapObject *obj);
 
-        CL_DECLARE_CUSTOM_DEALLOC(CodeObject, dealloc);
+        CL_DECLARE_CUSTOM_RELEASE(CodeObject, release_managed_references);
+        CL_DECLARE_NATIVE_DESTROY(CodeObject, destroy);
         CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
     };
 

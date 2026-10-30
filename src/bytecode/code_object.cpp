@@ -75,7 +75,7 @@ namespace cl
         }
     }
 
-    void CodeObject::dealloc(HeapObject *obj)
+    void CodeObject::release_managed_references(HeapObject *obj)
     {
         assert(obj->native_layout_id() == native_layout);
         CodeObject *code_object = static_cast<CodeObject *>(obj);
@@ -92,7 +92,13 @@ namespace cl
         code_object->jit_code.release_ref();
 
         code_object->inline_caches.clear();
+        code_object->constant_table.clear();
+    }
 
+    void CodeObject::destroy(HeapObject *obj)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        CodeObject *code_object = static_cast<CodeObject *>(obj);
         code_object->~CodeObject();
     }
 
