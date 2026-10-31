@@ -36,12 +36,15 @@ namespace cl
         }
     }  // namespace
 
-    struct HeapSpace::Chunk
+    struct HeapSpace::SlabListNode
     {
-        explicit Chunk(size_t mapping_size) : slab(tag_offset, mapping_size) {}
+        explicit SlabListNode(size_t mapping_size)
+            : slab(tag_offset, mapping_size)
+        {
+        }
 
         SlabAllocator slab;
-        std::unique_ptr<Chunk> next;
+        std::unique_ptr<SlabListNode> next;
     };
 
     HeapSpace::HeapSpace() noexcept = default;
@@ -49,18 +52,18 @@ namespace cl
     HeapSpace::~HeapSpace()
     {
         // Avoid recursively destroying an arbitrarily long ownership chain.
-        while(chunks_)
+        while(slabs_)
         {
-            auto next = std::move(chunks_->next);
-            chunks_ = std::move(next);
+            auto next = std::move(slabs_->next);
+            slabs_ = std::move(next);
         }
     }
 
-    SlabAllocator &HeapSpace::grow(size_t group_size) noexcept
+    SlabAllocator &HeapSpace::add_slab(size_t allocation_size) noexcept
     {
         size_t mapping_size =
             std::max(DefaultSlabSize,
-                     checked_round_up(checked_add(tag_offset, group_size),
+                     checked_round_up(checked_add(tag_offset, allocation_size),
                                       SlabLookupGranuleSize));
         if(mapping_size >
            static_cast<size_t>(std::numeric_limits<ptrdiff_t>::max()))
@@ -70,55 +73,35 @@ namespace cl
 
         // One native bookkeeping allocation per slab, never per reservation.
         // No exception handler is needed in the runtime's no-exceptions build.
-        std::unique_ptr<Chunk> chunk(new(std::nothrow) Chunk(mapping_size));
-        if(!chunk)
+        std::unique_ptr<SlabListNode> node(new(std::nothrow)
+                                               SlabListNode(mapping_size));
+        if(!node)
         {
             fatal("failed to allocate collector reservation bookkeeping");
         }
-        chunk->next = std::move(chunks_);
-        chunks_ = std::move(chunk);
-        current_ = &chunks_->slab;
-        return *current_;
+        node->next = std::move(slabs_);
+        slabs_ = std::move(node);
+        return slabs_->slab;
     }
 
-    GroupReservation
-    HeapSpace::reserve_group(std::span<const size_t> allocated_sizes) noexcept
+    std::byte *HeapSpace::allocate(size_t allocated_bytes) noexcept
     {
-        if(allocated_sizes.empty() || allocated_sizes.size() > 2)
+        if(allocated_bytes == 0)
         {
-            fatal("collector reservation requires one or two members");
+            fatal("collector reservation extent must be positive");
         }
+        size_t allocation_size = checked_round_up(allocated_bytes, stride);
 
-        std::array<size_t, 2> offsets{};
-        size_t group_size = 0;
-        for(size_t index = 0; index < allocated_sizes.size(); ++index)
-        {
-            if(allocated_sizes[index] == 0)
-            {
-                fatal("collector reservation extent must be positive");
-            }
-            offsets[index] = group_size;
-            group_size = checked_add(
-                group_size, checked_round_up(allocated_sizes[index], stride));
-        }
-
-        char *base = current_ ? current_->allocate(group_size) : nullptr;
+        char *base = slabs_ ? slabs_->slab.allocate(allocation_size) : nullptr;
         if(base == nullptr)
         {
-            base = grow(group_size).allocate(group_size);
+            base = add_slab(allocation_size).allocate(allocation_size);
             if(base == nullptr)
             {
                 fatal("collector reservation did not fit its new slab");
             }
         }
 
-        GroupReservation result;
-        result.count = allocated_sizes.size();
-        for(size_t index = 0; index < result.count; ++index)
-        {
-            result.members[index] =
-                reinterpret_cast<std::byte *>(base + offsets[index]);
-        }
-        return result;
+        return reinterpret_cast<std::byte *>(base);
     }
 }  // namespace cl

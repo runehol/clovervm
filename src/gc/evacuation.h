@@ -162,19 +162,10 @@ namespace cl::gc
                 return;
             }
 
-            auto group = heap_.allocation_group(source);
-            auto destinations =
-                heap_.copy_group(group, heap_.destination_for(group));
-            // Forward every member before scanning any, including companions.
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                heap_.install_forwarding(group.members[idx], destinations[idx]);
-            }
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                pending_.push_back(destinations[idx]);
-            }
-            slot.rewrite_pointer(destinations[0]);
+            Object *destination = heap_.copy_object(source);
+            heap_.install_forwarding(source, destination);
+            pending_.push_back(destination);
+            slot.rewrite_pointer(destination);
         }
 
         Heap &heap_;

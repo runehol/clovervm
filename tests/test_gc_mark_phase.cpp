@@ -54,7 +54,6 @@ namespace
                 {
                     continue;
                 }
-                changed = include(object->companion) || changed;
                 for(const TestCell &cell: object->strong_cells)
                 {
                     changed = include(cell) || changed;
@@ -71,12 +70,10 @@ namespace
         std::vector<TestCell> original_roots(roots.begin(), roots.end());
         std::vector<std::vector<TestCell>> original_cells;
         std::vector<std::vector<TestObject *>> original_weak;
-        std::vector<TestCell> original_companions;
         for(const auto &object: heap.objects())
         {
             original_cells.push_back(object->strong_cells);
             original_weak.push_back(object->weak_targets);
-            original_companions.push_back(object->companion);
         }
 
         TestHeapAdapter adapter(heap, TestCollectionKind::Full);
@@ -99,7 +96,6 @@ namespace
             EXPECT_EQ(live ? 1u : 0u, adapter.scan_count(object.get()));
             EXPECT_EQ(original_cells[idx], object->strong_cells);
             EXPECT_EQ(original_weak[idx], object->weak_targets);
-            EXPECT_EQ(original_companions[idx], object->companion);
             ++idx;
         }
     }

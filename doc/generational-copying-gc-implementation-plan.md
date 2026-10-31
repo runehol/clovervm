@@ -507,16 +507,17 @@ through the agreed collector interface. Preserve readable layout
 metadata when a source object or its shape has already been forwarded.
 
 Test cycles, shared children, duplicate roots, old-to-young references, and work
-whose edges alternate between ordinary and stable destinations. Allocation
-groups use at most two inline members and a `size_t` count; relocate exclusively
-owned overflow storage next to its owner and enqueue both objects. No bitmap
+whose edges alternate between ordinary and stable destinations. Each object is
+copied, forwarded, and enqueued independently. Overflow backing
+storage is discovered through an ordinary strong slot; owner/backing adjacency
+is a deferred optimization, not part of the collector interface. No bitmap
 walk or Cheney/slab scan cursor is required. Collector-only allocation during
 enumeration must preserve visited storage and must not reenter the mutator/GC.
 Destination and work-queue allocation failure are fatal; there is no rollback,
 recoverable allocation result, or resumption of a partially rewritten heap.
 Removing current allocation bitmaps remains separate allocator integration work.
 
-Implement in bounded slices: test-heap grouped-copy/forwarding primitives,
+Implement in bounded slices: test-heap single-object copy/forwarding primitives,
 shared copying traversal, isolated weak units/source disposal, then CloverVM
 weak-unit enumeration. The [weak repair unit design](gc-weak-repair-units.md)
 defines early resolution, exact-unit deferral, and coordinated entry/payload

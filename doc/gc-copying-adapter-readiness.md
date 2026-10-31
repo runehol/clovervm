@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Investigation |
 | Status | Proposed |
-| Implementation | Partial; isolated conditional groups and live layout queries implemented; production copying remains unimplemented |
+| Implementation | Partial; isolated copying and live layout queries implemented; production copying remains unimplemented |
 | Scope | Production adapter prerequisites and bounded preparatory slices, not permission to move runtime objects |
 | Owning layers | Memory owns header and allocation; layouts own extents and copy admission; runtime owns roots and lifetime mode; `src/gc/` owns traversal |
-| Validated against | Conditional-group working tree based on `977b2581` (2026-10-31); runtime findings remain source inspection |
+| Validated against | Single-object simplification based on `a7c007bf` (2026-11-01); runtime findings remain source inspection |
 | Supersedes | N/A; proposals below require their own implementation reviews |
 
 The [main GC design](generational-copying-gc.md),
@@ -20,14 +20,13 @@ placement, RC lifetime authority, or the paused frame-state work.
 
 The generic collector is ahead of the runtime adapter. Strong/weak slot repair
 is implemented. Real source classification, forwarding, admitted copying, and
-collector-owned destination allocation are not. Adding those methods to
+integrated destination ownership are not. Adding those methods to
 `CloverHeapAdapter` now would hide missing invariants behind an apparently
 complete interface.
 
 Several useful prerequisites can still be implemented while RC remains fully
-operational. Conditional group formation is now implemented in the test
-adapter. The unified registry now supports the live-layout query, reporting
-allocation size, copy size, and the optional ordinary strong span.
+operational. Source selection is exercised in the isolated test heap;
+production copying is not enabled.
 Retired backing contents are not a prerequisite: after the tracing cutover
 they are unreachable garbage, not objects the copying traversal must inspect.
 These preparatory changes do not require a nursery or physical relocation.
@@ -40,7 +39,8 @@ These preparatory changes do not require a nursery or physical relocation.
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
-| [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol and group placement |
+| [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol |
+| [HeapSpace](../src/memory/heap_space.h) | Owns a singly linked slab list and supplies checked single-object raw allocation | Runtime ownership transfer, typed relocation, and publication |
 | [ThreadLocalHeap](../src/memory/thread_local_heap.cpp) | Mutator allocation and RC epoch bookkeeping | Destination allocation independent of RC reclamation scheduling |
 | [ReclamationRootSet](../src/memory/heap_reclamation.h) | Conservative object identities used to protect RC reclamation | Complete precise mutable root locations |
 | [Reclamation](../src/memory/heap_reclamation.cpp) | Reference release, native destruction, ZCT and bitmap retirement | Tracing lifetime authority and safe source abandonment |
@@ -138,53 +138,22 @@ No generic C++ copy constructor may be used as a relocation primitive. The
 layout admission slice must settle typed object lifetime/relocation mechanics;
 scan completeness and a trivial destructor alone do not establish copy safety.
 
-## Allocation Groups Are Conditional
+## Single-Object Evacuation and Collection Selection
 
-Exclusive overflow ownership does not imply that owner and overflow are always
-evacuated together. [Object::ensure_overflow_slot](../src/object_model/object.cpp)
-can allocate a fresh overflow for an existing owner. Under generational
-allocation, that owner can already be old/stable.
+Overflow storage is reached through an ordinary strong slot. Source selection,
+copying, forwarding, and queueing apply independently to the owner and backing,
+regardless of root order. An old/stable owner can refer to young overflow; its
+actual remembered slot must be supplied to repair that reference. An already
+forwarded or unselected backing is not recopied.
 
-Accepted conditional group rules, implemented in the test adapter:
+The test adapter supports YoungOnly and Full moving-source selection. Full
+selects young and old movable source records; neither mode selects fresh
+destinations or stable storage. Source membership remains true after forwarding.
+The source-disposal helper uses the same selection and preserves excluded old
+and stable records. Generation and collection-mode checks remain adapter-owned.
 
-"Collected" in this table means selected for evacuation in the current
-collection's moving source set, not simply young. A young-only collection and
-a full collection can choose different source sets. Stable objects remain
-outside copying even when a full collection marks and sweeps them.
-
-| Encounter | Group |
-|---|---|
-| Collected owner, collected unforwarded overflow | Owner and overflow |
-| Collected owner, overflow outside collected space | Owner only |
-| Collected owner, overflow already forwarded | Owner only; scanning repairs its field |
-| Selected overflow reached without copying its owner | Overflow only |
-
-The former unconditional `exclusive_owner == nullptr` assertion is removed.
-Selected companions can be copied independently. This repairs a test-model
-limitation, not a running-VM regression: no production moving collector invokes
-it. The generic traversal is unchanged; group formation belongs to the adapter.
-
-The conditional-group slice adds test-only Young/Old generation labels
-and an explicit YoungOnly/Full collection selection. Full selects both young
-and old movable source records; neither mode selects fresh destination records
-or stable storage. That exercises the group contract without choosing whether
-production full GC moves or sweeps its ordinary old generation. No generation
-checks or collection-mode branches belong in the generic group/traversal API.
-The test source-disposal helper takes the same explicit selection, preserving
-uncollected old and stable records rather than clearing its entire source pool.
-
-Adjacency is an optimization conditional on both members being copied now.
-Do not recopy an old/already-forwarded companion just to obtain adjacency.
-Do not add a production owner backlink solely to discover standalone overflow;
-its native layout already tells the adapter it is a standalone member.
-
-Real placement also needs padding. Refcounted records start at addresses with
-the refcounted tag bits and subsequent records are 32-byte stride aligned.
-For a same-storage-class pair, place the companion after the primary's
-rounded reservation, not at `primary + copy_size` or necessarily
-`primary + allocated_size`. Verify alignment, overflow arithmetic, and storage
-tags for each member. Reserve the whole group before publishing forwarding;
-padding and unused tails are not copied or scanned.
+Owner/backing adjacency is deferred. It is not represented by a group type,
+special ownership backlink, or generic multi-object copying operation.
 
 ## Collector-Only Destination Allocation
 
@@ -196,9 +165,9 @@ reclamation. Neither is the destination-copy protocol as written.
 A dedicated collection-local destination allocator should:
 
 - grow stable-addressed chunks on demand, without a bitmap walk or Cheney scan;
-- reserve each group in one chunk, with checked size/tag/alignment accounting;
+- allocate one object at a time, with checked size/tag/alignment accounting;
 - distinguish unpublished reservation from a fully initialized record;
-- initialize/copy every member before exposing its forwarding association;
+- initialize/copy each object before exposing its forwarding association;
 - record ordinary and stable destination ownership for later reclamation;
 - never enter a safepoint, recursively collect, or run mutator callbacks;
 - treat allocation failure as fatal, including native bookkeeping failure.
@@ -209,22 +178,23 @@ separately. The new nursery/copy worklist must not depend on those bitmaps.
 Do not disguise global mutator allocation as collector allocation merely
 because both eventually call a bump allocator.
 
-### First Slice: Raw Group Reservations
+### Raw HeapSpace Allocation
 
 `HeapSpace` in `src/memory/heap_space.h` reuses SlabAllocator mappings and bump
-allocation, not ThreadLocalHeap. `reserve_group(span<const size_t>)`
-accepts one or two positive allocated extents and returns a fixed pair of byte
-addresses plus a `size_t` count. Each extent is rounded to the current 32-byte
-stride; the complete group is reserved by one bump before any address is
-returned. Both addresses retain the refcounted address encoding, including for
-any future stable destination. This does not derive generation from addresses.
+allocation, not ThreadLocalHeap. `allocate(size_t allocated_bytes)` accepts a
+positive allocated extent and returns one byte address. The extent is rounded
+to the current 32-byte stride. The address retains the refcounted encoding,
+including for any future stable destination. This does not derive generation
+from addresses.
 
-The space owns its slabs until destruction. A group that does not fit causes a
-new slab; an oversized group receives a mapping large enough for the entire
-group. Existing mappings and returned addresses never move. Rounding, sums,
-mapping overhead, and pointer-difference bounds are checked before allocation.
-Sizing/mapping/bookkeeping allocation failures are fatal. Native chunk
-bookkeeping uses nothrow allocation because the runtime disables C++ exceptions.
+The space owns its slabs until destruction through a singly linked list of
+`SlabListNode` entries. The head is the current allocation slab; there is no
+duplicate current-slab pointer. A reservation that does not fit causes a new
+slab; an oversized object receives a sufficiently large mapping. Earlier
+mappings and returned addresses never move. Rounding, mapping overhead, and
+pointer-difference bounds are checked before allocation. Sizing/mapping/native
+bookkeeping failure is fatal. Nodes use nothrow allocation because the runtime
+disables C++ exceptions, and list destruction is iterative.
 
 These are raw, unpublished bytes, not HeapObjects. There are no managed
 constructors, bitmap marks/walks, RC epoch registrations, source writes,
@@ -239,10 +209,8 @@ one thread's slabs. That ownership and cursor integration is future work: the
 current space is an unsynchronized raw allocator, used exclusively by its caller.
 Tracing, forwarding, construction, and safepoint policy remain outside this class.
 
-Reservation validation: 14 focused space/slab tests passed. Full Debug and
-Release `all check` passed (2,342 and 2,331 tests respectively; each configuration
-has three skipped JIT tests and one disabled test). These checks do not validate
-production evacuation, which is not enabled by this slice.
+The single-object simplification passed 50 focused GC/storage tests and full
+Debug/Release checks. These checks do not enable production evacuation.
 
 ## Source Classification and Initial Admission
 
@@ -270,7 +238,7 @@ with "movable". Unknown/unapproved layouts bypass the nursery.
 | Exact builtin Float, excluding NaN | Fixed native payload and ordinary strong fields; still needs relocation/root/admission tests; subclasses are not implicitly admitted |
 | Float NaN | Address-derived hash is a blocker; choose stable placement from construction or a stable hash policy before admission |
 | Exact builtin Tuple | Dynamic ordinary values; query excludes unused zero-length placeholder; needs relocation contract; subclasses need separate admission |
-| OverflowSlots | Capacity/aux metadata are local; needs standalone/group cases and exact zero-capacity extent |
+| OverflowSlots | Capacity/aux metadata are local; needs ordinary strong-edge coverage and exact zero-capacity extent |
 | Instance | Shape-derived capacity plus lazy prefix; defer until extent and forwarding-safe metadata tests exist |
 | ValueArrayBacking / HeapPtrArrayBacking | Query live capacity/initialized cells from existing counts; no retired-backing work; copying still needs layout admission |
 | RawArrayBacking | Query copies its full byte extent with no ordinary pointers; still needs relocation admission |
@@ -320,19 +288,17 @@ skips outside-source objects and its weak resolver treats outside-source targets
 as surviving. That is appropriate for uncollected objects in a minor collection,
 not for dead stable objects participating in full GC. The full-collector review
 must integrate marking/scanning and stable-target weak liveness, distinguishing
-"not copied" from "not collected". Conditional group tests cover full moving
+"not copied" from "not collected". Isolated tests cover full moving
 source selection, not complete full-heap tracing or reclamation.
 
 ## Follow-Up Slices Proposed for Review
 
-1. **Conditional allocation groups in the isolated heap (implemented).** Exercise old owner
-   with young overflow, young owner with old overflow, and an already-forwarded
-   companion. Preserve one copy/scan per source and do not require adjacency
-   when the companion is not copied with its owner. Exercise YoungOnly and Full
-   moving-source selections, both root orders, and destination exclusion in both
-   modes. An unreachable old movable weak target survives YoungOnly selection
-   but is cleared under Full selection. No runtime header changes or stable-heap
-   mark/sweep implementation.
+1. **Collection selection in the isolated heap (implemented).** Exercise old
+   owners with young backing, young owners with old backing, repeated references,
+   both root orders, and independent destination choices. Preserve one copy/scan
+   per selected source in YoungOnly and Full modes; fresh destinations are
+   excluded in both. Old weak-only targets survive YoungOnly but are cleared
+   under Full selection. No stable-heap marking/sweeping or runtime movement.
 2. **Unified descriptor lookup (implemented).** The separate release/object-size
    LUTs are replaced with one NativeLayoutId-indexed table
    whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor,
@@ -354,8 +320,8 @@ source selection, not complete full-heap tracing or reclamation.
    complete. HeapObject contains HeapHeader, with fully inline accessors and
    memcpy forwarding; production forwarding remains disabled.
 5. **Collector-only reservation and admission tests.** The raw-reservation
-   sub-slice implements dedicated space ownership and tag-compatible group
-   placement with no mutator reentry. C++ relocation lifetime, per-layout
+   sub-slice implements dedicated space ownership and tag-compatible object
+   allocation with no mutator reentry. C++ relocation lifetime, per-layout
    admission, publication, and runtime slab ownership transfer remain pending
    before real adapter methods are exposed. Isolated byte-reservation tests do
    not enable VM relocation or transfer ownership of real RC objects.
@@ -371,16 +337,18 @@ methods to make `Evacuation<CloverHeapAdapter>` compile.
 
 ## Verification of This Investigation
 
-The original investigation was source/design inspection at the commit in the
-metadata table. The subsequent conditional-group slice changes only the test
-heap and its tests, not the runtime header, allocator, or generic traversal.
-Its checks validate selected-source group formation, not production copying
-readiness. Header-size alternatives and runtime proposals have not been
-implemented or benchmarked. Relative links and diff formatting are checked
-separately.
+The original investigation was source/design inspection. Subsequent isolated
+tests exercise moving-source selection, strong and weak repair, and copied
+graph preservation; they do not validate production evacuation, full non-moving
+collection, or RC/tracing cutover. The standalone header and raw HeapSpace
+allocator are implemented groundwork, not movement activation.
 
-Conditional-group verification: 39 focused GC tests passed; full Debug
-`all check` passed 2,297 tests and full Release passed 2,287, each with three
-existing JIT-disabled skips and one disabled test. The
-[adapter verification record](gc-collector-heap-adapter.md#conditional-groups-and-collection-selection)
-states the cases and the full-collector coverage boundary.
+The single-object simplification removes grouped placement and its adjacency
+tests while retaining root-order, collection-selection, graph-oracle,
+weak-repair, and allocation-failure coverage. Working-tree validation on
+2026-11-01, based on `a7c007bf`: 50 focused GC/storage tests passed; full Debug
+`all check` passed 2,339 tests and full Release passed 2,328 tests. Each full
+configuration had three JIT-disabled skips and one disabled test. The focus
+thread bypassed the shared build lock as authorized; other jobs and the lock
+file were untouched. Formatting, local documentation links, and diff checks
+passed. These are isolated-copying and storage tests, not production movement.

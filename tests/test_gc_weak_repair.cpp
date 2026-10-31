@@ -288,34 +288,36 @@ namespace cl::gc::test
     {
         TestHeap heap(1);
         TestHeapAdapter adapter(heap, TestCollectionKind::Full);
-        auto group = heap.make_pair();
+        TestObject *owner = heap.make_object();
+        TestObject *backing = heap.make_object();
         TestObject *child = heap.make_object();
         TestObject *dead = heap.make_object();
-        group.members[1]->strong_cells = {TestCell::reference(child)};
-        child->strong_cells = {TestCell::reference(group.members[0])};
-        group.members[0]->weak_targets = {child, dead};
-        group.members[0]->weak_entries = {TestWeakEntry::active(
-            child, group.members[1], TestCell::reference(child))};
+        owner->strong_cells = {TestCell::reference(backing)};
+        backing->strong_cells = {TestCell::reference(child)};
+        child->strong_cells = {TestCell::reference(owner)};
+        owner->weak_targets = {child, dead};
+        owner->weak_entries = {
+            TestWeakEntry::active(child, backing, TestCell::reference(child))};
         child->preferred_destination = EvacuationDestination::Stable;
         TestObject *weak_root = dead;
         Evacuation<TestHeapAdapter> collection(adapter);
         collection.add_weak_root(Unit::bind<repair_test_weak_field>(weak_root));
-        TestObject *copy = copy_root(collection, group.members[0]);
+        TestObject *copy = copy_root(collection, owner);
         collection.finish();
-        TestObject *companion_copy = adapter.forwarded_to(group.members[1]);
+        TestObject *backing_copy = adapter.forwarded_to(backing);
         TestObject *child_copy = adapter.forwarded_to(child);
-        ASSERT_NE(nullptr, companion_copy);
+        ASSERT_NE(nullptr, backing_copy);
         ASSERT_NE(nullptr, child_copy);
         heap.discard_source_storage(TestCollectionKind::Full);
         EXPECT_TRUE(heap.objects().empty());
         EXPECT_EQ(nullptr, weak_root);
-        EXPECT_EQ(companion_copy, pointer(copy->companion));
-        EXPECT_EQ(child_copy, pointer(companion_copy->strong_cells[0]));
+        EXPECT_EQ(backing_copy, pointer(copy->strong_cells[0]));
+        EXPECT_EQ(child_copy, pointer(backing_copy->strong_cells[0]));
         EXPECT_EQ(copy, pointer(child_copy->strong_cells[0]));
         EXPECT_EQ(child_copy, copy->weak_targets[0]);
         EXPECT_EQ(nullptr, copy->weak_targets[1]);
         EXPECT_EQ(child_copy, copy->weak_entries[0].guards[0]);
-        EXPECT_EQ(companion_copy, copy->weak_entries[0].guards[1]);
+        EXPECT_EQ(backing_copy, copy->weak_entries[0].guards[1]);
         EXPECT_EQ(child_copy, pointer(copy->weak_entries[0].payload));
         EXPECT_EQ(0u, copy->weak_entries[0].reset_count);
     }

@@ -1,13 +1,11 @@
 #ifndef CL_GC_TEST_HEAP_H
 #define CL_GC_TEST_HEAP_H
 
-#include "gc/allocation_group.h"
 #include "gc/weak_repair.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -155,6 +153,13 @@ namespace cl::gc::test
         StableDestination,
     };
 
+    // Placement policy belongs to the test adapter, not the collector API.
+    enum class EvacuationDestination : uint8_t
+    {
+        Ordinary,
+        Stable,
+    };
+
     enum class TestGeneration : uint8_t
     {
         Young,
@@ -178,8 +183,6 @@ namespace cl::gc::test
         TestGeneration generation = TestGeneration::Young;
         EvacuationDestination preferred_destination =
             EvacuationDestination::Ordinary;
-        TestObject *exclusive_owner = nullptr;  // Not a traced edge.
-        TestCell companion = TestCell::reference(nullptr);
         std::vector<TestCell> strong_cells;
         std::vector<TestObject *> weak_targets;
         std::vector<TestWeakEntry> weak_entries;
@@ -246,7 +249,6 @@ namespace cl::gc::test
                 destination->header = TestHeader::normal();
                 destination->storage = storage;
                 destination->generation = TestGeneration::Old;
-                destination->exclusive_owner = nullptr;
                 return destination;
             }
 
@@ -278,55 +280,31 @@ namespace cl::gc::test
             return result;
         }
 
-        AllocationGroup<TestObject> make_pair()
+        TestObject *copy_object(TestObject *source)
         {
-            TestObject *primary = make_object();
-            TestObject *companion = make_object();
-            primary->companion = TestCell::reference(companion);
-            companion->exclusive_owner = primary;
-            return AllocationGroup<TestObject>::pair(primary, companion);
-        }
-
-        std::array<TestObject *, 2>
-        copy_group(const AllocationGroup<TestObject> &group,
-                   EvacuationDestination destination)
-        {
-            assert(group.count == 1 || group.count == 2);
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                assert(group.members[idx] != nullptr);
-                assert(group.members[idx]->storage == TestStorage::Source);
-                assert(group.members[idx]->header.kind ==
-                       TestHeaderKind::Normal);
-            }
+            assert(source != nullptr);
+            assert(source->storage == TestStorage::Source);
+            assert(source->header.kind == TestHeaderKind::Normal);
             try
             {
+                EvacuationDestination destination =
+                    source->preferred_destination;
                 DestinationArena &arena = arena_for(destination);
                 if(arena.chunks.empty() ||
-                   arena.chunks.back()->remaining() < group.count)
+                   arena.chunks.back()->remaining() == 0)
                 {
                     if(arena.chunks.size() >= arena.chunk_limit)
                     {
                         allocation_failure();
                     }
                     arena.chunks.push_back(std::make_unique<DestinationChunk>(
-                        std::max(destination_chunk_capacity_, group.count)));
+                        destination_chunk_capacity_));
                 }
                 TestStorage storage =
                     destination == EvacuationDestination::Ordinary
                         ? TestStorage::OrdinaryDestination
                         : TestStorage::StableDestination;
-                std::array<TestObject *, 2> result = {nullptr, nullptr};
-                for(size_t idx = 0; idx < group.count; ++idx)
-                {
-                    result[idx] =
-                        arena.chunks.back()->copy(group.members[idx], storage);
-                }
-                if(group.count == 2)
-                {
-                    result[1]->exclusive_owner = result[0];
-                }
-                return result;
+                return arena.chunks.back()->copy(source, storage);
             }
             catch(const std::bad_alloc &)
             {
@@ -408,7 +386,6 @@ namespace cl::gc::test
     public:
         using Object = TestObject;
         using Slot = TestSlot;
-        using Group = AllocationGroup<Object>;
         using WeakUnit = WeakRepairUnit<Object>;
 
         TestHeapAdapter(TestHeap &heap, TestCollectionKind collection_kind)
@@ -423,43 +400,10 @@ namespace cl::gc::test
                     object->generation == TestGeneration::Young);
         }
 
-        Group allocation_group(Object *source) const
+        Object *copy_object(Object *source)
         {
             assert(is_collected_source(source));
-            assert(source->header.kind == TestHeaderKind::Normal);
-            Object *companion = Slot(source->companion).load_pointer();
-            if(companion != nullptr && is_collected_source(companion) &&
-               forwarded_to(companion) == nullptr)
-            {
-                assert(companion->exclusive_owner == source);
-                assert(Slot(companion->companion).load_pointer() == nullptr);
-                assert(companion->header.kind == TestHeaderKind::Normal);
-                return Group::pair(source, companion);
-            }
-            return Group::single(source);
-        }
-
-        EvacuationDestination destination_for(const Group &group) const
-        {
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                if(group.members[idx]->preferred_destination ==
-                   EvacuationDestination::Stable)
-                {
-                    return EvacuationDestination::Stable;
-                }
-            }
-            return EvacuationDestination::Ordinary;
-        }
-
-        std::array<Object *, 2> copy_group(const Group &group,
-                                           EvacuationDestination destination)
-        {
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                assert(is_collected_source(group.members[idx]));
-            }
-            return heap_.copy_group(group, destination);
+            return heap_.copy_object(source);
         }
 
         Object *forwarded_to(Object *source) const
@@ -499,7 +443,6 @@ namespace cl::gc::test
         void visit_strong_slots(Object *object, Visitor &&visitor)
         {
             ++scan_counts_[object];
-            std::invoke(visitor, Slot(object->companion));
             for(TestCell &cell: object->strong_cells)
             {
                 std::invoke(visitor, Slot(cell));

@@ -158,14 +158,11 @@ current RC reclamation or stable storage. The queue holds pending objects, not
 processed objects; a wide live graph can still create a large pending frontier.
 
 Destination storage grows by acquiring slabs without relocating earlier copies.
-Fixed allocation groups of one or two objects allow an exclusively owned
-overflow object to be placed immediately after its relocated owner, with
-required alignment. Members retain separate headers and forwarding records,
-and every member is enqueued. The adapter owns that layout/placement knowledge.
-Pair formation requires both members to be in the current moving source set
-and the companion to be unforwarded. Otherwise copy the selected member alone;
-this includes young overflow reached through an old owner's remembered slot.
-The same rule applies when a full collection selects old movable sources.
+Each object is copied and forwarded independently. Overflow storage is reached
+through the owner's ordinary strong reference, with no adjacency guarantee.
+Co-placement of owner and backing storage is deferred until production
+collection works and its locality benefit can be measured. Young-only and full
+moving-source selections use the same single-object evacuation contract.
 See the [adapter design](gc-collector-heap-adapter.md) for the concrete contract.
 
 Collector-only allocation during slot enumeration is allowed provided it cannot
