@@ -230,15 +230,20 @@ and rewritten.
 
 Use the unified layout design in
 [Native Layout Descriptors](native-layout-descriptors.md) as the target. Migrate
-its queries and consumers in bounded slices. Report object extent, initialized
+its queries and consumers in bounded slices. Report object extent, copy
 extent, and strong slots separately; retain the shape-derived `Instance`
 capacity and auxiliary initialized prefix.
 
 The first unification step is implemented: `native_layout_descriptor_for(id)`
 returns one static record containing the existing release and object-size parts.
 Reclamation, scanning, and size-query consumers use it; the separate tables and
-lookup APIs are removed. Initialized byte extents and the compact formula query
-remain subsequent work, not assumed to equal allocated capacity.
+lookup APIs are removed. `NativeLayoutInfo` adds non-optional
+`allocated_size` and `copy_size`, plus an optional ordinary strong span with a
+64-bit count. Raw backings copy their full byte extent without pointer scanning;
+lazy instances copy their initialized prefix. Empty trailing placeholders remain
+reserved but are excluded from the copy prefix. Custom scanners stay separate.
+This query does not enable movement, and the compact formula migration remains
+subsequent work.
 
 Weak processing happens after strong closure. Repair or clear coherent cache
 entries as a unit. Objects in stable storage still expose outgoing references
@@ -471,7 +476,7 @@ Run a tracing verifier over the real non-moving heap using the new roots and
 scanners. Refcounting continues to reclaim objects; verification runs at a
 coordinated point where its inspected storage remains valid.
 
-Check reachable-slot validity, initialized extents, root publication, and
+Check reachable-slot validity, copy extents, root publication, and
 remembered-set coverage. Do not treat every positive refcount as a tracing root:
 that would hide missing root declarations. Tracing may find unreachable cycles
 that refcounting retains; that difference is expected.
@@ -545,7 +550,7 @@ adapter. Begin with explicitly audited layouts and keep other allocations in
 non-moving storage. Stable owners still need scanning and barriers for nursery
 children. Use immediate promotion of nursery survivors as the initial policy.
 
-Before a layout can move, establish its slot completeness, initialized extent,
+Before a layout can move, establish its slot completeness, copy extent,
 copy/relocation safety, identity and hash behavior, and raw-address exposure
 rules. Resolve the existing `id()` and identity-derived hash questions before
 moving affected objects. Safepoint publication and restoration must cover all
@@ -571,7 +576,7 @@ copies live elements into a new backing and replaces that reference; the old
 backing then becomes unreachable garbage. Do not clear its stale references or
 normalize its element count for tracing, which does not scan unreachable
 backings. Retain the current zeroing while RC remains active to prevent double
-release. This cleanup does not remove initialized-extent metadata needed to
+release. This cleanup does not remove layout/count metadata needed to
 scan or copy the live backing safely.
 
 Capacity shrinking, more precise remembered entries, barrier specialization,

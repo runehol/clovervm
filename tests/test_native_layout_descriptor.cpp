@@ -102,6 +102,8 @@ namespace
                   descriptor.object_size.static_size_in_bytes);
         EXPECT_EQ(object_size.custom_size_in_bytes,
                   descriptor.object_size.custom_size_in_bytes);
+        EXPECT_EQ(detail::native_copy_size_function<T>(),
+                  descriptor.custom_copy_size_in_bytes);
     }
 
     template <typename T> void expect_static_native_layout_descriptor()
@@ -140,13 +142,141 @@ TEST(NativeLayoutDescriptor, UnifiedTablePreservesEveryRegisteredLayout)
 #undef CL_EXPECT_UNIFIED_DESCRIPTOR
 }
 
-TEST(NativeLayoutDescriptor, UnifiedTableAddsNoDescriptorStorage)
+TEST(NativeLayoutDescriptor, UnifiedTableHasNoUnexpectedPadding)
 {
-    EXPECT_EQ(80u, sizeof(NativeLayoutDescriptor));
+    EXPECT_EQ(88u, sizeof(NativeLayoutDescriptor));
     EXPECT_EQ(
         native_layout_descriptor_count() *
-            (sizeof(ReleaseDescriptor) + sizeof(ObjectSizeDescriptor)),
+            (sizeof(ReleaseDescriptor) + sizeof(ObjectSizeDescriptor) +
+             sizeof(size_t (*)(const HeapObject *))),
         sizeof(native_layout_descriptor_detail::native_layout_descriptors));
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoCopiesCompleteFixedObject)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Float *object = context.thread()->make_object_raw<Float>(1.5);
+    int32_t refcount = object->refcount;
+    NativeLayoutInfo info = native_layout_info(object);
+    EXPECT_EQ(sizeof(Float), info.allocated_size);
+    EXPECT_EQ(sizeof(Float), info.copy_size);
+    ASSERT_TRUE(info.strong_span.has_value());
+    EXPECT_EQ(Float::native_value_offset_in_words(),
+              info.strong_span->value_offset_words);
+    EXPECT_EQ(Float::native_static_release_count(),
+              info.strong_span->value_count);
+    EXPECT_EQ(refcount, object->refcount);
+    EXPECT_EQ(nullptr, native_layout_descriptor_for(Float::native_layout)
+                           .custom_copy_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoKeepsCustomScanningDistinctFromEmpty)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    CodeObject *code = context.compile_file(L"a = 1\n");
+    ASSERT_NE(nullptr, code);
+    NativeLayoutInfo info = native_layout_info(code);
+    EXPECT_EQ(sizeof(CodeObject), info.allocated_size);
+    EXPECT_EQ(sizeof(CodeObject), info.copy_size);
+    EXPECT_FALSE(info.strong_span.has_value());
+    EXPECT_NE(nullptr, native_layout_descriptor_for(CodeObject::native_layout)
+                           .release.custom_trace_strong);
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoRawBackingCopiesAllReservedBytes)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    RawArray<uint64_t> array;
+    array.reserve(16);
+    array.push_back(uint64_t{42});
+    // Follow the owner slot to the real live backing without constructing or
+    // reading any of the spare raw elements.
+    HeapObject *backing = nullptr;
+    array.visit_strong_reference_slots(
+        [&](HeapReferenceSlot slot) { backing = slot.load_pointer(); });
+    ASSERT_NE(nullptr, backing);
+    NativeLayoutInfo info = native_layout_info(backing);
+    EXPECT_EQ(RawArrayBacking::allocation_size_for(16 * sizeof(uint64_t)),
+              info.allocated_size);
+    EXPECT_EQ(info.allocated_size, info.copy_size);
+    ASSERT_TRUE(info.strong_span.has_value());
+    EXPECT_EQ(0u, info.strong_span->value_count);
+    EXPECT_EQ(42u, array[0]);
+    array.release_refs();
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoEmptyRawBackingPreservesItsFullExtent)
+{
+    RawArrayBacking backing(0);
+    NativeLayoutInfo info = native_layout_info(&backing);
+    EXPECT_EQ(RawArrayBacking::allocation_size_for(0), info.allocated_size);
+    EXPECT_EQ(info.allocated_size, info.copy_size);
+    ASSERT_TRUE(info.strong_span.has_value());
+    EXPECT_EQ(0u, info.strong_span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoTupleExcludesOnlyUnusedPlaceholder)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    for(size_t count: {size_t{0}, size_t{1}, size_t{3}})
+    {
+        Tuple *tuple = context.thread()->make_object_raw<Tuple>(count);
+        NativeLayoutInfo info = native_layout_info(tuple);
+        EXPECT_EQ(Tuple::allocation_size_for(count), info.allocated_size);
+        EXPECT_EQ(info.allocated_size - (count == 0 ? sizeof(Value) : 0),
+                  info.copy_size);
+        ASSERT_TRUE(info.strong_span.has_value());
+        EXPECT_EQ(Tuple::native_additional_release_count() + count,
+                  info.strong_span->value_count);
+    }
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoOverflowPreservesInitializedCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    for(uint32_t capacity: {0u, 1u, 5u})
+    {
+        OverflowSlots *slots =
+            context.thread()->make_internal_raw<OverflowSlots>(0, capacity);
+        NativeLayoutInfo info = native_layout_info(slots);
+        EXPECT_EQ(OverflowSlots::allocation_size_for(capacity),
+                  info.allocated_size);
+        EXPECT_EQ(info.allocated_size - (capacity == 0 ? sizeof(Value) : 0),
+                  info.copy_size);
+        ASSERT_TRUE(info.strong_span.has_value());
+        EXPECT_EQ(capacity, info.strong_span->value_count);
+        // Logical size is zero, but every capacity cell was initialized.
+        for(uint32_t index = 0; index < capacity; ++index)
+        {
+            EXPECT_TRUE(slots->get(index).is_not_present());
+        }
+    }
+}
+
+TEST(NativeLayoutDescriptor, LayoutInfoReferenceBackingsPreserveWideCounts)
+{
+    for(size_t count: {size_t{0}, size_t{1}, size_t{5}, size_t{UINT32_MAX} + 1})
+    {
+        // Querying a layout reads count/header fields only. Large-count cases
+        // do not allocate or inspect the claimed payload, as in span tests.
+        ValueArrayBacking values(count);
+        HeapPtrArrayBacking pointers(count);
+        for(HeapObject *backing: {static_cast<HeapObject *>(&values),
+                                  static_cast<HeapObject *>(&pointers)})
+        {
+            NativeLayoutInfo info = native_layout_info(backing);
+            EXPECT_EQ(object_size_in_bytes(backing), info.allocated_size);
+            EXPECT_EQ(info.allocated_size - (count == 0 ? sizeof(Value) : 0),
+                      info.copy_size);
+            ASSERT_TRUE(info.strong_span.has_value());
+            EXPECT_EQ(count, info.strong_span->value_count);
+        }
+    }
 }
 
 TEST(NativeLayoutDescriptor, UnifiedCompletenessChecksBothPartsAndCustomScanner)
@@ -871,6 +1001,13 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
                   span->value_offset_words);
         EXPECT_EQ(InlineSlotObject::native_static_release_count(),
                   span->value_count);
+        NativeLayoutInfo info = native_layout_info(instance);
+        EXPECT_EQ(object_size_in_bytes(instance), info.allocated_size);
+        EXPECT_EQ(sizeof(Instance), info.copy_size);
+        ASSERT_TRUE(info.strong_span.has_value());
+        EXPECT_EQ(span->value_offset_words,
+                  info.strong_span->value_offset_words);
+        EXPECT_EQ(span->value_count, info.strong_span->value_count);
     }
 
     ASSERT_TRUE(
@@ -880,6 +1017,11 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
     // Seven cells are reserved, but only the initialized cell joins the span.
     EXPECT_EQ(InlineSlotObject::native_static_release_count() + 1,
               span->value_count);
+    NativeLayoutInfo info = native_layout_info(large);
+    EXPECT_EQ(Instance::allocation_size_for(uint32_t{7}), info.allocated_size);
+    EXPECT_EQ(sizeof(Instance) + sizeof(Value), info.copy_size);
+    ASSERT_TRUE(info.strong_span.has_value());
+    EXPECT_EQ(span->value_count, info.strong_span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesShapeCapacity)
@@ -946,6 +1088,14 @@ TEST(NativeLayoutDescriptor, InstanceSizeStaysFixedAsInitializedSlotsChange)
     EXPECT_TRUE(instance->get_own_property(b_name).is_not_present());
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
     EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
+    NativeLayoutInfo info = native_layout_info(instance);
+    EXPECT_EQ(allocated_size, info.allocated_size);
+    // Deleted inline slots remain initialized; overflow properties do not
+    // extend the inline copy prefix.
+    EXPECT_EQ(sizeof(Instance) + sizeof(Value), info.copy_size);
+    ASSERT_TRUE(info.strong_span.has_value());
+    EXPECT_EQ(InlineSlotObject::native_static_release_count() + 1,
+              info.strong_span->value_count);
 }
 
 TEST(NativeLayoutDescriptor,
@@ -966,6 +1116,12 @@ TEST(NativeLayoutDescriptor,
 
     EXPECT_EQ(Value::from_smi(1), instance->get_own_property(attr_name));
     EXPECT_EQ(0u, instance->native_layout_aux_count_value());
+    NativeLayoutInfo info = native_layout_info(instance);
+    EXPECT_EQ(sizeof(Instance), info.allocated_size);
+    EXPECT_EQ(sizeof(Instance), info.copy_size);
+    ASSERT_TRUE(info.strong_span.has_value());
+    EXPECT_EQ(InlineSlotObject::native_static_release_count(),
+              info.strong_span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)

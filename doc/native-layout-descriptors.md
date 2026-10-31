@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Partial; unified descriptor registry implemented, initialized-extent/formula query remains future work |
+| Implementation | Partial; unified descriptor registry and live copy-extent query implemented; compact formulas remain future work |
 | Scope | Descriptor-driven heap record sizing, strong scanning, weak processing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | Descriptor-unification working tree based on `b45b29e1` (2026-10-31); descriptor sections checked, unrelated layout prose unchanged |
+| Validated against | Copy-extent working tree based on `66ddedc0` (2026-10-31); descriptor sections checked, unrelated layout prose unchanged |
 | Supersedes | N/A |
 
 ## Current Model
@@ -75,6 +75,7 @@ struct NativeLayoutDescriptor
 {
     ReleaseDescriptor release;
     ObjectSizeDescriptor object_size;
+    size_t (*custom_copy_size_in_bytes)(const HeapObject *);
 };
 
 const NativeLayoutDescriptor &
@@ -89,12 +90,15 @@ parts to be valid and every custom-release layout to have a custom scanner.
 Invalid and TestOnly entries remain invalid; TestOnly is excluded from the
 production completeness requirement.
 
-The composite is 80 bytes on the current 64-bit targets: 56 bytes of release
-metadata plus 24 bytes of object-size metadata, with no additional padding.
-The logical table payload is unchanged from the sum of the previous tables.
+The registry-only composite was 80 bytes on current 64-bit targets: 56 bytes of
+release metadata plus 24 bytes of object-size metadata. The copy-extent query
+adds one eight-byte callback slot, making it 88 bytes with no extra padding.
+Null selects full-extent copying; type-local overrides describe smaller copy
+prefixes. Common full-extent layouts incur no extra indirect call in the query.
 This is static metadata, not a per-object header change. It is a preparatory
-registry refactor, not implementation of initialized extents or the final
-compact formula representation below; no performance improvement is implied.
+layout query, not the final compact formula representation below; no performance
+improvement is implied. Existing size-only, reclamation, and scanning consumers
+continue to use their own descriptor parts without computing copy extents.
 
 Descriptor-unification validation (2026-10-31): all 113 focused descriptor,
 reclamation, reference-slot, weak-processing, and GC-adapter tests passed.
@@ -103,6 +107,16 @@ reclamation, reference-slot, weak-processing, and GC-adapter tests passed.
 suite skipped three tests because runtime JIT tiering is disabled and reported
 one disabled test. These checks validate the registry migration, not production
 copying collection.
+
+Copy-extent query validation (2026-10-31, working tree based on `66ddedc0`):
+120 focused tests passed. Full Debug `all check` passed 2,308 tests, and full
+Release passed 2,297; each reported three existing runtime-JIT-disabled skips
+and one disabled test. Coverage includes raw reserved capacity, lazy Instance
+slots across mutation/deletion, zero-count placeholders, custom-only scanning,
+and reference counts above `UINT32_MAX` without allocating their payloads.
+Release disassembly confirms size-only queries do not compute copy extents or
+acquire an extra call. The full query performs one descriptor lookup and retains
+the existing custom size callbacks; compact formulas remain future work.
 
 ## Release Descriptors
 
@@ -310,12 +324,20 @@ teardown:
 struct NativeLayoutInfo
 {
     size_t allocated_size;
-    size_t initialized_size;
+    size_t copy_size;
 
-    uint64_t value_offset_words;
-    uint32_t strong_value_count;
+    std::optional<OrdinaryReferenceSpan> strong_span;
 };
 ```
+
+Both byte extents are non-optional. `strong_span` retains the existing 64-bit
+offset and count: an absent span requires custom scanning, whereas a present
+empty span has zero ordinary strong cells. Supplemental custom scanners remain
+independent and must still run. The first query uses the existing descriptor
+parts plus an optional type-local custom copy-size callback; a null callback
+means copy the complete object extent. It does not migrate formulas, change RC
+consumers, enable relocation, or add movement admission. The compact formulas
+below remain a later representation change.
 
 The current descriptors establish the expected distribution:
 
@@ -359,7 +381,7 @@ struct ExtentDescriptor
     size_t base_size;
     size_t element_size;
     CountFieldSource allocated_field;
-    CountFieldSource initialized_field;
+    CountFieldSource copy_field;
 };
 
 struct StrongSpanDescriptor
@@ -379,8 +401,8 @@ A static count `c` uses `multiplier = 0` and `addend = c`; no field is read.
 A dynamic SMI, integer, or auxiliary count normally uses `multiplier = 1` and
 the existing additional count as `addend`. There is no separate constant source
 or constant-field encoding. The compact formula is eight bytes. Evaluation
-checks that the resolved count fits the descriptor system's `uint32_t` object
-span limit before returning `NativeLayoutInfo`.
+must preserve the current 64-bit ordinary-span count contract; the compact
+encoding must not impose a new `uint32_t` limit on dynamic counts.
 
 The inline common query performs one `NativeLayoutId`-indexed table lookup,
 loads only the selected count fields, and applies straight-line arithmetic:
@@ -388,8 +410,8 @@ loads only the selected count fields, and applies straight-line arithmetic:
 ```cpp
 allocated_size = extent.base_size + extent.element_size *
                  read(extent.allocated_field, obj);
-initialized_size = extent.base_size + extent.element_size *
-                   read(extent.initialized_field, obj);
+copy_size = extent.base_size + extent.element_size *
+            read(extent.copy_field, obj);
 strong_value_count = evaluate(strong_span.count, obj);
 ```
 
@@ -402,11 +424,16 @@ layouts add one field load and arithmetic. Only a descriptor with a non-null
 `allocated_size` is the complete allocation extent, including spare capacity.
 It is the number of bytes a copying collector reserves for the destination.
 
-`initialized_size` is the contiguous prefix containing initialized object state
-that is safe to read or copy. The invariant is:
+`copy_size` is the source prefix to preserve byte-for-byte. It is a copy bound,
+not a count of constructed elements or permission to interpret raw storage as
+managed values. RawArrayBacking copies its complete extent, including spare
+capacity, and has an empty ordinary strong span. No backing-local initialized
+frontier or eager clearing is required. Lazy Instance slots instead use their
+initialized prefix, and unused trailing placeholders need not be copied.
+The invariant is:
 
 ```text
-initialized_size <= allocated_size
+copy_size <= allocated_size
 ```
 
 A copying path uses both values returned by the inline query:
@@ -414,28 +441,29 @@ A copying path uses both values returned by the inline query:
 ```cpp
 NativeLayoutInfo layout = native_layout_info(obj);
 HeapObject *dst = allocate(layout.allocated_size);
-memcpy(dst, obj, layout.initialized_size);
+memcpy(dst, obj, layout.copy_size);
 ```
 
-Spare capacity is preserved without reading uninitialized bytes. Shrinking a
-copied allocation is explicit collector policy, not an implicit descriptor
+Spare capacity is reserved even when excluded from the copy prefix. Raw storage
+is copied opaquely, without typed element reads or pointer scanning. Shrinking
+a copied allocation is explicit collector policy, not an implicit descriptor
 behavior.
 
 Knowing both extents does not make an object safe to copy. The space containing
 the object determines whether the collector evacuates it. A moving space admits
 only layouts compatible with bulk discard, as described below.
 
-Allocated and initialized extents share one byte formula:
+Allocated and copy extents share one byte formula in the later representation:
 
 ```text
 extent = base_size + element_size * field_value
 ```
 
 They may read different fields. A capacity-backed object normally uses capacity
-for `allocated_field` and logical size for `initialized_field`. An object that
+for `allocated_field` and logical size for `copy_field`. An object that
 initializes its complete capacity uses the same field for both. A static extent
 uses `base_size = sizeof(T)` and `element_size = 0`, so neither field is read. A
-layout whose allocated and initialized extents do not share the same base and
+layout whose allocated and copy extents do not share the same base and
 element sizes uses the rare custom query.
 
 ### Extent Source Invariant
@@ -457,13 +485,13 @@ tracing a shape's outgoing references merely to determine an instance's extent.
   so it records initialized usage rather than physical allocation capacity.
 
 The allocated-size helper reports full capacity from construction onward, while
-reference release uses only the initialized inline prefix. The future unified
-query will preserve that distinction for copying:
+reference release uses only the initialized inline prefix. The unified
+query preserves that distinction for copying:
 
 ```text
-allocated_size   = sizeof(Instance) + sizeof(Value) * shape.inline_capacity
-initialized_size = sizeof(Instance) + sizeof(Value) * aux_count
-strong_count     = inherited strong cells + aux_count
+allocated_size    = sizeof(Instance) + sizeof(Value) * shape.inline_capacity
+copy_size         = sizeof(Instance) + sizeof(Value) * aux_count
+strong_span.count = inherited strong cells + aux_count
 ```
 
 After a completed mutation, `aux_count` agrees with
@@ -504,7 +532,8 @@ The layout audit should flag any native ID with:
 
 - managed metadata dependencies without a defined forwarding-safe query path;
 - allocation capacity that cannot be recovered through its declared source;
-- uninitialized capacity included in a copied or traced span;
+- uninitialized slots included in a typed/traced span, or required live bytes
+  omitted from the copy prefix (opaque raw spare capacity may be copied);
 - logical size conflated with physical capacity;
 - a count mutated during backing ownership transfer;
 - a count that cannot fit in `native_layout_aux_count`;
@@ -525,11 +554,12 @@ release operation without changing the descriptor's strong-reference meaning.
 A copying collector traces and repairs the strong span in one pass:
 
 ```cpp
-Value *slots = reinterpret_cast<Value *>(obj) + layout.value_offset_words;
-for(size_t idx = 0; idx < layout.strong_value_count; ++idx)
+if(layout.strong_span)
 {
-    slots[idx] = evacuate(slots[idx]);
+    visit_ordinary_reference_slots(obj, *layout.strong_span,
+        [&](HeapReferenceSlot slot) { /* evacuate and repair pointer cells */ });
 }
+// Also run the descriptor's supplemental custom scanner, when present.
 ```
 
 Weak references are not part of this span. A weak-reference object still has
@@ -586,7 +616,7 @@ movable objects from repair. For `JitCodeObject`, scanning includes the tagged
 constant-pool slots outside the object's own allocation.
 
 `relocate` is used only when an object resides in a moving space. A null
-callback means the collector copies `initialized_size` bytes into the already
+callback means the collector copies `copy_size` bytes into the already
 allocated destination. A non-null callback constructs the live destination in
 that storage without allocating, safepointing, executing Python, or failing.
 The callback is not an object policy: objects in stable spaces are not relocated
@@ -633,7 +663,7 @@ span resolution consumed by reclamation before consolidating the full table.
 6. Audit allocated, initialized, and strong count sources for every native ID;
    retain lazy instance initialization and its shape-derived allocated size,
    and establish forwarding-safe access to layout metadata.
-7. Populate and test `initialized_size` without changing allocation or copying
+7. Populate and test `copy_size` without changing allocation or copying
    behavior.
 8. Add non-moving trace/update validation over the ordinary spans.
 9. Add debug allocation checks that reject destructor-requiring layouts from
@@ -673,7 +703,14 @@ Object-size declarations:
 ```cpp
 CL_DECLARE_STATIC_OBJECT_SIZE(type)
 CL_DECLARE_CUSTOM_OBJECT_SIZE(type, function)
+CL_DECLARE_CUSTOM_COPY_SIZE(type, function)
 ```
+
+Without a custom copy-size declaration, the query returns the full object size
+as its copy size. `Instance`, Tuple, OverflowSlots, ValueArrayBacking, and
+HeapPtrArrayBacking override this to omit lazy slots or unused placeholders.
+RawArrayBacking deliberately retains full-extent byte copying and an empty
+ordinary strong span.
 
 The `EXTENDS` release declarations inherit the base type's release span start
 and add the derived type's owned-cell count. The base release kind must be
@@ -691,8 +728,8 @@ and instantiates `NativeLayoutTraits<type::native_layout>` via
 `CL_DECLARE_NATIVE_LAYOUT(type)`.
 
 Ordinary descriptor users should include `native_layout_descriptor.h`, not the
-registry directly. The descriptor header builds constexpr release and object-size
-tables from the registered traits.
+registry directly. The descriptor header builds one constexpr table containing
+release, object-size, and copy-size metadata from the registered traits.
 
 The registered native layouts currently include:
 

@@ -199,7 +199,10 @@ slot-span, weak-reference, teardown, and copy-policy design is in
 [Native Layout Descriptors](native-layout-descriptors.md).
 
 In summary, one descriptor lookup and per-object query report allocated and
-initialized byte extents plus one contiguous strong owned `Value` span. Those
+copy byte extents plus an optional contiguous strong owned `Value` span. Raw
+backings copy their full byte extent without scanning their payload as pointers;
+lazy instances copy only their initialized prefix. Custom scanners remain
+separate from an absent or empty ordinary span. Those ordinary strong
 slots are traced and rewritten in one pass and, while deferred refcounting
 remains, released as the same ownership set. Weak references are enumerated
 separately after strong closure; an ordinary weak object still retains its

@@ -180,10 +180,22 @@ namespace cl
     {
         ReleaseDescriptor release;
         ObjectSizeDescriptor object_size;
+        // Null means preserve the complete object extent as opaque bytes.
+        size_t (*custom_copy_size_in_bytes)(const HeapObject *);
     };
 
     static_assert(sizeof(NativeLayoutDescriptor) ==
-                  sizeof(ReleaseDescriptor) + sizeof(ObjectSizeDescriptor));
+                  sizeof(ReleaseDescriptor) + sizeof(ObjectSizeDescriptor) +
+                      sizeof(size_t (*)(const HeapObject *)));
+
+    struct NativeLayoutInfo
+    {
+        size_t allocated_size;
+        size_t copy_size;
+        // Absent for custom-only scanning, distinct from a supported empty
+        // span. Supplemental custom scanners remain independent of this span.
+        std::optional<OrdinaryReferenceSpan> strong_span;
+    };
 
     constexpr size_t native_layout_descriptor_count()
     {
@@ -264,6 +276,20 @@ namespace cl
             }
         };
 
+        template <typename T>
+        constexpr auto native_copy_size_function()
+            -> size_t (*)(const HeapObject *)
+        {
+            if constexpr(requires { T::native_copy_size_in_bytes; })
+            {
+                return T::native_copy_size_in_bytes;
+            }
+            else
+            {
+                return nullptr;
+            }
+        }
+
 #define CL_DECLARE_NATIVE_LAYOUT(type)                                         \
     template <> struct NativeLayoutTraits<type::native_layout>                 \
     {                                                                          \
@@ -272,7 +298,8 @@ namespace cl
         static constexpr const char *cpp_name = #type;                         \
         static constexpr NativeLayoutDescriptor descriptor = {                 \
             NativeLayoutReleaseDescriptorBuilder<type>::build(),               \
-            NativeLayoutObjectSizeDescriptorBuilder<type>::build()};           \
+            NativeLayoutObjectSizeDescriptorBuilder<type>::build(),            \
+            native_copy_size_function<type>()};                                \
     }
 
         CL_NATIVE_LAYOUT_REGISTRY(CL_DECLARE_NATIVE_LAYOUT);
@@ -380,6 +407,11 @@ namespace cl
     }
 
     size_t object_size_in_bytes(const HeapObject *obj);
+
+    // Queries live layout state without reading payload cells. Copy size is a
+    // byte-preservation bound, not movement admission or a constructed-element
+    // count. Allocation size excludes allocator rounding.
+    NativeLayoutInfo native_layout_info(const HeapObject *obj);
 
     // Enumerates this object's own strong cells, not its transitive closure.
     // Ordinary spans and supplemental custom scanning can coexist. Weak cells

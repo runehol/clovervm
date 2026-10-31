@@ -6,6 +6,21 @@ namespace cl
 {
     namespace
     {
+        size_t resolve_object_size(const HeapObject *obj,
+                                   const ObjectSizeDescriptor &descriptor)
+        {
+            switch(descriptor.kind)
+            {
+                case ObjectSizeKind::StaticSize:
+                    return descriptor.static_size_in_bytes;
+                case ObjectSizeKind::Custom:
+                    assert(descriptor.custom_size_in_bytes != nullptr);
+                    return descriptor.custom_size_in_bytes(obj);
+            }
+            assert(false && "object-size descriptor kind not implemented yet");
+            return 0;
+        }
+
         template <typename T>
         bool inline_slot_capacity_is_valid(uint32_t capacity)
         {
@@ -100,17 +115,23 @@ namespace cl
         const ObjectSizeDescriptor &descriptor =
             native_layout_descriptor_for(obj->native_layout_id()).object_size;
 
-        switch(descriptor.kind)
-        {
-            case ObjectSizeKind::StaticSize:
-                return descriptor.static_size_in_bytes;
-            case ObjectSizeKind::Custom:
-                assert(descriptor.custom_size_in_bytes != nullptr);
-                return descriptor.custom_size_in_bytes(obj);
-        }
+        return resolve_object_size(obj, descriptor);
+    }
 
-        assert(false && "object-size descriptor kind not implemented yet");
-        return 0;
+    NativeLayoutInfo native_layout_info(const HeapObject *obj)
+    {
+        assert(obj != nullptr);
+        const NativeLayoutDescriptor &descriptor =
+            native_layout_descriptor_for(obj->native_layout_id());
+        size_t allocated_size =
+            resolve_object_size(obj, descriptor.object_size);
+        size_t copy_size = descriptor.custom_copy_size_in_bytes != nullptr
+                               ? descriptor.custom_copy_size_in_bytes(obj)
+                               : allocated_size;
+        assert(copy_size <= allocated_size);
+        return NativeLayoutInfo{
+            allocated_size, copy_size,
+            resolve_ordinary_reference_span(obj, descriptor.release)};
     }
 
 }  // namespace cl

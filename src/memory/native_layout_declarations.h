@@ -172,6 +172,14 @@ namespace cl
         return function(static_cast<const type *>(obj));                       \
     }
 
+    // Omit when the complete object extent is copied. This only describes a
+    // byte-copy prefix; it does not establish relocation safety.
+#define CL_DECLARE_CUSTOM_COPY_SIZE(type, function)                            \
+    static size_t native_copy_size_in_bytes(const HeapObject *obj)             \
+    {                                                                          \
+        return function(static_cast<const type *>(obj));                       \
+    }
+
 }  // namespace cl
 
 #endif  // CL_NATIVE_LAYOUT_DECLARATIONS_H

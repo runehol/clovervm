@@ -117,6 +117,13 @@ namespace cl
         {
             return allocation_size_for(backing->value_cell_count());
         }
+        static size_t copy_size_in_bytes(const ValueArrayBacking *backing)
+        {
+            return detail::checked_vm_array_backing_add(
+                CL_OFFSETOF(ValueArrayBacking, elements),
+                detail::checked_vm_array_backing_mul(
+                    sizeof(Value), backing->value_cell_count()));
+        }
 
         Member<TValue<SMI>> value_cell_count_value;
         Value elements[1];
@@ -125,6 +132,8 @@ namespace cl
                                           value_cell_count_value, elements, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(ValueArrayBacking,
                                       ValueArrayBacking::object_size_in_bytes);
+        CL_DECLARE_CUSTOM_COPY_SIZE(ValueArrayBacking,
+                                    ValueArrayBacking::copy_size_in_bytes);
     };
 
     class HeapPtrArrayBacking : public HeapObject
@@ -166,6 +175,13 @@ namespace cl
         {
             return allocation_size_for(backing->value_cell_count());
         }
+        static size_t copy_size_in_bytes(const HeapPtrArrayBacking *backing)
+        {
+            return detail::checked_vm_array_backing_add(
+                CL_OFFSETOF(HeapPtrArrayBacking, elements),
+                detail::checked_vm_array_backing_mul(
+                    sizeof(HeapObject *), backing->value_cell_count()));
+        }
 
         Member<TValue<SMI>> value_cell_count_value;
         HeapObject *elements[1];
@@ -177,6 +193,8 @@ namespace cl
                                           value_cell_count_value, elements, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(
             HeapPtrArrayBacking, HeapPtrArrayBacking::object_size_in_bytes);
+        CL_DECLARE_CUSTOM_COPY_SIZE(HeapPtrArrayBacking,
+                                    HeapPtrArrayBacking::copy_size_in_bytes);
     };
 
 }  // namespace cl

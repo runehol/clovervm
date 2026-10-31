@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Investigation |
 | Status | Proposed |
-| Implementation | Partial; isolated conditional groups implemented; production copying remains unimplemented |
+| Implementation | Partial; isolated conditional groups and live layout queries implemented; production copying remains unimplemented |
 | Scope | Production adapter prerequisites and bounded preparatory slices, not permission to move runtime objects |
 | Owning layers | Memory owns header and allocation; layouts own extents and copy admission; runtime owns roots and lifetime mode; `src/gc/` owns traversal |
 | Validated against | Conditional-group working tree based on `977b2581` (2026-10-31); runtime findings remain source inspection |
@@ -26,8 +26,8 @@ complete interface.
 
 Several useful prerequisites can still be implemented while RC remains fully
 operational. Conditional group formation is now implemented in the test
-adapter. The next runtime-layout work is the unified live-layout query, starting
-with co-locating existing descriptor data and then adding initialized extents.
+adapter. The unified registry now supports the live-layout query, reporting
+allocation size, copy size, and the optional ordinary strong span.
 Retired backing contents are not a prerequisite: after the tracing cutover
 they are unreachable garbage, not objects the copying traversal must inspect.
 These preparatory changes do not require a nursery or physical relocation.
@@ -37,9 +37,9 @@ These preparatory changes do not require a nursery or physical relocation.
 | Current code | Established | Still missing for copying |
 |---|---|---|
 | [HeapObject](../src/object_model/heap_object.h) | Eight-byte RC/lifecycle/native-ID/aux header | Generation, remembered membership, forwarding |
-| [Layout descriptors](../src/memory/native_layout_descriptor.h) | Object-size query, initialized strong spans, custom strong and weak hooks | Implemented unified allocated/initialized extent query and explicit copy admission |
+| [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
-| [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts and initialized cells; old-count zeroing is RC bookkeeping | Raw live-backing initialized frontier; no retired-backing copy requirement |
+| [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
 | [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol and group placement |
 | [ThreadLocalHeap](../src/memory/thread_local_heap.cpp) | Mutator allocation and RC epoch bookkeeping | Destination allocation independent of RC reclamation scheduling |
 | [ReclamationRootSet](../src/memory/heap_reclamation.h) | Conservative object identities used to protect RC reclamation | Complete precise mutable root locations |
@@ -117,7 +117,7 @@ to how a forwarding pointer is stored.
 
 Implement the existing `NativeLayoutInfo` design in the layout subsystem, not
 a second GC-specific descriptor registry. It reports allocated bytes,
-initialized bytes, and the ordinary strong span; custom scanners remain
+copy bytes, and the optional ordinary strong span; custom scanners remain
 independent. Keep allocator-rounded reservation bytes distinct from logical
 layout extents. Future shrinking may choose a smaller destination reservation
 without claiming the source reservation was already smaller.
@@ -136,19 +136,20 @@ The live-data cases are:
    remain while RC is active. Remove them after the cutover, as recorded in
    [stage 10](generational-copying-gc-implementation-plan.md#10-expand-coverage-and-retire-transitional-machinery).
 3. **Raw backing spare capacity.** `RawArrayBacking::storage_bytes` records
-   capacity, but RawArray growth constructs only the used prefix and does not
-   clear the rest. There is no backing-local initialized-byte frontier. Keep
-   this layout outside the initial moving admission set; later choose explicit
-   initialized-frontier metadata or a separately approved clearing policy.
+   its complete extent. Copy the backing's full extent opaquely, including spare
+   capacity. It has no ordinary strong cells: copying raw bytes does not
+   interpret elements or scan them as pointers. No initialized frontier or
+   clearing policy is needed for this query. Relocation admission remains a
+   separate review, as for every other layout.
 
 Zero-length Tuple and OverflowSlots allocations reserve at least one element,
 but constructors initialize zero trailing elements when their count/capacity is
-zero. Their initialized extent must stop before that placeholder. A query
-cannot simply return allocated size as initialized size for all ordinary
+zero. Their copy extent stops before that placeholder. A query
+cannot simply return allocated size as copy size for all ordinary
 layouts. Use the existing custom-query escape hatch where a zero-length clamp
 does not fit the common formulas; do not silently extend the formula language.
 
-The new initialized extent is a byte-copy bound, not permission to copy-construct
+The new copy extent is a byte-copy bound, not permission to copy-construct
 ownership wrappers. `Member`/`MemberHeapPtr` copy constructors retain references.
 No generic C++ copy constructor may be used as a relocation primitive. The
 layout admission slice must settle typed object lifetime/relocation mechanics;
@@ -197,7 +198,7 @@ its native layout already tells the adapter it is a standalone member.
 Real placement also needs padding. Refcounted records start at addresses with
 the refcounted tag bits and subsequent records are 32-byte stride aligned.
 For a same-storage-class pair, place the companion after the primary's
-rounded reservation, not at `primary + initialized_size` or necessarily
+rounded reservation, not at `primary + copy_size` or necessarily
 `primary + allocated_size`. Verify alignment, overflow arithmetic, and storage
 tags for each member. Reserve the whole group before publishing forwarding;
 padding and unused tails are not copied or scanned.
@@ -250,11 +251,11 @@ with "movable". Unknown/unapproved layouts bypass the nursery.
 |---|---|
 | Exact builtin Float, excluding NaN | Fixed native payload and ordinary strong fields; still needs relocation/root/admission tests; subclasses are not implicitly admitted |
 | Float NaN | Address-derived hash is a blocker; choose stable placement from construction or a stable hash policy before admission |
-| Exact builtin Tuple | Dynamic ordinary values; needs exact zero-length initialized extent and relocation contract; subclasses need separate admission |
+| Exact builtin Tuple | Dynamic ordinary values; query excludes unused zero-length placeholder; needs relocation contract; subclasses need separate admission |
 | OverflowSlots | Capacity/aux metadata are local; needs standalone/group cases and exact zero-capacity extent |
 | Instance | Shape-derived capacity plus lazy prefix; defer until extent and forwarding-safe metadata tests exist |
 | ValueArrayBacking / HeapPtrArrayBacking | Query live capacity/initialized cells from existing counts; no retired-backing work; copying still needs layout admission |
-| RawArrayBacking | Defer moving admission until its live initialized frontier is settled |
+| RawArrayBacking | Query copies its full byte extent with no ordinary pointers; still needs relocation admission |
 | CodeObject, Shape, JitCodeObject | Custom destruction: stable allocation, never ordinary source copying |
 | Remaining layouts, resource owners, exports, large objects | No implicit admission; retain their reviewed stable/bypass policy |
 
@@ -316,18 +317,18 @@ source selection, not complete full-heap tracing or reclamation.
    mark/sweep implementation.
 2. **Unified descriptor lookup (implemented).** The separate release/object-size
    LUTs are replaced with one NativeLayoutId-indexed table
-   whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor.
+   whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor,
    exposed by `native_layout_descriptor_for(id)`. All in-repo users are migrated;
    there are no duplicate compatibility lookup APIs. The current formulas,
-   callbacks, validation, ownership and object layouts are preserved. This is the first bounded
-   step toward the existing unified-query design, not its final formula encoding.
+   callbacks, validation, ownership and object layouts are preserved. This is
+   the first bounded step toward the unified-query design, not its final formula encoding.
    It deliberately does not add an initialized-size field or fabricate a default.
-3. **Live initialized-extent query.** Add the existing NativeLayoutInfo design
-   with allocated bytes, initialized bytes and the ordinary strong span, using
+3. **Live copy-extent query (implemented).** Add the existing NativeLayoutInfo design
+   with allocated bytes, copy bytes and the optional ordinary strong span, using
    the unified lookup. Cover lazy Instance, live reference backings, and empty
    trailing allocations. Keep custom scanning/release distinct from an ordinary
-   empty span. Settle raw live-backing initialization separately; no blind
-   allocated-equals-initialized fallback. No retired-backing audit or new
+   empty span. Raw backings report their full extent for both sizes and no
+   ordinary pointers. Neither size is optional. No retired-backing audit or new
    historical-reservation field is part of this work.
 4. **Transitional header.** Review the sixteen-/twenty-four-byte candidates, preserve RC,
    default current allocations Old, test independent GC state, and measure

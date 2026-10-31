@@ -261,7 +261,7 @@ now. The likely additional primitives are:
 | Primitive | Adapter responsibility | Algorithm responsibility |
 |---|---|---|
 | Classify an object | Read generation, placement/pinning, and movement eligibility | Decide whether the current collection must evacuate or scan it |
-| Inspect copy layout | Preserve forwarding-safe size and initialized-state information | Obtain it before destructive forwarding changes |
+| Inspect copy layout | Preserve forwarding-safe allocated/copy extents and ordinary strong-span information | Obtain it before destructive forwarding changes |
 | Query/install forwarding | Read/write a single source-to-destination association | Ensure one destination and enqueue it exactly once |
 | Reserve/copy an allocation group | Place and copy one or two admitted objects, without tracing children or installing forwarding | Publish forwarding and ensure all destinations are scanned |
 | Visit strong slots | Enumerate initialized cells, including header references and custom storage | Discover children and repair references |
