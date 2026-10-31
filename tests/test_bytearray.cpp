@@ -63,6 +63,19 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
     }
 }
 
+TEST(BinaryStrip, SemanticsSurviveEverySafepointReclamation)
+{
+    std::ifstream input("tests/python/binary_strip.py");
+    ASSERT_TRUE(input);
+    std::string source((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+    std::wstring wide(source.begin(), source.end());
+    test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(wide.c_str()).is_exception_marker());
+}
+
 TEST(ByteArray, SynchronousWritableBorrowPreservesLengthAndUnwrittenSuffix)
 {
     test::VmTestContext context;

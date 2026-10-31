@@ -1,5 +1,6 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/binary_split.h"
+#include "builtin_types/binary_strip.h"
 #include "builtin_types/bytearray.h"
 
 #include "builtin_types/hash.h"
@@ -907,6 +908,41 @@ namespace cl
         return result;
     }
 
+    template <StripMode Mode>
+    [[nodiscard]] static Value native_bytes_strip(ThreadState *, Value self,
+                                                  Value chars)
+    {
+        constexpr const wchar_t *method = Mode == StripMode::Both   ? L"strip"
+                                          : Mode == StripMode::Left ? L"lstrip"
+                                                                    : L"rstrip";
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, method));
+        if(!chars.is_none() && !has_native_layout<Bytes>(chars) &&
+           !has_native_layout<ByteArray>(chars))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"strip chars must be bytes or bytearray");
+        }
+        Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
+        Owned<Value> chars_owner(chars);
+        StripRange range;
+        {
+            std::optional<std::string_view> charset;
+            if(!chars.is_none())
+                charset = bytes_split_view(chars_owner.value());
+            range = scan_binary_strip(bytes_split_view(source.raw_value()),
+                                      charset, Mode);
+        }
+        if(range.start == 0 &&
+           range.size == size_t(source.extract()->count.extract()) &&
+           source.extract()->get_shape()->get_class() ==
+               active_thread()->get_machine()->bytes_class())
+        {
+            return source.raw_value();
+        }
+        return copy_bytes_piece(source.value(), {range.start, range.size})
+            .raw_value();
+    }
+
     static Value split_bytes(Value self, Value separator, Value limit,
                              SearchDirection direction)
     {
@@ -1683,7 +1719,19 @@ namespace cl
         static constexpr const wchar_t *suffix_names[] = {L"suffix"};
         static constexpr const wchar_t *replace_names[] = {L"old", L"new",
                                                            L"count"};
+        Owned<TValue<Tuple>> strip_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        strip_defaults.extract()->initialize_item_unchecked(0, Value::None());
         BuiltinIntrinsicMethod methods[] = {
+            with_defaults(builtin_intrinsic_method(
+                              L"strip", native_bytes_strip<StripMode::Both>),
+                          strip_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"lstrip", native_bytes_strip<StripMode::Left>),
+                          strip_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"rstrip", native_bytes_strip<StripMode::Right>),
+                          strip_defaults.value()),
             builtin_intrinsic_method(L"__iter__", native_bytes_iter),
             with_keyword_parameter_names(
                 with_defaults(
