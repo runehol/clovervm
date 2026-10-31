@@ -71,8 +71,8 @@ TEST(BytesIterator, SourceSurvivesReclamationAndIsReleasedOnExhaustion)
     Owned<TValue<BytesIterator>> iterator(
         thread->make_object_value<BytesIterator>(source));
     EXPECT_EQ(1, source.extract()->refcount);
-    thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
-                                          Value::not_present());
+    thread->publish_safepoint_scan_record(
+        SafepointScanRecord::idle(thread->clover_frame_sentinel()));
     context.vm().run_heap_reclamation();
     EXPECT_EQ(1, source.extract()->refcount);
     auto next_name =
