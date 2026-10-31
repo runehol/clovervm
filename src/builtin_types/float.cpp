@@ -14,6 +14,7 @@
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <compare>
 #include <cstdint>
@@ -284,6 +285,74 @@ namespace cl
         return std::isfinite(value) && std::trunc(value) == value
                    ? Value::True()
                    : Value::False();
+    }
+
+    [[nodiscard]] static Value
+    native_float_as_integer_ratio(ThreadState *thread, Value self)
+    {
+        if(!has_native_layout<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"float.as_integer_ratio expects a float receiver");
+        }
+        Owned<TValue<Float>> receiver(TValue<Float>::from_value_assumed(self));
+        double value = receiver.extract()->value();
+        if(std::isnan(value))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"ValueError", L"cannot convert NaN to integer ratio");
+        }
+        if(std::isinf(value))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"cannot convert Infinity to integer ratio");
+        }
+
+        static_assert(FLT_RADIX == 2 && DBL_MANT_DIG == 53 &&
+                      DBL_MAX_EXP == 1024);
+        static_assert(value_smi_max >= (int64_t{1} << DBL_MANT_DIG) - 1);
+        int exponent;
+        double fraction = std::frexp(value, &exponent);
+        int64_t significand =
+            static_cast<int64_t>(std::ldexp(fraction, DBL_MANT_DIG));
+        exponent -= DBL_MANT_DIG;
+        if(significand == 0)
+        {
+            exponent = 0;
+        }
+        else
+        {
+            // Reduce before constructing either integer. This also normalizes
+            // subnormals, whose denominator may be as large as 2**1074.
+            while(significand % 2 == 0)
+            {
+                significand /= 2;
+                ++exponent;
+            }
+        }
+
+        Owned<Value> numerator(
+            CL_TRY(int_value_from_int64(thread, significand)));
+        Owned<Value> denominator(CL_TRY(int_value_from_uint64(thread, 1)));
+        SmiViewStorage storage;
+        // The reduced significand fits an SMI. Only stack-backed digit views
+        // enter allocating helpers; no borrowed heap digits survive allocation.
+        if(exponent > 0)
+        {
+            numerator = CL_TRY(
+                bigint_lshift(thread, smi_bigint_view(significand, &storage),
+                              uint64_t(exponent)));
+        }
+        else if(exponent < 0)
+        {
+            denominator = CL_TRY(bigint_lshift(
+                thread, smi_bigint_view(1, &storage), uint64_t(-exponent)));
+        }
+        TValue<Tuple> result = thread->make_object_value<Tuple>(2);
+        result.extract()->initialize_item_unchecked(0, numerator.value());
+        result.extract()->initialize_item_unchecked(1, denominator.value());
+        return result.raw_value();
     }
 
     // Both payloads are validated by the caller. No conversion of the integer
@@ -1347,6 +1416,10 @@ namespace cl
             builtin_intrinsic_method(
                 L"is_integer", native_float_is_integer,
                 L"Return whether self is a finite integer."),
+            builtin_intrinsic_method(L"as_integer_ratio",
+                                     native_float_as_integer_ratio,
+                                     L"Return the exact reduced integer ratio "
+                                     L"with positive denominator."),
             builtin_intrinsic_method(L"conjugate", native_float_conjugate,
                                      L"Return self as an exact float."),
             with_trusted_handler_resolver<FloatEqResolver>(
