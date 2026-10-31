@@ -1562,6 +1562,89 @@ def run(): return reduce(subtract, [10, 2, 3])
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(target_address));
     }
 
+    TEST(AArch64Execution, AutomaticTieringHandlesEmptyUnaryCaches)
+    {
+        if constexpr(!JitTieringEnabled)
+        {
+            GTEST_SKIP() << "runtime JIT tiering is disabled";
+        }
+        PythonJitExecutionFixture fixture;
+        std::wstring source = LR"(
+def negate(value): return -value
+def positive(value): return +value
+def invert(value): return ~value
+def check_errors():
+    for operation in (negate, positive, invert):
+        try:
+            operation(None)
+        except TypeError:
+            pass
+        else:
+            return False
+    return True
+)";
+        source += L"for index in range(" +
+                  std::to_wstring(InitialJitTieringBudget + 2) + LR"():
+    assert negate(19) == -19
+    assert positive(19) == 19
+    assert invert(19) == -20
+)";
+        fixture.execute_module(source.c_str());
+        ASSERT_FALSE(fixture.thread()->has_pending_exception());
+        for(const wchar_t *name: {L"negate", L"positive", L"invert"})
+        {
+            EXPECT_TRUE(fixture.is_jit_compiled(name));
+        }
+        EXPECT_EQ(Value::from_smi(-23),
+                  fixture.call(L"negate", Value::from_smi(23)));
+        EXPECT_EQ(Value::from_smi(23),
+                  fixture.call(L"positive", Value::from_smi(23)));
+        EXPECT_EQ(Value::from_smi(-24),
+                  fixture.call(L"invert", Value::from_smi(23)));
+        EXPECT_EQ(Value::True(), fixture.call(L"check_errors"));
+        EXPECT_FALSE(fixture.thread()->has_pending_exception());
+    }
+
+    TEST(AArch64Execution, AutomaticTieringResumesUntakenTernaryPower)
+    {
+        if constexpr(!JitTieringEnabled)
+        {
+            GTEST_SKIP() << "runtime JIT tiering is disabled";
+        }
+        PythonJitExecutionFixture fixture;
+        std::wstring source = LR"(
+power = pow
+class UnsupportedPower:
+    def __pow__(self, exponent, modulus): return NotImplemented
+def run(): return power(2, 3, 5)
+def check_errors():
+    try:
+        power(2, 3, 0)
+    except ValueError:
+        pass
+    else:
+        return False
+    try:
+        power(UnsupportedPower(), 3, 5)
+    except TypeError:
+        return True
+    return False
+)";
+        source += L"for index in range(" +
+                  std::to_wstring(InitialJitTieringBudget + 2) + LR"():
+    assert power(2, 3) == 8
+)";
+        fixture.execute_module(source.c_str());
+        ASSERT_FALSE(fixture.thread()->has_pending_exception());
+        ASSERT_TRUE(fixture.is_jit_compiled(L"power"));
+        // The modular branch was not executed before compilation.
+        EXPECT_EQ(Value::from_smi(3), fixture.call(L"run"));
+        EXPECT_EQ(Value::from_smi(3), fixture.call(L"run"));
+        EXPECT_EQ(Value::True(), fixture.call(L"check_errors"));
+        EXPECT_FALSE(fixture.thread()->has_pending_exception());
+        EXPECT_EQ(Value::from_smi(3), fixture.call(L"run"));
+    }
+
     TEST(AArch64Execution, InterpreterCallsPublishedTierAfterArgumentAdaptation)
     {
         if constexpr(!JitTieringEnabled)
