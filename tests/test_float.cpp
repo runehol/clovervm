@@ -6,7 +6,9 @@
 #include "object_model/class_object.h"
 #include "object_model/owned.h"
 #include "test_helpers.h"
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -605,35 +607,78 @@ True
         EXPECT_EQ(Value::True(), result);
     }
 
-    TEST(FloatRuntime, NanHashIsStableAndSupportsDistinctDictionaryKeys)
+    TEST(FloatRuntime, NanHashIsCanonicalAndSupportsDistinctDictionaryKeys)
     {
         test::VmTestContext context;
         ThreadState::ActivationScope activation(context.thread());
         CodeObject *code = context.compile_file(LR"(
-first_hash = hash(first)
-assert first_hash == hash(first)
-assert first_hash == float.__hash__(first)
+def hash_one(value):
+    return hash(value)
+nan_hash = 208141517942204353
+for value in (False, True, 0.0, -0.0, float('inf'), -float('inf')):
+    assert hash_one(value) != nan_hash
+for value in range(-16, 17):
+    assert hash_one(value) != nan_hash
+for value in (first, second, float('nan'), float('inf') - float('inf')):
+    assert hash_one(value) == nan_hash
+    assert hash_one(value) == nan_hash
+    assert float.__hash__(value) == nan_hash
+    assert value != value
+class F(float):
+    pass
+assert hash(F(second)) == nan_hash
+assert first is not second
 values = {first: 1, second: 2}
 assert len(values) == 2
 assert values[first] == 1
 assert values[second] == 2
+assert float('nan') not in values
+values[first] = 3
+assert len(values) == 2
+assert values[first] == 3
+del values[second]
+assert first in values
+assert second not in values
+keys = []
+for i in range(40):
+    keys.append(float('nan'))
+values = {}
+for i in range(len(keys)):
+    values[keys[i]] = i
+assert len(values) == len(keys)
+for i in range(len(keys)):
+    assert values[keys[i]] == i
+assert hash((first,)) == hash((second,))
+assert hash(((first,),)) == hash(((second,),))
+values = {(first,): 1, (second,): 2}
+assert len(values) == 2
+assert values[(first,)] == 1
+assert values[(second,)] == 2
 True
 )");
-        for(const wchar_t *name: {L"first", L"second"})
+        const uint64_t nan_patterns[] = {
+            0x7ff8000000000000ULL, 0x7ff8000000000001ULL, 0x7fffffffffffffffULL,
+            0xfff8000000000000ULL, 0xfff8000000000001ULL, 0x7ff0000000000001ULL,
+            0xfff0000000000001ULL};
+        for(uint64_t bits: nan_patterns)
         {
-            ASSERT_TRUE(
-                code->get_defining_module()
-                    .extract()
-                    ->set_own_property(
-                        interned_string(name),
-                        context.thread()
-                            ->make_object_value<Float>(
-                                std::numeric_limits<double>::quiet_NaN())
-                            .raw_value())
-                    .value());
+            for(const wchar_t *name: {L"first", L"second"})
+            {
+                double number = name == std::wstring_view(L"first")
+                                    ? std::numeric_limits<double>::quiet_NaN()
+                                    : std::bit_cast<double>(bits);
+                ASSERT_TRUE(code->get_defining_module()
+                                .extract()
+                                ->set_own_property(
+                                    interned_string(name),
+                                    context.thread()
+                                        ->make_object_value<Float>(number)
+                                        .raw_value())
+                                .value());
+            }
+            EXPECT_EQ(Value::True(),
+                      context.thread()->run_clovervm_code_object(code));
         }
-        EXPECT_EQ(Value::True(),
-                  context.thread()->run_clovervm_code_object(code));
     }
 
     TEST(FloatRuntime, HashUsesTrustedCacheAndHonorsSubclassInvalidation)

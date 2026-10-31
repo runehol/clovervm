@@ -1146,15 +1146,13 @@ namespace cl
         // _Py_HashDouble processes the mantissa in 28-bit chunks:
         // https://github.com/python/cpython/blob/3.14/Python/pyhash.c
         constexpr int64_t infinity_hash = 314159;
+        // Keep NaNs away from common small-integer and infinity hashes.
+        constexpr int64_t nan_hash = 0x02e3779b97f4a7c1;
+        static_assert(nan_hash > 0 && nan_hash < clover_hash_modulus);
         constexpr int mantissa_chunk_bits = 28;
         constexpr double mantissa_chunk_scale =
             static_cast<double>(uint64_t{1} << mantissa_chunk_bits);
         static_assert(clover_hash_modulus_bits > mantissa_chunk_bits);
-
-        // Inspired by CPython's four-bit pointer rotation. Clover discards
-        // those alignment bits and reduces with its existing hash modulus:
-        // https://github.com/python/cpython/blob/3.14/Include/internal/pycore_pyhash.h
-        constexpr int nan_pointer_alignment_bits = 4;
 
         double value = self.extract()->value();
         if(!std::isfinite(value))
@@ -1164,11 +1162,11 @@ namespace cl
                 return TValue<SMI>::from_smi(value > 0 ? infinity_hash
                                                        : -infinity_hash);
             }
-            // Live objects in the current heap have stable addresses. Distinct
-            // NaNs should not all collide merely because they compare unequal.
-            return canonicalize_nonnegative_raw_hash(
-                reinterpret_cast<uintptr_t>(self.extract()) >>
-                nan_pointer_alignment_bits);
+            // A canonical NaN hash is independent of payload and object
+            // location. Dictionaries distinguish NaN keys by identity before
+            // equality, so distinct NaNs remain distinct keys despite
+            // collisions.
+            return TValue<SMI>::from_smi(nan_hash);
         }
 
         // Preserve the existing SMI hash policy, including its lower endpoint.
