@@ -402,6 +402,33 @@ existing class-call limitations on custom initialization. Pickling, CPython's
 private result-tuple recycling/retention behavior, and specialized iteration/JIT
 paths are omitted. Held result tuples remain distinct and retain their elements.
 
+### Combinatorial itertools use managed snapshots and index state
+
+`itertools.combinations`, `combinations_with_replacement`, and `permutations`
+snapshot supported input iterables into exact tuples at construction and yield
+independent tuple results lazily in lexicographic input-index order. Equal input
+elements occupy distinct positions. Pools remain retained after exhaustion;
+source iterators are not retained separately from their yielded elements.
+Subsequent explicit `__init__` calls are no-ops, including invalid arguments.
+
+Combinations accept builtin int/bool/subclass `r` through the existing
+`operator.index` subset; custom non-int `__index__` remains unsupported.
+Permutations accepts only builtin int/bool/subclass payloads or `None`, matching
+the reference's rejection of custom non-int indices. Both combinations APIs
+convert and check signed 64-bit `r` before acquiring the input, then reject
+negative values after snapshotting. Permutations snapshots before validating
+`r`, with omitted/`None` using the pool length. All APIs consume the input for
+`r=0` and yield one empty tuple.
+
+The CPython 3.14.10 checked index-array bound (`r > (2**63 - 1) // 8`) raises
+`MemoryError` after acquisition. Already-empty results skip unnecessary index or
+cycle allocation. Exact allocation-failure timing, native throughput, tuple
+recycling, refcount-sensitive finalization timing, copy/pickle/repr and subclass
+or signature metadata fidelity are excluded. Ordinary managed argument-error
+wording differs. Inputs use the existing iterator subset, without sequence-only
+fallback or length-hint callbacks. No native or general protocol machinery is
+added.
+
 ## Numeric Semantics
 
 ### Base-conversion builtins accept stored integer payloads only

@@ -244,7 +244,8 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
                            "tests/python/itertools_accumulate.py",
                            "tests/python/itertools_batched.py",
                            "tests/python/itertools_zip_longest.py",
-                           "tests/python/itertools_product.py"})
+                           "tests/python/itertools_product.py",
+                           "tests/python/itertools_combinatorial.py"})
     {
         SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);
