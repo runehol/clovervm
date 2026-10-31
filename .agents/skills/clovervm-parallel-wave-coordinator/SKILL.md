@@ -33,9 +33,20 @@ writers to the same module where a single slice is more coherent.
 
 Create chats only when requested, and message existing chats only with human
 authorization. Use the desktop thread tools, not hidden subagents, when the user
-requests separate chats. Give each parallel implementation chat its own worktree
-from a verified base. Identify the resulting chats and distinguish queued setup
-from running work. Do not create duplicate chats for slow setup.
+requests separate chats. Every new parallel task gets its own worktree from a
+verified base, including readiness/research chats and prerequisites launched
+from worker chats. The human need not repeat “with a worktree”: this standing
+policy applies to those launches too. Use the worktree launch option rather
+than the saved project's local checkout, and verify the resulting chat directory
+before repository edits. A branch in the primary checkout is not isolation.
+Identify the resulting chats and distinguish queued setup from running work.
+Do not create duplicate chats for slow setup.
+
+When an existing research chat moves into implementation, first create or attach
+its own task worktree and switch the chat to it. Safely transfer any task-owned
+edits and preserve unrelated changes in the original checkout. Verify the new
+base and working directory before coding. Approval to implement does not waive
+worktree isolation; do not wait for the human to notice or request the move.
 
 Each launch must state the goal, concrete exclusions, review gate and publication
 permissions and intended end state: readiness only, reviewed uncommitted changes,
@@ -76,7 +87,8 @@ When the human chooses prerequisite-first wave scheduling:
 1. Record the blocked goal and link its restart brief and original chat, retaining
    human decisions, acceptance criteria, exclusions and necessary evidence. Ensure
    essential evidence will remain available beyond temporary-file cleanup.
-2. Launch the authorized prerequisite attempt(s), each with its own boundary/gate.
+2. Launch the authorized prerequisite attempt(s), each in its own worktree with
+   its own boundary/gate, including when the launch is delegated to a worker chat.
 3. Close the dependent attempt logically as “blocked discovery completed”; retain
    the unfinished goal in the backlog. Archive the chat/worktree only if separately
    authorized and needed work is safely preserved. Do not confuse chat completion
@@ -98,8 +110,10 @@ Use isolated worktrees for parallel changes. Establish resource settings per hos
 and apply them consistently to chats sharing that host. On the current shared
 macOS desktop, the established defaults are exclusive `fcntl.flock` on
 `/private/tmp/clovervm-next-wave-build.lock` around substantial builds/full checks,
-Ninja `-j2`, and isolated existing per-process TMPDIRs. Adapt to the actual host
-and user instructions rather than copying those paths and limits blindly.
+and isolated existing per-process TMPDIRs. While holding the exclusive lock,
+let Ninja use its default parallelism: omit `-j` and remove explicit parallelism
+overrides from build wrappers. Keep performance timing exclusive and free of
+competing builds/tests. Adapt paths to the actual host and user instructions.
 Preserve ccache; follow repository escalation guidance on sandbox errors. Reuse
 a verified suitable binary for bounded discovery when useful.
 Do not repeatedly rebuild merely for inventory or launch more work than the

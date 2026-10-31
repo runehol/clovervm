@@ -11,6 +11,13 @@ This repository contains clovervm, a Python VM.
   coordination and `clovervm-parallel-intent-review` for each bounded task's
   implementation sketch and approval gate. Core bytecode, interpreter execution,
   and core codegen changes require a separate, explicit human scope decision.
+- Every new parallel task gets its own worktree, including readiness/research
+  chats and prerequisites launched from worker chats. This standing instruction
+  applies even when the launch request omits “with a worktree.” Verify the new
+  chat uses its own worktree, not the primary checkout or another task's tree.
+  Before an existing research chat begins implementation, move it and any
+  task-owned changes into its own worktree; implementation approval alone does
+  not authorize editing the shared checkout. Preserve unrelated changes.
 - Before other nontrivial new designs, including deep single-thread work, use
   `implementation-readiness-review` to agree on a compact sketch unless an
   equivalent sketch is already agreed. Use the appropriate review rather than
@@ -55,6 +62,11 @@ This repository contains clovervm, a Python VM.
 - Before every push, run `ninja -C build-release all check` at the exact HEAD
   being pushed.
 - Run benchmarks with `cmake --build build-release --target run_benchmark`.
+- On the shared macOS host, serialize substantial builds/full checks with
+  exclusive `fcntl.flock` on `/private/tmp/clovervm-next-wave-build.lock`. While
+  holding it, let Ninja use its default parallelism: omit `-j` and remove explicit
+  parallelism overrides from build wrappers. Use isolated existing per-process
+  `TMPDIR`s. Performance measurements keep exclusive access and a quiet machine.
 - `ccache` is picked up at CMake configure time. If a configure or build step hits sandbox restrictions because of `ccache`, ask for elevated permissions instead of disabling `ccache` or reconfiguring the build to avoid it.
 - Run git commands one at a time. Do not launch multiple git commands in parallel, because repository locking can make them fail.
 - Prefer rebasing local work onto upstream changes over creating merge commits
