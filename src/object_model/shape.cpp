@@ -17,24 +17,39 @@ namespace cl
     {
     }
 
-    void Shape::process_weak_references(HeapObject *obj,
-                                        WeakTargetResolver resolver)
+    namespace
+    {
+        gc::WeakRepairResult repair_shape_backlink(Shape *&previous,
+                                                   WeakResolver resolver)
+        {
+            if(previous == nullptr)
+            {
+                return gc::WeakRepairResult::Complete;
+            }
+            WeakResolution resolution = resolver(previous);
+            switch(resolution.state)
+            {
+                case gc::WeakState::Resolved:
+                    HeapReferenceSlot(&previous).rewrite_pointer(
+                        resolution.target);
+                    return gc::WeakRepairResult::Complete;
+                case gc::WeakState::Pending:
+                    return gc::WeakRepairResult::Pending;
+                case gc::WeakState::Dead:
+                    previous = nullptr;
+                    return gc::WeakRepairResult::Complete;
+            }
+            __builtin_unreachable();
+        }
+    }  // namespace
+
+    void Shape::visit_weak_reference_units(HeapObject *obj,
+                                           WeakUnitVisitor visitor)
     {
         assert(obj->native_layout_id() == native_layout);
         Shape *shape = static_cast<Shape *>(obj);
-        if(shape->previous_shape != nullptr)
-        {
-            HeapObject *replacement = resolver(shape->previous_shape);
-            if(replacement == nullptr)
-            {
-                shape->previous_shape = nullptr;
-            }
-            else
-            {
-                HeapReferenceSlot(&shape->previous_shape)
-                    .rewrite_pointer(replacement);
-            }
-        }
+        visitor(
+            WeakRepairUnit::bind<repair_shape_backlink>(shape->previous_shape));
     }
 
     void Shape::trace_strong_references(HeapObject *obj,

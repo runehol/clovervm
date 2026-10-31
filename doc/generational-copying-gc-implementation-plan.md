@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | 4d.2a and parameter-clear fix through `7db447f0`; 4d.2b.1 working tree (2026-10-31) |
+| Validated against | Weak-unit migration working tree based on `649dca5b`; further frame-state work paused (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -40,8 +40,8 @@ CloverVM adapter
 
 Collector algorithm
     evacuate roots and remembered references
-    drain ordinary and stable-promotion work queues
-    process weak references after strong closure
+    drain one copying work queue for ordinary and stable destinations
+    resolve settled weak units early; finish deferred units after strong closure
     complete collection
 
 Mutator integration
@@ -55,6 +55,13 @@ This is a responsibility boundary, not a commitment to virtual dispatch or a
 large heap framework. Agree the concrete interface when its first consumer is
 implemented, following existing low-overhead runtime patterns. The algorithm
 must also run against a small test heap without constructing a VM.
+
+The template interface and concrete test-heap/CloverVM sketches are in
+[Isolated Collector and Heap Adapter](gc-collector-heap-adapter.md). The initial
+slice is non-moving strong closure over explicit roots; it is implemented in
+`src/gc/` in the current working tree, with both synthetic and real-object tests.
+It does not depend on completing interpreter frame maps and does not enable
+production tracing or evacuation.
 
 The collector model and the production algorithm should expose corresponding
 state transitions. Lean proofs establish properties under explicit adapter
@@ -180,12 +187,14 @@ Implement this stage in bounded slices:
   rewriting, latent descriptor names, and tagged-only JIT pool rewriting.
 - **3c: audit remaining layouts and implement weak processing**, keeping
   coherent cache repair separate from strong tracing. Use a non-owning
-  `WeakTargetResolver` (`absl::FunctionRef<HeapObject *(HeapObject *)>`) and
-  an optional descriptor `process_weak` callback behind
-  `process_weak_references(object, resolver)`. Run only after strong closure;
-  the resolver returns a surviving address (including identity for uncollected
-  storage) or null for a dead target, without marking or dereferencing dead
-  inputs. Shape repairs/clears its back-link. CodeObject repairs all raw cache
+  `WeakResolver` returning Resolved/Pending/Dead and an optional descriptor
+  `visit_weak_units` callback behind
+  `visit_weak_reference_units(object, visitor)`. The initial owner-wide,
+  late-only interface has been replaced by per-unit enumeration and callbacks.
+  Early repair preserves unresolved references; after strong closure the
+  resolver reports an unforwarded source as dead, without marking or
+  dereferencing dead inputs. Shape exposes its back-link as one unit.
+  CodeObject exposes each IC entry as a unit and repairs all raw cache
   references, respecting shape-key sentinels and active union arms, or resets
   an entire entry if a target dies. Include keyword-call caches in full cache
   clearing. Successful repairs are RC-neutral; resetting an expanded-call
@@ -198,7 +207,8 @@ Implement this stage in bounded slices:
   implemented. The exhaustive
   [Native Layout Reference Audit](native-layout-reference-audit.md) records
   ownership, weak fields, native-only state, and unresolved relocation
-  prerequisites (including transferred array-backing extent metadata).
+  prerequisites. Old-backing count zeroing is RC-only bookkeeping scheduled
+  for post-cutover removal, not a tracing/copying prerequisite.
 
 Audit every native layout, including references in C++ containers, backing
 records, compiled code, and caches. Separate strong-slot enumeration, weak
@@ -220,9 +230,20 @@ and rewritten.
 
 Use the unified layout design in
 [Native Layout Descriptors](native-layout-descriptors.md) as the target. Migrate
-its queries and consumers in bounded slices. Report object extent, initialized
+its queries and consumers in bounded slices. Report object extent, copy
 extent, and strong slots separately; retain the shape-derived `Instance`
 capacity and auxiliary initialized prefix.
+
+The first unification step is implemented: `native_layout_descriptor_for(id)`
+returns one static record containing the existing release and object-size parts.
+Reclamation, scanning, and size-query consumers use it; the separate tables and
+lookup APIs are removed. `NativeLayoutInfo` adds non-optional
+`allocated_size` and `copy_size`, plus an optional ordinary strong span with a
+64-bit count. Raw backings copy their full byte extent without pointer scanning;
+lazy instances copy their initialized prefix. Empty trailing placeholders remain
+reserved but are excluded from the copy prefix. Custom scanners stay separate.
+This query does not enable movement, and the compact formula migration remains
+subsequent work.
 
 Weak processing happens after strong closure. Repair or clear coherent cache
 entries as a unit. Objects in stable storage still expose outgoing references
@@ -337,6 +358,13 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
 - **4d: Precise frame roots.** Distinguish parameters, locals, temporaries,
   saved code objects, and continuation operands from native PCs, frame pointers,
   padding, and scalar metadata.
+  Further exceptional-flow clearing and frame-map implementation are paused
+  pending a frame-state design: semantic binding, initialized storage, temporary
+  liveness, before/after-instruction and suspended-call positions, handler entry,
+  and the separate needs of GC, traceback/frame observation, and recovery.
+  The existing normal/loop prologue clears are bounded initialization changes,
+  not evidence that precise scanning is designed or complete. The remaining
+  slices below are provisional work breakdowns, not implementation authority.
   - **4d.1: Publish exact frame position (implemented).**
     `SafepointScanRecord` carries the frame pointer and resume bytecode PC,
     alongside the existing stack bound and root cells. Active interpreter
@@ -448,7 +476,7 @@ Run a tracing verifier over the real non-moving heap using the new roots and
 scanners. Refcounting continues to reclaim objects; verification runs at a
 coordinated point where its inspected storage remains valid.
 
-Check reachable-slot validity, initialized extents, root publication, and
+Check reachable-slot validity, copy extents, root publication, and
 remembered-set coverage. Do not treat every positive refcount as a tracing root:
 that would hide missing root declarations. Tracing may find unreachable cycles
 that refcounting retains; that difference is expected.
@@ -460,15 +488,32 @@ prove it.
 
 ### 7. Implement Evacuation Against a Test Heap
 
-Implement forwarding, destination reservation, initialized-state copying, root
-repair, ordinary queue draining, stable-promotion queue draining, and weak
-processing through the agreed collector interface. Preserve readable layout
+Implement forwarding, growable slab-backed destinations, initialized-state
+copying, root repair, one destination-independent work queue, and weak processing
+through the agreed collector interface. Preserve readable layout
 metadata when a source object or its shape has already been forwarded.
 
 Test cycles, shared children, duplicate roots, old-to-young references, and work
-that crosses between both destination queues. Define capacity preconditions or
-failure behavior before publishing any forwarding state; a partially rewritten
-heap cannot simply resume the mutator after an allocation failure.
+whose edges alternate between ordinary and stable destinations. Allocation
+groups use at most two inline members and a `size_t` count; relocate exclusively
+owned overflow storage next to its owner and enqueue both objects. No bitmap
+walk or Cheney/slab scan cursor is required. Collector-only allocation during
+enumeration must preserve visited storage and must not reenter the mutator/GC.
+Destination and work-queue allocation failure are fatal; there is no rollback,
+recoverable allocation result, or resumption of a partially rewritten heap.
+Removing current allocation bitmaps remains separate allocator integration work.
+
+Implement in bounded slices: test-heap grouped-copy/forwarding primitives,
+shared copying traversal, isolated weak units/source disposal, then CloverVM
+weak-unit enumeration. The [weak repair unit design](gc-weak-repair-units.md)
+defines early resolution, exact-unit deferral, and coordinated entry/payload
+invalidation; it does not yet implement production weak-remembered coverage.
+Concrete boundaries
+and the first-slice review are in the
+[adapter design](gc-collector-heap-adapter.md#evacuation-implementation-stages).
+Production copying-adapter readiness follows separately; these slices do not
+change production object-header layouts, frame roots, barriers, or lifetime
+authority.
 
 Completion: the isolated algorithm preserves the test heap's reachable graph,
 and the Lean model and executable comparisons described below cover its state
@@ -505,7 +550,7 @@ adapter. Begin with explicitly audited layouts and keep other allocations in
 non-moving storage. Stable owners still need scanning and barriers for nursery
 children. Use immediate promotion of nursery survivors as the initial policy.
 
-Before a layout can move, establish its slot completeness, initialized extent,
+Before a layout can move, establish its slot completeness, copy extent,
 copy/relocation safety, identity and hash behavior, and raw-address exposure
 rules. Resolve the existing `id()` and identity-derived hash questions before
 moving affected objects. Safepoint publication and restoration must cover all
@@ -523,6 +568,17 @@ ZCT processing, and obsolete lifecycle state after tracing has replaced their
 contracts. Repack the header in a later slice rather than coupling that cleanup
 to first movement.
 
+Purge RC-specific array-backing retirement once tracing is authoritative and no
+supported RC reclamation path needs it. In particular, remove the
+`set_value_cell_count(0)` writes to old backings in `ValueArray::reserve()` and
+`HeapPtrArray::reserve()`. The front array exclusively owns its backing: growth
+copies live elements into a new backing and replaces that reference; the old
+backing then becomes unreachable garbage. Do not clear its stale references or
+normalize its element count for tracing, which does not scan unreachable
+backings. Retain the current zeroing while RC remains active to prevent double
+release. This cleanup does not remove layout/count metadata needed to
+scan or copy the live backing safely.
+
 Capacity shrinking, more precise remembered entries, barrier specialization,
 and further allocation optimizations follow measured needs. The documented
 `Instance` shrinking policy preserves existing inline locations; it remains a
@@ -534,8 +590,9 @@ Model a finite heap graph with roots, strong and weak slots, generation/space
 classification, forwarding, and pending scan work. Represent logical object
 identity separately from physical addresses. State adapter assumptions
 explicitly: complete roots and slots, valid layouts, stable source metadata,
-exclusive collection access, and sufficient destination capacity for the
-successful-collection theorem.
+exclusive collection access, and successful resource acquisition for the
+successful-collection theorem. Allocation failure is a separate terminal outcome,
+not a resumable partially evacuated state or a whole-heap preallocation promise.
 
 The initial proof targets are:
 
@@ -546,7 +603,8 @@ The initial proof targets are:
 - the write barrier preserves coverage of old-to-young references;
 - evacuation terminates for a finite heap with sufficient destination capacity;
 - weak slots are repaired or cleared only after strong closure;
-- both scan queues reach closure before nursery reuse.
+- all ordinary and stable destinations reach closure through the unified work
+  queue before nursery reuse.
 
 Build the model alongside the isolated collector rather than reconstructing it
 after runtime integration. Compare executable model results with the C++ test

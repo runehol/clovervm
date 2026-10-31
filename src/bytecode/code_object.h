@@ -689,13 +689,13 @@ namespace cl
         static void destroy(HeapObject *obj);
         static void trace_strong_references(HeapObject *obj,
                                             StrongSlotVisitor visitor);
-        static void process_weak_references(HeapObject *obj,
-                                            WeakTargetResolver resolver);
+        static void visit_weak_reference_units(HeapObject *obj,
+                                               WeakUnitVisitor visitor);
 
         CL_DECLARE_CUSTOM_RELEASE(CodeObject, release_managed_references);
         CL_DECLARE_NATIVE_DESTROY(CodeObject, destroy);
         CL_DECLARE_CUSTOM_TRACE_STRONG(CodeObject, trace_strong_references);
-        CL_DECLARE_PROCESS_WEAK(CodeObject, process_weak_references);
+        CL_DECLARE_VISIT_WEAK_UNITS(CodeObject, visit_weak_reference_units);
         CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
     };
 

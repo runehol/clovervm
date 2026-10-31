@@ -85,181 +85,234 @@ namespace cl
     namespace
     {
         template <typename T>
-        bool repair_weak_target(T *&target, WeakTargetResolver resolver)
+        gc::WeakState repair_weak_target(T *&target, WeakResolver resolver)
         {
             if(target == nullptr)
             {
-                return true;
+                return gc::WeakState::Resolved;
             }
-            HeapObject *replacement =
+            WeakResolution resolution =
                 resolver(const_cast<std::remove_const_t<T> *>(target));
-            if(replacement == nullptr)
+            if(resolution.state == gc::WeakState::Resolved)
             {
-                return false;
+                HeapReferenceSlot(&target).rewrite_pointer(resolution.target);
             }
-            HeapReferenceSlot(&target).rewrite_pointer(replacement);
-            return true;
+            return resolution.state;
         }
 
-        bool repair_weak_value(Value &value, WeakTargetResolver resolver)
+        gc::WeakState repair_weak_value(Value &value, WeakResolver resolver)
         {
             if(!value.is_ptr())
             {
-                return true;
+                return gc::WeakState::Resolved;
             }
-            HeapObject *replacement = resolver(value.as.ptr);
-            if(replacement == nullptr)
+            WeakResolution resolution = resolver(value.as.ptr);
+            if(resolution.state == gc::WeakState::Resolved)
             {
-                return false;
+                HeapReferenceSlot(&value).rewrite_pointer(resolution.target);
             }
-            HeapReferenceSlot(&value).rewrite_pointer(replacement);
-            return true;
+            return resolution.state;
         }
 
-        bool repair_cache(AttributeReadInlineCache &cache,
-                          WeakTargetResolver resolver)
+        // Accumulate without short-circuiting: Pending must not prevent other
+        // fields from being repaired. Dead dominates Pending for whole-entry
+        // invalidation, but no field is dereferenced through its weak target.
+        class WeakCacheRepair
         {
-            if(!repair_weak_target(cache.receiver_shape, resolver) ||
-               !repair_weak_target(cache.lookup_validity_cell, resolver))
+        public:
+            explicit WeakCacheRepair(WeakResolver resolver)
+                : resolver_(resolver)
             {
-                return false;
             }
+
+            template <typename T> void target(T *&value)
+            {
+                observe(repair_weak_target(value, resolver_));
+            }
+
+            void value(Value &value)
+            {
+                observe(repair_weak_value(value, resolver_));
+            }
+            void key(ShapeKey &key)
+            {
+                observe(key.repair_weak_reference(resolver_));
+            }
+            gc::WeakState state() const { return state_; }
+
+        private:
+            void observe(gc::WeakState state)
+            {
+                if(state == gc::WeakState::Dead ||
+                   state_ == gc::WeakState::Resolved)
+                {
+                    state_ = state;
+                }
+            }
+
+            WeakResolver resolver_;
+            gc::WeakState state_ = gc::WeakState::Resolved;
+        };
+
+        gc::WeakState repair_cache(AttributeReadInlineCache &cache,
+                                   WeakResolver resolver)
+        {
+            WeakCacheRepair repair(resolver);
+            repair.target(cache.receiver_shape);
+            repair.target(cache.lookup_validity_cell);
             switch(cache.plan.kind)
             {
                 case AttributeReadPlanKind::ConstantValue:
-                    return repair_weak_value(cache.plan.constant_value,
-                                             resolver);
+                    repair.value(cache.plan.constant_value);
+                    return repair.state();
                 case AttributeReadPlanKind::ReceiverSlot:
                 case AttributeReadPlanKind::BindFunctionReceiver:
                 case AttributeReadPlanKind::DataDescriptorGet:
                 case AttributeReadPlanKind::NonDataDescriptorGet:
-                    return repair_weak_target(cache.plan.storage_owner,
-                                              resolver);
+                    repair.target(cache.plan.storage_owner);
+                    return repair.state();
             }
             assert(false && "invalid attribute read plan kind");
             __builtin_unreachable();
         }
 
-        bool repair_cache(AttributeMutationInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(AttributeMutationInlineCache &cache,
+                                   WeakResolver resolver)
         {
-            if(!repair_weak_target(cache.receiver_shape, resolver) ||
-               !repair_weak_target(cache.lookup_validity_cell, resolver))
-            {
-                return false;
-            }
+            WeakCacheRepair repair(resolver);
+            repair.target(cache.receiver_shape);
+            repair.target(cache.lookup_validity_cell);
             switch(cache.plan.kind)
             {
                 case AttributeMutationPlanKind::StoreExisting:
-                    return repair_weak_target(cache.plan.storage_owner,
-                                              resolver);
+                    repair.target(cache.plan.storage_owner);
+                    return repair.state();
                 case AttributeMutationPlanKind::AddOwnProperty:
                 case AttributeMutationPlanKind::DeleteOwnProperty:
-                    return repair_weak_target(cache.plan.next_shape, resolver);
+                    repair.target(cache.plan.next_shape);
+                    return repair.state();
                 case AttributeMutationPlanKind::ChangeClass:
-                    return true;
+                    return repair.state();
             }
             assert(false && "invalid attribute mutation plan kind");
             __builtin_unreachable();
         }
 
-        bool repair_cache(ModuleGlobalReadInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(ModuleGlobalReadInlineCache &cache,
+                                   WeakResolver resolver)
         {
-            return repair_weak_target(cache.lookup_validity_cell, resolver) &&
-                   repair_weak_target(cache.slot.storage_owner, resolver);
+            WeakCacheRepair repair(resolver);
+            repair.target(cache.lookup_validity_cell);
+            repair.target(cache.slot.storage_owner);
+            return repair.state();
         }
 
-        bool repair_cache(ModuleGlobalMutationInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(ModuleGlobalMutationInlineCache &cache,
+                                   WeakResolver resolver)
         {
-            return repair_weak_target(cache.lookup_validity_cell, resolver) &&
-                   repair_weak_target(cache.store_existing.storage_owner,
-                                      resolver);
+            WeakCacheRepair repair(resolver);
+            repair.target(cache.lookup_validity_cell);
+            repair.target(cache.store_existing.storage_owner);
+            return repair.state();
         }
 
-        bool repair_cache(FunctionCallInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(FunctionCallInlineCache &cache,
+                                   WeakResolver resolver)
         {
-            return repair_weak_value(cache.guard_value, resolver) &&
-                   repair_weak_target(cache.function, resolver) &&
-                   repair_weak_target(cache.code_object, resolver) &&
-                   repair_weak_target(cache.validity_cell, resolver);
+            WeakCacheRepair repair(resolver);
+            repair.value(cache.guard_value);
+            repair.target(cache.function);
+            repair.target(cache.code_object);
+            repair.target(cache.validity_cell);
+            return repair.state();
         }
 
-        bool repair_cache(KeywordCallInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(KeywordCallInlineCache &cache,
+                                   WeakResolver resolver)
         {
-            return repair_weak_value(cache.guard_value, resolver) &&
-                   repair_weak_target(cache.function, resolver) &&
-                   repair_weak_target(cache.code_object, resolver) &&
-                   repair_weak_target(cache.validity_cell, resolver);
+            WeakCacheRepair repair(resolver);
+            repair.value(cache.guard_value);
+            repair.target(cache.function);
+            repair.target(cache.code_object);
+            repair.target(cache.validity_cell);
+            return repair.state();
         }
 
-        bool repair_cache(ExpandedCallInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(ExpandedCallInlineCache &cache,
+                                   WeakResolver resolver)
         {
             // binding_plan owns strong keyword names, repaired during strong
             // closure. Do not treat those names as weak cache guards.
-            return repair_weak_value(cache.guard_value, resolver) &&
-                   repair_weak_target(cache.function, resolver) &&
-                   repair_weak_target(cache.validity_cell, resolver);
+            WeakCacheRepair repair(resolver);
+            repair.value(cache.guard_value);
+            repair.target(cache.function);
+            repair.target(cache.validity_cell);
+            return repair.state();
         }
 
-        bool repair_cache(OperatorInlineCache &cache,
-                          WeakTargetResolver resolver)
+        gc::WeakState repair_cache(OperatorInlineCache &cache,
+                                   WeakResolver resolver)
         {
+            WeakCacheRepair repair(resolver);
             for(ShapeKey &key: cache.operand_shape_keys)
             {
-                if(!key.repair_weak_reference(resolver))
-                {
-                    return false;
-                }
+                repair.key(key);
             }
             for(ValidityCell *&cell: cache.operand_lookup_validity_cells)
             {
-                if(!repair_weak_target(cell, resolver))
-                {
-                    return false;
-                }
+                repair.target(cell);
             }
-            return repair_weak_target(cache.function, resolver) &&
-                   repair_weak_target(cache.code_object, resolver);
+            repair.target(cache.function);
+            repair.target(cache.code_object);
+            return repair.state();
         }
 
         template <typename Cache>
-        void process_weak_cache_table(std::vector<Cache> &table,
-                                      WeakTargetResolver resolver)
+        gc::WeakRepairResult repair_cache_unit(Cache &cache,
+                                               WeakResolver resolver)
         {
-            for(Cache &cache: table)
+            switch(repair_cache(cache, resolver))
             {
-                if(!repair_cache(cache, resolver))
-                {
+                case gc::WeakState::Dead:
                     // No mutator or observer runs during repair. Any partial
                     // repairs are discarded together with the whole entry.
                     // Expanded-call reset releases its owned name plan; weak
                     // pointer repair itself performs no refcount operations.
                     cache = Cache{};
-                }
+                    return gc::WeakRepairResult::Complete;
+                case gc::WeakState::Pending:
+                    return gc::WeakRepairResult::Pending;
+                case gc::WeakState::Resolved:
+                    return gc::WeakRepairResult::Complete;
+            }
+            __builtin_unreachable();
+        }
+
+        template <typename Cache>
+        void visit_weak_cache_table(std::vector<Cache> &table,
+                                    WeakUnitVisitor visitor)
+        {
+            for(Cache &cache: table)
+            {
+                visitor(WeakRepairUnit::bind<repair_cache_unit<Cache>>(cache));
             }
         }
     }  // namespace
 
-    void CodeObject::process_weak_references(HeapObject *obj,
-                                             WeakTargetResolver resolver)
+    void CodeObject::visit_weak_reference_units(HeapObject *obj,
+                                                WeakUnitVisitor visitor)
     {
         assert(obj->native_layout_id() == native_layout);
         InlineCacheTables &caches =
             static_cast<CodeObject *>(obj)->inline_caches;
-        process_weak_cache_table(caches.attribute_read_caches, resolver);
-        process_weak_cache_table(caches.attribute_mutation_caches, resolver);
-        process_weak_cache_table(caches.module_global_read_caches, resolver);
-        process_weak_cache_table(caches.module_global_mutation_caches,
-                                 resolver);
-        process_weak_cache_table(caches.function_call_caches, resolver);
-        process_weak_cache_table(caches.keyword_call_caches, resolver);
-        process_weak_cache_table(caches.expanded_call_caches, resolver);
-        process_weak_cache_table(caches.operator_caches, resolver);
+        visit_weak_cache_table(caches.attribute_read_caches, visitor);
+        visit_weak_cache_table(caches.attribute_mutation_caches, visitor);
+        visit_weak_cache_table(caches.module_global_read_caches, visitor);
+        visit_weak_cache_table(caches.module_global_mutation_caches, visitor);
+        visit_weak_cache_table(caches.function_call_caches, visitor);
+        visit_weak_cache_table(caches.keyword_call_caches, visitor);
+        visit_weak_cache_table(caches.expanded_call_caches, visitor);
+        visit_weak_cache_table(caches.operator_caches, visitor);
     }
 
     void CodeObject::trace_strong_references(HeapObject *obj,

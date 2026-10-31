@@ -101,9 +101,14 @@ namespace cl
         {
             return allocation_size_for(tuple->size());
         }
+        static size_t copy_size_in_bytes(const Tuple *tuple)
+        {
+            return CL_OFFSETOF(Tuple, elements) + tuple->size() * sizeof(Value);
+        }
 
         CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(Tuple, Object, size_value, 1);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Tuple, Tuple::object_size_in_bytes);
+        CL_DECLARE_CUSTOM_COPY_SIZE(Tuple, Tuple::copy_size_in_bytes);
 
     private:
         static size_t storage_count_for(size_t size)

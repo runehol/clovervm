@@ -39,6 +39,11 @@ namespace cl
         {
             return allocation_size_for(overflow_slots->get_capacity());
         }
+        static size_t copy_size_in_bytes(const OverflowSlots *overflow_slots)
+        {
+            return CL_OFFSETOF(OverflowSlots, slots) +
+                   sizeof(Value) * overflow_slots->get_capacity();
+        }
 
         uint32_t get_size() const { return size; }
         uint32_t get_capacity() const { return capacity; }
@@ -68,6 +73,8 @@ namespace cl
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(OverflowSlots, slots, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(OverflowSlots,
                                       OverflowSlots::object_size_in_bytes);
+        CL_DECLARE_CUSTOM_COPY_SIZE(OverflowSlots,
+                                    OverflowSlots::copy_size_in_bytes);
     };
 
 }  // namespace cl

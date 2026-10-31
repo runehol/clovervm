@@ -24,6 +24,11 @@ configure_file(
     @ONLY)
 
 add_library(libclovervm_objects OBJECT
+    gc/strong_closure.h
+    gc/allocation_group.h
+    gc/evacuation.h
+    gc/weak_repair.h
+    gc/clover_heap_adapter.h
     codecs/codec.cpp
     codecs/codec.h
     codecs/incremental_codec.cpp

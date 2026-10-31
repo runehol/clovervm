@@ -30,6 +30,11 @@ namespace cl
             return allocation_size_for(inline_slot_count_for_class(cls));
         }
         static size_t object_size_in_bytes(const Instance *instance);
+        static size_t copy_size_in_bytes(const Instance *instance)
+        {
+            return sizeof(Instance) +
+                   sizeof(Value) * instance->native_layout_aux_count_value();
+        }
 
         static uint32_t inline_slot_count_for_class(ClassObject *cls);
 
@@ -37,6 +42,7 @@ namespace cl
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(Instance, InlineSlotObject,
                                                   0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Instance, Instance::object_size_in_bytes);
+        CL_DECLARE_CUSTOM_COPY_SIZE(Instance, Instance::copy_size_in_bytes);
     };
 
 }  // namespace cl

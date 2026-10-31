@@ -94,7 +94,7 @@ namespace cl::jit
         ASSERT_EQ(2, child.extract()->refcount);
 
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(JitCodeObject::native_layout);
+            native_layout_descriptor_for(JitCodeObject::native_layout).release;
         EXPECT_EQ(JitCodeObject::release_managed_references,
                   descriptor.custom_release);
         EXPECT_EQ(JitCodeObject::destroy, descriptor.destroy);

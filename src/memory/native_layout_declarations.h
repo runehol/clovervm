@@ -153,8 +153,8 @@ namespace cl
 #define CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)                         \
     static constexpr auto native_custom_trace_strong = function;
 
-#define CL_DECLARE_PROCESS_WEAK(type, function)                                \
-    static constexpr auto native_process_weak = function;
+#define CL_DECLARE_VISIT_WEAK_UNITS(type, function)                            \
+    static constexpr auto native_visit_weak_units = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \
     static constexpr ObjectSizeKind native_object_size_kind =                  \
@@ -168,6 +168,14 @@ namespace cl
     static constexpr ObjectSizeKind native_object_size_kind =                  \
         ObjectSizeKind::Custom;                                                \
     static size_t native_object_size_in_bytes(const HeapObject *obj)           \
+    {                                                                          \
+        return function(static_cast<const type *>(obj));                       \
+    }
+
+    // Omit when the complete object extent is copied. This only describes a
+    // byte-copy prefix; it does not establish relocation safety.
+#define CL_DECLARE_CUSTOM_COPY_SIZE(type, function)                            \
+    static size_t native_copy_size_in_bytes(const HeapObject *obj)             \
     {                                                                          \
         return function(static_cast<const type *>(obj));                       \
     }

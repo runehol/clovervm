@@ -26,7 +26,8 @@ namespace cl
                 assert(obj != nullptr);
                 assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
                 const ReleaseDescriptor &descriptor =
-                    release_descriptor_for(obj->native_layout_id());
+                    native_layout_descriptor_for(obj->native_layout_id())
+                        .release;
 
                 if(auto span = resolve_ordinary_reference_span(obj, descriptor))
                 {

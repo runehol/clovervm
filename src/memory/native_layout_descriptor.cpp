@@ -6,6 +6,21 @@ namespace cl
 {
     namespace
     {
+        size_t resolve_object_size(const HeapObject *obj,
+                                   const ObjectSizeDescriptor &descriptor)
+        {
+            switch(descriptor.kind)
+            {
+                case ObjectSizeKind::StaticSize:
+                    return descriptor.static_size_in_bytes;
+                case ObjectSizeKind::Custom:
+                    assert(descriptor.custom_size_in_bytes != nullptr);
+                    return descriptor.custom_size_in_bytes(obj);
+            }
+            assert(false && "object-size descriptor kind not implemented yet");
+            return 0;
+        }
+
         template <typename T>
         bool inline_slot_capacity_is_valid(uint32_t capacity)
         {
@@ -70,7 +85,7 @@ namespace cl
     {
         assert(object != nullptr);
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(object->native_layout_id());
+            native_layout_descriptor_for(object->native_layout_id()).release;
         auto span = resolve_ordinary_reference_span(object, descriptor);
         assert(span.has_value() || descriptor.custom_trace_strong != nullptr);
         if(span)
@@ -83,15 +98,14 @@ namespace cl
         }
     }
 
-    void process_weak_references(HeapObject *object,
-                                 WeakTargetResolver resolver)
+    void visit_weak_reference_units(HeapObject *object, WeakUnitVisitor visitor)
     {
         assert(object != nullptr);
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(object->native_layout_id());
-        if(descriptor.process_weak != nullptr)
+            native_layout_descriptor_for(object->native_layout_id()).release;
+        if(descriptor.visit_weak_units != nullptr)
         {
-            descriptor.process_weak(object, resolver);
+            descriptor.visit_weak_units(object, visitor);
         }
     }
 
@@ -99,19 +113,25 @@ namespace cl
     {
         assert(obj != nullptr);
         const ObjectSizeDescriptor &descriptor =
-            object_size_descriptor_for(obj->native_layout_id());
+            native_layout_descriptor_for(obj->native_layout_id()).object_size;
 
-        switch(descriptor.kind)
-        {
-            case ObjectSizeKind::StaticSize:
-                return descriptor.static_size_in_bytes;
-            case ObjectSizeKind::Custom:
-                assert(descriptor.custom_size_in_bytes != nullptr);
-                return descriptor.custom_size_in_bytes(obj);
-        }
+        return resolve_object_size(obj, descriptor);
+    }
 
-        assert(false && "object-size descriptor kind not implemented yet");
-        return 0;
+    NativeLayoutInfo native_layout_info(const HeapObject *obj)
+    {
+        assert(obj != nullptr);
+        const NativeLayoutDescriptor &descriptor =
+            native_layout_descriptor_for(obj->native_layout_id());
+        size_t allocated_size =
+            resolve_object_size(obj, descriptor.object_size);
+        size_t copy_size = descriptor.custom_copy_size_in_bytes != nullptr
+                               ? descriptor.custom_copy_size_in_bytes(obj)
+                               : allocated_size;
+        assert(copy_size <= allocated_size);
+        return NativeLayoutInfo{
+            allocated_size, copy_size,
+            resolve_ordinary_reference_span(obj, descriptor.release)};
     }
 
 }  // namespace cl

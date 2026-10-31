@@ -147,7 +147,8 @@ TEST(HeapReferenceSlot, WalksMixedInstanceFieldsAndOnlyInitializedInlineCells)
     instance->inline_slot_base()[3] = original.raw_value();
     ASSERT_EQ(2u, instance->native_layout_aux_count_value());
     auto span = resolve_ordinary_reference_span(
-        instance, release_descriptor_for(Instance::native_layout));
+        instance,
+        native_layout_descriptor_for(Instance::native_layout).release);
     ASSERT_TRUE(span.has_value());
     std::array<HeapObject *, 3> sources{original_shape, original_overflow.get(),
                                         original.extract()};

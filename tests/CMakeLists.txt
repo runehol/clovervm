@@ -13,6 +13,11 @@ set_target_properties(test_clovervm PROPERTIES
 enable_sanitizers(test_clovervm)
 
 target_sources(test_clovervm PRIVATE
+	gc_test_heap.h
+	test_gc_mark_phase.cpp
+	test_gc_evacuation_primitives.cpp
+	test_gc_evacuation.cpp
+	test_gc_weak_repair.cpp
 	test_codec.cpp
 	test_incremental_codec.cpp
 	test_codec_c.c

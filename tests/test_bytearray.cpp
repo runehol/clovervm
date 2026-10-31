@@ -17,20 +17,22 @@ using namespace cl;
 
 TEST(ByteArray, LayoutTracesOwnerBackingAndIterator)
 {
-    const auto &release = release_descriptor_for(NativeLayoutId::ByteArray);
+    const auto &release =
+        native_layout_descriptor_for(NativeLayoutId::ByteArray).release;
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
     EXPECT_EQ(Object::native_static_release_count() +
                   RawArray<uint8_t>::embedded_value_count,
               release.static_release_count);
     EXPECT_EQ(nullptr, release.custom_release);
     EXPECT_EQ(sizeof(ByteArray),
-              object_size_descriptor_for(NativeLayoutId::ByteArray)
-                  .static_size_in_bytes);
+              native_layout_descriptor_for(NativeLayoutId::ByteArray)
+                  .object_size.static_size_in_bytes);
     EXPECT_EQ(Object::native_static_release_count() + 2,
-              release_descriptor_for(NativeLayoutId::ByteArrayIterator)
-                  .static_release_count);
+              native_layout_descriptor_for(NativeLayoutId::ByteArrayIterator)
+                  .release.static_release_count);
     EXPECT_EQ(ReleaseKind::StaticSpan,
-              release_descriptor_for(NativeLayoutId::RawArrayBacking).kind);
+              native_layout_descriptor_for(NativeLayoutId::RawArrayBacking)
+                  .release.kind);
 }
 
 TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
