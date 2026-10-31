@@ -433,6 +433,28 @@ existing class-call limitations on custom initialization. Pickling, CPython's
 private result-tuple recycling/retention behavior, and specialized iteration/JIT
 paths are omitted. Held result tuples remain distinct and retain their elements.
 
+### Cycle uses a managed lazy cache
+
+`itertools.cycle(iterable, /)` acquires its source at construction without
+advancing it. Successful source results are saved by reference; mutable elements
+remain shared. Ordinary source exceptions propagate without closing the source.
+The first `StopIteration` discards its payload, releases the source, and switches
+permanently to replay, including for resumable inputs. Empty inputs remain
+exhausted. Cached elements remain retained until the cycle is released.
+Reentry follows CPython 3.14.10's state transitions: a successful outer call still
+caches its item after nested exhaustion. Explicit reinitialization is a no-op,
+including invalid arguments. When both a nested and an outer source advancement
+exhaust, CPython 3.14.10 resets replay to the first saved element for the outer
+call. CPython 3.14.4 instead preserves the nested replay position. The cycle
+regression and host differential target 3.14.10; the host harness requires that
+exact reference version.
+
+Infinite inputs are never eagerly materialized, but their saved-element cache
+grows without bound. Inputs use existing iteration support. Allocation-failure
+and exact refcount-sensitive finalization timing, subclass fidelity, signature
+metadata, copy, pickle, and repr fidelity are excluded. Managed argument-error
+wording differs; no native layout or iterator protocol changes are included.
+
 ### Combinatorial itertools use managed snapshots and index state
 
 `itertools.combinations`, `combinations_with_replacement`, and `permutations`
