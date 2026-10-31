@@ -1,7 +1,9 @@
 #include "builtin_types/bytearray.h"
+#include "builtin_types/binary_split.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
+#include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
@@ -618,6 +620,117 @@ namespace cl
         return bytes_view(TValue<Bytes>::from_value_assumed(value));
     }
 
+    [[nodiscard]] static Value require_split_separator(Value separator)
+    {
+        if(has_native_layout<Bytes>(separator) ||
+           has_native_layout<ByteArray>(separator))
+            return Value::None();
+        return active_thread()->set_pending_builtin_exception_string(
+            L"TypeError", L"separator must be bytes or bytearray");
+    }
+
+    static std::string_view split_view(Value value)
+    {
+        auto view = stored_byte_view(value);
+        return {reinterpret_cast<const char *>(view.data()), view.size()};
+    }
+
+    static TValue<ByteArray> copy_split_piece(TValue<ByteArray> source,
+                                              BinarySplitPiece piece)
+    {
+        Owned<TValue<ByteArray>> owner(source);
+        Owned<TValue<ByteArray>> result(
+            active_thread()->make_object_value<ByteArray>());
+        result.extract()->items.resize(piece.size);
+        // Reacquire payloads after allocation; no callbacks, resizing of the
+        // source, or safepoints occur while these pointers are in use.
+        if(piece.size != 0)
+            std::copy_n(owner.extract()->items.data() + piece.start, piece.size,
+                        result.extract()->items.data());
+        return result.value();
+    }
+
+    template <SearchDirection Direction>
+    [[nodiscard]] static Value native_split(ThreadState *, Value self,
+                                            Value separator, Value limit)
+    {
+        constexpr const wchar_t *method =
+            Direction == SearchDirection::Forward ? L"split" : L"rsplit";
+        Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
+        int64_t maxsplit = CL_TRY(binary_maxsplit(limit));
+        Owned<Value> separator_owner(separator);
+        if(!separator.is_none())
+            CL_PROPAGATE_EXCEPTION(require_split_separator(separator));
+        std::vector<BinarySplitPiece> pieces;
+        {
+            std::optional<std::string_view> sep;
+            if(!separator.is_none())
+            {
+                sep = split_view(separator_owner.value());
+                if(sep->empty())
+                    return active_thread()
+                        ->set_pending_builtin_exception_string(
+                            L"ValueError", L"empty separator");
+            }
+            pieces = scan_binary_split(split_view(source.raw_value()), sep,
+                                       maxsplit, Direction);
+        }
+        Owned<TValue<List>> result(active_thread()->make_object_value<List>());
+        for(auto piece: pieces)
+        {
+            Owned<TValue<ByteArray>> part(
+                copy_split_piece(source.value(), piece));
+            result.extract()->append(part.raw_value());
+        }
+        return result.raw_value();
+    }
+
+    template <SearchDirection Direction>
+    [[nodiscard]] static Value native_partition(ThreadState *, Value self,
+                                                Value separator)
+    {
+        constexpr const wchar_t *method = Direction == SearchDirection::Forward
+                                              ? L"partition"
+                                              : L"rpartition";
+        Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
+        CL_PROPAGATE_EXCEPTION(require_split_separator(separator));
+        Owned<Value> separator_owner(separator);
+        BinarySplitPiece pieces[3]{};
+        {
+            auto view = split_view(source.raw_value());
+            auto sep = split_view(separator_owner.value());
+            if(sep.empty())
+                return active_thread()->set_pending_builtin_exception_string(
+                    L"ValueError", L"empty separator");
+            size_t found = sep.size() > view.size()
+                               ? std::string_view::npos
+                               : SeparatorSearch<char>(sep, Direction)
+                                     .find(view, 0, view.size());
+            if(found == std::string_view::npos)
+            {
+                size_t original = Direction == SearchDirection::Forward ? 0 : 2;
+                pieces[original] = {0, view.size()};
+            }
+            else
+            {
+                pieces[0] = {0, found};
+                pieces[1] = {found, sep.size()};
+                pieces[2] = {found + sep.size(),
+                             view.size() - found - sep.size()};
+            }
+        }
+        Owned<TValue<Tuple>> result(
+            active_thread()->make_object_value<Tuple>(3));
+        for(size_t index = 0; index < 3; ++index)
+        {
+            Owned<TValue<ByteArray>> part(
+                copy_split_piece(source.value(), pieces[index]));
+            result.extract()->initialize_item_unchecked(index,
+                                                        part.raw_value());
+        }
+        return result.raw_value();
+    }
+
     enum class ByteArraySearch
     {
         Find,
@@ -1012,6 +1125,12 @@ namespace cl
             vm->get_default_thread()->make_object_value<Tuple>(2));
         search_defaults.extract()->initialize_item_unchecked(0, Value::None());
         search_defaults.extract()->initialize_item_unchecked(1, Value::None());
+        Owned<TValue<Tuple>> split_defaults(
+            vm->get_default_thread()->make_object_value<Tuple>(2));
+        split_defaults.extract()->initialize_item_unchecked(0, Value::None());
+        split_defaults.extract()->initialize_item_unchecked(
+            1, Value::from_smi(-1));
+        static constexpr const wchar_t *split_names[] = {L"sep", L"maxsplit"};
         vm->register_trusted_handler(trusted_compare<ByteArrayEqOperator>,
                                      TrustedHandlerEffects::None);
         vm->register_trusted_handler(trusted_compare<ByteArrayNeOperator>,
@@ -1042,6 +1161,22 @@ namespace cl
         vm->register_trusted_handler(trusted_delitem<ItemKeyKind::Slice>,
                                      TrustedHandlerEffects::Raise);
         BuiltinIntrinsicMethod methods[] = {
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(
+                        L"split", native_split<SearchDirection::Forward>),
+                    split_defaults.value()),
+                split_names, 2, 1),
+            with_keyword_parameter_names(
+                with_defaults(
+                    builtin_intrinsic_method(
+                        L"rsplit", native_split<SearchDirection::Reverse>),
+                    split_defaults.value()),
+                split_names, 2, 1),
+            builtin_intrinsic_method(
+                L"partition", native_partition<SearchDirection::Forward>),
+            builtin_intrinsic_method(
+                L"rpartition", native_partition<SearchDirection::Reverse>),
             builtin_intrinsic_method(L"__len__", native_len),
             builtin_intrinsic_method(L"__repr__", native_repr),
             builtin_intrinsic_method(L"__str__", native_repr),

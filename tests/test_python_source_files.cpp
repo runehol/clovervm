@@ -136,6 +136,16 @@ TEST(PythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
+TEST(PythonSourceFiles, StringSeparatorSearchSurvivesEverySafepointReclamation)
+{
+    std::wstring source =
+        read_source_file("tests/python/string_separator_search.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
 TEST(PythonSourceFiles, BytesJoinSurvivesEverySafepointReclamation)
 {
     for(const char *path:

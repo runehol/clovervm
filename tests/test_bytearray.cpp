@@ -10,6 +10,7 @@
 #include "test_helpers.h"
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <unistd.h>
 
 using namespace cl;
@@ -44,7 +45,10 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
                            "tests/python/builtin_bytearray_methods.py",
                            "tests/python/builtin_bytearray_methods_limits.py",
                            "tests/python/builtin_bytearray_search.py",
-                           "tests/python/builtin_bytearray_search_limits.py"})
+                           "tests/python/builtin_bytearray_search_limits.py",
+                           "tests/python/builtin_bytearray_split.py",
+                           "tests/python/builtin_bytearray_split_limits.py",
+                           "tests/python/binary_split_search.py"})
     {
         SCOPED_TRACE(path);
         std::ifstream input(path);
