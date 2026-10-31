@@ -190,6 +190,20 @@ TEST(PythonSourceFiles, StringPaddingSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, BinaryPaddingSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/binary_padding.py",
+                           "tests/python/binary_padding_limits.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(PythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/bytes_split.py");

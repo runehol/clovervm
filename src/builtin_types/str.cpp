@@ -5,6 +5,7 @@
 #include "builtin_types/line_tab.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
+#include "builtin_types/padding.h"
 #include "builtin_types/search_range.h"
 #include "builtin_types/separator_search.h"
 #include "builtin_types/slice.h"
@@ -26,6 +27,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <cwctype>
 #include <iterator>
 #include <limits>
@@ -791,103 +793,56 @@ namespace cl
             L"ValueError", L"empty separator");
     }
 
-    enum class StrPaddingKind
-    {
-        Left,
-        Right,
-        Center,
-        Zero
-    };
-
-    [[nodiscard]] static Expected<int64_t> str_padding_width(Value value)
-    {
-        if(!is_intlike_value(value))
-        {
-            return Expected<int64_t>::raise_exception(
-                L"TypeError", L"width must be an integer");
-        }
-        SmiViewStorage storage;
-        int64_t width =
-            CL_TRY(bigint_to_int64(intlike_value_bigint_view(value, &storage)));
-        if(width < std::numeric_limits<ptrdiff_t>::min() ||
-           width > std::numeric_limits<ptrdiff_t>::max())
-        {
-            return Expected<int64_t>::raise_exception(
-                L"OverflowError", L"width exceeds platform index range");
-        }
-        return Expected<int64_t>::ok(width);
-    }
-
     [[nodiscard]] static Value pad_string(ThreadState *thread,
                                           TValue<String> source, int64_t width,
-                                          cl_wchar fill, StrPaddingKind kind)
+                                          cl_wchar fill, PaddingKind kind)
     {
-        int64_t length = source.extract()->count.extract();
-        if(width <= length)
+        int64_t stored_length = source.extract()->count.extract();
+        size_t length = static_cast<size_t>(stored_length);
+        if(width <= stored_length)
         {
             if(is_exact_string(thread, source.raw_value()))
-            {
                 return source.raw_value();
-            }
-            return thread->make_object_value<String>(string_view(source))
-                .raw_value();
+            // No padding: the owning wrapper handles the subclass-to-base
+            // copy directly, retaining and reacquiring the source across
+            // allocation.
+            Owned<TValue<String>> owner(source);
+            TValue<String> result = thread->make_object_value<String>(
+                TValue<SMI>::from_smi(stored_length));
+            if(length != 0)
+                std::memcpy(result.extract()->data, owner.extract()->data,
+                            length * sizeof(cl_wchar));
+            return result.raw_value();
         }
-        // Check before narrowing the length or calculating
-        // String::allocation_size_for.
-        if(width > value_smi_max ||
-           static_cast<uint64_t>(width) >
-               (std::numeric_limits<size_t>::max() - sizeof(String)) /
-                   sizeof(cl_wchar))
-        {
+        const size_t limit =
+            std::min(size_t(value_smi_max),
+                     (std::numeric_limits<size_t>::max() - sizeof(String)) /
+                         sizeof(cl_wchar));
+        auto plan = plan_padding(length, width, limit, kind);
+        if(!plan)
             return thread->set_pending_builtin_exception_string(
                 L"OverflowError", L"padded string exceeds storage limit");
-        }
-        int64_t margin = width - length;
-        int64_t left = 0;
-        switch(kind)
-        {
-            case StrPaddingKind::Left:
-                break;
-            case StrPaddingKind::Right:
-            case StrPaddingKind::Zero:
-                left = margin;
-                break;
-            case StrPaddingKind::Center:
-                left = margin / 2 + (margin & width & 1);
-                break;
-        }
 
         // Keep the source alive and reacquire its payload after allocation.
         // No Python callbacks or safepoints occur while payloads are borrowed.
         Owned<TValue<String>> owner(source);
-        TValue<String> result =
-            thread->make_object_value<String>(TValue<SMI>::from_smi(width));
-        cl_wchar *output = result.extract()->data;
-        std::fill_n(output, static_cast<size_t>(left), fill);
-        std::copy_n(owner.extract()->data, static_cast<size_t>(length),
-                    output + left);
-        std::fill_n(output + left + length, static_cast<size_t>(margin - left),
-                    fill);
-        if(kind == StrPaddingKind::Zero && length != 0)
-        {
-            cl_wchar first = output[left];
-            if(first == L'+' || first == L'-')
-            {
-                output[0] = first;
-                output[left] = L'0';
-            }
-        }
+        TValue<String> result = thread->make_object_value<String>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(plan->size)));
+        write_padding(std::span<const cl_wchar>(owner.extract()->data, length),
+                      fill, *plan,
+                      std::span<cl_wchar>(result.extract()->data, plan->size),
+                      kind);
         return result.raw_value();
     }
 
     [[nodiscard]] static Value justify_string(ThreadState *thread, Value self,
                                               Value width_value,
                                               Value fill_value,
-                                              StrPaddingKind kind,
+                                              PaddingKind kind,
                                               const wchar_t *method_name)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, method_name));
-        int64_t width = CL_TRY(str_padding_width(width_value));
+        int64_t width = CL_TRY(stored_padding_width(width_value));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(fill_value, L"fill character must be str"));
         if(fill_value.get_ptr<String>()->count.extract() != 1)
@@ -904,21 +859,21 @@ namespace cl
     [[nodiscard]] static Value native_str_ljust(ThreadState *thread, Value self,
                                                 Value width, Value fill)
     {
-        return justify_string(thread, self, width, fill, StrPaddingKind::Left,
+        return justify_string(thread, self, width, fill, PaddingKind::Left,
                               L"ljust");
     }
 
     [[nodiscard]] static Value native_str_rjust(ThreadState *thread, Value self,
                                                 Value width, Value fill)
     {
-        return justify_string(thread, self, width, fill, StrPaddingKind::Right,
+        return justify_string(thread, self, width, fill, PaddingKind::Right,
                               L"rjust");
     }
 
     [[nodiscard]] static Value
     native_str_center(ThreadState *thread, Value self, Value width, Value fill)
     {
-        return justify_string(thread, self, width, fill, StrPaddingKind::Center,
+        return justify_string(thread, self, width, fill, PaddingKind::Center,
                               L"center");
     }
 
@@ -926,9 +881,9 @@ namespace cl
                                                 Value width_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"zfill"));
-        int64_t width = CL_TRY(str_padding_width(width_value));
+        int64_t width = CL_TRY(stored_padding_width(width_value));
         return pad_string(thread, TValue<String>::from_value_assumed(self),
-                          width, L'0', StrPaddingKind::Zero);
+                          width, L'0', PaddingKind::Zero);
     }
 
     static bool is_strip_space(wchar_t ch);

@@ -316,6 +316,27 @@ Run `python3.14 tests/host/test_string_padding.py [path/to/clovervm]` with
 CPython 3.14.10 for the differential trace; VM-only storage/index limits have
 separate regressions.
 
+`bytes` and `bytearray` also provide `ljust(width, fillchar=b' ', /)`,
+`rjust`, `center`, and `zfill(width, /)`, checked against CPython 3.14.10.
+All three types share native sizing, center-parity, copying and ASCII-sign
+handling templates, with validation, allocation and result policy in each
+owning wrapper. Binary fills must be stored bytes (including subclasses) or
+bytearray payloads of exactly one byte. Explicit `None` is invalid; omitted
+fill uses a space. Width conversion precedes fill validation, which precedes
+no-padding shortcuts and positive result-storage limits.
+
+Exact bytes preserve identity when no padding is required; bytes subclasses
+produce exact bytes. Bytearray results are always independent exact bytearrays,
+including empty and no-padding results and when fill aliases the source.
+Subclass length/index/conversion hooks are bypassed for stored payloads and
+stored integer widths. The same platform-index and SMI/storage limits apply;
+heap exhaustion retains the VM's fatal policy. Custom `__index__`, general
+buffers/memoryview and bytearray subclassing remain excluded. Binary padding
+preserves every byte value; zfill recognizes only ASCII plus and minus.
+Run `python3.14 tests/host/test_binary_padding.py [path/to/clovervm]` for the
+binary differential trace. Independent interpreter fixtures include repeated
+cached calls, subclass overrides, aliases and every-safepoint reclamation.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object

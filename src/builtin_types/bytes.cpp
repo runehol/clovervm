@@ -3,6 +3,7 @@
 #include "builtin_types/binary_strip.h"
 #include "builtin_types/bytearray.h"
 #include "builtin_types/line_tab.h"
+#include "builtin_types/padding.h"
 
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
@@ -944,6 +945,78 @@ namespace cl
             .raw_value();
     }
 
+    template <PaddingKind Kind>
+    [[nodiscard]] static Value pad_bytes(ThreadState *thread,
+                                         TValue<Bytes> source, int64_t width,
+                                         uint8_t fill)
+    {
+        Owned<TValue<Bytes>> owner(source);
+        size_t length = static_cast<size_t>(owner.extract()->count.extract());
+        const size_t limit =
+            std::min(size_t(value_smi_max),
+                     std::numeric_limits<size_t>::max() - sizeof(Bytes));
+        auto plan = plan_padding(length, width, limit, Kind);
+        if(!plan)
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"padded bytes exceeds storage limit");
+        if(plan->size == length && thread->class_of_value(source.raw_value()) ==
+                                       thread->get_machine()->bytes_class())
+            return source.raw_value();
+        TValue<Bytes> result = thread->make_object_value<Bytes>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(plan->size)));
+        // Allocation is complete. Reacquire payloads before the native
+        // fill; no callbacks, mutation or safepoints occur while borrowed.
+        write_padding(bytes_view(owner.value()), fill, *plan,
+                      std::span<uint8_t>(result.extract()->data, plan->size),
+                      Kind);
+        return result.raw_value();
+    }
+
+    template <PaddingKind Kind>
+    [[nodiscard]] static Value
+    native_bytes_justify(ThreadState *thread, Value self, Value width_value,
+                         Value fill)
+    {
+        constexpr const wchar_t *method = Kind == PaddingKind::Left ? L"ljust"
+                                          : Kind == PaddingKind::Right
+                                              ? L"rjust"
+                                              : L"center";
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, method));
+        int64_t width = CL_TRY(stored_padding_width(width_value));
+        if(!has_native_layout<Bytes>(fill) &&
+           !has_native_layout<ByteArray>(fill))
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"fill character must be bytes or bytearray of length 1");
+        size_t fill_length;
+        uint8_t byte = 0;
+        {
+            auto view =
+                has_native_layout<Bytes>(fill)
+                    ? bytes_view(TValue<Bytes>::from_value_assumed(fill))
+                    : fill.get_ptr<ByteArray>()->view();
+            fill_length = view.size();
+            // Only scalars escape the borrow, including when fill aliases self.
+            if(fill_length == 1)
+                byte = view[0];
+        }
+        if(fill_length != 1)
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"fill character must be exactly one byte long");
+        return pad_bytes<Kind>(thread, TValue<Bytes>::from_value_assumed(self),
+                               width, byte);
+    }
+
+    [[nodiscard]] static Value native_bytes_zfill(ThreadState *thread,
+                                                  Value self, Value width_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"zfill"));
+        int64_t width = CL_TRY(stored_padding_width(width_value));
+        return pad_bytes<PaddingKind::Zero>(
+            thread, TValue<Bytes>::from_value_assumed(self), width,
+            uint8_t('0'));
+    }
+
     [[nodiscard]] static Value
     native_bytes_splitlines(ThreadState *thread, Value self, Value keepends)
     {
@@ -1791,7 +1864,27 @@ namespace cl
         tab_defaults.extract()->initialize_item_unchecked(0,
                                                           Value::from_smi(8));
         static constexpr const wchar_t *tab_names[] = {L"tabsize"};
+        Owned<TValue<Tuple>> padding_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        TValue<Bytes> space =
+            active_thread()->make_object_value<Bytes>(TValue<SMI>::from_smi(1));
+        space.extract()->data[0] = ' ';
+        padding_defaults.extract()->initialize_item_unchecked(
+            0, space.raw_value());
         BuiltinIntrinsicMethod methods[] = {
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"ljust", native_bytes_justify<PaddingKind::Left>),
+                padding_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"rjust", native_bytes_justify<PaddingKind::Right>),
+                padding_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"center", native_bytes_justify<PaddingKind::Center>),
+                padding_defaults.value()),
+            builtin_intrinsic_method(L"zfill", native_bytes_zfill),
             with_defaults(builtin_intrinsic_method(
                               L"strip", native_bytes_strip<StripMode::Both>),
                           strip_defaults.value()),
