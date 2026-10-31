@@ -1,7 +1,8 @@
 """Lazy iteration building blocks supported by CloverVM.
 
 The supported subset provides chain, repeat, islice, starmap, compress,
-filterfalse, takewhile, dropwhile, pairwise, count, accumulate, batched, and zip_longest.
+filterfalse, takewhile, dropwhile, pairwise, count, accumulate, batched, zip_longest,
+and product.
 Integer bounds use operator.index's builtin-int/bool support; custom __index__
 is not supported yet. Limits match the VM's current signed 64-bit platforms.
 count accepts builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
@@ -15,6 +16,9 @@ batched builds batches incrementally rather than preallocating n tuple slots;
 CPython's eager allocation failures and their timing are not reproduced.
 zip_longest keeps final exhaustion sticky across input reentry, rather than
 reproducing CPython 3.14.5's unsafe reentrant exhaustion and counter underflow.
+product eagerly snapshots input pools, retains them after exhaustion, and shares
+those snapshots across repeated dimensions. It does not cache result tuples or
+reproduce CPython's allocation-failure timing.
 """
 
 from builtins import bool as _bool, float as _float, int as _int
@@ -26,12 +30,88 @@ from operator import index as _index
 __all__ = (
     "chain", "repeat", "islice", "starmap",
     "compress", "filterfalse", "takewhile", "dropwhile",
-    "pairwise", "count", "accumulate", "batched", "zip_longest",
+    "pairwise", "count", "accumulate", "batched", "zip_longest", "product",
 )
 
 _missing = object()
 _SSIZE_MAX = 2**63 - 1
 _SSIZE_MIN = -(2**63)
+
+
+class product:
+    def __init__(self, /, *iterables, **options):
+        # CPython constructs in __new__; subsequent __init__ calls are no-ops,
+        # including calls with invalid arguments. Parse keywords only once.
+        if hasattr(self, "_pools"):
+            return
+        if len(options) > 1 or (options and "repeat" not in options):
+            raise TypeError("product() accepts only the repeat keyword")
+        repeat = 1
+        if options:
+            repeat = _index(options["repeat"])
+        if repeat < _SSIZE_MIN or repeat > _SSIZE_MAX:
+            raise OverflowError("Python int too large to convert to C ssize_t")
+        if repeat < 0:
+            raise ValueError("repeat argument cannot be negative")
+        count = len(iterables)
+        # Match the 64-bit reference's checked index-array size before inputs.
+        if repeat and count > _SSIZE_MAX // 8 // repeat:
+            raise OverflowError("repeat argument too large")
+        pools = []
+        if repeat:
+            for iterable in iterables:
+                # Even an empty pool does not skip acquisition of later pools.
+                pools.append(_tuple(iterable))
+        original_count = len(pools)
+        size = original_count * repeat
+        index = original_count
+        while index < size:
+            pools.append(pools[index - original_count])
+            index += 1
+        indices = []
+        stopped = False
+        for pool in pools:
+            indices.append(0)
+            if not pool:
+                stopped = True
+        # Publish only complete state, after all input callbacks have finished.
+        self._indices = indices
+        self._started = False
+        self._stopped = stopped
+        self._pools = _tuple(pools)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._stopped:
+            raise StopIteration
+        pools = self._pools
+        indices = self._indices
+        try:
+            if self._started:
+                index = len(pools) - 1
+                while index >= 0:
+                    following = indices[index] + 1
+                    if following < len(pools[index]):
+                        indices[index] = following
+                        break
+                    indices[index] = 0
+                    index -= 1
+                if index < 0:
+                    self._stopped = True
+                    raise StopIteration
+            row = []
+            index = 0
+            while index < len(pools):
+                row.append(pools[index][indices[index]])
+                index += 1
+            result = _tuple(row)
+        except:
+            self._stopped = True
+            raise
+        self._started = True
+        return result
 
 
 class chain:
