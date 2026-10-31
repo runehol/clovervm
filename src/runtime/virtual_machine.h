@@ -398,7 +398,7 @@ namespace cl
         {
             T *object = interned_global_heap.make_global_internal_raw<T>(
                 std::forward<Args>(args)...);
-            object->refcount = -1;
+            object->refcount() = -1;
             return object;
         }
 
@@ -418,7 +418,7 @@ namespace cl
             assert(cls != nullptr);
             T *object = interned_global_heap.make_global_internal_raw<T>(
                 cls, std::forward<Args>(args)...);
-            object->refcount = -1;
+            object->refcount() = -1;
             return object;
         }
 

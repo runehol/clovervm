@@ -46,8 +46,8 @@ TEST(HeapReferenceSlot, RewritesTaggedRawAndWrappedReferencesWithoutOwnership)
     Member<Value> member_value(original.raw_value());
     Member<TValue<Float>> member_typed_value(original.value());
     MemberHeapPtr<Float> member_pointer(original.extract());
-    int32_t original_refcount = original.extract()->refcount;
-    int32_t replacement_refcount = replacement.extract()->refcount;
+    int32_t original_refcount = original.extract()->refcount();
+    int32_t replacement_refcount = replacement.extract()->refcount();
     size_t zero_count_table_size = context.thread()->zero_count_table_size();
     bool original_in_zct =
         context.thread()->zero_count_table_contains_for_testing(
@@ -64,8 +64,8 @@ TEST(HeapReferenceSlot, RewritesTaggedRawAndWrappedReferencesWithoutOwnership)
         EXPECT_EQ(original.extract(), slot.load_pointer());
         slot.rewrite_pointer(replacement.extract());
         EXPECT_EQ(replacement.extract(), slot.load_pointer());
-        EXPECT_EQ(original_refcount, original.extract()->refcount);
-        EXPECT_EQ(replacement_refcount, replacement.extract()->refcount);
+        EXPECT_EQ(original_refcount, original.extract()->refcount());
+        EXPECT_EQ(replacement_refcount, replacement.extract()->refcount());
         EXPECT_EQ(zero_count_table_size,
                   context.thread()->zero_count_table_size());
         EXPECT_EQ(original_in_zct,
@@ -99,8 +99,8 @@ TEST(HeapReferenceSlot, PreservesInternedPointerEncoding)
     ASSERT_TRUE(replacement.raw_value().is_interned_ptr());
     Value value = original.raw_value();
     String *pointer = original.extract();
-    int32_t original_refcount = original.extract()->refcount;
-    int32_t replacement_refcount = replacement.extract()->refcount;
+    int32_t original_refcount = original.extract()->refcount();
+    int32_t replacement_refcount = replacement.extract()->refcount();
 
     for(void *address: std::array<void *, 2>{&value, &pointer})
     {
@@ -111,8 +111,8 @@ TEST(HeapReferenceSlot, PreservesInternedPointerEncoding)
     }
     EXPECT_EQ(replacement.raw_value(), value);
     EXPECT_EQ(replacement.extract(), pointer);
-    EXPECT_EQ(original_refcount, original.extract()->refcount);
-    EXPECT_EQ(replacement_refcount, replacement.extract()->refcount);
+    EXPECT_EQ(original_refcount, original.extract()->refcount());
+    EXPECT_EQ(replacement_refcount, replacement.extract()->refcount());
 }
 
 TEST(HeapReferenceSlot, WalksMixedInstanceFieldsAndOnlyInitializedInlineCells)
@@ -161,8 +161,8 @@ TEST(HeapReferenceSlot, WalksMixedInstanceFieldsAndOnlyInitializedInlineCells)
     std::array<bool, 3> targets_in_zct;
     for(size_t idx = 0; idx < sources.size(); ++idx)
     {
-        source_refcounts[idx] = sources[idx]->refcount;
-        target_refcounts[idx] = targets[idx]->refcount;
+        source_refcounts[idx] = sources[idx]->refcount();
+        target_refcounts[idx] = targets[idx]->refcount();
         sources_in_zct[idx] =
             thread->zero_count_table_contains_for_testing(sources[idx]);
         targets_in_zct[idx] =
@@ -196,8 +196,8 @@ TEST(HeapReferenceSlot, WalksMixedInstanceFieldsAndOnlyInitializedInlineCells)
     EXPECT_EQ(zero_count_table_size, thread->zero_count_table_size());
     for(size_t idx = 0; idx < sources.size(); ++idx)
     {
-        EXPECT_EQ(source_refcounts[idx], sources[idx]->refcount);
-        EXPECT_EQ(target_refcounts[idx], targets[idx]->refcount);
+        EXPECT_EQ(source_refcounts[idx], sources[idx]->refcount());
+        EXPECT_EQ(target_refcounts[idx], targets[idx]->refcount());
         EXPECT_EQ(sources_in_zct[idx],
                   thread->zero_count_table_contains_for_testing(sources[idx]));
         EXPECT_EQ(targets_in_zct[idx],

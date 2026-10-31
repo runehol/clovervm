@@ -35,7 +35,7 @@ namespace cl
             }
 
             CLType *value = factory(src);
-            value->refcount = -1;  // signifying immortality
+            value->refcount() = -1;  // signifying immortality
             map.emplace(BasicType(src), value);
             return value;
         }

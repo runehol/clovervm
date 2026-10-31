@@ -76,9 +76,9 @@ TEST(EnumerateZip, NativeStateEdgesRetainSourcesAndCounter)
         EXPECT_EQ(sizeof(EnumerateIterator),
                   object_size_in_bytes(enumerate.extract()));
         EXPECT_EQ(sizeof(ZipIterator), object_size_in_bytes(zip.extract()));
-        EXPECT_EQ(3, iterator.extract()->refcount);
-        EXPECT_EQ(2, source.extract()->refcount);
-        EXPECT_EQ(2, sources.extract()->refcount);
+        EXPECT_EQ(3, iterator.extract()->refcount());
+        EXPECT_EQ(2, source.extract()->refcount());
+        EXPECT_EQ(2, sources.extract()->refcount());
         context.vm().run_heap_reclamation();
         EXPECT_EQ(iterator.raw_value(),
                   enumerate.extract()->source.raw_value());

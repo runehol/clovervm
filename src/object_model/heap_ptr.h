@@ -27,7 +27,7 @@ namespace cl
                heap_ptr_is_interned(obj));
         if(heap_ptr_is_refcounted(obj))
         {
-            ++obj->refcount;
+            ++obj->refcount();
         }
         return obj;
     }
@@ -45,7 +45,7 @@ namespace cl
     {
         assert(obj == nullptr || heap_ptr_is_refcounted(obj) ||
                heap_ptr_is_interned(obj));
-        if(heap_ptr_is_refcounted(obj) && --obj->refcount == 0)
+        if(heap_ptr_is_refcounted(obj) && --obj->refcount() == 0)
         {
             add_to_active_zero_count_table_if_needed(obj);
         }

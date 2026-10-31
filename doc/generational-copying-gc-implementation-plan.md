@@ -461,6 +461,12 @@ final native-ID/aux fields only in an explicit later layout cutover. Generation
 is not retained after forwarding. Audit moved RC/native-ID/aux offsets and
 measure performance even though total header size is unchanged.
 
+The representation slice is implemented with standalone `HeapHeader` storage
+contained by `HeapObject`. Header accessors and object delegates are fully
+inline; forwarding reads/writes use memcpy only within HeapHeader. RC and
+lifecycle users are migrated to accessors. This supplies normal-state metadata
+and an independently tested encoding, not production forwarding or barriers.
+
 Introduce object-level remembered sets and barrier entry points following the
 GC design's hot-path lessons. Cover ordinary members, raw pointer stores,
 backing arrays, bulk copies, runtime caches, and relevant generated stores.

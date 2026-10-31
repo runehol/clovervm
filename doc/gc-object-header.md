@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | Document type | Architecture contract |
-| Status | Accepted design; not implemented |
-| Implementation | Current HeapObject remains the eight-byte RC/native-layout header |
+| Status | Accepted |
+| Implementation | Eight-byte transitional representation implemented; production forwarding and final RC-free layout are not enabled |
 | Scope | Eight-byte transitional and final headers, byte-sized GC state, and destructive forwarding |
 | Owning layers | Object model owns header access; memory owns construction/placement; GC owns forwarding publication |
-| Validated against | Header design agreed 2026-10-31; source inspected at `1f56180b` |
+| Validated against | Contained-header working tree based on `8d3bb678` (2026-10-31); validation recorded below |
 | Supersedes | Earlier sixteen-byte transition, separate forwarding-bit, and generation-preserving packed-word proposals |
 
 ## Final Eight-Byte Layout
@@ -128,6 +128,21 @@ normal header, not clearing a pointer while preserving nonexistent source flags.
 
 ## Eight-Byte RC Transition
 
+The representation lives in a standalone
+[`HeapHeader`](../src/object_model/heap_header.h).
+[`HeapObject`](../src/object_model/heap_object.h) contains one private header
+and delegates its object-facing API to it. Every accessor/delegate is defined
+inline. RC callers use `refcount()` rather than a public data member; generation,
+lifecycle, native layout, and aux count are likewise accessed through methods.
+Normal accessors assert that the header is not forwarded.
+
+Both directions of forwarding use `memcpy` within HeapHeader. The write is
+exactly `sizeof(HeapHeader)`, never `sizeof(HeapObject)` or a derived object.
+There is no inactive-union access or pointer-typed alias of the stored fields.
+Size/alignment/offset assertions belong to the header representation, and tests
+exercise it independently plus verify that object-level forwarding leaves
+derived payload bytes untouched.
+
 Keep RC until tracing replaces its lifetime contract, but retain the current
 eight-byte total size rather than adding a second word:
 
@@ -205,3 +220,24 @@ stop-the-world collection contract.
   directions; verify RC accesses now use offset four.
 - Keep header representation changes separate from movement activation,
   relocation admission, and RC retirement.
+
+## Transitional Implementation Validation
+
+The contained-header working tree based on `8d3bb678` passed 170 focused tests,
+full Debug `all check` (2,329 passed), and full Release `all check` (2,318 passed).
+Both full suites report three existing runtime-JIT-disabled skips and one
+disabled test. The hot-opcode frame checker reports no new warnings.
+
+The Release layout probe checked 52 rows covering all registered types,
+HeapObject, and four Instance capacities. No allocator stride changed. Float
+stays 32 bytes with its value at offset 24. HeapObject alignment changes from
+four to eight; ValidityCell grows from 12 to 16 bytes but retains a 32-byte
+stride. Accessors inline, and memcpy forwarding folds to one pointer load/store.
+
+The [full A/B report](gc-header-benchmarks.md) includes every one of the 92
+benchmark cases and balanced A/B/B/A confirmation on 16 cases. Results are
+mixed: repeated medians show method keyword calls 4.48% slower, construction
+without __init__ 2.91% slower, and memory reclamation 6.62% faster. These are not
+grounds for a blanket performance-neutral claim. Review accepted the mixed
+profile as broadly neutral for this change while retaining the individual
+slowdowns. Short profiles do not isolate their instruction-level cause.

@@ -157,7 +157,7 @@ TEST(NativeLayoutDescriptor, LayoutInfoCopiesCompleteFixedObject)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
     Float *object = context.thread()->make_object_raw<Float>(1.5);
-    int32_t refcount = object->refcount;
+    int32_t refcount = object->refcount();
     NativeLayoutInfo info = native_layout_info(object);
     EXPECT_EQ(sizeof(Float), info.allocated_size);
     EXPECT_EQ(sizeof(Float), info.copy_size);
@@ -166,7 +166,7 @@ TEST(NativeLayoutDescriptor, LayoutInfoCopiesCompleteFixedObject)
               info.strong_span->value_offset_words);
     EXPECT_EQ(Float::native_static_release_count(),
               info.strong_span->value_count);
-    EXPECT_EQ(refcount, object->refcount);
+    EXPECT_EQ(refcount, object->refcount());
     EXPECT_EQ(nullptr, native_layout_descriptor_for(Float::native_layout)
                            .custom_copy_size_in_bytes);
 }
@@ -351,14 +351,14 @@ TEST(NativeLayoutDescriptor, ResolvesOrdinaryStaticReferenceSpan)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
     Float *object = context.thread()->make_object_raw<Float>(1.5);
-    int32_t refcount = object->refcount;
+    int32_t refcount = object->refcount();
     auto span = resolve_ordinary_reference_span(
         object, native_layout_descriptor_for(Float::native_layout).release);
 
     ASSERT_TRUE(span.has_value());
     EXPECT_EQ(Object::native_value_offset_in_words(), span->value_offset_words);
     EXPECT_EQ(Object::native_static_release_count(), span->value_count);
-    EXPECT_EQ(refcount, object->refcount);
+    EXPECT_EQ(refcount, object->refcount());
 }
 
 TEST(NativeLayoutDescriptor, EmptyOrdinarySpanIsSupported)
@@ -688,9 +688,9 @@ TEST(NativeHandle, OverflowStorageRetainsValuesButFrameStorageDoesNot)
 
     Float *frame_float =
         context.thread()->make_object_value<Float>(1.5).extract();
-    EXPECT_EQ(0, frame_float->refcount);
+    EXPECT_EQ(0, frame_float->refcount());
     (void)allocate_handle(&handle_context, Value::from_oop(frame_float));
-    EXPECT_EQ(0, frame_float->refcount);
+    EXPECT_EQ(0, frame_float->refcount());
 
     for(size_t idx = 1; idx < native_handle_detail::frame_handle_cell_count - 1;
         ++idx)
@@ -706,10 +706,10 @@ TEST(NativeHandle, OverflowStorageRetainsValuesButFrameStorageDoesNot)
 
     Float *overflow_float =
         context.thread()->make_object_value<Float>(2.5).extract();
-    EXPECT_EQ(0, overflow_float->refcount);
+    EXPECT_EQ(0, overflow_float->refcount());
     clover_handle overflow_handle =
         allocate_handle(&handle_context, Value::from_oop(overflow_float));
-    EXPECT_EQ(1, overflow_float->refcount);
+    EXPECT_EQ(1, overflow_float->refcount());
     EXPECT_EQ(Value::from_oop(overflow_float), resolve_handle(overflow_handle));
 }
 

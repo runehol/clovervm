@@ -102,8 +102,8 @@ TEST(VMPersistentRoots, CachedHelperRewritesAreGetterVisibleAndRCNeutral)
             });
         ASSERT_NE(helpers.end(), candidate);
         Function *replacement = *candidate;
-        int32_t source_refs = source->refcount;
-        int32_t replacement_refs = replacement->refcount;
+        int32_t source_refs = source->refcount();
+        int32_t replacement_refs = replacement->refcount();
         size_t zct_size = thread.zero_count_table_size();
         SavedRoots originals;
         // A single source/replacement pair makes the rewrite idempotent even
@@ -119,8 +119,8 @@ TEST(VMPersistentRoots, CachedHelperRewritesAreGetterVisibleAndRCNeutral)
         for(size_t index = 0; index < helpers.size(); ++index)
             EXPECT_EQ(helpers[index] == source ? replacement : helpers[index],
                       observed[index]);
-        EXPECT_EQ(source_refs, source->refcount);
-        EXPECT_EQ(replacement_refs, replacement->refcount);
+        EXPECT_EQ(source_refs, source->refcount());
+        EXPECT_EQ(replacement_refs, replacement->refcount());
         EXPECT_EQ(zct_size, thread.zero_count_table_size());
         restore_vm_roots(originals);
         EXPECT_EQ(helpers, helper_functions(vm));
@@ -140,10 +140,10 @@ TEST(VMPersistentRoots, RewritesVMAliasesWithoutTouchingThreadCachesOrMaps)
     OwnedHeapPtr<Shape> replacement_shape(
         original_shape->clone_with_flags(original_shape->flags()));
     SavedRoots originals;
-    int32_t class_refs = original_class->refcount;
-    int32_t replacement_class_refs = replacement_class->refcount;
-    int32_t shape_refs = original_shape->refcount;
-    int32_t replacement_shape_refs = replacement_shape.get()->refcount;
+    int32_t class_refs = original_class->refcount();
+    int32_t replacement_class_refs = replacement_class->refcount();
+    int32_t shape_refs = original_shape->refcount();
+    int32_t replacement_shape_refs = replacement_shape.get()->refcount();
     size_t zct_size = thread.zero_count_table_size();
     vm.visit_persistent_root_slots([&](HeapReferenceSlot slot) {
         if(slot.load_pointer() == original_class)
@@ -165,10 +165,10 @@ TEST(VMPersistentRoots, RewritesVMAliasesWithoutTouchingThreadCachesOrMaps)
               thread.class_for_native_layout(NativeLayoutId::BigInt));
     EXPECT_EQ(original_shape, thread.get_exact_dict_general_shape());
     EXPECT_EQ(original_class, vm.builtin_class_by_name(name));
-    EXPECT_EQ(class_refs, original_class->refcount);
-    EXPECT_EQ(replacement_class_refs, replacement_class->refcount);
-    EXPECT_EQ(shape_refs, original_shape->refcount);
-    EXPECT_EQ(replacement_shape_refs, replacement_shape.get()->refcount);
+    EXPECT_EQ(class_refs, original_class->refcount());
+    EXPECT_EQ(replacement_class_refs, replacement_class->refcount());
+    EXPECT_EQ(shape_refs, original_shape->refcount());
+    EXPECT_EQ(replacement_shape_refs, replacement_shape.get()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
     restore_vm_roots(originals);
     EXPECT_EQ(original_class, vm.int_class());
@@ -247,14 +247,14 @@ TEST(VMPersistentRoots, ReclamationCombinesVMAndThreadRoots)
         ValidityCellDependencyMutability::Mutable);
     thread.add_to_zero_count_table_if_needed(module);
     thread.add_to_zero_count_table_if_needed(native);
-    ASSERT_EQ(0, module->refcount);
-    ASSERT_EQ(0, native->refcount);
+    ASSERT_EQ(0, module->refcount());
+    ASSERT_EQ(0, native->refcount());
     vm.set_global_builtins_module(module);
     {
         ScopedRoot root(thread, HeapReferenceSlot(&native));
         vm.run_heap_reclamation();
-        EXPECT_EQ(0, module->refcount);
-        EXPECT_EQ(0, native->refcount);
+        EXPECT_EQ(0, module->refcount());
+        EXPECT_EQ(0, native->refcount());
         EXPECT_TRUE(thread.zero_count_table_contains_for_testing(module));
         EXPECT_TRUE(thread.zero_count_table_contains_for_testing(native));
         EXPECT_EQ(module, vm.global_builtins_module().extract());

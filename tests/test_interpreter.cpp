@@ -6985,7 +6985,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
             expected.native_layout_id);
         ASSERT_NE(nullptr, cls);
         EXPECT_EQ(type_class, cls->get_shape()->get_class());
-        EXPECT_EQ(-1, cls->refcount);
+        EXPECT_EQ(-1, cls->refcount());
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutable));
         EXPECT_EQ(Value::not_present(),
@@ -7078,8 +7078,8 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     Value add_method = str_class->get_own_property(dunder_add_name);
     ASSERT_TRUE(has_native_layout<Function>(str_method));
     ASSERT_TRUE(has_native_layout<Function>(add_method));
-    EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount);
-    EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount);
+    EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount());
+    EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount());
     Optional<TValue<String>> str_docstring =
         native_cast<Function>(str_method)->docstring.value();
     Optional<TValue<String>> add_docstring =
@@ -8802,7 +8802,7 @@ static void check_return_continuation_roots(void *opaque, ThreadState *thread,
         ASSERT_TRUE(operands[index].is_refcounted_ptr());
         HeapObject *object = operands[index].as.ptr;
         EXPECT_TRUE(roots.contains(object));
-        check.saw_zero_refcount_operand |= object->refcount == 0;
+        check.saw_zero_refcount_operand |= object->refcount() == 0;
     }
     ++check.observations;
 }

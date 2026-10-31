@@ -36,7 +36,7 @@ These preparatory changes do not require a nursery or physical relocation.
 
 | Current code | Established | Still missing for copying |
 |---|---|---|
-| [HeapObject](../src/object_model/heap_object.h) | Eight-byte RC/lifecycle/native-ID/aux header | Generation, remembered membership, forwarding |
+| [HeapObject](../src/object_model/heap_object.h) | Contains standalone eight-byte HeapHeader with generation/lifecycle/native-ID/aux/RC and tested forwarding encoding | Real source classification, remembered coverage, and admitted production forwarding |
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
@@ -313,10 +313,11 @@ source selection, not complete full-heap tracing or reclamation.
    empty span. Raw backings report their full extent for both sizes and no
    ordinary pointers. Neither size is optional. No retired-backing audit or new
    historical-reservation field is part of this work.
-4. **Transitional header.** Implement the accepted eight-byte
-   [header encoding](gc-object-header.md), preserve RC,
-   default current allocations Old, test independent GC state, and measure
-   header/stride/construction costs. Do not publish real forwarding in RC mode.
+4. **Transitional header (implemented).** The accepted eight-byte
+   [header encoding](gc-object-header.md) preserves RC and initializes current
+   allocations as Old. Independent state tests and before/after benchmarks are
+   complete. HeapObject contains HeapHeader, with fully inline accessors and
+   memcpy forwarding; production forwarding remains disabled.
 5. **Collector-only reservation and admission tests.** Use dedicated storage
    with no mutator reentry. Settle C++ relocation lifetime, per-layout admission,
    tag-compatible group placement, publication, and slab ownership before real

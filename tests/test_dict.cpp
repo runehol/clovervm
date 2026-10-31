@@ -2450,13 +2450,13 @@ TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
     HeapObject *new_object = new_value.as.ptr;
     set_dict_item(context.thread(), dict, key, old_value);
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_object));
-    ASSERT_EQ(HeapLifecycleState::Normal, old_object->lifecycle_state);
+    ASSERT_EQ(HeapLifecycleState::Normal, old_object->lifecycle_state());
 
     set_dict_item(context.thread(), dict, key, new_value);
 
     EXPECT_EQ(new_value, get_dict_item(context.thread(), dict, key));
-    EXPECT_EQ(0, old_object->refcount);
-    EXPECT_EQ(HeapLifecycleState::InZct, old_object->lifecycle_state);
+    EXPECT_EQ(0, old_object->refcount());
+    EXPECT_EQ(HeapLifecycleState::InZct, old_object->lifecycle_state());
     EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_object));
     EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_object));
 }
@@ -2472,10 +2472,10 @@ TEST(Dict, SetItemOverwriteWithSameObjectDoesNotChangeOwnership)
     HeapObject *value_object = value.value().as.ptr;
 
     set_dict_item(thread, dict, key, value.value());
-    int64_t refcount_before = value_object->refcount;
+    int64_t refcount_before = value_object->refcount();
     set_dict_item(thread, dict, key, value.value());
 
-    EXPECT_EQ(refcount_before, value_object->refcount);
+    EXPECT_EQ(refcount_before, value_object->refcount());
     EXPECT_FALSE(thread->zero_count_table_contains_for_testing(value_object));
 }
 
@@ -3577,14 +3577,14 @@ namespace
                 context.vm().get_or_create_interned_string_value(L"__next__");
             auto hint_name = context.vm().get_or_create_interned_string_value(
                 L"__length_hint__");
-            const int64_t owned_source_count = source.extract()->refcount;
+            const int64_t owned_source_count = source.extract()->refcount();
             ASSERT_EQ(2, owned_source_count);
             context.vm().run_heap_reclamation();
             ASSERT_FALSE(
                 thread->call_clovervm_method(iterator.raw_value(), next_name)
                     .is_exception_marker());
             // Successful yields do not detach, including the last yield below.
-            ASSERT_EQ(owned_source_count, source.extract()->refcount);
+            ASSERT_EQ(owned_source_count, source.extract()->refcount());
             if(terminal_kind == 1)
             {
                 ASSERT_FALSE(source.extract()
@@ -3609,7 +3609,7 @@ namespace
                         ->call_clovervm_method(iterator.raw_value(), next_name)
                         .is_exception_marker());
             }
-            ASSERT_EQ(owned_source_count, source.extract()->refcount);
+            ASSERT_EQ(owned_source_count, source.extract()->refcount());
             ASSERT_TRUE(
                 thread->call_clovervm_method(iterator.raw_value(), next_name)
                     .is_exception_marker());
@@ -3622,7 +3622,7 @@ namespace
                         : L"dictionary changed size during iteration");
             }
             thread->clear_pending_exception();
-            EXPECT_EQ(terminal_kind == 2 ? 2 : 1, source.extract()->refcount);
+            EXPECT_EQ(terminal_kind == 2 ? 2 : 1, source.extract()->refcount());
             EXPECT_EQ(Value::from_smi(0), thread->call_clovervm_method(
                                               iterator.raw_value(), hint_name));
             source = thread->make_object_value<Dict>();

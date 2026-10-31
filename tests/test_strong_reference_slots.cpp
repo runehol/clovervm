@@ -92,8 +92,8 @@ TEST(StrongReferenceSlots, CodeObjectVisitsOwnedCellsButNotWeakCaches)
         code.get()->function_keyword_remap.keyword_bindable_names);
     HeapObject *indexes_backing = array_backing(
         code.get()->function_keyword_remap.keyword_bindable_parameter_indexes);
-    int32_t name_refs = name.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
+    int32_t name_refs = name.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
     size_t zct_size = thread->zero_count_table_size();
     expect_references(
         code.get(), {code.get()->get_shape(), overflow.get(), module.get(),
@@ -124,8 +124,8 @@ TEST(StrongReferenceSlots, CodeObjectVisitsOwnedCellsButNotWeakCaches)
     EXPECT_EQ(weak_cell.get(), expanded.validity_cell);
     // Neither the module nor the VM-array backing is recursively scanned.
     EXPECT_EQ(name.raw_value(), code.get()->function_keyword_remap.name_at(0));
-    EXPECT_EQ(name_refs, name.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
+    EXPECT_EQ(name_refs, name.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
 
     // Simulate relocation, then restore the ownership graph before RC teardown.
@@ -159,10 +159,10 @@ TEST(StrongReferenceSlots, RewritesArrayBackingHandlesWithoutVisitingElements)
     HeapObject *new_names = array_backing(new_remap.keyword_bindable_names);
     HeapObject *new_indexes =
         array_backing(new_remap.keyword_bindable_parameter_indexes);
-    int32_t old_name_refs = old_names->refcount;
-    int32_t old_index_refs = old_indexes->refcount;
-    int32_t new_name_refs = new_names->refcount;
-    int32_t new_index_refs = new_indexes->refcount;
+    int32_t old_name_refs = old_names->refcount();
+    int32_t old_index_refs = old_indexes->refcount();
+    int32_t new_name_refs = new_names->refcount();
+    int32_t new_index_refs = new_indexes->refcount();
     size_t zct_size = thread->zero_count_table_size();
 
     size_t rewrites = 0;
@@ -181,10 +181,10 @@ TEST(StrongReferenceSlots, RewritesArrayBackingHandlesWithoutVisitingElements)
     EXPECT_EQ(2u, rewrites);
     EXPECT_EQ(other.raw_value(), original_remap.name_at(0));
     EXPECT_EQ(9, original_remap.parameter_index_at(0));
-    EXPECT_EQ(old_name_refs, old_names->refcount);
-    EXPECT_EQ(old_index_refs, old_indexes->refcount);
-    EXPECT_EQ(new_name_refs, new_names->refcount);
-    EXPECT_EQ(new_index_refs, new_indexes->refcount);
+    EXPECT_EQ(old_name_refs, old_names->refcount());
+    EXPECT_EQ(old_index_refs, old_indexes->refcount());
+    EXPECT_EQ(new_name_refs, new_names->refcount());
+    EXPECT_EQ(new_index_refs, new_indexes->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
 
     visit_strong_reference_slots(code.get(), [&](HeapReferenceSlot slot) {
@@ -227,10 +227,10 @@ TEST(StrongReferenceSlots,
     ASSERT_EQ(root.get(), latent->get_previous_shape());
     expect_references(latent,
                       {cls.get(), name.extract(), name.extract(), successor});
-    int32_t name_refs = name.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
-    int32_t successor_refs = successor->refcount;
-    int32_t new_successor_refs = new_successor.get()->refcount;
+    int32_t name_refs = name.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
+    int32_t successor_refs = successor->refcount();
+    int32_t new_successor_refs = new_successor.get()->refcount();
     size_t zct_size = thread->zero_count_table_size();
 
     size_t rewrites = 0;
@@ -255,10 +255,10 @@ TEST(StrongReferenceSlots,
     EXPECT_EQ(root.get(), latent->get_previous_shape());
     EXPECT_EQ(name.value(), root.get()->get_property_name(0));
     EXPECT_EQ(name.value(), successor->get_property_name(0));
-    EXPECT_EQ(name_refs, name.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
-    EXPECT_EQ(successor_refs, successor->refcount);
-    EXPECT_EQ(new_successor_refs, new_successor.get()->refcount);
+    EXPECT_EQ(name_refs, name.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
+    EXPECT_EQ(successor_refs, successor->refcount());
+    EXPECT_EQ(new_successor_refs, new_successor.get()->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
 
     visit_strong_reference_slots(latent, [&](HeapReferenceSlot slot) {

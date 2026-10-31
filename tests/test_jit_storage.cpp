@@ -146,8 +146,8 @@ namespace cl::jit
             context.thread()->make_internal_raw<String>(L"source constant");
         Value existing_value = Value::from_oop(existing);
 
-        EXPECT_EQ(0, created->refcount);
-        EXPECT_EQ(0, existing->refcount);
+        EXPECT_EQ(0, created->refcount());
+        EXPECT_EQ(0, existing->refcount());
         {
             CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Core);
@@ -167,11 +167,11 @@ namespace cl::jit
 
             EXPECT_EQ(created_value, retained_created);
             EXPECT_EQ(existing_value, retained_existing);
-            EXPECT_EQ(1, created->refcount);
-            EXPECT_EQ(1, existing->refcount);
+            EXPECT_EQ(1, created->refcount());
+            EXPECT_EQ(1, existing->refcount());
         }
-        EXPECT_EQ(0, created->refcount);
-        EXPECT_EQ(0, existing->refcount);
+        EXPECT_EQ(0, created->refcount());
+        EXPECT_EQ(0, existing->refcount());
     }
 
     TEST(JitInstructionStorage, HasDenseIdsAndStableHandles)
