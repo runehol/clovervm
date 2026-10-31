@@ -89,11 +89,12 @@ namespace cl
         Member<TValue<SMI>> count;
         uint8_t data[1];
 
-        static size_t size_for(ClassObject *, std::span<const uint8_t> bytes)
+        static size_t allocation_size_for(ClassObject *,
+                                          std::span<const uint8_t> bytes)
         {
             return storage_size_for(bytes.size());
         }
-        static size_t size_for(ClassObject *, TValue<SMI> count)
+        static size_t allocation_size_for(ClassObject *, TValue<SMI> count)
         {
             return storage_size_for(size_t(count.extract()));
         }

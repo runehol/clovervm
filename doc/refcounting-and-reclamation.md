@@ -504,10 +504,15 @@ more importantly, lets the dynamic scan process cascaded children in the same
 safepoint sweep. If a cascaded child is stack-rooted, it is copied into the kept
 prefix and remains in that ZCT for the next safepoint.
 
-Layouts with `CustomDealloc` descriptors are cold paths. Reclamation installs
-the reclaimed thread as active before invoking the custom deallocator, so that
-deallocator may use ordinary `decref()` and still route cascaded zero-count
+Layouts with `CustomRelease` descriptors are cold paths. Reclamation installs
+the reclaimed thread as active before invoking the custom release callback, so
+that callback may use ordinary `decref()` and still route cascaded zero-count
 children to the correct thread's ZCT.
+
+After ordinary or custom reference release, reclamation invokes the descriptor's
+optional `destroy` callback before retiring the allocation. That callback only
+destroys native state; owning containers must already have released their
+managed references during the release phase.
 
 ZCT processing should be serial in the first multi-thread-capable design. Unlike
 root scanning, it mutates lifecycle state, compacts ZCTs, runs teardown, appends

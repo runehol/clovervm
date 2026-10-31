@@ -19,6 +19,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/str.h"
 #include "memory/global_heap.h"
+#include "memory/heap_reference_slot.h"
 #include "object_model/class_object.h"
 #include "object_model/heap_ptr.h"
 #include "object_model/owned.h"
@@ -58,6 +59,9 @@ namespace cl
         ThreadState *get_default_thread() { return threads[0].get(); }
 
         ThreadState *make_new_thread();
+        // Fixed managed-reference fields only; native containers and thread
+        // roots are enumerated separately. Uses the StrongSlotVisitor contract.
+        void visit_persistent_root_slots(StrongSlotVisitor visitor);
         void run_heap_reclamation();
 
         template <TrustedHandlerFunction Target>
@@ -170,6 +174,16 @@ namespace cl
             auto found = builtin_classes_by_name_.find(interned_name.extract());
             assert(found != builtin_classes_by_name_.end());
             return found->second;
+        }
+
+        // Read-only roots for full tracing. Names/classes are immortal and
+        // non-moving; the tracer follows outgoing references from each class.
+        // No map mutation, managed allocation, or reentry during the visit.
+        template <typename Visitor>
+        void for_each_builtin_class(Visitor &&visitor) const
+        {
+            for(const auto &entry: builtin_classes_by_name_)
+                visitor(entry.second);
         }
 
         ClassObject *class_for_native_layout(NativeLayoutId id) const

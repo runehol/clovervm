@@ -13,8 +13,13 @@
 #include "object_model/shape.h"
 #include "object_model/validity_cell.h"
 #include "object_model/vm_array_backing.h"
+#include "runtime/expanded_call.h"
 
 #include <gtest/gtest.h>
+
+#include <cstddef>
+#include <memory>
+#include <new>
 
 namespace cl
 {
@@ -363,7 +368,49 @@ namespace cl
         EXPECT_FALSE(slab_has_valid_object(child_slab, child));
     }
 
-    TEST(HeapReclamation, CodeObjectCustomDeallocReclaimsConstantTableChild)
+    TEST(HeapReclamation, CodeObjectReleasesOwnershipBeforeNativeDestruction)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<String>> child(
+            thread->make_object_value<String>(L"child"));
+        TValue<String> module_name =
+            context.vm().get_or_create_interned_string_value(L"<module>");
+        ModuleObject *module = context.make_test_module_object(
+            module_name, context.vm().global_builtins_module().raw_value());
+        int32_t module_refs = module->refcount;
+
+        // Not heap-registered: exercise the two phases separately without
+        // scheduling this object for reclamation again after destruction.
+        alignas(CodeObject) std::byte storage[sizeof(CodeObject)];
+        CodeObject *code = new(storage) CodeObject(
+            context.vm().code_class(), nullptr,
+            TValue<ModuleObject>::from_oop(module), nullptr, child.value());
+        code->constant_table.emplace_back(child.value().raw_value());
+        code->inline_caches.expanded_call_caches.emplace_back();
+        auto &cache = code->inline_caches.expanded_call_caches.back();
+        cache.binding_plan = std::make_unique<ExpandedCallCachedPlan>();
+        cache.binding_plan->keyword_names.emplace_back(child.value());
+        ASSERT_EQ(4, child.extract()->refcount);
+        ASSERT_EQ(module_refs + 1, module->refcount);
+
+        const ReleaseDescriptor &descriptor =
+            release_descriptor_for(CodeObject::native_layout);
+        descriptor.custom_release(code);
+        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(module_refs, module->refcount);
+        EXPECT_TRUE(code->constant_table.empty());
+        EXPECT_EQ(nullptr, cache.binding_plan);
+        size_t zct_size = thread->zero_count_table_size();
+
+        descriptor.destroy(code);
+        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(module_refs, module->refcount);
+        EXPECT_EQ(zct_size, thread->zero_count_table_size());
+    }
+
+    TEST(HeapReclamation, CodeObjectCustomReleaseReclaimsConstantTableChild)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -390,11 +437,16 @@ namespace cl
         auto *overflow_child_slab =
             heap.slab_for_object_unlocked(overflow_child);
         code_object->constant_table.emplace_back(Value::from_oop(child));
+        code_object->inline_caches.expanded_call_caches.emplace_back();
+        auto &expanded = code_object->inline_caches.expanded_call_caches.back();
+        expanded.binding_plan = std::make_unique<ExpandedCallCachedPlan>();
+        expanded.binding_plan->keyword_names.emplace_back(
+            TValue<String>::from_oop(child));
         code_object->inline_caches.function_call_caches.push_back(
             FunctionCallInlineCache{});
         code_object->inline_caches.function_call_caches.back().guard_value =
             Value::from_oop(child);
-        ASSERT_EQ(1, child->refcount);
+        ASSERT_EQ(2, child->refcount);
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         SlabAllocator *module_slab = heap.slab_for_object_unlocked(module);
         SlabAllocator *code_object_slab =
@@ -422,7 +474,43 @@ namespace cl
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(module));
     }
 
-    TEST(HeapReclamation, ShapeCustomDeallocReclaimsTransitionTarget)
+    TEST(HeapReclamation, ShapeReleasesOwnershipBeforeNativeDestruction)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        Owned<TValue<String>> name(thread->make_object_value<String>(L"a"));
+        ClassObject *cls = context.vm().object_class();
+        alignas(Shape) std::byte storage[sizeof(Shape)];
+        Shape *shape =
+            new(storage) Shape(TValue<ClassObject>::from_oop(cls), nullptr, 0,
+                               0, 0, shape_flag(ShapeFlag::None), 0);
+        OwnedHeapPtr<Shape> next(
+            shape->derive_transition(name.value(), ShapeTransitionVerb::Add));
+        int32_t class_refs = cls->refcount;
+        // Builtin classes can be immortal; only refcounted storage contributes
+        // a reference-count decrement during the release phase.
+        int32_t class_release_count = heap_ptr_is_refcounted(cls) ? 1 : 0;
+        int32_t name_refs = name.extract()->refcount;
+        ASSERT_EQ(2, next.get()->refcount);
+
+        const ReleaseDescriptor &descriptor =
+            release_descriptor_for(Shape::native_layout);
+        descriptor.custom_release(shape);
+        EXPECT_EQ(0u, shape->transition_count());
+        EXPECT_EQ(class_refs - class_release_count, cls->refcount);
+        EXPECT_EQ(name_refs - 1, name.extract()->refcount);
+        EXPECT_EQ(1, next.get()->refcount);
+        size_t zct_size = thread->zero_count_table_size();
+
+        descriptor.destroy(shape);
+        EXPECT_EQ(class_refs - class_release_count, cls->refcount);
+        EXPECT_EQ(name_refs - 1, name.extract()->refcount);
+        EXPECT_EQ(1, next.get()->refcount);
+        EXPECT_EQ(zct_size, thread->zero_count_table_size());
+    }
+
+    TEST(HeapReclamation, ShapeCustomReleaseReclaimsTransitionTarget)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();

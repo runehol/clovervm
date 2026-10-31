@@ -27,6 +27,13 @@ target_sources(test_clovervm PRIVATE
 	test_num_parse.cpp
 	test_hash.cpp
 	test_heap.cpp
+	test_heap_reference_slot.cpp
+	test_scoped_root.cpp
+	test_persistent_roots.cpp
+	test_vm_persistent_roots.cpp
+	test_builtin_class_roots.cpp
+	test_strong_reference_slots.cpp
+	test_weak_reference_processing.cpp
 	test_import_system.cpp
 	test_aarch64_assembler.cpp
 	test_aarch64_allocation_constraints.cpp

@@ -65,6 +65,36 @@ namespace cl
         }
     }
 
+    void visit_strong_reference_slots(HeapObject *object,
+                                      StrongSlotVisitor visitor)
+    {
+        assert(object != nullptr);
+        const ReleaseDescriptor &descriptor =
+            release_descriptor_for(object->native_layout_id());
+        auto span = resolve_ordinary_reference_span(object, descriptor);
+        assert(span.has_value() || descriptor.custom_trace_strong != nullptr);
+        if(span)
+        {
+            visit_ordinary_reference_slots(object, *span, visitor);
+        }
+        if(descriptor.custom_trace_strong != nullptr)
+        {
+            descriptor.custom_trace_strong(object, visitor);
+        }
+    }
+
+    void process_weak_references(HeapObject *object,
+                                 WeakTargetResolver resolver)
+    {
+        assert(object != nullptr);
+        const ReleaseDescriptor &descriptor =
+            release_descriptor_for(object->native_layout_id());
+        if(descriptor.process_weak != nullptr)
+        {
+            descriptor.process_weak(object, resolver);
+        }
+    }
+
     size_t object_size_in_bytes(const HeapObject *obj)
     {
         assert(obj != nullptr);

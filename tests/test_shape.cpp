@@ -386,7 +386,7 @@ TEST(NativeAllocationValidationDeathTest,
             context.vm().get_or_create_interned_string_value(L"Oversized"),
             uint32_t(UINT16_MAX) + 1, context.vm().object_class(),
             NativeLayoutId::Instance));
-    EXPECT_DEATH(Instance::size_for(cls.extract()),
+    EXPECT_DEATH(Instance::allocation_size_for(cls.extract()),
                  "native_inline_slot_capacity_is_valid");
 }
 #endif

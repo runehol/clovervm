@@ -1,6 +1,7 @@
 #ifndef CL_SHAPE_KEY_H
 #define CL_SHAPE_KEY_H
 
+#include "memory/heap_reference_slot.h"
 #include "object_model/value.h"
 #include <cassert>
 #include <cstdint>
@@ -44,6 +45,23 @@ namespace cl
 
         bool operator==(ShapeKey other) const { return bits == other.bits; }
         bool operator!=(ShapeKey other) const { return bits != other.bits; }
+
+        bool repair_weak_reference(WeakTargetResolver resolver)
+        {
+            if(!is_valid() || is_inline())
+            {
+                return true;
+            }
+            HeapObject *replacement =
+                resolver(reinterpret_cast<HeapObject *>(bits));
+            if(replacement == nullptr)
+            {
+                *this = ShapeKey{};
+                return false;
+            }
+            HeapReferenceSlot(&bits).rewrite_pointer(replacement);
+            return true;
+        }
 
     private:
         static constexpr uintptr_t invalid_bits = UINTPTR_MAX;

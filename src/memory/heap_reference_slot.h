@@ -1,0 +1,78 @@
+#ifndef CL_HEAP_REFERENCE_SLOT_H
+#define CL_HEAP_REFERENCE_SLOT_H
+
+#include "object_model/heap_object.h"
+#include "object_model/value_tags.h"
+
+#include <absl/functional/function_ref.h>
+
+#include <bit>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+namespace cl
+{
+    // Borrowed view of one initialized reference-capable cell. Tagged Values
+    // and raw heap pointers use the same pointer bits. Byte access also handles
+    // cells inside Member wrappers without invoking their ownership operations.
+    class HeapReferenceSlot
+    {
+    public:
+        explicit HeapReferenceSlot(void *address)
+            : address_(static_cast<std::byte *>(address))
+        {
+            assert(address_ != nullptr);
+        }
+
+        HeapObject *load_pointer() const
+        {
+            uint64_t bits;
+            std::memcpy(&bits, address_, sizeof(bits));
+            switch(bits & value_ptr_mask)
+            {
+                case 0:
+                    return nullptr;
+                case value_refcounted_ptr_tag:
+                case value_interned_ptr_tag:
+                    return std::bit_cast<HeapObject *>(bits);
+            }
+            assert(false && "invalid reference cell encoding");
+            __builtin_unreachable();
+        }
+
+        // Collector-only relocation: preserves the logical reference and its
+        // storage class, without refcounting, barriers, allocation or
+        // safepoints.
+        void rewrite_pointer(HeapObject *replacement) const
+        {
+            HeapObject *current = load_pointer();
+            assert(current != nullptr);
+            assert(replacement != nullptr);
+            assert((reinterpret_cast<uintptr_t>(current) & value_ptr_mask) ==
+                   (reinterpret_cast<uintptr_t>(replacement) & value_ptr_mask));
+            (void)current;
+            std::memcpy(address_, &replacement, sizeof(replacement));
+        }
+
+    private:
+        std::byte *address_;
+    };
+
+    static_assert(sizeof(HeapObject *) == sizeof(uint64_t));
+
+    // Borrowed, synchronous visit. The object and its slot storage must remain
+    // valid: no managed allocation, safepoints, Python execution, or container
+    // mutation during enumeration. Visiting does not transfer ownership.
+    using StrongSlotVisitor = absl::FunctionRef<void(HeapReferenceSlot)>;
+
+    // After strong closure: return the surviving address, or null for a dead
+    // target. Unmoved/uncollected objects return their original address. The
+    // resolver must preserve object type/storage class and must not mark,
+    // dereference dead inputs, allocate managed objects, or reenter the VM.
+    using WeakTargetResolver = absl::FunctionRef<HeapObject *(HeapObject *)>;
+
+}  // namespace cl
+
+#endif  // CL_HEAP_REFERENCE_SLOT_H

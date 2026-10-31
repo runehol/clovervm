@@ -34,12 +34,28 @@ using namespace cl;
 
 namespace
 {
-    class CustomDeallocTestObject : public HeapObject
+    class CustomReleaseTestObject : public HeapObject
     {
     public:
-        static void dealloc(HeapObject *) {}
+        static void release_managed_references(HeapObject *) {}
 
-        CL_DECLARE_CUSTOM_DEALLOC(CustomDeallocTestObject, dealloc);
+        CL_DECLARE_CUSTOM_RELEASE(CustomReleaseTestObject,
+                                  release_managed_references);
+    };
+
+    class StaticReleaseWithDestroyTestObject : public HeapObject
+    {
+    public:
+        static void destroy(HeapObject *) {}
+        static void trace_strong_references(HeapObject *, StrongSlotVisitor) {}
+        static void process_weak_references(HeapObject *, WeakTargetResolver) {}
+
+        CL_DECLARE_EMPTY_VALUE_SPAN(StaticReleaseWithDestroyTestObject);
+        CL_DECLARE_NATIVE_DESTROY(StaticReleaseWithDestroyTestObject, destroy);
+        CL_DECLARE_CUSTOM_TRACE_STRONG(StaticReleaseWithDestroyTestObject,
+                                       trace_strong_references);
+        CL_DECLARE_PROCESS_WEAK(StaticReleaseWithDestroyTestObject,
+                                process_weak_references);
     };
 
     struct TwoValueCells
@@ -58,6 +74,10 @@ namespace
                   release.value_offset_words);
         EXPECT_EQ(T::native_static_release_count(),
                   release.static_release_count);
+        EXPECT_EQ(nullptr, release.custom_release);
+        EXPECT_EQ(nullptr, release.destroy);
+        EXPECT_EQ(nullptr, release.custom_trace_strong);
+        EXPECT_EQ(nullptr, release.process_weak);
 
         const ObjectSizeDescriptor &object_size =
             object_size_descriptor_for(T::native_layout);
@@ -72,14 +92,102 @@ TEST(NativeLayoutDescriptor, ListUsesNativeStaticReleaseDescriptor)
     expect_static_native_layout_descriptor<List>();
 }
 
-TEST(NativeLayoutDescriptor, CustomDeallocDeclarationBuildsDescriptor)
+TEST(NativeLayoutDescriptor, CustomReleaseDeclarationBuildsDescriptor)
 {
     const ReleaseDescriptor release =
         native_layout_descriptor_detail::NativeLayoutReleaseDescriptorBuilder<
-            CustomDeallocTestObject>::build();
+            CustomReleaseTestObject>::build();
 
-    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
-    EXPECT_EQ(CustomDeallocTestObject::dealloc, release.custom_dealloc);
+    EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
+    EXPECT_EQ(CustomReleaseTestObject::release_managed_references,
+              release.custom_release);
+    EXPECT_EQ(nullptr, release.destroy);
+    EXPECT_EQ(nullptr, release.custom_trace_strong);
+}
+
+TEST(NativeLayoutDescriptor,
+     OrdinaryReleaseCanHaveIndependentScanningAndDestruction)
+{
+    const ReleaseDescriptor release =
+        native_layout_descriptor_detail::NativeLayoutReleaseDescriptorBuilder<
+            StaticReleaseWithDestroyTestObject>::build();
+
+    EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
+    EXPECT_EQ(nullptr, release.custom_release);
+    EXPECT_EQ(StaticReleaseWithDestroyTestObject::destroy, release.destroy);
+    EXPECT_EQ(StaticReleaseWithDestroyTestObject::trace_strong_references,
+              release.custom_trace_strong);
+    EXPECT_EQ(StaticReleaseWithDestroyTestObject::process_weak_references,
+              release.process_weak);
+}
+
+TEST(NativeLayoutDescriptor, ResolvesOrdinaryStaticReferenceSpan)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Float *object = context.thread()->make_object_raw<Float>(1.5);
+    int32_t refcount = object->refcount;
+    auto span = resolve_ordinary_reference_span(
+        object, release_descriptor_for(Float::native_layout));
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(Object::native_value_offset_in_words(), span->value_offset_words);
+    EXPECT_EQ(Object::native_static_release_count(), span->value_count);
+    EXPECT_EQ(refcount, object->refcount);
+}
+
+TEST(NativeLayoutDescriptor, EmptyOrdinarySpanIsSupported)
+{
+    RawArrayBacking backing(0);
+    auto span = resolve_ordinary_reference_span(
+        &backing, release_descriptor_for(RawArrayBacking::native_layout));
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(0u, span->value_offset_words);
+    EXPECT_EQ(0u, span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, OrdinarySpanPreservesLargeStartingOffset)
+{
+    // Resolve metadata only; no storage at this offset needs to be accessed.
+    HeapObject header(NativeLayoutId::TestOnly);
+    uint64_t offset = uint64_t{UINT32_MAX} + 1;
+    ReleaseDescriptor descriptor = ReleaseDescriptor::static_span(offset, 0);
+    auto span = resolve_ordinary_reference_span(&header, descriptor);
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(offset, span->value_offset_words);
+    EXPECT_EQ(0u, span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, ResolvesSmiReferenceCountWithoutNarrowing)
+{
+    // The query reads only the stored count, not the unallocated trailing
+    // cells.
+    uint64_t count = uint64_t{UINT32_MAX} + 1;
+    ValueArrayBacking backing(count);
+    auto span = resolve_ordinary_reference_span(
+        &backing, release_descriptor_for(ValueArrayBacking::native_layout));
+
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
+              span->value_offset_words);
+    EXPECT_EQ(count, span->value_count);
+}
+
+TEST(NativeLayoutDescriptor, CustomReleaseDoesNotResolveAsAnEmptySpan)
+{
+    for(NativeLayoutId layout:
+        {NativeLayoutId::CodeObject, NativeLayoutId::Shape,
+         NativeLayoutId::JitCodeObject})
+    {
+        SCOPED_TRACE(static_cast<uint32_t>(layout));
+        // Custom handling must not inspect payload fields or run a deallocator.
+        HeapObject header(layout);
+        EXPECT_FALSE(resolve_ordinary_reference_span(
+                         &header, release_descriptor_for(layout))
+                         .has_value());
+    }
 }
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
@@ -183,7 +291,7 @@ TEST(NativeLayoutDescriptor, ShapeInstallationRejectsFixedCapacityOverflow)
 
 TEST(NativeLayoutDescriptor, DynamicInstanceCapacityIsCheckedBeforeAllocation)
 {
-    EXPECT_DEATH(Instance::size_for(uint32_t{UINT16_MAX} + 1),
+    EXPECT_DEATH(Instance::allocation_size_for(uint32_t{UINT16_MAX} + 1),
                  "dynamic_inline_slot_count <= UINT16_MAX");
 }
 #endif
@@ -275,7 +383,7 @@ TEST(NativeLayoutDescriptor, BigIntExactSizedAllocationMapsToIntClass)
     EXPECT_EQ(3u, bigint->view().n_digits);
     EXPECT_EQ(-1, bigint->view().signum);
     EXPECT_EQ(3u, bigint->mutable_view_for_initialization().capacity);
-    EXPECT_EQ(BigInt::size_for(3), object_size_in_bytes(bigint));
+    EXPECT_EQ(BigInt::allocation_size_for(3), object_size_in_bytes(bigint));
 }
 
 TEST(NativeLayoutDescriptor, BigIntZeroAllocationStillHasOneDigitSlot)
@@ -291,8 +399,8 @@ TEST(NativeLayoutDescriptor, BigIntZeroAllocationStillHasOneDigitSlot)
     EXPECT_EQ(0u, bigint->view().n_digits);
     EXPECT_EQ(0, bigint->view().signum);
     EXPECT_EQ(1u, bigint->mutable_view_for_initialization().capacity);
-    EXPECT_EQ(sizeof(BigInt), BigInt::size_for(0));
-    EXPECT_EQ(BigInt::size_for(0), object_size_in_bytes(bigint));
+    EXPECT_EQ(sizeof(BigInt), BigInt::allocation_size_for(0));
+    EXPECT_EQ(BigInt::allocation_size_for(0), object_size_in_bytes(bigint));
 }
 
 TEST(NativeLayoutDescriptor, ValidityCellUsesEmptyStaticDescriptor)
@@ -504,11 +612,11 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     EXPECT_EQ(expected_range_iterator_size,
               object_size_in_bytes(range_iterator));
 
-    size_t expected_string_size = String::size_for(5);
+    size_t expected_string_size = String::allocation_size_for(5);
     String *str = context.thread()->make_object_raw<String>(L"hello");
     EXPECT_EQ(expected_string_size, object_size_in_bytes(str));
 
-    size_t expected_tuple_size = Tuple::size_for(5);
+    size_t expected_tuple_size = Tuple::allocation_size_for(5);
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(5);
     EXPECT_EQ(expected_tuple_size, object_size_in_bytes(tuple));
 
@@ -517,7 +625,8 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-    EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
+    EXPECT_EQ(Instance::allocation_size_for(uint32_t{4}),
+              object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
@@ -531,8 +640,9 @@ TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
-    EXPECT_EQ(String::size_for(5), object_size.custom_size_in_bytes(str));
-    EXPECT_EQ(String::size_for(5), object_size_in_bytes(str));
+    EXPECT_EQ(String::allocation_size_for(5),
+              object_size.custom_size_in_bytes(str));
+    EXPECT_EQ(String::allocation_size_for(5), object_size_in_bytes(str));
 }
 
 TEST(NativeLayoutDescriptor,
@@ -585,6 +695,12 @@ TEST(NativeLayoutDescriptor, CompactTupleDynamicSmiReleaseSpanUsesStoredCount)
               release.value_offset_words);
     EXPECT_EQ(Tuple::native_additional_release_count(),
               release.additional_release_count);
+
+    auto span = resolve_ordinary_reference_span(tuple, release);
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(Object::native_value_offset_in_words(), span->value_offset_words);
+    EXPECT_EQ(3u + Object::native_static_release_count() + 1,
+              span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
@@ -598,8 +714,9 @@ TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
-    EXPECT_EQ(Tuple::size_for(5), object_size.custom_size_in_bytes(tuple));
-    EXPECT_EQ(Tuple::size_for(5), object_size_in_bytes(tuple));
+    EXPECT_EQ(Tuple::allocation_size_for(5),
+              object_size.custom_size_in_bytes(tuple));
+    EXPECT_EQ(Tuple::allocation_size_for(5), object_size_in_bytes(tuple));
 }
 
 TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
@@ -648,30 +765,53 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
               release.value_offset_words);
     EXPECT_EQ(Instance::native_additional_release_count(),
               release.additional_release_count);
+
+    for(Instance *instance: {small, large})
+    {
+        auto span = resolve_ordinary_reference_span(instance, release);
+        ASSERT_TRUE(span.has_value());
+        EXPECT_EQ(Object::native_value_offset_in_words(),
+                  span->value_offset_words);
+        EXPECT_EQ(InlineSlotObject::native_static_release_count(),
+                  span->value_count);
+    }
+
+    ASSERT_TRUE(
+        large->set_own_property(small_name, Value::from_smi(1)).value());
+    auto span = resolve_ordinary_reference_span(large, release);
+    ASSERT_TRUE(span.has_value());
+    // Seven cells are reserved, but only the initialized cell joins the span.
+    EXPECT_EQ(InlineSlotObject::native_static_release_count() + 1,
+              span->value_count);
 }
 
-TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesInitializedInlineSlots)
+TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesShapeCapacity)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
-    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 4, context.vm().object_class(), NativeLayoutId::Instance);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(Instance::native_layout);
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
-    EXPECT_EQ(0u, instance->native_layout_aux_count_value());
-    EXPECT_EQ(Instance::size_for(uint32_t{0}),
-              object_size.custom_size_in_bytes(instance));
-    EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
+    for(uint32_t capacity: {0u, 1u, 4u})
+    {
+        ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+            cls_name, capacity, context.vm().object_class(),
+            NativeLayoutId::Instance);
+        Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+        EXPECT_EQ(0u, instance->native_layout_aux_count_value());
+        EXPECT_EQ(Instance::allocation_size_for(capacity),
+                  object_size.custom_size_in_bytes(instance));
+        EXPECT_EQ(Instance::allocation_size_for(capacity),
+                  object_size_in_bytes(instance));
+    }
 }
 
-TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
+TEST(NativeLayoutDescriptor, InstanceSizeStaysFixedAsInitializedSlotsChange)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -687,9 +827,12 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
         cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
+    size_t allocated_size = Instance::allocation_size_for(uint32_t{1});
     ASSERT_EQ(0u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
     ASSERT_TRUE(instance->set_own_property(a_name, Value::from_smi(1)).value());
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
     ASSERT_TRUE(instance->set_own_property(b_name, Value::from_smi(2)).value());
     ASSERT_TRUE(instance->set_own_property(c_name, Value::from_smi(3)).value());
 
@@ -697,6 +840,15 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
     EXPECT_EQ(Value::from_smi(3), instance->get_own_property(c_name));
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
+
+    ASSERT_TRUE(instance->delete_own_property(a_name));
+    ASSERT_TRUE(instance->delete_own_property(b_name));
+    EXPECT_TRUE(instance->inline_slot_base()[0].is_not_present());
+    EXPECT_TRUE(instance->get_own_property(a_name).is_not_present());
+    EXPECT_TRUE(instance->get_own_property(b_name).is_not_present());
+    EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(allocated_size, object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor,
@@ -719,13 +871,16 @@ TEST(NativeLayoutDescriptor,
     EXPECT_EQ(0u, instance->native_layout_aux_count_value());
 }
 
-TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
+TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(CodeObject::native_layout);
 
-    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
-    EXPECT_EQ(CodeObject::dealloc, release.custom_dealloc);
+    EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
+    EXPECT_EQ(CodeObject::release_managed_references, release.custom_release);
+    EXPECT_EQ(CodeObject::destroy, release.destroy);
+    EXPECT_EQ(CodeObject::trace_strong_references, release.custom_trace_strong);
+    EXPECT_EQ(CodeObject::process_weak_references, release.process_weak);
 
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(CodeObject::native_layout);
@@ -734,13 +889,16 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
     EXPECT_EQ(sizeof(CodeObject), object_size.static_size_in_bytes);
 }
 
-TEST(NativeLayoutDescriptor, ShapeUsesCustomDeallocAndCustomObjectSize)
+TEST(NativeLayoutDescriptor, ShapeUsesCustomReleaseAndCustomObjectSize)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(Shape::native_layout);
 
-    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
-    EXPECT_EQ(Shape::dealloc, release.custom_dealloc);
+    EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
+    EXPECT_EQ(Shape::release_managed_references, release.custom_release);
+    EXPECT_EQ(Shape::destroy, release.destroy);
+    EXPECT_EQ(Shape::trace_strong_references, release.custom_trace_strong);
+    EXPECT_EQ(Shape::process_weak_references, release.process_weak);
 
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(Shape::native_layout);
@@ -758,7 +916,7 @@ TEST(NativeLayoutDescriptor, ShapeNativeObjectSizeUsesPropertyCount)
         TValue<ClassObject>::from_oop(cls), nullptr, 0, 3, 0,
         shape_flag(ShapeFlag::None), 0);
 
-    EXPECT_EQ(Shape::size_for(3), object_size_in_bytes(shape));
+    EXPECT_EQ(Shape::allocation_size_for(3), object_size_in_bytes(shape));
 }
 
 TEST(NativeLayoutDescriptor, OverflowSlotsUsesDynamicAuxReleaseDescriptor)
@@ -791,6 +949,12 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeReleaseSpanUsesCapacity)
               release.value_offset_words);
     EXPECT_EQ(0u, release.additional_release_count);
     EXPECT_EQ(5u, overflow_slots->native_layout_aux_count_value());
+
+    auto span = resolve_ordinary_reference_span(overflow_slots, release);
+    ASSERT_TRUE(span.has_value());
+    EXPECT_EQ(OverflowSlots::native_value_offset_in_words(),
+              span->value_offset_words);
+    EXPECT_EQ(5u, span->value_count);
 }
 
 TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)
@@ -800,7 +964,8 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)
     OverflowSlots *overflow_slots =
         context.thread()->make_internal_raw<OverflowSlots>(2, 5);
 
-    EXPECT_EQ(OverflowSlots::size_for(5), object_size_in_bytes(overflow_slots));
+    EXPECT_EQ(OverflowSlots::allocation_size_for(5),
+              object_size_in_bytes(overflow_slots));
 }
 
 TEST(NativeLayoutDescriptor, RawArrayBackingUsesEmptyReleaseDescriptor)
@@ -825,7 +990,8 @@ TEST(NativeLayoutDescriptor, RawArrayBackingNativeObjectSizeUsesStorageBytes)
     RawArrayBacking *backing =
         context.thread()->make_internal_raw<RawArrayBacking>(27);
 
-    EXPECT_EQ(RawArrayBacking::size_for(27), object_size_in_bytes(backing));
+    EXPECT_EQ(RawArrayBacking::allocation_size_for(27),
+              object_size_in_bytes(backing));
 }
 
 TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicSmiReleaseDescriptor)
@@ -859,7 +1025,8 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingNativeReleaseSpanUsesCellCount)
     EXPECT_EQ(7u, backing->value_cell_count());
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
-    EXPECT_EQ(ValueArrayBacking::size_for(7), object_size_in_bytes(backing));
+    EXPECT_EQ(ValueArrayBacking::allocation_size_for(7),
+              object_size_in_bytes(backing));
 }
 
 TEST(NativeLayoutDescriptor, ValueArrayBackingStoresLargeCellCount)
@@ -873,7 +1040,7 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingStoresLargeCellCount)
 
     EXPECT_EQ(cell_count, backing->value_cell_count());
     EXPECT_EQ(0u, backing->native_layout_aux_count_value());
-    EXPECT_EQ(ValueArrayBacking::size_for(cell_count),
+    EXPECT_EQ(ValueArrayBacking::allocation_size_for(cell_count),
               object_size_in_bytes(backing));
 }
 
@@ -929,7 +1096,8 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
               release.value_offset_words);
     EXPECT_EQ(reinterpret_cast<Value *>(backing) + release.value_offset_words,
               reinterpret_cast<Value *>(backing->elements));
-    EXPECT_EQ(HeapPtrArrayBacking::size_for(3), object_size_in_bytes(backing));
+    EXPECT_EQ(HeapPtrArrayBacking::allocation_size_for(3),
+              object_size_in_bytes(backing));
 }
 
 TEST(NativeLayoutDescriptor, HeapPtrArrayBackingStoresLargeCellCount)
@@ -943,7 +1111,7 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingStoresLargeCellCount)
 
     EXPECT_EQ(cell_count, backing->value_cell_count());
     EXPECT_EQ(0u, backing->native_layout_aux_count_value());
-    EXPECT_EQ(HeapPtrArrayBacking::size_for(cell_count),
+    EXPECT_EQ(HeapPtrArrayBacking::allocation_size_for(cell_count),
               object_size_in_bytes(backing));
 }
 

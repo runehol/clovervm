@@ -101,6 +101,12 @@ namespace cl
             }
             Shape *get_next_shape() const { return next_shape.extract(); }
 
+            void visit_strong_reference_slots(StrongSlotVisitor visitor)
+            {
+                visitor(HeapReferenceSlot(&name));
+                visitor(HeapReferenceSlot(&next_shape));
+            }
+
         private:
             Owned<TValue<String>> name;
             ShapeTransitionVerb verb;
@@ -132,16 +138,18 @@ namespace cl
             int32_t next_slot_index, uint32_t present_count,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
 
-        static size_t size_for(uint32_t property_count)
+        static size_t allocation_size_for(uint32_t property_count)
         {
             return sizeof(Shape) + sizeof(Value) * property_count -
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
-        static size_t size_for(TValue<ClassObject> class_value,
-                               Shape *previous_shape, int32_t next_slot_index,
-                               uint32_t property_count,
-                               uint32_t inline_slot_capacity,
-                               ShapeFlags shape_flags, uint32_t present_count)
+        static size_t allocation_size_for(TValue<ClassObject> class_value,
+                                          Shape *previous_shape,
+                                          int32_t next_slot_index,
+                                          uint32_t property_count,
+                                          uint32_t inline_slot_capacity,
+                                          ShapeFlags shape_flags,
+                                          uint32_t present_count)
         {
             (void)class_value;
             (void)previous_shape;
@@ -149,11 +157,11 @@ namespace cl
             (void)inline_slot_capacity;
             (void)shape_flags;
             (void)present_count;
-            return size_for(property_count);
+            return allocation_size_for(property_count);
         }
         static size_t object_size_in_bytes(const Shape *shape)
         {
-            return size_for(shape->property_count());
+            return allocation_size_for(shape->property_count());
         }
 
         ClassObject *get_class() const
@@ -254,9 +262,17 @@ namespace cl
         Value descriptor_names[1];
 
     public:
-        static void dealloc(HeapObject *obj);
+        static void release_managed_references(HeapObject *obj);
+        static void destroy(HeapObject *obj);
+        static void trace_strong_references(HeapObject *obj,
+                                            StrongSlotVisitor visitor);
+        static void process_weak_references(HeapObject *obj,
+                                            WeakTargetResolver resolver);
 
-        CL_DECLARE_CUSTOM_DEALLOC(Shape, dealloc);
+        CL_DECLARE_CUSTOM_RELEASE(Shape, release_managed_references);
+        CL_DECLARE_NATIVE_DESTROY(Shape, destroy);
+        CL_DECLARE_CUSTOM_TRACE_STRONG(Shape, trace_strong_references);
+        CL_DECLARE_PROCESS_WEAK(Shape, process_weak_references);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Shape, Shape::object_size_in_bytes);
     };
 

@@ -48,16 +48,16 @@ namespace cl
         }
         else
         {
-            return T::size_for(std::forward<Args>(args)...);
+            return T::allocation_size_for(std::forward<Args>(args)...);
         }
     }
 
     template <typename T, typename Heap, typename... Args>
     T *construct_object(Heap *heap, Args &&...args)
     {
-        size_t object_size_in_bytes =
+        size_t allocation_size_in_bytes =
             allocation_size_for<T>(std::forward<Args>(args)...);
-        HeapAllocation allocation = heap->allocate(object_size_in_bytes);
+        HeapAllocation allocation = heap->allocate(allocation_size_in_bytes);
         T *obj = std::construct_at(reinterpret_cast<T *>(allocation.memory),
                                    std::forward<Args>(args)...);
         assert(obj->HeapObject::native_layout_id() == T::native_layout);

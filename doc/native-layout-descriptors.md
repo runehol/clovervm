@@ -5,9 +5,9 @@
 | Document type | Architecture contract |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Descriptor-driven heap record sizing, reference release, and teardown |
+| Scope | Descriptor-driven heap record sizing, strong scanning, weak processing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | `6d661a8` (2026-07-11) |
+| Validated against | Slice 3c working tree based on `aaf57767` (2026-10-30) |
 | Supersedes | N/A |
 
 ## Current Model
@@ -78,7 +78,7 @@ The release table is keyed by `NativeLayoutId` and uses these forms:
 
 ```cpp
 enum class ReleaseKind : uint8_t {
-    CustomDealloc,
+    CustomRelease,
     StaticSpan,
     DynamicSmiSpan,
     DynamicAuxSpan,
@@ -91,16 +91,106 @@ word-aligned `Value` span. The reclamation loop copies each cell, clears it to
 reclamation context. It does not call ordinary hot-path `decref()` or look up
 the active thread through TLS.
 
-`CustomDealloc` is a cold escape hatch for layouts that cannot honestly be
-represented as a contiguous `Value` span. A custom deallocator owns the full
-`tp_dealloc`-style operation: release VM references in the right order and run
-any native payload teardown. Reclamation installs the reclaimed thread as active
-before invoking custom deallocators, so they may use ordinary `decref()`.
+`CustomRelease` is a cold escape hatch for layouts that cannot honestly be
+represented as a contiguous `Value` span. Its `custom_release` callback releases
+managed ownership. Reclamation installs the reclaimed thread as active before
+invoking it, so it may use ordinary `decref()`.
 
-`CustomDealloc` is also the default-invalid descriptor encoding:
-`custom_dealloc == nullptr` means the table entry is unfilled. Descriptor table
+The descriptor's independent, optional `destroy` callback tears down native
+resources after ordinary or custom reference release. It must not release any
+further managed references. Owning C++ containers must therefore be emptied by
+the release phase, before their destructors run. Direct `Member` fields retain
+their existing explicit-release behavior; they do not release on destruction.
+Release and destruction each run once, then reclamation retires the allocation.
+Ordinary spans can have a destruction callback too; custom destruction is not a
+reference-enumeration policy. Independent destruction grew `ReleaseDescriptor`
+from 32 to 40 bytes, strong scanning made it 48 bytes, and slice 3c's weak
+callback makes it 56 bytes. These are static table entries, not per-object
+metadata.
+
+`CustomRelease` is also the default-invalid descriptor encoding:
+`custom_release == nullptr` means the table entry is unfilled. Descriptor table
 validation requires every real native layout except `TestOnly` to have valid
 release and object-size descriptors.
+
+`resolve_ordinary_reference_span(object, descriptor)` resolves the three
+ordinary forms to an `OrdinaryReferenceSpan` containing a 64-bit
+`value_offset_words` and a 64-bit `value_count`. It reads count metadata without
+reading, clearing, or releasing the reference cells. Reclamation consumes the
+result using its existing clear-and-release loop.
+
+The query describes one contiguous span inside the object's allocation. An
+empty ordinary span is a supported result with a zero count. Custom handling
+returns `std::nullopt`, which does not mean the object has no references.
+Custom scanning and destruction are independent of reference release, as in the
+unified descriptor design below.
+
+`visit_strong_reference_slots(object, visitor)` visits this object's ordinary
+span, if supported, then its optional `custom_trace_strong` callback. The
+borrowed `StrongSlotVisitor` is an `absl::FunctionRef<void(HeapReferenceSlot)>`;
+it is not retained. An ordinary span and a supplemental custom callback may
+coexist. Every registered custom-release layout must supply a custom scanner;
+table validation checks this structural requirement, not semantic completeness
+of per-layout reference coverage.
+
+The three custom scanners expose:
+
+- `CodeObject`: shape, overflow storage, direct managed members, keyword-remap
+  backing handles, native constant-table entries, and owned keyword names in
+  expanded-call cache plans. VM-array wrappers expose their backing handles;
+  their elements are visited later when those backing objects are scanned.
+- `Shape`: class, every owned descriptor name including latent descriptors,
+  and each transition's owned name and successor shape.
+- `JitCodeObject`: only its tagged constant-pool prefix, not untagged pool data
+  or executable addresses.
+
+Enumeration is not recursive. Distinct cells containing the same pointer are
+visited separately. Raw weak-cache references and `Shape::previous_shape` are
+excluded and handled by separate weak processing. Native pointers such as
+CodeObject's `compilation_unit` are not heap-reference cells; roots owned by native runtime
+structures require a separate audit. These scans do not enter production
+reclamation or imply relocation safety. The per-layout field inventory and
+remaining movement prerequisites are recorded in the
+[Native Layout Reference Audit](native-layout-reference-audit.md).
+
+Neither enumeration nor relocation writes adjust refcounts or ZCT membership.
+The visitor must not allocate managed objects, safepoint, execute Python, or
+change container structure during a visit. Object and slot storage stay valid
+until enumeration completes. Tests simulate substitutions and restore the
+ownership graph before refcount teardown.
+
+`process_weak_references(object, resolver)` invokes an optional descriptor weak
+callback after the caller has established strong closure. The borrowed
+`WeakTargetResolver` returns a surviving address, identity for an unmoved or
+uncollected object, or null for a dead target. It must not mark or dereference
+dead inputs, allocate managed objects, or reenter the VM. The callbacks do not
+run production collection or reclamation.
+
+Shape repairs or clears its non-owning back-link. CodeObject processes every
+cache family, respecting optional nulls, tagged immediates, invalid/inline shape
+keys, and active plan fields. Any dead active component resets the whole entry;
+native handler pointers and scalar plans are not sent to the resolver. Successful
+pointer repair is RC-neutral. Clearing an expanded-call entry releases its owned
+keyword-name plan through ordinary ownership rules: with RC enabled an active
+thread must be installed, and zero-count children may enter the ZCT, but no
+reclamation runs inside the callback. Those names already participated in
+strong closure. Tests use fake liveness maps with physically live objects;
+Python-visible weakref objects and production collector integration are not
+part of this API implementation.
+
+`visit_ordinary_reference_slots(object, span, visitor)` enumerates each cell of
+a resolved span through a borrowed `HeapReferenceSlot`. This includes immediate
+values and null pointers: `load_pointer()` returns null for those cells.
+Tagged references and raw heap pointers use the same pointer bits in the current
+representation. The view uses byte copies rather than accessing raw fields as
+`Value &` or invoking wrapper assignment operators.
+
+`rewrite_pointer()` is a collector-only operation on an existing reference. Its
+non-null replacement must preserve pointer storage class and logical identity.
+It performs no refcount operations, barriers, allocation, or safepoints. The
+supplied span must describe initialized storage within the object, and that
+storage must remain valid throughout enumeration. Custom scanners may later
+use the same view for references outside the ordinary span.
 
 ## Dynamic Counts
 
@@ -120,9 +210,10 @@ by the release loop. There is no per-layout scale factor in reclamation. Backing
 records that store arrays of structs must store the physical `Value` cell count,
 not the number of logical elements.
 
-For `Instance`, the auxiliary count is the physical inline-slot allocation
-count. `Shape` remains the semantic authority for which attributes exist and
-which storage locations they use.
+For `Instance`, the auxiliary count is the initialized inline-slot prefix.
+Unused inline capacity remains uninitialized. The instance's current `Shape`
+describes inline capacity and attribute storage locations; its slot frontier
+also describes the initialized inline prefix after a completed mutation.
 
 For backing records whose ownership has been transferred during growth, the old
 backing's auxiliary count is set to zero so reclamation does not release moved
@@ -133,7 +224,7 @@ cells.
 Object-size descriptors answer a separate question:
 
 ```text
-How many bytes does this already-allocated heap object occupy?
+How many bytes does this object's current layout require, including spare capacity?
 ```
 
 The opaque query is:
@@ -151,12 +242,17 @@ Allocation does not use the opaque descriptor dispatch. Allocation sites know
 the concrete C++ type and use:
 
 ```cpp
-sizeof(T)          // static-size layouts
-T::size_for(...)   // dynamic/custom-size layouts
+sizeof(T)                     // static-size layouts
+T::allocation_size_for(...)   // dynamic/custom-size layouts
 ```
 
 This keeps allocation type-directed while still allowing validation, accounting,
 debugging, and slab policy code to query opaque object extents.
+
+These queries describe the allocation requirement of the current layout. They
+do not report allocator rounding, an older oversized reservation retained after
+a future capacity shrink, or the initialized prefix safe to copy. Collector
+policy chooses any different evacuation destination size separately.
 
 ## Unified Layout Query Design
 
@@ -173,7 +269,7 @@ struct NativeLayoutInfo
     size_t allocated_size;
     size_t initialized_size;
 
-    uint32_t value_offset_words;
+    uint64_t value_offset_words;
     uint32_t strong_value_count;
 };
 ```
@@ -183,9 +279,13 @@ The current descriptors establish the expected distribution:
 - most layouts have a static object size and static strong span;
 - `Tuple`, `ValueArrayBacking`, and `HeapPtrArrayBacking` read a dynamic count
   from an SMI field;
-- `Instance` and `OverflowSlots` use `native_layout_aux_count`;
+- `Instance` uses its shape for allocated capacity and
+  `native_layout_aux_count` for its initialized inline prefix and release count;
+- `OverflowSlots` uses `native_layout_aux_count` for release and its own
+  capacity field for object size;
 - most existing custom size helpers are `base + count * stride` formulas;
-- only `CodeObject` and `Shape` currently have custom deallocators.
+- `CodeObject`, `Shape`, and `JitCodeObject` have custom reference release and
+  separate native destruction.
 
 The common representation should preserve those LUT and arithmetic paths:
 
@@ -221,7 +321,7 @@ struct ExtentDescriptor
 
 struct StrongSpanDescriptor
 {
-    uint16_t value_offset_words;
+    uint64_t value_offset_words;
     CountFormula count;
 };
 ```
@@ -297,41 +397,71 @@ element sizes uses the rare custom query.
 
 ### Extent Source Invariant
 
-Physical extent metadata must be recoverable from the object header, a field in
-the object allocation, or the descriptor LUT. The query must not dereference a
-different movable object such as `Shape` or `ClassObject`.
+Extent metadata may come from the object, the descriptor LUT, or the object's
+shape. Shape-derived layout queries must work before ordinary strong-reference
+repair: source metadata must remain readable during evacuation, including when
+the shape has already been forwarded. The collector's forwarding representation
+and metadata access must preserve this contract. It must not require recursively
+tracing a shape's outgoing references merely to determine an instance's extent.
 
-This is required by copying order. The collector needs the source object's
-extent before it can copy the object and before its managed fields have been
-traced or rewritten. Following an unrepaired `shape` pointer to recover physical
-capacity creates a relocation dependency cycle.
+`Instance` retains lazy inline-slot initialization:
 
-`Instance` currently exposes this layout debt:
-
-- allocation calls `Instance::size_for(ClassObject *)`, which obtains inline
-  capacity from the class's instance root `Shape`;
-- `Instance::object_size_in_bytes()` instead uses
-  `native_layout_aux_count_value()`;
-- that auxiliary count currently grows as inline slots are lazily initialized,
+- allocation calls `Instance::allocation_size_for(ClassObject *)`, which obtains
+  inline capacity from the class's instance root `Shape`;
+- `Instance::object_size_in_bytes()` uses the instance's current shape's inline
+  capacity;
+- the auxiliary count grows as inline slots are lazily initialized,
   so it records initialized usage rather than physical allocation capacity.
 
-The current opaque size query therefore reports an initialized extent for
-`Instance`, while the physical allocated extent remains recoverable only by
-following class and shape metadata. That representation is not nursery-safe.
+The allocated-size helper reports full capacity from construction onward, while
+reference release uses only the initialized inline prefix. The future unified
+query will preserve that distinction for copying:
 
-The simplest repair is to store the selected physical capacity in
-`native_layout_aux_count`, initialize every allocated inline slot to
-`not_present`, and use the same capacity for allocated, initialized, and strong
-counts. This trades eager slot clearing for one local count and safe full-span
-copying and tracing. If that cost is unacceptable, `Instance` needs two local
-counts: immutable allocation capacity and initialized usage. Capacity must not
-remain solely in `Shape`.
+```text
+allocated_size   = sizeof(Instance) + sizeof(Value) * shape.inline_capacity
+initialized_size = sizeof(Instance) + sizeof(Value) * aux_count
+strong_count     = inherited strong cells + aux_count
+```
+
+After a completed mutation, `aux_count` agrees with
+`min(shape.next_slot_index, shape.inline_capacity)`. Deleted slots remain
+initialized as `not_present`; deletion does not reduce the frontier. A shape
+change and initialization of a newly claimed slot must not expose an invalid
+initialized span at a collection safepoint.
+
+### Future Instance Capacity Shrinking
+
+A class may initially reserve generous inline capacity, then use allocation
+profiling to choose a smaller capacity. At the shrink point, the new capacity
+must cover the maximum inline-slot frontier already reached by its instances.
+Every existing inline storage location therefore remains inline. Subsequent
+attribute growth beyond the reduced capacity uses overflow storage.
+
+The reduced capacity must govern subsequent shape transitions, including
+transitions used by instances allocated before the shrink. Cached transitions
+must not allow those instances to claim discarded inline capacity. The exact
+profiling threshold and shape-update mechanism remain future implementation
+work.
+
+Existing allocations can retain their excess bytes until evacuation. A copying
+collector then allocates the reduced extent and copies only the initialized
+prefix; no existing values need to move between inline and overflow storage.
+Allocator accounting or source-space walking must distinguish the original
+reservation from the reduced destination extent when necessary. Shrinking
+must be an explicit evacuation policy, rather than silently conflating those
+two sizes in the ordinary layout query.
+
+Lazy initialization remains the initial policy. Once capacity shrinking exists,
+measure whether clearing the full, usually smaller capacity is cheap enough to
+simplify initialized-prefix tracking.
+
+### Layout Audit
 
 The layout audit should flag any native ID with:
 
-- physical extent derived from another managed object;
-- allocation capacity that is no longer locally recoverable;
-- unused capacity containing uninitialized bytes;
+- managed metadata dependencies without a defined forwarding-safe query path;
+- allocation capacity that cannot be recovered through its declared source;
+- uninitialized capacity included in a copied or traced span;
 - logical size conflated with physical capacity;
 - a count mutated during backing ownership transfer;
 - a count that cannot fit in `native_layout_aux_count`;
@@ -399,6 +529,15 @@ exposing partially valid cache state.
 refcounting remains. `destroy` runs C++ destructors and releases native
 resources after managed references have been cleared.
 
+Reference enumeration and destruction are independent capabilities. An ordinary
+strong span, additional custom strong scanning, and custom destruction may all
+be present on the same layout. The current custom-deallocator layouts
+`CodeObject`, `Shape`, and `JitCodeObject` must each expose their strong
+references for scanning and rewriting, plus separate weak processing where
+applicable. Their eventual non-moving placement does not exempt references to
+movable objects from repair. For `JitCodeObject`, scanning includes the tagged
+constant-pool slots outside the object's own allocation.
+
 `relocate` is used only when an object resides in a moving space. A null
 callback means the collector copies `initialized_size` bytes into the already
 allocated destination. A non-null callback constructs the live destination in
@@ -431,6 +570,10 @@ policy is not stored in the object or native-layout descriptor.
 
 ### Refactor Sequence
 
+The [GC implementation plan](generational-copying-gc-implementation-plan.md)
+breaks this target into incremental runtime stages, starting with ordinary
+span resolution consumed by reclamation before consolidating the full table.
+
 1. Introduce `NativeLayoutInfo`, affine count and extent formulas, and one
    `NativeLayoutDescriptor` table.
 2. Generate static LUT entries from the existing declaration macros.
@@ -438,11 +581,11 @@ policy is not stored in the object or native-layout descriptor.
    indirect query calls.
 4. Move reclamation from `ReleaseDescriptor` to `strong_value_count` plus
    custom release and destruction.
-5. Move opaque allocation-size queries from `ObjectSizeDescriptor` to
+5. Move opaque object-size queries from `ObjectSizeDescriptor` to
    `allocated_size`.
 6. Audit allocated, initialized, and strong count sources for every native ID;
-   fix object-local metadata where the answers currently depend on `Shape` or
-   other movable state.
+   retain lazy instance initialization and its shape-derived allocated size,
+   and establish forwarding-safe access to layout metadata.
 7. Populate and test `initialized_size` without changing allocation or copying
    behavior.
 8. Add non-moving trace/update validation over the ordinary spans.
@@ -472,7 +615,10 @@ CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first_value_member,
                                   additional_release_count_expr)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base_type,
                                           own_additional_release_count_expr)
-CL_DECLARE_CUSTOM_DEALLOC(type, function)
+CL_DECLARE_CUSTOM_RELEASE(type, function)
+CL_DECLARE_NATIVE_DESTROY(type, function)
+CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)
+CL_DECLARE_PROCESS_WEAK(type, function)
 ```
 
 Object-size declarations:
@@ -529,12 +675,13 @@ mechanics; the registry remains the exhaustive source of registered IDs.
 | `Function` | `StaticSpan` via `SlotObject` | static |
 | `Dict` | `StaticSpan` | static |
 | `String` | `StaticSpan` | custom from character count |
-| `Instance` | `DynamicAuxSpan` via `SlotObject` | custom from aux count |
-| `CodeObject` | `CustomDealloc` | static |
+| `Instance` | `DynamicAuxSpan` via `SlotObject` | custom from shape inline capacity |
+| `CodeObject` | `CustomRelease` | static |
+| `JitCodeObject` | `CustomRelease` | static |
 | `ClassObject` | `StaticSpan` via `SlotObject` | static |
 | `ValidityCell` | empty `StaticSpan` | static |
 | `Scope` | `StaticSpan` | static |
-| `Shape` | `CustomDealloc` | custom from property count |
+| `Shape` | `CustomRelease` | custom from property count |
 | `OverflowSlots` | `DynamicAuxSpan` | custom from capacity |
 | `RawArrayBacking` | empty `StaticSpan` | custom from storage bytes |
 | `ValueArrayBacking` | `DynamicAuxSpan` | custom from value-cell count |
@@ -547,9 +694,10 @@ mechanics; the registry remains the exhaustive source of registered IDs.
   values.
 - Static and dynamic span release uses the current reclamation context's direct
   zero-count-table path.
-- Custom deallocators run cold with an active thread installed.
-- C++ destructors should stay context-free; custom deallocators should drain VM
-  references before invoking destructors that might otherwise release VM values.
+- Custom release callbacks run cold with an active thread installed.
+- Optional native destruction runs after release for either ordinary or custom
+  layouts. C++ destructors remain context-free: custom release drains owned VM
+  references in containers before destruction, avoiding a second release.
 - Descriptor release and bitmap/discovery are separate concerns: slab walking
   discovers object headers, while native layout descriptors release owned
   references after an object has already been selected for reclamation.
@@ -558,6 +706,6 @@ mechanics; the registry remains the exhaustive source of registered IDs.
 
 Public C-extension compatibility may eventually need an explicit extension
 descriptor kind or bridge around CPython-style `tp_dealloc`. That is not the
-same as today's internal `CustomDealloc` support. The future bridge must define
+same as today's internal `CustomRelease` support. The future bridge must define
 resurrection, finalizer, weakref, and thread-state behavior explicitly before it
 can run arbitrary extension teardown.

@@ -45,14 +45,16 @@ namespace cl
     using ThreadStateList = std::vector<std::unique_ptr<ThreadState>>;
 
     void collect_reclamation_roots_from_thread(ReclamationRootSet &roots,
-                                               const ThreadState &thread);
+                                               ThreadState &thread);
     ReclamationRootSet
     collect_reclamation_roots_from_threads(const ThreadStateList &threads);
 #ifndef NDEBUG
     void
     validate_zero_count_tables_for_reclamation(const ThreadStateList &threads);
 #endif
-    void run_heap_reclamation(const ThreadStateList &threads);
+    // The caller supplies the complete root set before any object is reclaimed.
+    void run_heap_reclamation(const ThreadStateList &threads,
+                              const ReclamationRootSet &roots);
 
 }  // namespace cl
 

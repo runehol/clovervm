@@ -685,9 +685,17 @@ namespace cl
             return nullptr;
         }
 
-        static void dealloc(HeapObject *obj);
+        static void release_managed_references(HeapObject *obj);
+        static void destroy(HeapObject *obj);
+        static void trace_strong_references(HeapObject *obj,
+                                            StrongSlotVisitor visitor);
+        static void process_weak_references(HeapObject *obj,
+                                            WeakTargetResolver resolver);
 
-        CL_DECLARE_CUSTOM_DEALLOC(CodeObject, dealloc);
+        CL_DECLARE_CUSTOM_RELEASE(CodeObject, release_managed_references);
+        CL_DECLARE_NATIVE_DESTROY(CodeObject, destroy);
+        CL_DECLARE_CUSTOM_TRACE_STRONG(CodeObject, trace_strong_references);
+        CL_DECLARE_PROCESS_WEAK(CodeObject, process_weak_references);
         CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
     };
 

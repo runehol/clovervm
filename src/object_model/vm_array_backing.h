@@ -57,7 +57,7 @@ namespace cl
         {
         }
 
-        static size_t size_for(size_t storage_bytes)
+        static size_t allocation_size_for(size_t storage_bytes)
         {
             return detail::checked_vm_array_backing_add(
                 CL_OFFSETOF(RawArrayBacking, bytes),
@@ -66,7 +66,7 @@ namespace cl
 
         static size_t object_size_in_bytes(const RawArrayBacking *backing)
         {
-            return size_for(backing->storage_bytes);
+            return allocation_size_for(backing->storage_bytes);
         }
 
         size_t storage_bytes;
@@ -103,7 +103,7 @@ namespace cl
                 detail::checked_vm_array_backing_count(value_cell_count)));
         }
 
-        static size_t size_for(size_t value_cell_count)
+        static size_t allocation_size_for(size_t value_cell_count)
         {
             value_cell_count =
                 detail::checked_vm_array_backing_count(value_cell_count);
@@ -115,7 +115,7 @@ namespace cl
 
         static size_t object_size_in_bytes(const ValueArrayBacking *backing)
         {
-            return size_for(backing->value_cell_count());
+            return allocation_size_for(backing->value_cell_count());
         }
 
         Member<TValue<SMI>> value_cell_count_value;
@@ -151,7 +151,7 @@ namespace cl
                 detail::checked_vm_array_backing_count(value_cell_count)));
         }
 
-        static size_t size_for(size_t value_cell_count)
+        static size_t allocation_size_for(size_t value_cell_count)
         {
             value_cell_count =
                 detail::checked_vm_array_backing_count(value_cell_count);
@@ -164,7 +164,7 @@ namespace cl
 
         static size_t object_size_in_bytes(const HeapPtrArrayBacking *backing)
         {
-            return size_for(backing->value_cell_count());
+            return allocation_size_for(backing->value_cell_count());
         }
 
         Member<TValue<SMI>> value_cell_count_value;

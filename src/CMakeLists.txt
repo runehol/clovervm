@@ -253,6 +253,7 @@ add_library(libclovervm_objects OBJECT
     runtime/runtime_helpers.h
     memory/heap_reclamation.cpp
     memory/heap_reclamation.h
+    memory/scoped_root.h
     object_model/shape.cpp
     object_model/shape.h
     object_model/slot_dict.cpp
@@ -396,7 +397,8 @@ target_compile_definitions(libclovervm_objects
     PRIVATE CLOVERVM_BUILDING_SHARED)
 target_link_libraries(
     libclovervm_objects PUBLIC absl::btree absl::inlined_vector
-                              absl::flat_hash_map absl::flat_hash_set)
+                              absl::flat_hash_map absl::flat_hash_set
+                              absl::function_ref)
 target_link_libraries(libclovervm_objects PUBLIC fmt::fmt)
 target_link_libraries(libclovervm_objects PUBLIC ${CMAKE_DL_LIBS})
 

@@ -1,6 +1,7 @@
 #ifndef CL_NATIVE_LAYOUT_DESCRIPTOR_H
 #define CL_NATIVE_LAYOUT_DESCRIPTOR_H
 
+#include "memory/heap_reference_slot.h"
 #include "memory/native_layout_declarations.h"
 #include "memory/native_layout_id.h"
 #include "memory/native_layout_registry.h"
@@ -11,58 +12,149 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <optional>
 
 namespace cl
 {
     struct ReleaseDescriptor
     {
         ReleaseKind kind;
-        uint16_t value_offset_words;
-        uint32_t static_release_count;
         uint16_t count_offset_words;
+        uint32_t static_release_count;
+        uint64_t value_offset_words;
         uint32_t additional_release_count;
-        void (*custom_dealloc)(HeapObject *);
+        void (*custom_release)(HeapObject *);
+        // Runs after all managed ownership has been released. Independent of
+        // whether the references use an ordinary span or custom release.
+        void (*destroy)(HeapObject *);
+        // Supplemental strong slots, independent of release and destruction.
+        void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
+        void (*process_weak)(HeapObject *, WeakTargetResolver);
 
         static constexpr ReleaseDescriptor
-        static_span(uint16_t value_offset_words, uint32_t release_count)
+        static_span(uint64_t value_offset_words, uint32_t release_count)
         {
             return ReleaseDescriptor{ReleaseKind::StaticSpan,
-                                     value_offset_words,
+                                     0,
                                      release_count,
+                                     value_offset_words,
                                      0,
-                                     0,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
                                      nullptr};
         }
 
         static constexpr ReleaseDescriptor
         dynamic_smi_span(uint16_t count_offset_words,
-                         uint16_t value_offset_words,
+                         uint64_t value_offset_words,
                          uint32_t additional_release_count)
         {
-            return ReleaseDescriptor{
-                ReleaseKind::DynamicSmiSpan, value_offset_words,       0,
-                count_offset_words,          additional_release_count, nullptr};
-        }
-
-        static constexpr ReleaseDescriptor
-        dynamic_aux_span(uint16_t value_offset_words,
-                         uint32_t additional_release_count)
-        {
-            return ReleaseDescriptor{ReleaseKind::DynamicAuxSpan,
+            return ReleaseDescriptor{ReleaseKind::DynamicSmiSpan,
+                                     count_offset_words,
+                                     0,
                                      value_offset_words,
-                                     0,
-                                     0,
                                      additional_release_count,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
                                      nullptr};
         }
 
         static constexpr ReleaseDescriptor
-        custom(void (*custom_dealloc)(HeapObject *))
+        dynamic_aux_span(uint64_t value_offset_words,
+                         uint32_t additional_release_count)
         {
-            return ReleaseDescriptor{
-                ReleaseKind::CustomDealloc, 0, 0, 0, 0, custom_dealloc};
+            return ReleaseDescriptor{ReleaseKind::DynamicAuxSpan,
+                                     0,
+                                     0,
+                                     value_offset_words,
+                                     additional_release_count,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr};
+        }
+
+        static constexpr ReleaseDescriptor
+        custom(void (*custom_release)(HeapObject *))
+        {
+            return ReleaseDescriptor{ReleaseKind::CustomRelease,
+                                     0,
+                                     0,
+                                     0,
+                                     0,
+                                     custom_release,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr};
         }
     };
+
+    static_assert(sizeof(ReleaseDescriptor) == 56);
+
+    struct OrdinaryReferenceSpan
+    {
+        uint64_t value_offset_words;
+        uint64_t value_count;
+    };
+
+    // The supplied object and span storage must remain valid throughout the
+    // visit. Every initialized cell is visited, including immediates and nulls.
+    template <typename Visitor>
+    void visit_ordinary_reference_slots(HeapObject *object,
+                                        OrdinaryReferenceSpan span,
+                                        Visitor &&visitor)
+    {
+        assert(object != nullptr);
+        std::byte *address = reinterpret_cast<std::byte *>(object) +
+                             span.value_offset_words * sizeof(uint64_t);
+        for(uint64_t idx = 0; idx < span.value_count; ++idx)
+        {
+            std::invoke(visitor, HeapReferenceSlot(address));
+            address += sizeof(uint64_t);
+        }
+    }
+
+    // Resolves one contiguous in-object span without reading its reference
+    // cells. Custom handling is unsupported, distinct from a supported empty
+    // span.
+    inline std::optional<OrdinaryReferenceSpan>
+    resolve_ordinary_reference_span(const HeapObject *object,
+                                    const ReleaseDescriptor &descriptor)
+    {
+        assert(object != nullptr);
+        switch(descriptor.kind)
+        {
+            case ReleaseKind::StaticSpan:
+                return OrdinaryReferenceSpan{descriptor.value_offset_words,
+                                             descriptor.static_release_count};
+            case ReleaseKind::DynamicSmiSpan:
+                {
+                    Value count_value =
+                        *(reinterpret_cast<const Value *>(object) +
+                          descriptor.count_offset_words);
+                    assert(count_value.is_smi());
+                    int64_t dynamic_count = count_value.get_smi();
+                    assert(dynamic_count >= 0);
+                    return OrdinaryReferenceSpan{
+                        descriptor.value_offset_words,
+                        static_cast<uint64_t>(dynamic_count) +
+                            descriptor.additional_release_count};
+                }
+            case ReleaseKind::DynamicAuxSpan:
+                return OrdinaryReferenceSpan{
+                    descriptor.value_offset_words,
+                    static_cast<uint64_t>(
+                        object->native_layout_aux_count_value()) +
+                        descriptor.additional_release_count};
+            case ReleaseKind::CustomRelease:
+                return std::nullopt;
+        }
+        assert(false && "invalid release descriptor kind");
+        __builtin_unreachable();
+    }
 
     struct ObjectSizeDescriptor
     {
@@ -97,6 +189,26 @@ namespace cl
         {
             static constexpr ReleaseDescriptor build()
             {
+                ReleaseDescriptor descriptor = build_release();
+                if constexpr(requires { T::native_destroy; })
+                {
+                    descriptor.destroy = T::native_destroy;
+                }
+                if constexpr(requires { T::native_custom_trace_strong; })
+                {
+                    descriptor.custom_trace_strong =
+                        T::native_custom_trace_strong;
+                }
+                if constexpr(requires { T::native_process_weak; })
+                {
+                    descriptor.process_weak = T::native_process_weak;
+                }
+                return descriptor;
+            }
+
+        private:
+            static constexpr ReleaseDescriptor build_release()
+            {
                 if constexpr(T::native_release_kind == ReleaseKind::StaticSpan)
                 {
                     return ReleaseDescriptor::static_span(
@@ -120,7 +232,7 @@ namespace cl
                 }
                 else
                 {
-                    return ReleaseDescriptor::custom(T::native_dealloc);
+                    return ReleaseDescriptor::custom(T::native_custom_release);
                 }
             }
         };
@@ -167,8 +279,8 @@ namespace cl
         {
             switch(descriptor.kind)
             {
-                case ReleaseKind::CustomDealloc:
-                    return descriptor.custom_dealloc != nullptr;
+                case ReleaseKind::CustomRelease:
+                    return descriptor.custom_release != nullptr;
                 case ReleaseKind::StaticSpan:
                 case ReleaseKind::DynamicSmiSpan:
                 case ReleaseKind::DynamicAuxSpan:
@@ -202,6 +314,11 @@ namespace cl
                     continue;
                 }
                 if(!release_descriptor_is_valid(descriptors[idx]))
+                {
+                    return false;
+                }
+                if(descriptors[idx].kind == ReleaseKind::CustomRelease &&
+                   descriptors[idx].custom_trace_strong == nullptr)
                 {
                     return false;
                 }
@@ -263,7 +380,8 @@ namespace cl
         inline constexpr std::array release_descriptors =
             make_release_descriptors();
         static_assert(release_descriptor_table_is_complete(release_descriptors),
-                      "Every native layout ID must have a release descriptor");
+                      "Every native layout ID must support release and strong "
+                      "slot enumeration");
 
         inline constexpr std::array object_size_descriptors =
             make_object_size_descriptors();
@@ -303,6 +421,19 @@ namespace cl
     }
 
     size_t object_size_in_bytes(const HeapObject *obj);
+
+    // Enumerates this object's own strong cells, not its transitive closure.
+    // Ordinary spans and supplemental custom scanning can coexist. Weak cells
+    // are excluded; no reference counts or reclamation state are changed.
+    void visit_strong_reference_slots(HeapObject *object,
+                                      StrongSlotVisitor visitor);
+
+    // Caller establishes strong closure first. Dead weak targets do not become
+    // strong. Clearing a cache can release its owned native plan's references,
+    // but must not run reclamation, Python code, or a safepoint.
+    // With RC enabled, install an active thread for any resulting ZCT enqueue.
+    void process_weak_references(HeapObject *object,
+                                 WeakTargetResolver resolver);
 
 }  // namespace cl
 

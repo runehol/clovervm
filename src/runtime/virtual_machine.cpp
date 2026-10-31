@@ -544,9 +544,80 @@ namespace cl
         return threads.emplace_back(std::make_unique<ThreadState>(this)).get();
     }
 
+    void VirtualMachine::visit_persistent_root_slots(StrongSlotVisitor visitor)
+    {
+        visitor(HeapReferenceSlot(&type_class_));
+        visitor(HeapReferenceSlot(&str_class_));
+        visitor(HeapReferenceSlot(&int_class_));
+        visitor(HeapReferenceSlot(&bool_class_));
+        visitor(HeapReferenceSlot(&none_type_class_));
+        visitor(HeapReferenceSlot(&not_implemented_type_class_));
+        visitor(HeapReferenceSlot(&ellipsis_type_class_));
+        visitor(HeapReferenceSlot(&dunder_class_name_));
+        for(auto &steps: operator_dispatch_steps_)
+        {
+            for(OperatorStep &step: steps)
+            {
+                visitor(HeapReferenceSlot(&step.dunder_name));
+            }
+        }
+        visitor(HeapReferenceSlot(&smi_shape_));
+        visitor(HeapReferenceSlot(&bool_shape_));
+        visitor(HeapReferenceSlot(&none_shape_));
+        visitor(HeapReferenceSlot(&not_implemented_shape_));
+        visitor(HeapReferenceSlot(&ellipsis_shape_));
+        visitor(HeapReferenceSlot(&str_instance_root_shape_));
+        visitor(HeapReferenceSlot(&exact_dict_string_key_shape_));
+        visitor(HeapReferenceSlot(&exact_dict_general_shape_));
+        visitor(HeapReferenceSlot(&slice_step_none_shape_));
+        visitor(HeapReferenceSlot(&slice_general_shape_));
+        for(ClassObject *&cls: class_for_native_layouts)
+        {
+            visitor(HeapReferenceSlot(&cls));
+        }
+        for(CodeObject *&adapter: clover_function_entry_adapters)
+        {
+            visitor(HeapReferenceSlot(&adapter));
+        }
+        visitor(HeapReferenceSlot(&range_builtin));
+        visitor(HeapReferenceSlot(&os_error_errno_map_));
+        visitor(HeapReferenceSlot(&hash_value_helper_function_));
+        visitor(HeapReferenceSlot(&test_equal_helper_function_));
+        for(auto &helper: ordering_helper_functions_)
+        {
+            visitor(HeapReferenceSlot(&helper));
+        }
+        visitor(HeapReferenceSlot(&enumerate_call_function_));
+        visitor(HeapReferenceSlot(&iterable_to_exact_tuple_function_));
+        visitor(HeapReferenceSlot(&iterable_to_exact_list_function_));
+        visitor(HeapReferenceSlot(&bytearray_snapshot_function_));
+        visitor(HeapReferenceSlot(&dict_insert_if_absent_known_hash_function_));
+        visitor(HeapReferenceSlot(&call_keyword_error_function_));
+        visitor(HeapReferenceSlot(&call_keyword_merge_function_));
+        visitor(HeapReferenceSlot(&call_keyword_mapping_function_));
+        visitor(HeapReferenceSlot(&call_keyword_add_function_));
+        visitor(HeapReferenceSlot(&list_extend_function_));
+        visitor(HeapReferenceSlot(&membership_iter_fallback_function_));
+        visitor(HeapReferenceSlot(&membership_sequence_fallback_function_));
+        visitor(HeapReferenceSlot(&global_builtins_module_));
+        visitor(HeapReferenceSlot(&builtin_implementation_module_));
+        visitor(HeapReferenceSlot(&sys_module_));
+        visitor(HeapReferenceSlot(&imported_modules_));
+    }
+
     void VirtualMachine::run_heap_reclamation()
     {
-        cl::run_heap_reclamation(threads);
+        ReclamationRootSet roots =
+            collect_reclamation_roots_from_threads(threads);
+        visit_persistent_root_slots([&](HeapReferenceSlot slot) {
+            if(HeapObject *object = slot.load_pointer())
+            {
+                Value value;
+                value.as.ptr = object;
+                roots.add_conservative_value(value);
+            }
+        });
+        cl::run_heap_reclamation(threads, roots);
     }
 
     void VirtualMachine::complete_safepoint()

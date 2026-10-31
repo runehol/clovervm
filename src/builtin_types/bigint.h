@@ -96,21 +96,22 @@ namespace cl
         ConstBigIntView view() const;
         MutableBigIntView mutable_view_for_initialization();
 
-        static size_t size_for(size_t n_digits)
+        static size_t allocation_size_for(size_t n_digits)
         {
             return sizeof(BigInt) +
                    (storage_count_for(n_digits) - 1) * sizeof(digit_t);
         }
 
-        static size_t size_for(ClassObject *, UninitializedBigIntDigitsTag,
-                               size_t n_digits, signum_t)
+        static size_t allocation_size_for(ClassObject *,
+                                          UninitializedBigIntDigitsTag,
+                                          size_t n_digits, signum_t)
         {
-            return size_for(n_digits);
+            return allocation_size_for(n_digits);
         }
 
         static size_t object_size_in_bytes(const BigInt *bigint)
         {
-            return size_for(bigint->n_digits_);
+            return allocation_size_for(bigint->n_digits_);
         }
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(BigInt, Object, 0);

@@ -81,11 +81,13 @@ by native-layout release descriptors keyed by `NativeLayoutId`:
 - `StaticSpan`
 - `DynamicSmiSpan`
 - `DynamicAuxSpan`
-- `CustomDealloc`
+- `CustomRelease`
 
 Static and dynamic spans describe one contiguous `Value` cell range to clear and
-release. Custom deallocators handle layouts whose ownership cannot be described
-as a simple span, such as `CodeObject` and `Shape`.
+release. Custom release callbacks handle layouts whose ownership cannot be
+described as a simple span, such as `CodeObject` and `Shape`. Independent,
+optional destruction callbacks run after release to tear down native resources
+without further managed-reference releases.
 
 See [Native Layout Descriptors](native-layout-descriptors.md) for the descriptor
 contracts and declaration macros.
@@ -95,8 +97,8 @@ contracts and declaration macros.
 Allocation size is computed by concrete type:
 
 ```cpp
-sizeof(T)          // static-size layouts
-T::size_for(...)   // dynamic/custom-size layouts
+sizeof(T)                     // static-size layouts
+T::allocation_size_for(...)   // dynamic/custom-size layouts
 ```
 
 For already-allocated opaque objects, the runtime can call:

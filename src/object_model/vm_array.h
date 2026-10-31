@@ -129,6 +129,12 @@ namespace cl
             backing.release_ref();
         }
 
+        // Elements belong to the backing object, not to this wrapper.
+        void visit_strong_reference_slots(StrongSlotVisitor visitor)
+        {
+            visitor(HeapReferenceSlot(&backing));
+        }
+
         T *data()
         {
             if(backing == nullptr)
@@ -426,6 +432,12 @@ namespace cl
             size_value.release_ref();
             capacity_value.release_ref();
             backing.release_ref();
+        }
+
+        // Elements belong to the backing object, not to this wrapper.
+        void visit_strong_reference_slots(StrongSlotVisitor visitor)
+        {
+            visitor(HeapReferenceSlot(&backing));
         }
 
         const T *data() const
