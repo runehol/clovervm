@@ -152,6 +152,24 @@ def test_reentry():
     assert source.calls == 2
 
 
+def test_nested_exhaustion_restarts_replay():
+    # CPython 3.14.10's cycle_next snapshots the index before calling the
+    # source, then resets it on exhaustion. CPython 3.14.4 retains the nested
+    # replay position instead; these versions differ here.
+    source = Reentrant([1, 2], 3, 3)
+    selected = cycle(source)
+    source.target = selected
+    assert next(selected) == 1
+    assert next(selected) == 2
+    # The nested call exhausts the source and replays 1. The outer call also
+    # exhausts and restarts at 1, rather than continuing at the nested index.
+    assert next(selected) == 1
+    assert source.nested == 1
+    assert next(selected) == 2
+    assert next(selected) == 1
+    assert source.calls == 4
+
+
 def test_mutation_cache_and_roots():
     first = []
     values = [first]
@@ -203,4 +221,5 @@ def test_mutation_cache_and_roots():
 
 test_basic()
 test_reentry()
+test_nested_exhaustion_restarts_replay()
 test_mutation_cache_and_roots()

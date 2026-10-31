@@ -1,6 +1,6 @@
 """Compare the unmodified managed cycle with CPython 3.14.10.
 
-Run with python3.14. Exact refcount-sensitive finalization timing, allocation
+Run with CPython 3.14.10. Exact refcount-sensitive finalization timing, allocation
 failure timing, subclass fidelity, and copy/pickle/metadata are excluded.
 """
 
@@ -10,6 +10,13 @@ import itertools
 from pathlib import Path
 import sys
 import weakref
+
+
+# The reentrant-exhaustion algorithm changed within the 3.14 release series.
+# Keep this differential tied to the source version used for the module slice.
+if sys.implementation.name != 'cpython' or sys.version_info[:3] != (3, 14, 10):
+    raise RuntimeError('cycle differential requires CPython 3.14.10; '
+                       'reentrant exhaustion is version-dependent')
 
 
 root = Path(__file__).resolve().parents[2]

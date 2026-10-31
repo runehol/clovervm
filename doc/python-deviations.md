@@ -443,7 +443,11 @@ permanently to replay, including for resumable inputs. Empty inputs remain
 exhausted. Cached elements remain retained until the cycle is released.
 Reentry follows CPython 3.14.10's state transitions: a successful outer call still
 caches its item after nested exhaustion. Explicit reinitialization is a no-op,
-including invalid arguments.
+including invalid arguments. When both a nested and an outer source advancement
+exhaust, CPython 3.14.10 resets replay to the first saved element for the outer
+call. CPython 3.14.4 instead preserves the nested replay position. The cycle
+regression and host differential target 3.14.10; the host harness requires that
+exact reference version.
 
 Infinite inputs are never eagerly materialized, but their saved-element cache
 grows without bound. Inputs use existing iteration support. Allocation-failure

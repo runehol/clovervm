@@ -420,6 +420,7 @@ class cycle:
             try:
                 item = _next(source)
             except StopIteration:
+                # CPython 3.14.10 resets replay even after nested exhaustion.
                 # Exhaustion is permanent even for a resumable source.
                 index = 0
                 self._index = 0
