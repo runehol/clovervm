@@ -1,4 +1,5 @@
 #include "builtin_types/bytearray.h"
+#include "builtin_types/binary_case.h"
 #include "builtin_types/binary_split.h"
 #include "builtin_types/binary_strip.h"
 #include "builtin_types/bytes.h"
@@ -36,6 +37,21 @@ namespace cl
         }
         return Expected<TValue<ByteArray>>::ok(
             TValue<ByteArray>::from_value_assumed(self));
+    }
+
+    template <BinaryCase Mode>
+    [[nodiscard]] static Value native_case(ThreadState *thread, Value self)
+    {
+        Owned<TValue<ByteArray>> source(
+            CL_TRY(receiver(self, binary_case_name<Mode>())));
+        Owned<TValue<ByteArray>> result(thread->make_object_value<ByteArray>());
+        result.extract()->items.resize(source.extract()->size());
+        // Both allocations are complete before acquiring either payload
+        // pointer.
+        transform_binary_case<Mode>(source.extract()->items.data(),
+                                    result.extract()->items.data(),
+                                    source.extract()->size());
+        return result.raw_value();
     }
 
     static Expected<size_t> checked_size(size_t count)
@@ -1366,6 +1382,13 @@ namespace cl
                 L"partition", native_partition<SearchDirection::Forward>),
             builtin_intrinsic_method(
                 L"rpartition", native_partition<SearchDirection::Reverse>),
+            builtin_intrinsic_method(L"lower", native_case<BinaryCase::Lower>),
+            builtin_intrinsic_method(L"upper", native_case<BinaryCase::Upper>),
+            builtin_intrinsic_method(L"swapcase",
+                                     native_case<BinaryCase::Swapcase>),
+            builtin_intrinsic_method(L"capitalize",
+                                     native_case<BinaryCase::Capitalize>),
+            builtin_intrinsic_method(L"title", native_case<BinaryCase::Title>),
             builtin_intrinsic_method(L"__len__", native_len),
             builtin_intrinsic_method(L"__repr__", native_repr),
             builtin_intrinsic_method(L"__str__", native_repr),
