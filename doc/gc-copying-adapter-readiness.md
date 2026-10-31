@@ -26,9 +26,11 @@ complete interface.
 
 Several useful prerequisites can still be implemented while RC remains fully
 operational. Conditional group formation is now implemented in the test
-adapter. The next runtime-layout work is the initialized
-extent query for already-understood records, plus an explicit policy for
-retired backings. These do not require a nursery or physical relocation.
+adapter. The next runtime-layout work is the unified live-layout query, starting
+with co-locating existing descriptor data and then adding initialized extents.
+Retired backing contents are not a prerequisite: after the tracing cutover
+they are unreachable garbage, not objects the copying traversal must inspect.
+These preparatory changes do not require a nursery or physical relocation.
 
 ## What Exists, and What It Does Not Establish
 
@@ -37,7 +39,7 @@ retired backings. These do not require a nursery or physical relocation.
 | [HeapObject](../src/object_model/heap_object.h) | Eight-byte RC/lifecycle/native-ID/aux header | Generation, remembered membership, forwarding |
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Object-size query, initialized strong spans, custom strong and weak hooks | Implemented unified allocated/initialized extent query and explicit copy admission |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
-| [Array backings](../src/object_model/vm_array_backing.h) | Current size/count fields, scanner/release bounds | Explicit retired-backing extent policy; raw initialized frontier |
+| [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts and initialized cells; old-count zeroing is RC bookkeeping | Raw live-backing initialized frontier; no retired-backing copy requirement |
 | [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol and group placement |
 | [ThreadLocalHeap](../src/memory/thread_local_heap.cpp) | Mutator allocation and RC epoch bookkeeping | Destination allocation independent of RC reclamation scheduling |
 | [ReclamationRootSet](../src/memory/heap_reclamation.h) | Conservative object identities used to protect RC reclamation | Complete precise mutable root locations |
@@ -120,22 +122,19 @@ independent. Keep allocator-rounded reservation bytes distinct from logical
 layout extents. Future shrinking may choose a smaller destination reservation
 without claiming the source reservation was already smaller.
 
-Three concrete cases need attention:
+The live-data cases are:
 
 1. **Lazy Instance slots.** Keep shape capacity as allocated extent and aux
    count as the initialized prefix. Do not eagerly clear all reserved slots.
-2. **Transferred reference backings.** `ValueArray::reserve()` and
-   `HeapPtrArray::reserve()` zero the old backing's `value_cell_count`, which
-   also drives its current size helper. That no longer reports the historical
-   reservation, but this worklist collector does not need that reservation to
-   find the next object. Two policies remain possible: record immutable allocated
-   capacity separately, or define a retired backing as a logically empty layout
-   that can shrink during copying. The latter needs proof that no permitted
-   borrow/observer can still access the transferred cells and that independent
-   source retirement does not depend on the old extent. In either policy the
-   owning count stays zero, so transferred cells are not duplicate strong owners.
-   Test real transfer paths. Do not add a capacity field merely to reproduce a
-   heap-walking requirement that the chosen collector does not have.
+2. **Live reference backings.** ValueArray and HeapPtrArray exclusively own
+   their backings. A live backing's count describes its allocated cell capacity,
+   and growth initializes that capacity. In the tracing model, replacing the
+   backing reference leaves the old backing unreachable: do not query, copy,
+   normalize, or preserve its old cells. There is no retired-backing shrink
+   policy to prove and no new immutable-capacity field required for that purpose.
+   The current `set_value_cell_count(0)` writes prevent duplicate RC release and
+   remain while RC is active. Remove them after the cutover, as recorded in
+   [stage 10](generational-copying-gc-implementation-plan.md#10-expand-coverage-and-retire-transitional-machinery).
 3. **Raw backing spare capacity.** `RawArrayBacking::storage_bytes` records
    capacity, but RawArray growth constructs only the used prefix and does not
    clear the rest. There is no backing-local initialized-byte frontier. Keep
@@ -254,7 +253,8 @@ with "movable". Unknown/unapproved layouts bypass the nursery.
 | Exact builtin Tuple | Dynamic ordinary values; needs exact zero-length initialized extent and relocation contract; subclasses need separate admission |
 | OverflowSlots | Capacity/aux metadata are local; needs standalone/group cases and exact zero-capacity extent |
 | Instance | Shape-derived capacity plus lazy prefix; defer until extent and forwarding-safe metadata tests exist |
-| Raw/value/pointer backings | Defer until reservation/initialized/ownership-transfer metadata is settled |
+| ValueArrayBacking / HeapPtrArrayBacking | Query live capacity/initialized cells from existing counts; no retired-backing work; copying still needs layout admission |
+| RawArrayBacking | Defer moving admission until its live initialized frontier is settled |
 | CodeObject, Shape, JitCodeObject | Custom destruction: stable allocation, never ordinary source copying |
 | Remaining layouts, resource owners, exports, large objects | No implicit admission; retain their reviewed stable/bypass policy |
 
@@ -314,16 +314,21 @@ source selection, not complete full-heap tracing or reclamation.
    modes. An unreachable old movable weak target survives YoungOnly selection
    but is cleared under Full selection. No runtime header changes or stable-heap
    mark/sweep implementation.
-2. **Backing extent policy.** Review immutable capacity versus intentionally
-   shrinking a retired backing. Prove the borrow/ownership contract before
-   choosing fields. Exercise real growth/transfer and RC release with no GC
-   activation; this review must precede admitting those backings to copying.
-3. **Unified initialized-extent query.** Implement the existing layout query
-   design in bounded cases, including lazy Instance and zero-length tails.
-   Use existing reclamation as a real consumer while preserving release counts.
-   Do not manufacture initialized extents for unresolved layouts; keep raw and
-   unresolved reference backings outside moving admission until their contracts
-   are settled.
+2. **Unified descriptor lookup (next proposed implementation slice).** Replace
+   the separate release/object-size LUTs with one NativeLayoutId-indexed table
+   whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor.
+   Expose `native_layout_descriptor_for(id)` and migrate all in-repo users; do
+   not retain duplicate compatibility lookup APIs. Preserve the current formulas,
+   callbacks, validation, ownership and object layouts. This is the first bounded
+   step toward the existing unified-query design, not its final formula encoding.
+   It deliberately does not add an initialized-size field or fabricate a default.
+3. **Live initialized-extent query.** Add the existing NativeLayoutInfo design
+   with allocated bytes, initialized bytes and the ordinary strong span, using
+   the unified lookup. Cover lazy Instance, live reference backings, and empty
+   trailing allocations. Keep custom scanning/release distinct from an ordinary
+   empty span. Settle raw live-backing initialization separately; no blind
+   allocated-equals-initialized fallback. No retired-backing audit or new
+   historical-reservation field is part of this work.
 4. **Transitional header.** Review the sixteen-/twenty-four-byte candidates, preserve RC,
    default current allocations Old, test independent GC state, and measure
    header/stride/construction costs. Do not publish real forwarding in RC mode.

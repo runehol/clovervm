@@ -207,7 +207,8 @@ Implement this stage in bounded slices:
   implemented. The exhaustive
   [Native Layout Reference Audit](native-layout-reference-audit.md) records
   ownership, weak fields, native-only state, and unresolved relocation
-  prerequisites (including transferred array-backing extent metadata).
+  prerequisites. Old-backing count zeroing is RC-only bookkeeping scheduled
+  for post-cutover removal, not a tracing/copying prerequisite.
 
 Audit every native layout, including references in C++ containers, backing
 records, compiled code, and caches. Separate strong-slot enumeration, weak
@@ -555,6 +556,17 @@ Expand nursery admission by audited layout family. Remove refcount operations,
 ZCT processing, and obsolete lifecycle state after tracing has replaced their
 contracts. Repack the header in a later slice rather than coupling that cleanup
 to first movement.
+
+Purge RC-specific array-backing retirement once tracing is authoritative and no
+supported RC reclamation path needs it. In particular, remove the
+`set_value_cell_count(0)` writes to old backings in `ValueArray::reserve()` and
+`HeapPtrArray::reserve()`. The front array exclusively owns its backing: growth
+copies live elements into a new backing and replaces that reference; the old
+backing then becomes unreachable garbage. Do not clear its stale references or
+normalize its element count for tracing, which does not scan unreachable
+backings. Retain the current zeroing while RC remains active to prevent double
+release. This cleanup does not remove initialized-extent metadata needed to
+scan or copy the live backing safely.
 
 Capacity shrinking, more precise remembered entries, barrier specialization,
 and further allocation optimizations follow measured needs. The documented

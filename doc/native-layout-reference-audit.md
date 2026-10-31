@@ -110,12 +110,13 @@ is RC-neutral. Whole-cache clearing also includes keyword-call entries.
   state are not made precise or mutable by this heap-field audit. Root auditing
   remains stage 4. Transient lookup results, views, and native borrows need
   explicit lifetime/safepoint contracts rather than blanket weak treatment.
-- `ValueArray`/`HeapPtrArray` growth transfers element ownership and zeroes the
-  old backing's `value_cell_count`. That field currently also drives
-  `object_size_in_bytes()`: it is not immutable allocation-reservation metadata
-  for retired backing storage. Future extent queries/collector policy must
-  account for this; this slice does not change backing layouts or ownership
-  transfer. Cleared/transferred cells must not become duplicate strong owners.
+- `ValueArray`/`HeapPtrArray` old-backing count zeroing is RC-only retirement
+  bookkeeping, not a moving-GC prerequisite. The front array exclusively owns
+  its backing; after replacement the old backing is unreachable garbage and is
+  not traced or copied. Keep zeroing while RC needs it, then remove it as part
+  of the [post-cutover cleanup](generational-copying-gc-implementation-plan.md#10-expand-coverage-and-retire-transitional-machinery).
+  No new historical-capacity field or retired-backing shrink audit is required.
+  Live backing extents and initialized storage still require correct queries.
 - `Instance` shape-derived sizing and lazy initialization remain unchanged.
   Future capacity shrinking is collector policy, not permission to scan or copy
   uninitialized tails.

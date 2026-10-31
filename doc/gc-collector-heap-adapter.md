@@ -554,8 +554,8 @@ movement. The mark phase remains usable and unchanged throughout.
 
    The [copying-adapter investigation](gc-copying-adapter-readiness.md) records
    current code evidence and preparatory slices. Conditional grouping is
-   implemented in the isolated heap; backing metadata and transitional header
-   candidates remain proposals, not accepted runtime policy or movement.
+   implemented in the isolated heap; the live-layout query and transitional
+   header candidates remain preparatory work, not implemented runtime movement.
 
 The first slice's test-only source header models normal versus forwarded state;
 it does not impose a production header layout. Existing mark tests still use
