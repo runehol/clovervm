@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started; current CloverVM hooks are late-only and owner-wide |
+| Implementation | Isolated collector/test-heap protocol implemented; current CloverVM hooks remain late-only and owner-wide |
 | Scope | Enumerated weak repair units, early resolution, exact-unit deferral, and coordinated payload invalidation |
 | Owning layers | Layout/cache code enumerates units and owns reset semantics; the generic collector owns resolution phase and deferred scheduling |
-| Validated against | Existing IC fields and weak hooks at `38936060` (2026-10-31); proposed API is not implemented |
+| Validated against | Isolated weak-repair working tree based on `72c64a3e` (2026-10-31); real IC fields and weak hooks previously inspected at `38936060` |
 | Supersedes | Whole-owner deferral proposed during collector design; existing runtime hooks are not yet replaced |
 
 This is the weak-repair part of the
@@ -34,9 +34,10 @@ storage, not because every old object is a root. Neither resolver marks or
 copies through a weak edge. Null/primitive/sentinel fields are handled by their
 unit's field-specific rules, not passed as object references to the resolver.
 
-The following CloverVM-facing sketch is new design, not the existing late-only
-`WeakTargetResolver` API. The test heap supplies equivalent types for its own
-object representation; the generic collector names them through the adapter.
+The shared implementation in `src/gc/weak_repair.h` templates the following
+types on `Object`; the sketch below uses `HeapObject` to show the eventual
+CloverVM-facing form. This is not the existing late-only `WeakTargetResolver`
+API. The test adapter exposes `WeakRepairUnit<TestObject>` as `WeakUnit`.
 
 ```cpp
 enum class WeakState { Resolved, Pending, Dead };
@@ -76,6 +77,11 @@ struct WeakRepairUnit
 
 The unit is a borrowed address plus a static callback, not a separately allocated
 registration object. It does not retain the resolver or its callback state.
+It occupies two machine words (16 bytes on the 64-bit targets), regardless of
+the number of weak fields it repairs. There is no stored owner, phase, status,
+captured resolver, or separately allocated callback. The same callback receives
+the early resolver and, only if deferred, the late resolver. Unit-specific
+invalidation belongs inside that callback, not a second stored callback.
 
 ### Enumeration and Exact-Unit Deferral
 
@@ -102,6 +108,39 @@ weak field in the owning object or walk the heap to rediscover them. The weak
 queue contains only unresolved units, though a pathological workload may defer
 every unit. Its allocation failure follows the same fatal policy as other
 collector allocation.
+
+In the isolated implementation, `Evacuation::drain()` scans strong slots and
+enumerates weak units in destination objects. `add_weak_root()` accepts explicit
+weak roots or exact units supplied by an external provider. `finish()` drains
+remaining strong work, seals tracing, and runs late repair on the deferred
+units. After it begins late repair, no more strong roots or weak units may be
+added. Phase assertions diagnose API misuse; they are caller preconditions,
+not a recoverable runtime protocol. Every unit must be supplied exactly once,
+without overlapping units that can invalidate each other's storage.
+
+Late callbacks must return `Complete`; the late resolver never returns
+`Pending`. Native allocation exceptions during early/late repair reach the
+same fatal adapter handler as copying and queue allocation. Source storage
+remains valid until `finish()` returns; test-only explicit disposal then
+destroys source records without affecting destination records. The generic
+collector itself does not release or reuse source storage.
+
+`tests/test_gc_weak_repair.cpp` verifies the two-word/trivially-copyable handle,
+early completion, partial repair, exact-unit deferral among adjacent entries,
+coordinated guard/payload reset, weak roots, external units, phase sealing,
+allocation failure, and explicit source disposal. The IC-like test entry is
+synthetic; production cache reset/ownership semantics still need their own
+integration review.
+
+Working-tree verification on 2026-10-31, based on `72c64a3e`: all 33 focused
+GC tests passed. Full Debug `all check` passed 2,285 tests and full Release
+`all check` passed 2,275 tests; each configuration had three existing
+JIT-disabled skips and one disabled test. The phase-misuse assertion test is
+Debug-only. The generic header passed standalone C++20 compilation with Abseil
+but no VM headers. Queue handles are statically checked to be trivially copyable
+and 16 bytes on the 64-bit targets. Tests also exercise 512 deferred units
+through destination-chunk growth. Native allocation exceptions are injected at
+repair entry points; the standard deque allocator itself is not fault-injected.
 
 ### IC Repair and Payload Invalidation
 

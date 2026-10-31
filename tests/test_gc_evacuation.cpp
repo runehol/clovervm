@@ -141,9 +141,20 @@ namespace cl::gc::test
                     expect_cell(original.strong_cells[cell],
                                 copy->strong_cells[cell]);
                 }
-                // Weak targets are deliberately neither retained nor repaired
-                // by this strong-only phase. Source storage is still alive.
-                EXPECT_EQ(original.weak_targets, copy->weak_targets);
+                // drain() may repair already-resolved weak targets early, but
+                // leaves unresolved targets for finish(), even if strong work
+                // subsequently discovers them during this drain.
+                ASSERT_EQ(original.weak_targets.size(),
+                          copy->weak_targets.size());
+                for(size_t weak = 0; weak < original.weak_targets.size();
+                    ++weak)
+                {
+                    TestObject *before = original.weak_targets[weak];
+                    TestObject *after = copy->weak_targets[weak];
+                    EXPECT_TRUE(after == before ||
+                                (before != nullptr &&
+                                 adapter.forwarded_to(before) == after));
+                }
                 if(TestObject *companion = pointer(original.companion))
                 {
                     EXPECT_EQ(sizeof(TestObject),
@@ -171,6 +182,25 @@ namespace cl::gc::test
                                        EvacuationDestination::Ordinary) +
                                        heap.destination_object_count(
                                            EvacuationDestination::Stable));
+            collection.finish();
+            for(const auto &object: heap.objects())
+            {
+                if(!live.contains(object.get()))
+                {
+                    continue;
+                }
+                TestObject *copy = adapter.forwarded_to(object.get());
+                EXPECT_EQ(1u, adapter.weak_scan_count(copy));
+                ASSERT_EQ(object->weak_targets.size(),
+                          copy->weak_targets.size());
+                for(size_t weak = 0; weak < object->weak_targets.size(); ++weak)
+                {
+                    TestObject *target = object->weak_targets[weak];
+                    EXPECT_EQ(target == nullptr ? nullptr
+                                                : adapter.forwarded_to(target),
+                              copy->weak_targets[weak]);
+                }
+            }
         }
 
         class FailingCopyAdapter : public TestHeapAdapter

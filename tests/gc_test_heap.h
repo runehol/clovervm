@@ -2,6 +2,7 @@
 #define CL_GC_TEST_HEAP_H
 
 #include "gc/allocation_group.h"
+#include "gc/weak_repair.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
@@ -38,6 +39,95 @@ namespace cl::gc::test
 
         bool operator==(const TestCell &) const = default;
     };
+
+    // IC-like unit: two guards and an active tagged payload share one reset.
+    // Counters are test instrumentation, not part of the queued unit handle.
+    struct TestWeakEntry
+    {
+        std::array<TestObject *, 2> guards;
+        TestCell payload;
+        size_t repair_count = 0;
+        size_t reset_count = 0;
+
+        static TestWeakEntry active(TestObject *first, TestObject *second,
+                                    TestCell payload)
+        {
+            return {{first, second}, payload};
+        }
+
+        void clear()
+        {
+            guards.fill(nullptr);
+            payload = TestCell::immediate(0);
+            ++reset_count;
+        }
+
+        bool operator==(const TestWeakEntry &) const = default;
+    };
+
+    inline WeakState repair_test_weak_target(TestObject *&target,
+                                             WeakResolver<TestObject> resolver)
+    {
+        if(target == nullptr)
+        {
+            return WeakState::Resolved;
+        }
+        WeakResolution<TestObject> resolution = resolver(target);
+        switch(resolution.state)
+        {
+            case WeakState::Resolved:
+                target = resolution.target;
+                break;
+            case WeakState::Pending:
+                break;
+            case WeakState::Dead:
+                target = nullptr;
+                break;
+        }
+        return resolution.state;
+    }
+
+    inline WeakRepairResult
+    repair_test_weak_field(TestObject *&target,
+                           WeakResolver<TestObject> resolver)
+    {
+        return repair_test_weak_target(target, resolver) == WeakState::Pending
+                   ? WeakRepairResult::Pending
+                   : WeakRepairResult::Complete;
+    }
+
+    inline WeakRepairResult
+    repair_test_weak_entry(TestWeakEntry &entry,
+                           WeakResolver<TestObject> resolver)
+    {
+        ++entry.repair_count;
+        if(entry.guards[0] == nullptr || entry.guards[1] == nullptr)
+        {
+            entry.clear();
+            return WeakRepairResult::Complete;
+        }
+        bool pending = false;
+        bool dead = false;
+        auto inspect = [&](TestObject *&target) {
+            WeakState state = repair_test_weak_target(target, resolver);
+            pending |= state == WeakState::Pending;
+            dead |= state == WeakState::Dead;
+        };
+        for(TestObject *&guard: entry.guards)
+        {
+            inspect(guard);
+        }
+        if(auto payload = std::get_if<TestObject *>(&entry.payload.contents))
+        {
+            inspect(*payload);
+        }
+        if(dead)
+        {
+            entry.clear();
+            return WeakRepairResult::Complete;
+        }
+        return pending ? WeakRepairResult::Pending : WeakRepairResult::Complete;
+    }
 
     enum class TestHeaderKind : uint8_t
     {
@@ -77,6 +167,7 @@ namespace cl::gc::test
         TestCell companion = TestCell::reference(nullptr);
         std::vector<TestCell> strong_cells;
         std::vector<TestObject *> weak_targets;
+        std::vector<TestWeakEntry> weak_entries;
     };
 
     class TestSlot
@@ -259,6 +350,10 @@ namespace cl::gc::test
             return objects_;
         }
 
+        // Test-only lifecycle boundary. The caller must finish strong and weak
+        // repair first, and stop using source objects and source slot handles.
+        void discard_source_storage() { objects_.clear(); }
+
     private:
         DestinationArena &arena_for(EvacuationDestination destination)
         {
@@ -291,6 +386,7 @@ namespace cl::gc::test
         using Object = TestObject;
         using Slot = TestSlot;
         using Group = AllocationGroup<Object>;
+        using WeakUnit = WeakRepairUnit<Object>;
 
         explicit TestHeapAdapter(TestHeap &heap) : heap_(heap) {}
 
@@ -379,6 +475,28 @@ namespace cl::gc::test
             }
         }
 
+        template <typename Visitor>
+        void visit_weak_units(Object *object, Visitor &&visitor)
+        {
+            ++weak_scan_counts_[object];
+            for(Object *&target: object->weak_targets)
+            {
+                std::invoke(visitor,
+                            WeakUnit::bind<repair_test_weak_field>(target));
+            }
+            for(TestWeakEntry &entry: object->weak_entries)
+            {
+                std::invoke(visitor,
+                            WeakUnit::bind<repair_test_weak_entry>(entry));
+            }
+        }
+
+        size_t weak_scan_count(Object *object) const
+        {
+            auto count = weak_scan_counts_.find(object);
+            return count == weak_scan_counts_.end() ? 0 : count->second;
+        }
+
         size_t scan_count(Object *object) const
         {
             auto count = scan_counts_.find(object);
@@ -389,6 +507,7 @@ namespace cl::gc::test
         TestHeap &heap_;
         absl::flat_hash_set<Object *> marked_;
         absl::flat_hash_map<Object *, size_t> scan_counts_;
+        absl::flat_hash_map<Object *, size_t> weak_scan_counts_;
     };
 }  // namespace cl::gc::test
 

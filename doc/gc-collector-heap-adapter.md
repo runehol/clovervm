@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; isolated mark and strong evacuation implemented; weak evacuation repair and production copying not implemented |
+| Implementation | Partial; isolated mark, strong evacuation, and weak repair implemented; production copying and weak-unit migration not implemented |
 | Scope | One collector algorithm instantiated against a test heap and CloverVM |
 | Owning layers | `src/gc/` owns traversal and the CloverVM adapter; memory layouts own slot enumeration; tests own the synthetic heap |
-| Validated against | Strong evacuation working tree based on `9e0ab41f` (2026-10-31); verification recorded below |
+| Validated against | Weak-repair working tree based on `72c64a3e` (2026-10-31); earlier verification recorded below |
 | Supersedes | N/A |
 
 This expands the collector boundary in the
@@ -493,8 +493,8 @@ and lifetime cutover remain separate review gates.
 The accepted [weak repair unit design](gc-weak-repair-units.md) specifies the
 tri-state resolver, borrowed address/callback API, per-IC enumeration, early
 repair, exact-unit deferral, coordinated payload reset, and lifetime/registration
-contracts. This is design only; current CloverVM hooks remain late-only and
-owner-wide until their own implementation slice.
+contracts. The isolated collector implements this protocol; current CloverVM
+hooks remain late-only and owner-wide until their own implementation slice.
 ## Evacuation Implementation Stages
 
 These are bounded slices of isolated copying, not permission to enable CloverVM
@@ -606,13 +606,14 @@ adapter's non-returning allocation-failure handler.
 `tests/test_gc_evacuation.cpp` compares copied graphs with a source-graph oracle
 that does not use adapter enumeration or forwarding to discover reachability.
 It checks graph identity/connections, source-payload preservation, exactly-once
-destination scanning, unchanged weak cells, group adjacency, duplicate roots,
+destination scanning, repaired weak targets, group adjacency, duplicate roots,
 cycles, ordinary/stable closure, chunk growth during scanning, and wide
 frontiers. Injected native allocation exceptions exercise the fatal public entry
 paths; destination-exhaustion death tests also cover the primitive layer.
 This does not inject a failure into the standard library's deque allocator.
-Source storage remains alive after this phase: weak repair and reclamation
-are not implemented or implied by strong closure.
+Source storage remains alive through `finish()`, which follows strong closure
+with exact-unit weak repair. Source reclamation remains a caller responsibility;
+the test heap provides an explicit source-disposal operation for tests.
 
 Strong-evacuation working-tree verification on 2026-10-31, based on
 `9e0ab41f`: all 22 focused GC tests passed. Full Debug `all check` passed
