@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | 4d.2a and parameter-clear fix through `7db447f0`; 4d.2b.1 working tree (2026-10-31) |
+| Validated against | Mark-phase working tree based on `7ce87175`; further frame-state work paused (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -55,6 +55,13 @@ This is a responsibility boundary, not a commitment to virtual dispatch or a
 large heap framework. Agree the concrete interface when its first consumer is
 implemented, following existing low-overhead runtime patterns. The algorithm
 must also run against a small test heap without constructing a VM.
+
+The template interface and concrete test-heap/CloverVM sketches are in
+[Isolated Collector and Heap Adapter](gc-collector-heap-adapter.md). The initial
+slice is non-moving strong closure over explicit roots; it is implemented in
+`src/gc/` in the current working tree, with both synthetic and real-object tests.
+It does not depend on completing interpreter frame maps and does not enable
+production tracing or evacuation.
 
 The collector model and the production algorithm should expose corresponding
 state transitions. Lean proofs establish properties under explicit adapter
@@ -337,6 +344,13 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
 - **4d: Precise frame roots.** Distinguish parameters, locals, temporaries,
   saved code objects, and continuation operands from native PCs, frame pointers,
   padding, and scalar metadata.
+  Further exceptional-flow clearing and frame-map implementation are paused
+  pending a frame-state design: semantic binding, initialized storage, temporary
+  liveness, before/after-instruction and suspended-call positions, handler entry,
+  and the separate needs of GC, traceback/frame observation, and recovery.
+  The existing normal/loop prologue clears are bounded initialization changes,
+  not evidence that precise scanning is designed or complete. The remaining
+  slices below are provisional work breakdowns, not implementation authority.
   - **4d.1: Publish exact frame position (implemented).**
     `SafepointScanRecord` carries the frame pointer and resume bytecode PC,
     alongside the existing stack bound and root cells. Active interpreter

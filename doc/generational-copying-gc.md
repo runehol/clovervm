@@ -18,6 +18,8 @@ The [implementation plan](generational-copying-gc-implementation-plan.md)
 stages scanning, mutable roots, and write barriers alongside deferred
 refcounting, followed by the tracing lifetime cutover and production movement.
 It also defines the boundary for an isolated collector algorithm and Lean model.
+The concrete template/heap-adapter design is kept separately in
+[Isolated Collector and Heap Adapter](gc-collector-heap-adapter.md).
 
 This design supersedes the earlier non-moving generational mark-sweep direction.
 It allows ordinary VM objects to move, so it is incompatible with a collector
