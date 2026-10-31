@@ -492,7 +492,12 @@ namespace cl::jit
             {
                 CL_JIT_MACHINE_INSTRUCTION_KIND_CASE(Uninitialized)
                 {
-                    // Uninitialized instructions emit no machine code.
+                    // Side exits recover unavailable values too. Define a
+                    // valid sentinel rather than expose stale register bits.
+                    assembler.mov(
+                        assigned_register(locations,
+                                          ProgramValueRef(instruction)),
+                        static_cast<uint64_t>(Value::not_present().as.integer));
                     break;
                 }
 

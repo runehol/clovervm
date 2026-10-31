@@ -753,6 +753,11 @@ rather than disappearing. Interior unavailable and padding positions likewise
 remain explicit. Only an unused trailing suffix may be omitted, so operand
 count alone determines the captured prefix.
 
+An `Uninitialized` definition materializes `Value::not_present()` in machine
+code. It must not leave its assigned register undefined: transfers and side
+exits can recover that definition into interpreter state, including the
+published accumulator and uninitialized frame slots.
+
 Generic use and liveness traversal visits every captured position, including
 frame-header values. Verification uses the CFG ordering description to check
 the expected representation at each position.
