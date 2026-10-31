@@ -40,8 +40,8 @@ CloverVM adapter
 
 Collector algorithm
     evacuate roots and remembered references
-    drain ordinary and stable-promotion work queues
-    process weak references after strong closure
+    drain one copying work queue for ordinary and stable destinations
+    resolve settled weak units early; finish deferred units after strong closure
     complete collection
 
 Mutator integration
@@ -474,15 +474,32 @@ prove it.
 
 ### 7. Implement Evacuation Against a Test Heap
 
-Implement forwarding, destination reservation, initialized-state copying, root
-repair, ordinary queue draining, stable-promotion queue draining, and weak
-processing through the agreed collector interface. Preserve readable layout
+Implement forwarding, growable slab-backed destinations, initialized-state
+copying, root repair, one destination-independent work queue, and weak processing
+through the agreed collector interface. Preserve readable layout
 metadata when a source object or its shape has already been forwarded.
 
 Test cycles, shared children, duplicate roots, old-to-young references, and work
-that crosses between both destination queues. Define capacity preconditions or
-failure behavior before publishing any forwarding state; a partially rewritten
-heap cannot simply resume the mutator after an allocation failure.
+whose edges alternate between ordinary and stable destinations. Allocation
+groups use at most two inline members and a `size_t` count; relocate exclusively
+owned overflow storage next to its owner and enqueue both objects. No bitmap
+walk or Cheney/slab scan cursor is required. Collector-only allocation during
+enumeration must preserve visited storage and must not reenter the mutator/GC.
+Destination and work-queue allocation failure are fatal; there is no rollback,
+recoverable allocation result, or resumption of a partially rewritten heap.
+Removing current allocation bitmaps remains separate allocator integration work.
+
+Implement in bounded slices: test-heap grouped-copy/forwarding primitives,
+shared copying traversal, isolated weak units/source disposal, then CloverVM
+weak-unit enumeration. The [weak repair unit design](gc-weak-repair-units.md)
+defines early resolution, exact-unit deferral, and coordinated entry/payload
+invalidation; it does not yet implement production weak-remembered coverage.
+Concrete boundaries
+and the first-slice review are in the
+[adapter design](gc-collector-heap-adapter.md#evacuation-implementation-stages).
+Production copying-adapter readiness follows separately; these slices do not
+change production object-header layouts, frame roots, barriers, or lifetime
+authority.
 
 Completion: the isolated algorithm preserves the test heap's reachable graph,
 and the Lean model and executable comparisons described below cover its state
@@ -548,8 +565,9 @@ Model a finite heap graph with roots, strong and weak slots, generation/space
 classification, forwarding, and pending scan work. Represent logical object
 identity separately from physical addresses. State adapter assumptions
 explicitly: complete roots and slots, valid layouts, stable source metadata,
-exclusive collection access, and sufficient destination capacity for the
-successful-collection theorem.
+exclusive collection access, and successful resource acquisition for the
+successful-collection theorem. Allocation failure is a separate terminal outcome,
+not a resumable partially evacuated state or a whole-heap preallocation promise.
 
 The initial proof targets are:
 
@@ -560,7 +578,8 @@ The initial proof targets are:
 - the write barrier preserves coverage of old-to-young references;
 - evacuation terminates for a finite heap with sufficient destination capacity;
 - weak slots are repaired or cleared only after strong closure;
-- both scan queues reach closure before nursery reuse.
+- all ordinary and stable destinations reach closure through the unified work
+  queue before nursery reuse.
 
 Build the model alongside the isolated collector rather than reconstructing it
 after runtime integration. Compare executable model results with the C++ test

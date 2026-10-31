@@ -127,26 +127,50 @@ A collection has three broad phases:
 2. Evacuate reachable movable objects from the collected generation.
 3. Rewrite roots, handle slots, and heap references to point at copied objects.
 
-The evacuation algorithm should use a Cheney scan with breadth-first
-traversal. Roots and remembered old references copy their young targets into
-to-space and append those copied objects to the evacuation worklist. The
-collector then advances a scan frontier through to-space: scanning each copied
-object's outgoing references, copying any not-yet-forwarded collected objects,
-and appending those copies after the frontier.
+The evacuation algorithm uses one explicit double-ended work queue. Roots and
+remembered references copy their collected targets into destination storage,
+install source forwarding, and enqueue every newly copied object. Pop each
+object before scanning its strong slots, copying/forwarding children and
+repairing references as they are visited. A later encounter with a forwarded
+source only repairs the incoming slot; it does not copy or enqueue again.
 
-Objects evacuated directly into the stable heap are outside that to-space
-frontier. On first evacuation, install their forwarding target and append the
-stable destination to a separate stable-promotion scan queue. Scan its precise
-outgoing slots using the same evacuation and reference-repair rules as the
-Cheney scan. A later encounter with the forwarded source repairs the incoming
-slot without copying or enqueueing the object again.
+Layout code also enumerates weak-containing objects/embedded structs as
+[weak repair units](gc-weak-repair-units.md). Resolve uncollected or already
+forwarded targets immediately; remember only exact units with unresolved
+collected targets, not whole owners. After strong closure, repair surviving
+targets or invalidate the unit, including its payload and owned resources.
+Never discover strong liveness through a weak reference. Old/stable units that
+are not scanned by copying still require separate weak-remembered coverage.
 
-Either scan can discover work for either destination. Continue draining both
-until the to-space scan frontier reaches its allocation frontier and the
-stable-promotion scan queue is empty. Only then is evacuation closure complete;
-finish reference repair before reclaiming the nursery or resuming mutators.
-In particular, a nursery child reachable only through a newly stable object
-must be evacuated and its slot in that stable object rewritten.
+Ordinary old-generation destinations and direct stable promotions enter the
+same queue. Stable placement never exempts a copied object from scanning.
+Continue until the queue is empty after processing the active object. Only
+then is strong evacuation closure complete; finish weak/reference repair before
+reclaiming the nursery or resuming mutators. In particular, a nursery child
+reachable only through a newly stable object must be copied and its incoming
+slot repaired too.
+
+This is worklist copying, not a Cheney allocation-frontier scan. Scanning does
+not require walking slabs, finding arbitrary object starts, or using the current
+valid-object bitmap. Removing bitmap work from young allocation is an eventual
+allocator goal, not an instruction to remove bookkeeping still needed by
+current RC reclamation or stable storage. The queue holds pending objects, not
+processed objects; a wide live graph can still create a large pending frontier.
+
+Destination storage grows by acquiring slabs without relocating earlier copies.
+Fixed allocation groups of one or two objects allow an exclusively owned
+overflow object to be placed immediately after its relocated owner, with
+required alignment. Members retain separate headers and forwarding records,
+and every member is enqueued. The adapter owns that layout/placement knowledge.
+See the [adapter design](gc-collector-heap-adapter.md) for the concrete contract.
+
+Collector-only allocation during slot enumeration is allowed provided it cannot
+trigger collection or mutator execution and cannot invalidate the object/slots
+being scanned. Failure to allocate destination slabs, work-queue storage, or
+required copying metadata is fatal in the initial design: terminate, do not
+attempt rollback or resume with a partially rewritten heap. Slab rollover is
+normal growth, not exhaustion. No whole-heap reservation or live-size prepass
+is required by this policy.
 
 The collector must be able to enumerate and update precise slots, not just
 discover object identities:
@@ -226,13 +250,11 @@ forwarded but not scanned = grey
 forwarded and scan complete = black
 ```
 
-The grey/black distinction can be represented by the evacuation scan queue and
-its scan frontier rather than by header bits. With the Cheney scan, copied
-objects before the scan frontier are black, copied objects between the scan
-frontier and the to-space allocation frontier are grey, and not-yet-forwarded
-objects in from-space are white. For direct stable promotions, pending entries
-in the stable-promotion scan queue are grey and completed entries are black;
-their scan state cannot be inferred from the ordinary to-space frontier.
+The grey/black distinction is represented by the work queue and the active scan,
+not an allocation frontier or additional header bits. Forwarded destinations
+awaiting or undergoing scanning are grey; completed objects are black. The same
+rule applies to ordinary and stable destinations. Popping a queue entry starts
+its scan; it is not complete until all of its strong slots have been processed.
 
 The first implementation should use object-level generation state in the header:
 
@@ -709,9 +731,9 @@ expose compatible buffer data. If used, its acquisition path is:
 2. If that allocation is in the nursery, reach a safepoint and run a full minor
    collection. Establish its stable destination before root scanning so any
    first encounter selects that destination. Promote it directly into the stable
-   heap and enqueue it for stable-promotion scanning; other nursery survivors
-   follow the ordinary promotion policy. Drain both that queue and the Cheney
-   scan to closure, repairing their outgoing references. The nursery is fully
+   heap and enqueue it in the unified copying work queue; other nursery survivors
+   follow the ordinary promotion policy and enter the same queue. Drain it to
+   closure, repairing outgoing references. The nursery is fully
    evacuated and can be reused wholesale only after that work completes.
 3. If the allocation is already in the ordinary old generation, relocate it into
    the stable heap at a safepoint before exposure. This path must repair all
