@@ -1754,6 +1754,64 @@ namespace cl
         return TValue<String>::from_value_assumed(builder.finish());
     }
 
+    [[nodiscard]] static Value native_bytes_iter(ThreadState *thread,
+                                                 Value self)
+    {
+        auto source = CL_TRY(TValue<Bytes>::from_value_or_raise(
+            self, L"TypeError", L"bytes.__iter__ expects a bytes receiver"));
+        return thread->make_object_value<BytesIterator>(source).raw_value();
+    }
+
+    [[nodiscard]] static Value bytes_iterator_iter(ThreadState *, Value self)
+    {
+        (void)CL_TRY(TValue<BytesIterator>::from_value_or_raise(
+            self, L"TypeError", L"expected bytes_iterator receiver"));
+        return self;
+    }
+
+    [[nodiscard]] static Value bytes_iterator_next(ThreadState *thread,
+                                                   Value self)
+    {
+        auto iterator = CL_TRY(TValue<BytesIterator>::from_value_or_raise(
+            self, L"TypeError", L"expected bytes_iterator receiver"));
+        if(!iterator.extract()->source.value())
+            return thread->set_pending_stop_iteration_no_value();
+        auto source = iterator.extract()->source.value().value();
+        int64_t pos = iterator.extract()->index.extract();
+        if(pos >= source.extract()->count.extract())
+        {
+            iterator.extract()->source = Optional<TValue<Bytes>>::none();
+            return thread->set_pending_stop_iteration_no_value();
+        }
+        // Bytes lengths fit SMI, so advancing a valid position cannot overflow.
+        iterator.extract()->index = TValue<SMI>::from_smi(pos + 1);
+        return Value::from_smi(
+            source.extract()->data[static_cast<size_t>(pos)]);
+    }
+
+    BuiltinClassDefinition make_bytes_iterator_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId layouts[] = {
+            NativeLayoutId::BytesIterator};
+        BuiltinClassMethod methods[] = {
+            {vm->get_or_create_interned_string_value(L"__iter__"),
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, bytes_iterator_iter),
+                 "bytes iterator")
+                 .raw_value()},
+            {vm->get_or_create_interned_string_value(L"__next__"),
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, bytes_iterator_next),
+                 "bytes iterator")
+                 .raw_value()}};
+        auto cls = ClassObject::make_builtin_class<BytesIterator>(
+            vm->get_or_create_interned_string_value(L"bytes_iterator"), 0,
+            methods, std::size(methods), vm->object_class(),
+            SubclassPolicy::Disallowed);
+        return builtin_class_definition(cls, layouts,
+                                        BuiltinsVisibility::Internal);
+    }
+
     BuiltinClassDefinition make_bytes_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
@@ -1802,6 +1860,7 @@ namespace cl
         static constexpr const wchar_t *replace_names[] = {L"old", L"new",
                                                            L"count"};
         BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__iter__", native_bytes_iter),
             with_keyword_parameter_names(
                 with_defaults(
                     builtin_intrinsic_method(L"split", native_bytes_split),

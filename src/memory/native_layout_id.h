@@ -12,6 +12,7 @@ namespace cl
         BigInt,
         String,
         Bytes,
+        BytesIterator,
         ByteArray,
         ByteArrayIterator,
         List,

@@ -40,6 +40,7 @@
     V(ByteArray);                                                              \
     V(ByteArrayIterator);                                                      \
     V(Bytes);                                                                  \
+    V(BytesIterator);                                                          \
     V(List);                                                                   \
     V(Tuple);                                                                  \
     V(EnumerateIterator);                                                      \

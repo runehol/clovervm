@@ -100,6 +100,16 @@ while the combined `__new__`/`__init__` protocol remains incomplete.
 To close: implement the full combined constructor protocol, then restore the
 CPython allocation/population split.
 
+### Bytes iteration
+
+`bytes.__iter__` returns a dedicated `bytes_iterator` yielding unsigned integer
+values from the stored byte payload, including for inherited bytes subclasses.
+Subclass `__iter__` overrides still apply to ordinary iteration. Exhaustion is
+permanent and releases the retained source on the first exhausted advance.
+Iterator length hints and pickling/state methods remain unsupported, following
+the bounded native iterator interface. General sequence-only `__getitem__`
+iteration fallback remains unsupported.
+
 ### `bytes.join` uses stored byte payloads and the existing iterator subset
 
 `bytes.join(iterable, /)` accepts stored bytes (including bytes subclasses) and
