@@ -35,6 +35,7 @@ target_sources(test_clovervm PRIVATE
 	test_num_parse.cpp
 	test_hash.cpp
 	test_heap.cpp
+	test_heap_space.cpp
 	test_heap_object.cpp
 	test_heap_reference_slot.cpp
 	test_scoped_root.cpp

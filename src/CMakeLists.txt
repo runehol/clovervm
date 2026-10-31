@@ -329,6 +329,8 @@ add_library(libclovervm_objects OBJECT
     object_model/shape_descriptor.h
     memory/slab_allocator.cpp
     memory/slab_allocator.h
+    memory/heap_space.cpp
+    memory/heap_space.h
     api/clover_entry.cpp
     api/clover_entry.h
     builtin_types/str.cpp

@@ -209,6 +209,41 @@ separately. The new nursery/copy worklist must not depend on those bitmaps.
 Do not disguise global mutator allocation as collector allocation merely
 because both eventually call a bump allocator.
 
+### First Slice: Raw Group Reservations
+
+`HeapSpace` in `src/memory/heap_space.h` reuses SlabAllocator mappings and bump
+allocation, not ThreadLocalHeap. `reserve_group(span<const size_t>)`
+accepts one or two positive allocated extents and returns a fixed pair of byte
+addresses plus a `size_t` count. Each extent is rounded to the current 32-byte
+stride; the complete group is reserved by one bump before any address is
+returned. Both addresses retain the refcounted address encoding, including for
+any future stable destination. This does not derive generation from addresses.
+
+The space owns its slabs until destruction. A group that does not fit causes a
+new slab; an oversized group receives a mapping large enough for the entire
+group. Existing mappings and returned addresses never move. Rounding, sums,
+mapping overhead, and pointer-difference bounds are checked before allocation.
+Sizing/mapping/bookkeeping allocation failures are fatal. Native chunk
+bookkeeping uses nothrow allocation because the runtime disables C++ exceptions.
+
+These are raw, unpublished bytes, not HeapObjects. There are no managed
+constructors, bitmap marks/walks, RC epoch registrations, source writes,
+forwarding, or GlobalHeap adoption. Oversized byte reservations do not grant
+large-object movement admission. Publication, ownership transfer into a runtime
+heap, typed relocation, and RC/source retirement remain separate reviews.
+
+The intended runtime owner is the memory manager, with nursery, old, and stable
+spaces surviving individual collections. Thread-local allocation cursors will
+borrow nursery slabs; a minor collection covers the whole VM nursery, not just
+one thread's slabs. That ownership and cursor integration is future work: the
+current space is an unsynchronized raw allocator, used exclusively by its caller.
+Tracing, forwarding, construction, and safepoint policy remain outside this class.
+
+Reservation validation: 14 focused space/slab tests passed. Full Debug and
+Release `all check` passed (2,342 and 2,331 tests respectively; each configuration
+has three skipped JIT tests and one disabled test). These checks do not validate
+production evacuation, which is not enabled by this slice.
+
 ## Source Classification and Initial Admission
 
 `is_collected_source()` must identify the current collection's moving source
@@ -318,16 +353,18 @@ source selection, not complete full-heap tracing or reclamation.
    allocations as Old. Independent state tests and before/after benchmarks are
    complete. HeapObject contains HeapHeader, with fully inline accessors and
    memcpy forwarding; production forwarding remains disabled.
-5. **Collector-only reservation and admission tests.** Use dedicated storage
-   with no mutator reentry. Settle C++ relocation lifetime, per-layout admission,
-   tag-compatible group placement, publication, and slab ownership before real
-   adapter methods are exposed. Isolated byte-reservation tests do not enable
-   VM relocation or transfer ownership of real RC objects.
+5. **Collector-only reservation and admission tests.** The raw-reservation
+   sub-slice implements dedicated space ownership and tag-compatible group
+   placement with no mutator reentry. C++ relocation lifetime, per-layout
+   admission, publication, and runtime slab ownership transfer remain pending
+   before real adapter methods are exposed. Isolated byte-reservation tests do
+   not enable VM relocation or transfer ownership of real RC objects.
 6. **Activation readiness.** Recheck root completeness, barriers, stable tracing
    lifetime authority, hash/identity, and source retirement. Only then implement
    real adapter copying and a restricted nursery under a separate approval.
 
-Slices 1--4 are useful independently and do not authorize slices 5--6. Root
+Slices 1--4 and raw reservations are useful independently; raw reservations
+do not authorize the remaining admission or activation work. Root
 publication, write barriers, non-moving tracing reclamation, and any Lean-model
 work retain their existing stage reviews. Nothing here adds stub copying
 methods to make `Evacuation<CloverHeapAdapter>` compile.
