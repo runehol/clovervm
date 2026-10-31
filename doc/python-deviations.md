@@ -122,8 +122,8 @@ storage limit, and heap exhaustion retains the existing fatal VM heap policy.
 copies, integer iterables, length/truth, indexing and slicing, item/slice
 assignment and deletion, `append`, `extend`, `clear`, `pop`, `insert`, `remove`,
 `reverse`, `copy`, `find`, `rfind`, `index`, `rindex`, `count`, `startswith`,
-`endswith`, repr/str, all six comparisons
-with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
+`endswith`, `split`, `rsplit`, `partition`, `rpartition`, repr/str, all six
+comparisons with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
 an independent immutable bytes object; bytes immutability and hashing are unchanged.
 
 Like the existing dict boundary, construction is implemented by a Python-backed
@@ -161,6 +161,29 @@ may differ. Search retains owners and borrows spans only during synchronous
 scans without allocation, callbacks, safepoints, or mutation.
 Run `python3 tests/host/test_bytearray_search.py [path/to/clovervm]` with
 CPython 3.14.5 for the reproducible native-method differential trace.
+
+Splitting and partitioning follow CPython 3.14.10 for supported inputs.
+`split(sep=None, maxsplit=-1)` and `rsplit` accept keyword arguments, use
+ASCII whitespace for `None`, and convert `maxsplit` before validating the
+separator. Signed platform-size integer/bool limits are supported; negative
+limits mean unlimited splitting and overflow raises `OverflowError`.
+`partition(sep, /)` and `rpartition` require a positional separator. Explicit
+separators accept stored bytes/bytes-subclass and bytearray payloads; empty
+separators raise `ValueError`, even with a zero split limit. Every result
+component is a fresh exact bytearray, including empty pieces, no-match copies,
+and matched partition separators. Source/separator aliases are supported.
+Custom `__index__`, general buffers and bytearray subclasses retain the existing
+unsupported boundary; native error wording may differ. The offset scan is
+shared with bytes; result construction preserves each type's identity rules.
+For explicit separators longer than 16 bytes, these four methods on both types
+use constant-space Two-Way search in either direction. Separator factorization
+is reused across split ranges, giving linear total scanning/preprocessing time
+in source plus separator length. Shorter separators retain a bounded library
+search path. Search state and payload views expire before result allocation.
+The adapted factorization's source and license are recorded in
+`src/builtin_types/binary_split.h` and `LICENSE-CPYTHON`.
+Run `python3.14 tests/host/test_bytearray_split.py [path/to/clovervm]` using
+CPython 3.14.10 for the supported-input differential trace.
 
 Item access, assignment, and deletion enter native code, with trusted handlers
 for SMI and slice keys. Slice assignment inspects the replacement on every

@@ -1,3 +1,4 @@
+#include "builtin_types/binary_split.h"
 #include "builtin_types/bytearray.h"
 #include "builtin_types/bytes.h"
 #include "memory/global_heap.h"
@@ -10,9 +11,145 @@
 #include "test_helpers.h"
 #include <fstream>
 #include <iterator>
+#include <random>
+#include <string>
 #include <unistd.h>
 
 using namespace cl;
+
+namespace
+{
+    size_t naive_binary_match(std::string_view source,
+                              std::string_view separator, size_t start,
+                              size_t end, BinarySplitDirection direction)
+    {
+        if(separator.size() > end - start)
+            return std::string_view::npos;
+        size_t last = end - separator.size();
+        for(size_t offset = 0; offset <= last - start; ++offset)
+        {
+            size_t position = direction == BinarySplitDirection::Left
+                                  ? start + offset
+                                  : last - offset;
+            size_t index = 0;
+            while(index < separator.size() &&
+                  source[position + index] == separator[index])
+                ++index;
+            if(index == separator.size())
+                return position;
+        }
+        return std::string_view::npos;
+    }
+
+    std::string binary_word(size_t mask, size_t length, size_t stride)
+    {
+        std::string result(length * stride, '\0');
+        for(size_t index = 0; index < length; ++index)
+            for(size_t repeat = 0; repeat < stride; ++repeat)
+                result[index * stride + repeat] =
+                    (mask & (size_t(1) << index)) ? char(0xff) : '\0';
+        return result;
+    }
+}  // namespace
+
+TEST(BinarySeparatorSearch, ExhaustiveBinaryWordsAndClippedRanges)
+{
+    // Striding the same exhaustive words exercises both the short path and
+    // Two-Way, with range boundaries also falling inside repeated runs.
+    for(size_t stride: {size_t(1), size_t(4)})
+        for(size_t source_length = 0; source_length <= 8; ++source_length)
+            for(size_t source_mask = 0;
+                source_mask < (size_t(1) << source_length); ++source_mask)
+            {
+                auto source = binary_word(source_mask, source_length, stride);
+                for(size_t separator_length = 1; separator_length <= 6;
+                    ++separator_length)
+                    for(size_t separator_mask = 0;
+                        separator_mask < (size_t(1) << separator_length);
+                        ++separator_mask)
+                    {
+                        auto separator = binary_word(separator_mask,
+                                                     separator_length, stride);
+                        for(auto direction: {BinarySplitDirection::Left,
+                                             BinarySplitDirection::Right})
+                        {
+                            BinarySeparatorSearch search(separator, direction);
+                            for(size_t boundary = 0; boundary <= source.size();
+                                ++boundary)
+                            {
+                                ASSERT_EQ(naive_binary_match(source, separator,
+                                                             0, boundary,
+                                                             direction),
+                                          search.find(source, 0, boundary));
+                                ASSERT_EQ(naive_binary_match(
+                                              source, separator, boundary,
+                                              source.size(), direction),
+                                          search.find(source, boundary,
+                                                      source.size()));
+                            }
+                        }
+                    }
+            }
+}
+
+TEST(BinarySeparatorSearch, RandomPeriodicPatternsAndRepeatedRangeSearch)
+{
+    std::mt19937 random(86421);
+    for(size_t trial = 0; trial < 20000; ++trial)
+    {
+        SCOPED_TRACE(trial);
+        std::string source(random() % 385, '\0');
+        for(char &byte: source)
+            byte = static_cast<char>(trial % 2 ? random() % 4 : random() % 256);
+        size_t period = 1 + random() % 13;
+        if(trial % 3 == 0)
+            for(size_t index = period; index < source.size(); ++index)
+                source[index] = source[index % period];
+        std::string separator(1 + random() % 129, '\0');
+        for(char &byte: separator)
+            byte = static_cast<char>(random() % 256);
+        if(separator.size() <= source.size() && trial % 2)
+        {
+            size_t start = random() % (source.size() - separator.size() + 1);
+            separator = source.substr(start, separator.size());
+            if(trial % 5 == 0)
+                separator[random() % separator.size()] ^= char(0x80);
+        }
+        for(auto direction:
+            {BinarySplitDirection::Left, BinarySplitDirection::Right})
+        {
+            BinarySeparatorSearch search(separator, direction);
+            for(size_t repeat = 0; repeat < 4; ++repeat)
+            {
+                size_t start = repeat == 0 ? 0 : random() % (source.size() + 1);
+                size_t end =
+                    repeat == 0
+                        ? source.size()
+                        : start + random() % (source.size() - start + 1);
+                ASSERT_EQ(naive_binary_match(source, separator, start, end,
+                                             direction),
+                          search.find(source, start, end));
+            }
+        }
+    }
+}
+
+TEST(BinarySeparatorSearch, LongForwardAndReverseNearMisses)
+{
+    std::string source(65536, 'a');
+    for(auto direction:
+        {BinarySplitDirection::Left, BinarySplitDirection::Right})
+    {
+        std::string separator(32768, 'a');
+        if(direction == BinarySplitDirection::Left)
+            separator.back() = 'b';
+        else
+            separator.front() = 'b';
+        BinarySeparatorSearch search(separator, direction);
+        EXPECT_EQ(std::string_view::npos,
+                  search.find(source, 0, source.size()));
+    }
+}
 
 TEST(ByteArray, LayoutTracesOwnerBackingAndIterator)
 {
@@ -44,7 +181,10 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
                            "tests/python/builtin_bytearray_methods.py",
                            "tests/python/builtin_bytearray_methods_limits.py",
                            "tests/python/builtin_bytearray_search.py",
-                           "tests/python/builtin_bytearray_search_limits.py"})
+                           "tests/python/builtin_bytearray_search_limits.py",
+                           "tests/python/builtin_bytearray_split.py",
+                           "tests/python/builtin_bytearray_split_limits.py",
+                           "tests/python/binary_split_search.py"})
     {
         SCOPED_TRACE(path);
         std::ifstream input(path);
