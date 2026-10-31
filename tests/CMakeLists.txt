@@ -16,6 +16,7 @@ target_sources(test_clovervm PRIVATE
 	gc_test_heap.h
 	test_gc_mark_phase.cpp
 	test_gc_evacuation_primitives.cpp
+	test_gc_evacuation.cpp
 	test_codec.cpp
 	test_incremental_codec.cpp
 	test_codec_c.c

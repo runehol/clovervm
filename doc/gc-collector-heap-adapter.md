@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; isolated mark phase implemented, evacuation not implemented |
+| Implementation | Partial; isolated mark and strong evacuation implemented; weak evacuation repair and production copying not implemented |
 | Scope | One collector algorithm instantiated against a test heap and CloverVM |
 | Owning layers | `src/gc/` owns traversal and the CloverVM adapter; memory layouts own slot enumeration; tests own the synthetic heap |
-| Validated against | Mark-phase working tree based on `7ce87175` (2026-10-31) |
+| Validated against | Strong evacuation working tree based on `9e0ab41f` (2026-10-31); verification recorded below |
 | Supersedes | N/A |
 
 This expands the collector boundary in the
@@ -318,7 +318,7 @@ struct AllocationGroup
 enum class EvacuationDestination { Ordinary, Stable };
 ```
 
-The success-path algorithm below is a design sketch, not added C++ code.
+The success-path sketch below is implemented by `src/gc/evacuation.h`.
 `copy_group()` returns `std::array<Object *, 2>` corresponding to the source
 members; only the group's counted prefix is used. It fully copies
 the members without child traversal or forwarding publication. The destination
@@ -592,6 +592,34 @@ unchanged references, refcounts, lifecycle fields, and ZCT size. These assertion
 do not claim an independent oracle for the entire VM metadata graph.
 
 ## Tests and Proof Boundary
+
+The isolated strong copying phase is `Evacuation<Heap>` in
+`src/gc/evacuation.h`. Its borrowed adapter must outlive the phase. Callers add
+roots/remembered slots with `add_root()` and reach strong closure with `drain()`;
+outside-source targets are left alone, not implicitly scanned. The phase is
+noncopyable and nonmovable so pending scans cannot accidentally be duplicated.
+One deque schedules both ordinary and stable destinations. Forwarding is
+published for every group member before any is scanned. Native allocation
+exceptions during construction, root evacuation, and draining reach the
+adapter's non-returning allocation-failure handler.
+
+`tests/test_gc_evacuation.cpp` compares copied graphs with a source-graph oracle
+that does not use adapter enumeration or forwarding to discover reachability.
+It checks graph identity/connections, source-payload preservation, exactly-once
+destination scanning, unchanged weak cells, group adjacency, duplicate roots,
+cycles, ordinary/stable closure, chunk growth during scanning, and wide
+frontiers. Injected native allocation exceptions exercise the fatal public entry
+paths; destination-exhaustion death tests also cover the primitive layer.
+This does not inject a failure into the standard library's deque allocator.
+Source storage remains alive after this phase: weak repair and reclamation
+are not implemented or implied by strong closure.
+
+Strong-evacuation working-tree verification on 2026-10-31, based on
+`9e0ab41f`: all 22 focused GC tests passed. Full Debug `all check` passed
+2,274 tests and full Release `all check` passed 2,265 tests; each configuration
+had three existing JIT-disabled skips and one disabled test. The tests include
+a 30,001-object chain, a 4,096-child frontier, and 24 fixed-seed generated
+graphs. These checks cover the isolated adapter, not production relocation.
 
 Exercise both instantiations; use synthetic graphs for exact comparison with an
 independent oracle: empty roots, null/immediate cells, duplicate roots/edges, self-cycles,
