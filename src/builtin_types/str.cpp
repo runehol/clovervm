@@ -17,8 +17,11 @@
 #include "runtime/virtual_machine.h"
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <cwctype>
 #include <iterator>
+#include <limits>
 #include <vector>
 
 namespace cl
@@ -779,6 +782,146 @@ namespace cl
     {
         return active_thread()->set_pending_builtin_exception_string(
             L"ValueError", L"empty separator");
+    }
+
+    enum class StrPaddingKind
+    {
+        Left,
+        Right,
+        Center,
+        Zero
+    };
+
+    [[nodiscard]] static Expected<int64_t> str_padding_width(Value value)
+    {
+        if(!is_intlike_value(value))
+        {
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"width must be an integer");
+        }
+        SmiViewStorage storage;
+        int64_t width =
+            CL_TRY(bigint_to_int64(intlike_value_bigint_view(value, &storage)));
+        if(width < std::numeric_limits<ptrdiff_t>::min() ||
+           width > std::numeric_limits<ptrdiff_t>::max())
+        {
+            return Expected<int64_t>::raise_exception(
+                L"OverflowError", L"width exceeds platform index range");
+        }
+        return Expected<int64_t>::ok(width);
+    }
+
+    [[nodiscard]] static Value pad_string(ThreadState *thread,
+                                          TValue<String> source, int64_t width,
+                                          cl_wchar fill, StrPaddingKind kind)
+    {
+        int64_t length = source.extract()->count.extract();
+        if(width <= length)
+        {
+            if(is_exact_string(thread, source.raw_value()))
+            {
+                return source.raw_value();
+            }
+            return thread->make_object_value<String>(string_view(source))
+                .raw_value();
+        }
+        // Check before narrowing the length or calculating
+        // String::allocation_size_for.
+        if(width > value_smi_max ||
+           static_cast<uint64_t>(width) >
+               (std::numeric_limits<size_t>::max() - sizeof(String)) /
+                   sizeof(cl_wchar))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"padded string exceeds storage limit");
+        }
+        int64_t margin = width - length;
+        int64_t left = 0;
+        switch(kind)
+        {
+            case StrPaddingKind::Left:
+                break;
+            case StrPaddingKind::Right:
+            case StrPaddingKind::Zero:
+                left = margin;
+                break;
+            case StrPaddingKind::Center:
+                left = margin / 2 + (margin & width & 1);
+                break;
+        }
+
+        // Keep the source alive and reacquire its payload after allocation.
+        // No Python callbacks or safepoints occur while payloads are borrowed.
+        Owned<TValue<String>> owner(source);
+        TValue<String> result =
+            thread->make_object_value<String>(TValue<SMI>::from_smi(width));
+        cl_wchar *output = result.extract()->data;
+        std::fill_n(output, static_cast<size_t>(left), fill);
+        std::copy_n(owner.extract()->data, static_cast<size_t>(length),
+                    output + left);
+        std::fill_n(output + left + length, static_cast<size_t>(margin - left),
+                    fill);
+        if(kind == StrPaddingKind::Zero && length != 0)
+        {
+            cl_wchar first = output[left];
+            if(first == L'+' || first == L'-')
+            {
+                output[0] = first;
+                output[left] = L'0';
+            }
+        }
+        return result.raw_value();
+    }
+
+    [[nodiscard]] static Value justify_string(ThreadState *thread, Value self,
+                                              Value width_value,
+                                              Value fill_value,
+                                              StrPaddingKind kind,
+                                              const wchar_t *method_name)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, method_name));
+        int64_t width = CL_TRY(str_padding_width(width_value));
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(fill_value, L"fill character must be str"));
+        if(fill_value.get_ptr<String>()->count.extract() != 1)
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"fill character must be exactly one character long");
+        }
+        cl_wchar fill = fill_value.get_ptr<String>()->data[0];
+        return pad_string(thread, TValue<String>::from_value_assumed(self),
+                          width, fill, kind);
+    }
+
+    [[nodiscard]] static Value native_str_ljust(ThreadState *thread, Value self,
+                                                Value width, Value fill)
+    {
+        return justify_string(thread, self, width, fill, StrPaddingKind::Left,
+                              L"ljust");
+    }
+
+    [[nodiscard]] static Value native_str_rjust(ThreadState *thread, Value self,
+                                                Value width, Value fill)
+    {
+        return justify_string(thread, self, width, fill, StrPaddingKind::Right,
+                              L"rjust");
+    }
+
+    [[nodiscard]] static Value
+    native_str_center(ThreadState *thread, Value self, Value width, Value fill)
+    {
+        return justify_string(thread, self, width, fill, StrPaddingKind::Center,
+                              L"center");
+    }
+
+    [[nodiscard]] static Value native_str_zfill(ThreadState *thread, Value self,
+                                                Value width_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"zfill"));
+        int64_t width = CL_TRY(str_padding_width(width_value));
+        return pad_string(thread, TValue<String>::from_value_assumed(self),
+                          width, L'0', StrPaddingKind::Zero);
     }
 
     static bool is_strip_space(wchar_t ch);
@@ -1740,6 +1883,10 @@ namespace cl
             active_thread()->make_object_value<Tuple>(1));
         str_new_defaults.extract()->initialize_item_unchecked(
             0, vm->get_or_create_interned_string_value(L"").raw_value());
+        Owned<TValue<Tuple>> str_padding_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        str_padding_defaults.extract()->initialize_item_unchecked(
+            0, vm->get_or_create_interned_string_value(L" ").raw_value());
         Owned<TValue<Tuple>> str_strip_defaults(
             active_thread()->make_object_value<Tuple>(1));
         str_strip_defaults.extract()->initialize_item_unchecked(0,
@@ -1829,6 +1976,23 @@ namespace cl
                 builtin_intrinsic_method(L"__getitem__", native_str_getitem,
                                          L"Return self[index]."),
                 resolve_trusted_str_getitem_handler),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"ljust", native_str_ljust,
+                    L"Return a left-justified string of length width."),
+                str_padding_defaults.value()),
+            with_defaults(
+                builtin_intrinsic_method(
+                    L"rjust", native_str_rjust,
+                    L"Return a right-justified string of length width."),
+                str_padding_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"center", native_str_center,
+                              L"Return a centered string of length width."),
+                          str_padding_defaults.value()),
+            builtin_intrinsic_method(
+                L"zfill", native_str_zfill,
+                L"Pad with zeros after an optional ASCII sign."),
             builtin_intrinsic_method(L"lower", native_str_lower,
                                      L"Return a lowercase copy."),
             builtin_intrinsic_method(L"capitalize", native_str_capitalize,

@@ -202,6 +202,27 @@ native argument error wording can differ from CPython. Bytearray subclassing
 remains unavailable. No changes to interpreter, codegen, JIT, layout, cache or
 buffer protocols are involved.
 
+### String padding uses stored integers and bounded native storage
+
+`str.ljust(width, fillchar=' ', /)`, `rjust` and `center` with the same
+signature, and `str.zfill(width, /)` follow CPython 3.14.10 for code-point
+padding, default spaces, single-character fill validation, center parity and
+ASCII sign handling. Width conversion precedes fill validation, even when no
+padding is required. Exact-string no-ops preserve identity; subclass inputs
+produce exact strings, using stored payloads without subclass hooks.
+
+Widths accept stored int/bool/int-subclass payloads within the signed platform
+index range. Custom `__index__` remains unsupported and raises TypeError without
+callbacks. Positive result lengths beyond SMI string-length storage or checked
+allocation-size bounds raise OverflowError. Actual heap exhaustion retains the
+existing fatal allocator policy rather than promising recoverable MemoryError.
+Native argument diagnostics can differ from CPython. Padding counts the existing
+string representation's code points, not display columns or grapheme clusters.
+No general Unicode framework, layout, protocol or interpreter changes are added.
+Run `python3.14 tests/host/test_string_padding.py [path/to/clovervm]` with
+CPython 3.14.10 for the differential trace; VM-only storage/index limits have
+separate regressions.
+
 ## Methods And Attribute Access
 
 ### `obj.method` does not produce a bound method object
