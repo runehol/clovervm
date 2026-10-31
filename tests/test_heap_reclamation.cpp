@@ -399,7 +399,7 @@ namespace cl
         ASSERT_EQ(module_refs + 1, module->refcount);
 
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(CodeObject::native_layout);
+            native_layout_descriptor_for(CodeObject::native_layout).release;
         descriptor.custom_release(code);
         EXPECT_EQ(1, child.extract()->refcount);
         EXPECT_EQ(module_refs, module->refcount);
@@ -498,7 +498,7 @@ namespace cl
         ASSERT_EQ(2, next.get()->refcount);
 
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(Shape::native_layout);
+            native_layout_descriptor_for(Shape::native_layout).release;
         descriptor.custom_release(shape);
         EXPECT_EQ(0u, shape->transition_count());
         EXPECT_EQ(class_refs - class_release_count, cls->refcount);

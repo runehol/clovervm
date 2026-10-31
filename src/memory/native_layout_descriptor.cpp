@@ -70,7 +70,7 @@ namespace cl
     {
         assert(object != nullptr);
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(object->native_layout_id());
+            native_layout_descriptor_for(object->native_layout_id()).release;
         auto span = resolve_ordinary_reference_span(object, descriptor);
         assert(span.has_value() || descriptor.custom_trace_strong != nullptr);
         if(span)
@@ -87,7 +87,7 @@ namespace cl
     {
         assert(object != nullptr);
         const ReleaseDescriptor &descriptor =
-            release_descriptor_for(object->native_layout_id());
+            native_layout_descriptor_for(object->native_layout_id()).release;
         if(descriptor.visit_weak_units != nullptr)
         {
             descriptor.visit_weak_units(object, visitor);
@@ -98,7 +98,7 @@ namespace cl
     {
         assert(obj != nullptr);
         const ObjectSizeDescriptor &descriptor =
-            object_size_descriptor_for(obj->native_layout_id());
+            native_layout_descriptor_for(obj->native_layout_id()).object_size;
 
         switch(descriptor.kind)
         {

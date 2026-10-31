@@ -64,10 +64,50 @@ namespace
         Value second;
     };
 
+    template <typename T> void expect_unified_registered_descriptor()
+    {
+        namespace detail = native_layout_descriptor_detail;
+        SCOPED_TRACE(detail::NativeLayoutTraits<T::native_layout>::cpp_name);
+        const NativeLayoutDescriptor &descriptor =
+            native_layout_descriptor_for(T::native_layout);
+        const auto &table_entry =
+            detail::native_layout_descriptors[detail::native_layout_index(
+                T::native_layout)];
+        EXPECT_EQ(&table_entry, &descriptor);
+
+        // Compare every field with the unchanged type-directed builders, not
+        // just the combined table's own traits or completeness predicate.
+        constexpr ReleaseDescriptor release =
+            detail::NativeLayoutReleaseDescriptorBuilder<T>::build();
+        EXPECT_EQ(release.kind, descriptor.release.kind);
+        EXPECT_EQ(release.count_offset_words,
+                  descriptor.release.count_offset_words);
+        EXPECT_EQ(release.static_release_count,
+                  descriptor.release.static_release_count);
+        EXPECT_EQ(release.value_offset_words,
+                  descriptor.release.value_offset_words);
+        EXPECT_EQ(release.additional_release_count,
+                  descriptor.release.additional_release_count);
+        EXPECT_EQ(release.custom_release, descriptor.release.custom_release);
+        EXPECT_EQ(release.destroy, descriptor.release.destroy);
+        EXPECT_EQ(release.custom_trace_strong,
+                  descriptor.release.custom_trace_strong);
+        EXPECT_EQ(release.visit_weak_units,
+                  descriptor.release.visit_weak_units);
+
+        constexpr ObjectSizeDescriptor object_size =
+            detail::NativeLayoutObjectSizeDescriptorBuilder<T>::build();
+        EXPECT_EQ(object_size.kind, descriptor.object_size.kind);
+        EXPECT_EQ(object_size.static_size_in_bytes,
+                  descriptor.object_size.static_size_in_bytes);
+        EXPECT_EQ(object_size.custom_size_in_bytes,
+                  descriptor.object_size.custom_size_in_bytes);
+    }
+
     template <typename T> void expect_static_native_layout_descriptor()
     {
         const ReleaseDescriptor &release =
-            release_descriptor_for(T::native_layout);
+            native_layout_descriptor_for(T::native_layout).release;
 
         EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
         EXPECT_EQ(T::native_value_offset_in_words(),
@@ -80,7 +120,7 @@ namespace
         EXPECT_EQ(nullptr, release.visit_weak_units);
 
         const ObjectSizeDescriptor &object_size =
-            object_size_descriptor_for(T::native_layout);
+            native_layout_descriptor_for(T::native_layout).object_size;
 
         EXPECT_EQ(ObjectSizeKind::StaticSize, object_size.kind);
         EXPECT_EQ(sizeof(T), object_size.static_size_in_bytes);
@@ -91,6 +131,61 @@ TEST(NativeLayoutDescriptor, ListUsesNativeStaticReleaseDescriptor)
 {
     expect_static_native_layout_descriptor<List>();
 }
+
+TEST(NativeLayoutDescriptor, UnifiedTablePreservesEveryRegisteredLayout)
+{
+#define CL_EXPECT_UNIFIED_DESCRIPTOR(type)                                     \
+    expect_unified_registered_descriptor<type>()
+    CL_NATIVE_LAYOUT_REGISTRY(CL_EXPECT_UNIFIED_DESCRIPTOR);
+#undef CL_EXPECT_UNIFIED_DESCRIPTOR
+}
+
+TEST(NativeLayoutDescriptor, UnifiedTableAddsNoDescriptorStorage)
+{
+    EXPECT_EQ(80u, sizeof(NativeLayoutDescriptor));
+    EXPECT_EQ(
+        native_layout_descriptor_count() *
+            (sizeof(ReleaseDescriptor) + sizeof(ObjectSizeDescriptor)),
+        sizeof(native_layout_descriptor_detail::native_layout_descriptors));
+}
+
+TEST(NativeLayoutDescriptor, UnifiedCompletenessChecksBothPartsAndCustomScanner)
+{
+    namespace detail = native_layout_descriptor_detail;
+    auto descriptors = detail::native_layout_descriptors;
+    size_t index = detail::native_layout_index(NativeLayoutId::Float);
+    NativeLayoutDescriptor original = descriptors[index];
+    EXPECT_TRUE(
+        detail::native_layout_descriptor_table_is_complete(descriptors));
+
+    descriptors[index].object_size = ObjectSizeDescriptor::custom(nullptr);
+    EXPECT_FALSE(
+        detail::native_layout_descriptor_table_is_complete(descriptors));
+    descriptors[index] = original;
+    descriptors[index].release = ReleaseDescriptor::custom(nullptr);
+    EXPECT_FALSE(
+        detail::native_layout_descriptor_table_is_complete(descriptors));
+    descriptors[index].release = ReleaseDescriptor::custom(
+        CustomReleaseTestObject::release_managed_references);
+    EXPECT_FALSE(
+        detail::native_layout_descriptor_table_is_complete(descriptors));
+    descriptors[index].release.custom_trace_strong =
+        StaticReleaseWithDestroyTestObject::trace_strong_references;
+    EXPECT_TRUE(
+        detail::native_layout_descriptor_table_is_complete(descriptors));
+}
+
+#ifndef NDEBUG
+TEST(NativeLayoutDescriptor, UnifiedLookupRejectsInvalidTestOnlyAndOutOfRange)
+{
+    EXPECT_DEATH((void)native_layout_descriptor_for(NativeLayoutId::Invalid),
+                 "native_layout");
+    EXPECT_DEATH((void)native_layout_descriptor_for(NativeLayoutId::TestOnly),
+                 "native_layout_descriptor_is_valid");
+    EXPECT_DEATH((void)native_layout_descriptor_for(NativeLayoutId::Count),
+                 "native_layout_index");
+}
+#endif
 
 TEST(NativeLayoutDescriptor, CustomReleaseDeclarationBuildsDescriptor)
 {
@@ -128,7 +223,7 @@ TEST(NativeLayoutDescriptor, ResolvesOrdinaryStaticReferenceSpan)
     Float *object = context.thread()->make_object_raw<Float>(1.5);
     int32_t refcount = object->refcount;
     auto span = resolve_ordinary_reference_span(
-        object, release_descriptor_for(Float::native_layout));
+        object, native_layout_descriptor_for(Float::native_layout).release);
 
     ASSERT_TRUE(span.has_value());
     EXPECT_EQ(Object::native_value_offset_in_words(), span->value_offset_words);
@@ -140,7 +235,8 @@ TEST(NativeLayoutDescriptor, EmptyOrdinarySpanIsSupported)
 {
     RawArrayBacking backing(0);
     auto span = resolve_ordinary_reference_span(
-        &backing, release_descriptor_for(RawArrayBacking::native_layout));
+        &backing,
+        native_layout_descriptor_for(RawArrayBacking::native_layout).release);
 
     ASSERT_TRUE(span.has_value());
     EXPECT_EQ(0u, span->value_offset_words);
@@ -167,7 +263,8 @@ TEST(NativeLayoutDescriptor, ResolvesSmiReferenceCountWithoutNarrowing)
     uint64_t count = uint64_t{UINT32_MAX} + 1;
     ValueArrayBacking backing(count);
     auto span = resolve_ordinary_reference_span(
-        &backing, release_descriptor_for(ValueArrayBacking::native_layout));
+        &backing,
+        native_layout_descriptor_for(ValueArrayBacking::native_layout).release);
 
     ASSERT_TRUE(span.has_value());
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
@@ -185,7 +282,7 @@ TEST(NativeLayoutDescriptor, CustomReleaseDoesNotResolveAsAnEmptySpan)
         // Custom handling must not inspect payload fields or run a deallocator.
         HeapObject header(layout);
         EXPECT_FALSE(resolve_ordinary_reference_span(
-                         &header, release_descriptor_for(layout))
+                         &header, native_layout_descriptor_for(layout).release)
                          .has_value());
     }
 }
@@ -329,7 +426,7 @@ TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(List::native_layout);
+        native_layout_descriptor_for(List::native_layout).release;
 
     EXPECT_EQ(Object::native_value_offset_in_words(),
               release.value_offset_words);
@@ -353,7 +450,7 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
 TEST(NativeLayoutDescriptor, BigIntUsesInheritedObjectReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(BigInt::native_layout);
+        native_layout_descriptor_for(BigInt::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
     EXPECT_EQ(Object::native_value_offset_in_words(),
@@ -362,7 +459,7 @@ TEST(NativeLayoutDescriptor, BigIntUsesInheritedObjectReleaseDescriptor)
               release.static_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(BigInt::native_layout);
+        native_layout_descriptor_for(BigInt::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -560,7 +657,7 @@ TEST(NativeLayoutDescriptor, ScopeUsesNativeStaticReleaseDescriptor)
 TEST(NativeLayoutDescriptor, ScopeNativeReleaseSpanStartsAtParentScope)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(Scope::native_layout);
+        native_layout_descriptor_for(Scope::native_layout).release;
 
     EXPECT_EQ(Scope::native_value_offset_in_words(),
               release.value_offset_words);
@@ -571,7 +668,7 @@ TEST(NativeLayoutDescriptor, ScopeNativeReleaseSpanStartsAtParentScope)
 TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(String::native_layout);
+        native_layout_descriptor_for(String::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
     EXPECT_EQ(String::native_value_offset_in_words(),
@@ -580,7 +677,7 @@ TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
               release.static_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(String::native_layout);
+        native_layout_descriptor_for(String::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -636,7 +733,7 @@ TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
     String *str = context.thread()->make_object_raw<String>(L"hello");
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(String::native_layout);
+        native_layout_descriptor_for(String::native_layout).object_size;
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -649,7 +746,7 @@ TEST(NativeLayoutDescriptor,
      StringNativeReleaseSpanStartsAtInheritedObjectCells)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(String::native_layout);
+        native_layout_descriptor_for(String::native_layout).release;
 
     EXPECT_EQ(Object::native_value_offset_in_words(),
               release.value_offset_words);
@@ -660,7 +757,7 @@ TEST(NativeLayoutDescriptor,
 TEST(NativeLayoutDescriptor, TupleUsesDynamicSmiReleaseAndCustomObjectSize)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(Tuple::native_layout);
+        native_layout_descriptor_for(Tuple::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
     EXPECT_EQ(Tuple::native_value_count_offset_in_words(),
@@ -673,7 +770,7 @@ TEST(NativeLayoutDescriptor, TupleUsesDynamicSmiReleaseAndCustomObjectSize)
               release.additional_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(Tuple::native_layout);
+        native_layout_descriptor_for(Tuple::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -685,7 +782,7 @@ TEST(NativeLayoutDescriptor, CompactTupleDynamicSmiReleaseSpanUsesStoredCount)
     ThreadState::ActivationScope activation_scope(context.thread());
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(3);
     const ReleaseDescriptor &release =
-        release_descriptor_for(Tuple::native_layout);
+        native_layout_descriptor_for(Tuple::native_layout).release;
 
     Value count_value =
         *(reinterpret_cast<Value *>(tuple) + release.count_offset_words);
@@ -710,7 +807,7 @@ TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(5);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(Tuple::native_layout);
+        native_layout_descriptor_for(Tuple::native_layout).object_size;
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -722,7 +819,7 @@ TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
 TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(Instance::native_layout);
+        native_layout_descriptor_for(Instance::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
     EXPECT_EQ(Instance::native_value_offset_in_words(),
@@ -733,7 +830,7 @@ TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
               release.additional_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(Instance::native_layout);
+        native_layout_descriptor_for(Instance::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -759,7 +856,7 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
     EXPECT_EQ(0u, large->native_layout_aux_count_value());
 
     const ReleaseDescriptor &release =
-        release_descriptor_for(Instance::native_layout);
+        native_layout_descriptor_for(Instance::native_layout).release;
 
     EXPECT_EQ(Object::native_value_offset_in_words(),
               release.value_offset_words);
@@ -792,7 +889,7 @@ TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesShapeCapacity)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(Instance::native_layout);
+        native_layout_descriptor_for(Instance::native_layout).object_size;
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -874,7 +971,7 @@ TEST(NativeLayoutDescriptor,
 TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(CodeObject::native_layout);
+        native_layout_descriptor_for(CodeObject::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
     EXPECT_EQ(CodeObject::release_managed_references, release.custom_release);
@@ -883,7 +980,7 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)
     EXPECT_EQ(CodeObject::visit_weak_reference_units, release.visit_weak_units);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(CodeObject::native_layout);
+        native_layout_descriptor_for(CodeObject::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::StaticSize, object_size.kind);
     EXPECT_EQ(sizeof(CodeObject), object_size.static_size_in_bytes);
@@ -892,7 +989,7 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)
 TEST(NativeLayoutDescriptor, ShapeUsesCustomReleaseAndCustomObjectSize)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(Shape::native_layout);
+        native_layout_descriptor_for(Shape::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::CustomRelease, release.kind);
     EXPECT_EQ(Shape::release_managed_references, release.custom_release);
@@ -901,7 +998,7 @@ TEST(NativeLayoutDescriptor, ShapeUsesCustomReleaseAndCustomObjectSize)
     EXPECT_EQ(Shape::visit_weak_reference_units, release.visit_weak_units);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(Shape::native_layout);
+        native_layout_descriptor_for(Shape::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -922,7 +1019,7 @@ TEST(NativeLayoutDescriptor, ShapeNativeObjectSizeUsesPropertyCount)
 TEST(NativeLayoutDescriptor, OverflowSlotsUsesDynamicAuxReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(OverflowSlots::native_layout);
+        native_layout_descriptor_for(OverflowSlots::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
     EXPECT_EQ(OverflowSlots::native_value_offset_in_words(),
@@ -930,7 +1027,7 @@ TEST(NativeLayoutDescriptor, OverflowSlotsUsesDynamicAuxReleaseDescriptor)
     EXPECT_EQ(0u, release.additional_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(OverflowSlots::native_layout);
+        native_layout_descriptor_for(OverflowSlots::native_layout).object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -943,7 +1040,7 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeReleaseSpanUsesCapacity)
     OverflowSlots *overflow_slots =
         context.thread()->make_internal_raw<OverflowSlots>(2, 5);
     const ReleaseDescriptor &release =
-        release_descriptor_for(OverflowSlots::native_layout);
+        native_layout_descriptor_for(OverflowSlots::native_layout).release;
 
     EXPECT_EQ(OverflowSlots::native_value_offset_in_words(),
               release.value_offset_words);
@@ -971,13 +1068,14 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)
 TEST(NativeLayoutDescriptor, RawArrayBackingUsesEmptyReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(RawArrayBacking::native_layout);
+        native_layout_descriptor_for(RawArrayBacking::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
     EXPECT_EQ(0u, release.static_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(RawArrayBacking::native_layout);
+        native_layout_descriptor_for(RawArrayBacking::native_layout)
+            .object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -997,7 +1095,7 @@ TEST(NativeLayoutDescriptor, RawArrayBackingNativeObjectSizeUsesStorageBytes)
 TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicSmiReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(ValueArrayBacking::native_layout);
+        native_layout_descriptor_for(ValueArrayBacking::native_layout).release;
 
     EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
     EXPECT_EQ(ValueArrayBacking::native_value_count_offset_in_words(),
@@ -1007,7 +1105,8 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicSmiReleaseDescriptor)
     EXPECT_EQ(0u, release.additional_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(ValueArrayBacking::native_layout);
+        native_layout_descriptor_for(ValueArrayBacking::native_layout)
+            .object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -1020,7 +1119,7 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingNativeReleaseSpanUsesCellCount)
     ValueArrayBacking *backing =
         context.thread()->make_internal_raw<ValueArrayBacking>(7);
     const ReleaseDescriptor &release =
-        release_descriptor_for(ValueArrayBacking::native_layout);
+        native_layout_descriptor_for(ValueArrayBacking::native_layout).release;
 
     EXPECT_EQ(7u, backing->value_cell_count());
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
@@ -1066,7 +1165,8 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingRejectsCellCountOutsideSmiRange)
 TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicSmiReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
-        release_descriptor_for(HeapPtrArrayBacking::native_layout);
+        native_layout_descriptor_for(HeapPtrArrayBacking::native_layout)
+            .release;
 
     EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
     EXPECT_EQ(HeapPtrArrayBacking::native_value_count_offset_in_words(),
@@ -1076,7 +1176,8 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicSmiReleaseDescriptor)
     EXPECT_EQ(0u, release.additional_release_count);
 
     const ObjectSizeDescriptor &object_size =
-        object_size_descriptor_for(HeapPtrArrayBacking::native_layout);
+        native_layout_descriptor_for(HeapPtrArrayBacking::native_layout)
+            .object_size;
 
     EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
@@ -1089,7 +1190,8 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
     HeapPtrArrayBacking *backing =
         context.thread()->make_internal_raw<HeapPtrArrayBacking>(3);
     const ReleaseDescriptor &release =
-        release_descriptor_for(HeapPtrArrayBacking::native_layout);
+        native_layout_descriptor_for(HeapPtrArrayBacking::native_layout)
+            .release;
 
     EXPECT_EQ(3u, backing->value_cell_count());
     EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
@@ -1139,17 +1241,18 @@ TEST(NativeLayoutDescriptor, TestOnlyDescriptorsAreInvalid)
     size_t test_only_index =
         native_layout_descriptor_detail::native_layout_index(
             NativeLayoutId::TestOnly);
-    const auto &release_descriptors =
-        native_layout_descriptor_detail::release_descriptors;
-    const auto &object_size_descriptors =
-        native_layout_descriptor_detail::object_size_descriptors;
-    const ReleaseDescriptor &release = release_descriptors[test_only_index];
-    const ObjectSizeDescriptor &object_size =
-        object_size_descriptors[test_only_index];
+    const auto &descriptors =
+        native_layout_descriptor_detail::native_layout_descriptors;
+    const NativeLayoutDescriptor &descriptor = descriptors[test_only_index];
+    const ReleaseDescriptor &release = descriptor.release;
+    const ObjectSizeDescriptor &object_size = descriptor.object_size;
 
     EXPECT_FALSE(
         native_layout_descriptor_detail::release_descriptor_is_valid(release));
     EXPECT_FALSE(
         native_layout_descriptor_detail::object_size_descriptor_is_valid(
             object_size));
+    EXPECT_FALSE(
+        native_layout_descriptor_detail::native_layout_descriptor_is_valid(
+            descriptor));
 }

@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Implemented |
+| Implementation | Partial; unified descriptor registry implemented, initialized-extent/formula query remains future work |
 | Scope | Descriptor-driven heap record sizing, strong scanning, weak processing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | Weak-unit migration working tree based on `649dca5b` (2026-10-31) |
+| Validated against | Descriptor-unification working tree based on `b45b29e1` (2026-10-31); descriptor sections checked, unrelated layout prose unchanged |
 | Supersedes | N/A |
 
 ## Current Model
@@ -66,6 +66,44 @@ Other Python-visible native objects, such as strings, tuples, lists, dicts, and
 iterators, still have a `Shape`, but their fixed builtin shapes do not produce
 valid inline or overflow storage plans for ordinary attribute storage.
 
+## Unified Descriptor Registry
+
+One NativeLayoutId-indexed table stores the existing two descriptor parts:
+
+```cpp
+struct NativeLayoutDescriptor
+{
+    ReleaseDescriptor release;
+    ObjectSizeDescriptor object_size;
+};
+
+const NativeLayoutDescriptor &
+native_layout_descriptor_for(NativeLayoutId);
+```
+
+Reclamation, strong/weak enumeration, and size queries use this single lookup.
+The separate release/object-size tables and lookup functions are removed, not
+kept as compatibility wrappers. The existing type-directed builders, formulas,
+and callbacks remain unchanged. Combined completeness validation requires both
+parts to be valid and every custom-release layout to have a custom scanner.
+Invalid and TestOnly entries remain invalid; TestOnly is excluded from the
+production completeness requirement.
+
+The composite is 80 bytes on the current 64-bit targets: 56 bytes of release
+metadata plus 24 bytes of object-size metadata, with no additional padding.
+The logical table payload is unchanged from the sum of the previous tables.
+This is static metadata, not a per-object header change. It is a preparatory
+registry refactor, not implementation of initialized extents or the final
+compact formula representation below; no performance improvement is implied.
+
+Descriptor-unification validation (2026-10-31): all 113 focused descriptor,
+reclamation, reference-slot, weak-processing, and GC-adapter tests passed.
+`ninja -C build-debug all check` passed with 2,301 tests passing, and
+`ninja -C build-release all check` passed with 2,290 tests passing. Each full
+suite skipped three tests because runtime JIT tiering is disabled and reported
+one disabled test. These checks validate the registry migration, not production
+copying collection.
+
 ## Release Descriptors
 
 Release descriptors answer one question:
@@ -74,7 +112,7 @@ Release descriptors answer one question:
 How does reclamation release this object's owned references?
 ```
 
-The release table is keyed by `NativeLayoutId` and uses these forms:
+The unified entry's release part uses these forms:
 
 ```cpp
 enum class ReleaseKind : uint8_t {
@@ -218,9 +256,11 @@ Unused inline capacity remains uninitialized. The instance's current `Shape`
 describes inline capacity and attribute storage locations; its slot frontier
 also describes the initialized inline prefix after a completed mutation.
 
-For backing records whose ownership has been transferred during growth, the old
-backing's auxiliary count is set to zero so reclamation does not release moved
-cells.
+For ValueArrayBacking and HeapPtrArrayBacking whose ownership has been
+transferred during growth, the old SMI owning-cell count is set to zero so RC
+reclamation does not release moved cells. This is not an auxiliary-count field.
+After the tracing cutover, retired backings are unreachable garbage; this
+zeroing is removed rather than becoming a copying-GC requirement.
 
 ## Object Size Descriptors
 
@@ -259,9 +299,9 @@ policy chooses any different evacuation destination size separately.
 
 ## Unified Layout Query Design
 
-The separate release and object-size tables should be refactored into one
-descriptor table keyed by `NativeLayoutId`. The table primarily contains
-compact formulas, not one indirect query function per layout. An inline query
+The existing composite registry is the first step. The later query representation
+should primarily contain compact formulas, not one indirect query function per
+layout. An inline query
 evaluates those formulas and returns the complete scalar description needed by
 allocation accounting, copying, tracing, slot repair, and deferred-refcount
 teardown:
@@ -499,7 +539,9 @@ target is exposed only through the separate weak operation described below.
 ### Custom Layout Policy
 
 Some layouts cannot be fully represented by byte extents and one contiguous
-`Value` span. The static descriptor therefore retains cold custom operations:
+`Value` span. The later formula-based descriptor is intended to retain cold
+custom operations. This sketch is its target shape, not the current composite
+registry's field list:
 
 ```cpp
 struct NativeLayoutDescriptor

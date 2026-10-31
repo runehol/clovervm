@@ -31,7 +31,8 @@ TEST(BytesIterator, DescriptorAndSourceSlotAreCompleteAndRewritable)
         thread->make_object_value<Bytes>(std::span(payload)));
     Owned<TValue<BytesIterator>> iterator(
         thread->make_object_value<BytesIterator>(source.value()));
-    const auto &release = release_descriptor_for(NativeLayoutId::BytesIterator);
+    const auto &release =
+        native_layout_descriptor_for(NativeLayoutId::BytesIterator).release;
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
     EXPECT_EQ(Object::native_static_release_count() + 2,
               release.static_release_count);

@@ -314,12 +314,12 @@ source selection, not complete full-heap tracing or reclamation.
    modes. An unreachable old movable weak target survives YoungOnly selection
    but is cleared under Full selection. No runtime header changes or stable-heap
    mark/sweep implementation.
-2. **Unified descriptor lookup (next proposed implementation slice).** Replace
-   the separate release/object-size LUTs with one NativeLayoutId-indexed table
+2. **Unified descriptor lookup (implemented).** The separate release/object-size
+   LUTs are replaced with one NativeLayoutId-indexed table
    whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor.
-   Expose `native_layout_descriptor_for(id)` and migrate all in-repo users; do
-   not retain duplicate compatibility lookup APIs. Preserve the current formulas,
-   callbacks, validation, ownership and object layouts. This is the first bounded
+   exposed by `native_layout_descriptor_for(id)`. All in-repo users are migrated;
+   there are no duplicate compatibility lookup APIs. The current formulas,
+   callbacks, validation, ownership and object layouts are preserved. This is the first bounded
    step toward the existing unified-query design, not its final formula encoding.
    It deliberately does not add an initialized-size field or fabricate a default.
 3. **Live initialized-extent query.** Add the existing NativeLayoutInfo design

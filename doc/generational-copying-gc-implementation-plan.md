@@ -234,6 +234,12 @@ its queries and consumers in bounded slices. Report object extent, initialized
 extent, and strong slots separately; retain the shape-derived `Instance`
 capacity and auxiliary initialized prefix.
 
+The first unification step is implemented: `native_layout_descriptor_for(id)`
+returns one static record containing the existing release and object-size parts.
+Reclamation, scanning, and size-query consumers use it; the separate tables and
+lookup APIs are removed. Initialized byte extents and the compact formula query
+remain subsequent work, not assumed to equal allocated capacity.
+
 Weak processing happens after strong closure. Repair or clear coherent cache
 entries as a unit. Objects in stable storage still expose outgoing references
 to movable objects. Resource-owning layouts need a deliberate destruction and
