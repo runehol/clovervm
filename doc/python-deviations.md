@@ -462,6 +462,19 @@ added.
 
 ## Numeric Semantics
 
+### Float NaNs use a canonical hash
+
+All builtin float NaNs hash to `0x02e3779b97f4a7c1`, regardless of sign, payload,
+or object address. This avoids common small-integer, boolean, zero, and infinity
+hashes and keeps hashes stable across relocation without extra object
+storage. Float subclasses inherit this behavior unless they override `__hash__`.
+Distinct NaN objects remain distinct dictionary keys; lookup checks identity
+before numeric equality. Tuples containing NaNs inherit the hash collisions.
+
+Modern CPython instead uses an object-identity hash for NaNs. CloverVM accepts
+collisions, including potentially quadratic insertion for many distinct NaN
+keys, in exchange for the simpler relocation-safe policy.
+
 ### Base-conversion builtins accept stored integer payloads only
 
 `bin(number, /)`, `oct(number, /)`, and `hex(number, /)` support tagged integers,
