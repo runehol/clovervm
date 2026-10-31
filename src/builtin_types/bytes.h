@@ -14,6 +14,7 @@ namespace cl
 {
     class ClassObject;
     class List;
+    class ModuleObject;
     class String;
     class ThreadState;
     class Tuple;
@@ -132,6 +133,8 @@ namespace cl
     TValue<String> bytes_repr(ThreadState *thread, TValue<Bytes> value);
     BuiltinClassDefinition make_bytes_class(VirtualMachine *vm);
     void install_bytes_class_methods(VirtualMachine *vm);
+    void install_bytes_helpers(VirtualMachine *vm, ModuleObject *module);
+    void install_bytes_python_methods(VirtualMachine *vm, ModuleObject *module);
 
 }  // namespace cl
 

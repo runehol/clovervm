@@ -100,6 +100,22 @@ while the combined `__new__`/`__init__` protocol remains incomplete.
 To close: implement the full combined constructor protocol, then restore the
 CPython allocation/population split.
 
+### `bytes.join` uses stored byte payloads and the existing iterator subset
+
+`bytes.join(iterable, /)` accepts stored bytes (including bytes subclasses) and
+bytearray elements, returning exact bytes. It fully consumes nonexact-sequence
+inputs before validating elements or observing their byte payloads. Later source
+callbacks can therefore mutate earlier bytearrays before they are copied, and
+iterator exceptions take precedence over invalid-element errors. Stored payloads
+bypass conversion, length, and indexing hooks. A singleton exact bytes element
+is returned unchanged; other singleton elements are copied into exact bytes.
+
+General buffers and `bytearray.join` remain unsupported. Like the existing
+iterable materializers, this method has no sequence-only fallback or length-hint
+callbacks; CPython can instead raise from a length hint before consuming items.
+Empty-result interning is unspecified. Checked result lengths use the VM's SMI
+storage limit, and heap exhaustion retains the existing fatal VM heap policy.
+
 ### `bytearray` provides a bounded mutable byte container
 
 `bytearray` supports empty/zero-filled construction, stored bytes/bytearray
