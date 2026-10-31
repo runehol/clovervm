@@ -1,5 +1,6 @@
 #include "builtin_types/bytearray.h"
 #include "builtin_types/binary_split.h"
+#include "builtin_types/binary_strip.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
@@ -651,6 +652,33 @@ namespace cl
         return result.value();
     }
 
+    template <StripMode Mode>
+    [[nodiscard]] static Value native_strip(ThreadState *, Value self,
+                                            Value chars)
+    {
+        constexpr const wchar_t *method = Mode == StripMode::Both   ? L"strip"
+                                          : Mode == StripMode::Left ? L"lstrip"
+                                                                    : L"rstrip";
+        Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
+        if(!chars.is_none() && !has_native_layout<Bytes>(chars) &&
+           !has_native_layout<ByteArray>(chars))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"strip chars must be bytes or bytearray");
+        }
+        Owned<Value> chars_owner(chars);
+        StripRange range;
+        {
+            std::optional<std::string_view> charset;
+            if(!chars.is_none())
+                charset = split_view(chars_owner.value());
+            range = scan_binary_strip(split_view(source.raw_value()), charset,
+                                      Mode);
+        }
+        return copy_split_piece(source.value(), {range.start, range.size})
+            .raw_value();
+    }
+
     [[nodiscard]] static Value
     native_bytearray_splitlines(ThreadState *thread, Value self, Value keepends)
     {
@@ -1210,12 +1238,24 @@ namespace cl
                                      TrustedHandlerEffects::Raise);
         vm->register_trusted_handler(trusted_delitem<ItemKeyKind::Slice>,
                                      TrustedHandlerEffects::Raise);
+        Owned<TValue<Tuple>> strip_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        strip_defaults.extract()->initialize_item_unchecked(0, Value::None());
         Owned<TValue<Tuple>> tab_defaults(
             active_thread()->make_object_value<Tuple>(1));
         tab_defaults.extract()->initialize_item_unchecked(0,
                                                           Value::from_smi(8));
         static constexpr const wchar_t *tab_names[] = {L"tabsize"};
         BuiltinIntrinsicMethod methods[] = {
+            with_defaults(builtin_intrinsic_method(
+                              L"strip", native_strip<StripMode::Both>),
+                          strip_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"lstrip", native_strip<StripMode::Left>),
+                          strip_defaults.value()),
+            with_defaults(builtin_intrinsic_method(
+                              L"rstrip", native_strip<StripMode::Right>),
+                          strip_defaults.value()),
             with_keyword_parameter_names(
                 with_defaults(builtin_intrinsic_method(
                                   L"expandtabs", native_bytearray_expandtabs),

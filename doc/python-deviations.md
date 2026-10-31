@@ -247,6 +247,36 @@ lifetime, not pinning. This is not a buffer protocol, memoryview, or persistent
 export. FileIO `readinto` integration is separate; concurrent/moving collection,
 Python signal callbacks and asynchronous I/O must reassess this contract.
 
+### Binary stripping accepts stored binary charsets
+
+`bytes` and `bytearray` provide positional-only `strip(bytes=None, /)`,
+`lstrip`, and `rstrip`, checked against CPython 3.14.10. Omitted or `None`
+charsets remove only ASCII whitespace (`0x09..0x0d` and `0x20`). Explicit
+stored bytes/bytes-subclass or bytearray payloads are sets of removable bytes,
+including NUL and high-bit bytes; an empty charset removes nothing. Invalid
+charsets raise `TypeError` even for empty receivers. Subclass conversion,
+length, indexing, and iteration hooks are bypassed. General buffer inputs and
+bytearray subclass construction remain unsupported; native diagnostic wording
+may differ from CPython.
+
+Unchanged exact bytes return the receiver; bytes-subclass results are exact
+bytes. Every bytearray result is an independent exact bytearray, including
+unchanged and empty results. Source/charset aliases are supported. Explicit
+binary charset membership uses a fixed 256-entry stack table; the complete
+operation takes linear time in source plus charset length and constant extra
+scan space. The shared `scan_strip<CharT>` boundary scanner also serves strings,
+whose whitespace classification, charset lookup, call behavior, and result
+construction remain unchanged. The synchronous scans cannot allocate, call
+Python, mutate payloads, or poll safepoints. Binary result allocation retains
+only offsets; owned source payloads are reacquired for copying afterward.
+
+Run `python3.14 tests/host/test_binary_strip.py [path/to/clovervm]` with
+CPython 3.14.10 for the supported-input differential trace. Interpreter
+regressions also cover all 256 bytes, aliasing, result identity/independence,
+stored-subclass hook bypass, string scanner behavior, and every-safepoint
+reclamation. No object-layout, protocol, cache, or core execution changes are
+involved.
+
 ### Bytes splitting accepts stored binary payloads and integer limits
 
 `bytes.split` and `bytes.rsplit` implement separator/default-None splitting,

@@ -10,6 +10,7 @@
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/string_iterator.h"
+#include "builtin_types/strip_scan.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/unicode.h"
 #include "object_model/class_object.h"
@@ -1743,76 +1744,56 @@ namespace cl
         return active_thread()->make_object_value<String>(result);
     }
 
-    static bool string_contains_char(std::wstring_view chars, wchar_t ch)
-    {
-        return chars.find(ch) != std::wstring_view::npos;
-    }
-
-    static TValue<String> strip_string(const String *str, bool strip_left,
-                                       bool strip_right,
+    static TValue<String> strip_string(const String *str, StripMode mode,
                                        const String *chars = nullptr)
     {
         std::wstring_view view(str->data, size_t(str->count.extract()));
-        std::wstring_view chars_view;
-        if(chars != nullptr)
+        StripRange range;
+        if(chars == nullptr)
         {
-            chars_view =
-                std::wstring_view(chars->data, size_t(chars->count.extract()));
+            range = scan_strip(view, mode,
+                               [](wchar_t ch) { return is_strip_space(ch); });
         }
-        size_t start = 0;
-        size_t end = view.size();
-        if(strip_left)
+        else
         {
-            while(start < end &&
-                  (chars == nullptr
-                       ? is_strip_space(view[start])
-                       : string_contains_char(chars_view, view[start])))
-            {
-                ++start;
-            }
-        }
-        if(strip_right)
-        {
-            while(end > start &&
-                  (chars == nullptr
-                       ? is_strip_space(view[end - 1])
-                       : string_contains_char(chars_view, view[end - 1])))
-            {
-                --end;
-            }
+            std::wstring_view chars_view(chars->data,
+                                         size_t(chars->count.extract()));
+            range = scan_strip(view, mode, [&](wchar_t ch) {
+                return chars_view.find(ch) != std::wstring_view::npos;
+            });
         }
         return active_thread()->make_object_value<String>(
-            std::wstring(view.substr(start, end - start)));
+            std::wstring(view.substr(range.start, range.size)));
     }
 
     TValue<String> String::strip() const
     {
-        return strip_string(this, true, true);
+        return strip_string(this, StripMode::Both);
     }
 
     TValue<String> String::strip(const String *chars) const
     {
-        return strip_string(this, true, true, chars);
+        return strip_string(this, StripMode::Both, chars);
     }
 
     TValue<String> String::lstrip() const
     {
-        return strip_string(this, true, false);
+        return strip_string(this, StripMode::Left);
     }
 
     TValue<String> String::lstrip(const String *chars) const
     {
-        return strip_string(this, true, false, chars);
+        return strip_string(this, StripMode::Left, chars);
     }
 
     TValue<String> String::rstrip() const
     {
-        return strip_string(this, false, true);
+        return strip_string(this, StripMode::Right);
     }
 
     TValue<String> String::rstrip(const String *chars) const
     {
-        return strip_string(this, false, true, chars);
+        return strip_string(this, StripMode::Right, chars);
     }
 
     static bool classify_string(const String *str,
