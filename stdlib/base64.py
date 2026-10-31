@@ -1,11 +1,13 @@
-"""Bounded Base16, Base32, and Base64 conversion for bytes and ASCII strings.
+"""Bounded Base16, Base32, and Base64 conversion for bytes and bytearray.
 
 Uses stored payloads; subclass length, indexing, and transformation overrides
 are outside this slice, except explicit altchars/map01 length assertions.
-General buffers are unsupported.
+Decoders also accept ASCII strings. General buffers and native buffer-export
+resize guards are unsupported.
 """
 # Wrappers and decoder state machine adapted from CPython v3.14.5,
 # Lib/base64.py and Modules/binascii.c.
+# Bytearray support and callback ordering checked against CPython v3.14.10.
 # Copyright (c) Python Software Foundation.
 # The derived portions are licensed under the PSF License Agreement.
 
@@ -25,6 +27,8 @@ for _i in range(64):
 
 
 def _encode_input(s):
+    if isinstance(s, bytearray):
+        return bytes(s)
     if not isinstance(s, bytes):
         raise TypeError("a bytes-like object is required, not '" +
                         s.__class__.__name__ + "'")
@@ -40,11 +44,22 @@ def _bytes_from_decode_data(s):
                 raise ValueError("string argument should contain only ASCII characters")
             result.append(ch)
         return bytes(result)
-    if isinstance(s, bytes):
+    if isinstance(s, bytes) or isinstance(s, bytearray):
         # Wrapper-level length assertions must still observe subclass hooks.
         return s
     raise TypeError("argument should be a bytes-like object or ASCII string, not '" +
                     s.__class__.__name__ + "'")
+
+
+def _decode_input(s):
+    s = _bytes_from_decode_data(s)
+    # Normalize immutable data without hooks, but keep mutable data live until
+    # the wrapper's option callbacks have run. Option length assertions use
+    # _bytes_from_decode_data directly so they still see bytes-subclass hooks.
+    # Downstream code can reuse the resulting exact bytes without another copy.
+    if isinstance(s, bytes):
+        return bytes.__getitem__(s, slice(None))
+    return s
 
 
 def _translate(s, source, target):
@@ -84,12 +99,18 @@ def b64encode(s, altchars=None):
 
 def b64decode(s, altchars=None, validate=False):
     """Decode bytes or ASCII text, optionally checking the alphabet strictly."""
-    s = _encode_input(_bytes_from_decode_data(s))
+    s = _decode_input(s)
     if altchars is not None:
         altchars = _bytes_from_decode_data(altchars)
         assert len(altchars) == 2, repr(altchars)
+        if isinstance(s, bytearray):
+            s = bytes(s)
         s = _translate(s, _encode_input(altchars), b"+/")
     strict = True if validate else False
+    # With altchars, translation already captured the input before validate.
+    # Otherwise validate's truth test can still mutate the bytearray payload.
+    if isinstance(s, bytearray):
+        s = bytes(s)
     result = []
     quad_pos = 0
     leftchar = 0
@@ -196,8 +217,12 @@ def b16encode(s):
 
 def b16decode(s, casefold=False):
     """Decode Base16 bytes or ASCII text, optionally allowing lowercase."""
-    s = _encode_input(_bytes_from_decode_data(s))
-    if casefold:
+    s = _decode_input(s)
+    # A false flag can also mutate the input; test it before taking a snapshot.
+    fold = True if casefold else False
+    if isinstance(s, bytearray):
+        s = bytes(s)
+    if fold:
         s = _fold_ascii(s)
     digits = []
     for i in range(len(s)):
@@ -238,15 +263,21 @@ def _b32encode(alphabet, s):
 
 
 def _b32decode(table, s, casefold=False, map01=None):
-    s = _encode_input(_bytes_from_decode_data(s))
+    s = _decode_input(s)
     if len(s) % 8:
         raise binascii.Error("Incorrect padding")
     if map01 is not None:
         map01 = _bytes_from_decode_data(map01)
         assert len(map01) == 1, repr(map01)
         # The assertion sees subclass hooks; translation checks stored length.
+        if isinstance(s, bytearray):
+            s = bytes(s)
         s = _translate(s, b"01", b"O" + _encode_input(map01))
-    if casefold:
+    # Translation has already frozen the input when map01 was supplied.
+    fold = True if casefold else False
+    if isinstance(s, bytearray):
+        s = bytes(s)
+    if fold:
         s = _fold_ascii(s)
     end = len(s)
     while end and s[end - 1] == 61:
@@ -266,7 +297,8 @@ def _b32decode(table, s, casefold=False, map01=None):
             result.append((acc >> bits) & 255)
         acc &= (1 << bits) - 1
     # Validate after alphabet errors, and accept unused nonzero bits like CPython.
-    if pads not in (0, 1, 3, 4, 6):
+    # Option callbacks may have resized mutable input after the first check.
+    if len(s) % 8 or pads not in (0, 1, 3, 4, 6):
         raise binascii.Error("Incorrect padding")
     return bytes(result)
 
