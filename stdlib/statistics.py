@@ -1,10 +1,12 @@
 """A statistics subset using CloverVM's existing iterable and numeric protocols.
 
-Median ordering delegates to sorted, including its intentional divergence from
-CPython for NaNs and other inconsistently ordered values. Counting inherits
-dictionary key support, including the current absence of tuple hashing.
+Median and quantile ordering delegate to sorted, including its intentional
+divergence from CPython for NaNs and other inconsistently ordered values.
+Counting inherits dictionary key support.
 Decimal, Fraction and the remaining statistics APIs are outside this module's
-current scope.
+current scope. Quantiles preserve exact integer intermediates and existing
+binary64 arithmetic; weighted float operations can overflow or yield NaNs.
+The number of intervals inherits the existing range/index conversion limits.
 """
 
 # Median algorithms adapted from CPython's Lib/statistics.py at v3.14.5.
@@ -12,7 +14,8 @@ current scope.
 # The derived portions are licensed under the PSF License Agreement.
 
 __all__ = (
-    "StatisticsError", "median", "median_low", "median_high", "mode", "multimode"
+    "StatisticsError", "median", "median_low", "median_high", "mode", "multimode",
+    "quantiles"
 )
 
 
@@ -88,3 +91,48 @@ def multimode(data):
         elif count == best_count:
             result.append(pair[0])
     return result
+
+
+# Quantile algorithm adapted from CPython Lib/statistics.py at v3.14.10.
+# Copyright (c) Python Software Foundation.
+# The derived portions are licensed under the PSF License Agreement.
+def quantiles(data, *, n=4, method='exclusive'):
+    """Return n-1 cut points using exclusive or inclusive interpolation."""
+    if n < 1:
+        raise StatisticsError('n must be at least 1')
+
+    data = sorted(data)
+
+    ld = len(data)
+    if ld < 2:
+        if ld == 1:
+            # Preserve references, without requiring list repetition.
+            result = []
+            for i in range(n - 1):
+                result.append(data[0])
+            return result
+        raise StatisticsError('must have at least one data point')
+
+    if method == 'inclusive':
+        m = ld - 1
+        result = []
+        for i in range(1, n):
+            # divmod is unavailable; both operations use exact builtin integers.
+            j = i * m // n
+            delta = i * m % n
+            interpolated = (data[j] * (n - delta) + data[j + 1] * delta) / n
+            result.append(interpolated)
+        return result
+
+    if method == 'exclusive':
+        m = ld + 1
+        result = []
+        for i in range(1, n):
+            j = i * m // n
+            j = 1 if j < 1 else ld - 1 if j > ld - 1 else j
+            delta = i * m - j * n  # Exact integer arithmetic after clamping.
+            interpolated = (data[j - 1] * (n - delta) + data[j] * delta) / n
+            result.append(interpolated)
+        return result
+
+    raise ValueError('Unknown method: ' + repr(method))
