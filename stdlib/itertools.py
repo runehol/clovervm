@@ -2,7 +2,7 @@
 
 The supported subset provides chain, repeat, islice, starmap, compress,
 filterfalse, takewhile, dropwhile, pairwise, count, accumulate, batched, zip_longest,
-and product.
+product, combinations, combinations_with_replacement, and permutations.
 Integer bounds use operator.index's builtin-int/bool support; custom __index__
 is not supported yet. Limits match the VM's current signed 64-bit platforms.
 count accepts builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
@@ -19,6 +19,9 @@ reproducing CPython 3.14.5's unsafe reentrant exhaustion and counter underflow.
 product eagerly snapshots input pools, retains them after exhaustion, and shares
 those snapshots across repeated dimensions. It does not cache result tuples or
 reproduce CPython's allocation-failure timing.
+The combinatorial iterators also retain snapshots after exhaustion and build
+independent result tuples. They check the reference's index-array size bound,
+but avoid allocating index state for results already known to be empty.
 """
 
 from builtins import bool as _bool, float as _float, int as _int
@@ -31,11 +34,246 @@ __all__ = (
     "chain", "repeat", "islice", "starmap",
     "compress", "filterfalse", "takewhile", "dropwhile",
     "pairwise", "count", "accumulate", "batched", "zip_longest", "product",
+    "combinations", "combinations_with_replacement", "permutations",
 )
 
 _missing = object()
 _SSIZE_MAX = 2**63 - 1
 _SSIZE_MIN = -(2**63)
+
+
+def _combinatorial_args(args, options, name, default=_missing):
+    # Variadic initializers let explicit reinitialization bypass all binding,
+    # just like the native types whose construction lives in __new__.
+    nargs = len(args)
+    remaining = len(options)
+    if nargs + remaining > 2:
+        raise TypeError(name + "() expects at most 2 arguments")
+    # A local sentinel distinguishes even explicit module-private objects from
+    # absence. Each canonical-name lookup runs once, in Argument Clinic order;
+    # iterating/comparing keyword keys would add subclass comparison callbacks.
+    absent = object()
+    if nargs:
+        iterable = args[0]
+    else:
+        iterable = options.get("iterable", absent)
+        if iterable is absent:
+            raise TypeError(name + "() missing required argument iterable")
+        remaining -= 1
+    if nargs == 2:
+        r = args[1]
+    else:
+        r = absent
+        if remaining:
+            r = options.get("r", absent)
+        if r is not absent:
+            remaining -= 1
+        elif default is not _missing:
+            r = default
+        else:
+            raise TypeError(name + "() missing required argument r")
+    if remaining:
+        if nargs and options.get("iterable", absent) is not absent:
+            raise TypeError(name + "() got multiple values for iterable")
+        raise TypeError(name + "() got an unexpected keyword argument")
+    return iterable, r
+
+
+def _combinatorial_index(r):
+    r = _index(r)
+    if r < _SSIZE_MIN or r > _SSIZE_MAX:
+        raise OverflowError("Python int too large to convert to C ssize_t")
+    return r
+
+
+def _combinatorial_size(r):
+    # CPython snapshots the pool before these checks, even for empty results.
+    if r < 0:
+        raise ValueError("r must be non-negative")
+    if r > _SSIZE_MAX // 8:
+        raise MemoryError
+
+
+class combinations:
+    def __init__(self, /, *args, **options):
+        if hasattr(self, "_pool"):
+            return
+        arguments = _combinatorial_args(args, options, "combinations")
+        iterable = arguments[0]
+        r = _combinatorial_index(arguments[1])
+        arguments = None
+        pool = _tuple(iterable)
+        _combinatorial_size(r)
+        stopped = r > len(pool)
+        indices = []
+        if not stopped:
+            indices = list(range(r))
+        self._indices = indices
+        self._r = r
+        self._started = False
+        self._stopped = stopped
+        # Publish the completion marker only after every input callback.
+        self._pool = pool
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._stopped:
+            raise StopIteration
+        pool = self._pool
+        indices = self._indices
+        r = self._r
+        try:
+            if self._started:
+                i = r - 1
+                while i >= 0 and indices[i] == i + len(pool) - r:
+                    i -= 1
+                if i < 0:
+                    raise StopIteration
+                indices[i] += 1
+                j = i + 1
+                while j < r:
+                    indices[j] = indices[j - 1] + 1
+                    j += 1
+            row = []
+            for i in range(r):
+                row.append(pool[indices[i]])
+            result = _tuple(row)
+        except:
+            self._stopped = True
+            raise
+        self._started = True
+        return result
+
+
+class combinations_with_replacement:
+    def __init__(self, /, *args, **options):
+        if hasattr(self, "_pool"):
+            return
+        arguments = _combinatorial_args(
+            args, options, "combinations_with_replacement")
+        iterable = arguments[0]
+        r = _combinatorial_index(arguments[1])
+        arguments = None
+        pool = _tuple(iterable)
+        _combinatorial_size(r)
+        stopped = len(pool) == 0 and r != 0
+        indices = []
+        if not stopped:
+            for i in range(r):
+                indices.append(0)
+        self._indices = indices
+        self._r = r
+        self._started = False
+        self._stopped = stopped
+        self._pool = pool
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._stopped:
+            raise StopIteration
+        pool = self._pool
+        indices = self._indices
+        r = self._r
+        try:
+            if self._started:
+                i = r - 1
+                while i >= 0 and indices[i] == len(pool) - 1:
+                    i -= 1
+                if i < 0:
+                    raise StopIteration
+                following = indices[i] + 1
+                while i < r:
+                    indices[i] = following
+                    i += 1
+            row = []
+            for i in range(r):
+                row.append(pool[indices[i]])
+            result = _tuple(row)
+        except:
+            self._stopped = True
+            raise
+        self._started = True
+        return result
+
+
+class permutations:
+    def __init__(self, /, *args, **options):
+        if hasattr(self, "_pool"):
+            return
+        arguments = _combinatorial_args(args, options, "permutations", None)
+        iterable = arguments[0]
+        r = arguments[1]
+        arguments = None
+        pool = _tuple(iterable)
+        n = len(pool)
+        if r is None:
+            r = n
+        else:
+            # Unlike combinations, CPython rejects non-int __index__ objects.
+            if not _isinstance(r, _int):
+                raise TypeError("Expected int as r")
+            r = _combinatorial_index(r)
+        _combinatorial_size(r)
+        stopped = r > n
+        indices = []
+        cycles = []
+        if not stopped:
+            indices = list(range(n))
+            for i in range(r):
+                cycles.append(n - i)
+        self._indices = indices
+        self._cycles = cycles
+        self._r = r
+        self._started = False
+        self._stopped = stopped
+        self._pool = pool
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._stopped:
+            raise StopIteration
+        pool = self._pool
+        indices = self._indices
+        cycles = self._cycles
+        n = len(pool)
+        r = self._r
+        try:
+            if self._started:
+                i = r - 1
+                while i >= 0:
+                    cycles[i] -= 1
+                    if cycles[i] == 0:
+                        saved = indices[i]
+                        j = i
+                        while j < n - 1:
+                            indices[j] = indices[j + 1]
+                            j += 1
+                        indices[n - 1] = saved
+                        cycles[i] = n - i
+                        i -= 1
+                    else:
+                        j = n - cycles[i]
+                        saved = indices[i]
+                        indices[i] = indices[j]
+                        indices[j] = saved
+                        break
+                if i < 0:
+                    raise StopIteration
+            row = []
+            for i in range(r):
+                row.append(pool[indices[i]])
+            result = _tuple(row)
+        except:
+            self._stopped = True
+            raise
+        self._started = True
+        return result
 
 
 class product:
