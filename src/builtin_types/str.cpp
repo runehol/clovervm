@@ -16,6 +16,7 @@
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -1016,13 +1017,13 @@ namespace cl
     static TValue<String> copy_str_split_piece(TValue<String> source,
                                                StrSplitPiece piece)
     {
-        Owned<TValue<String>> owner(source);
+        // Both callers retain source throughout result construction.
         auto result = active_thread()->make_object_value<String>(
             TValue<SMI>::from_smi(static_cast<int64_t>(piece.size)));
         // Acquire payload pointers after allocation. Only offsets survive
         // the scan; no managed operation occurs during this copy.
         if(piece.size != 0)
-            std::copy_n(owner.extract()->data + piece.start, piece.size,
+            std::copy_n(source.extract()->data + piece.start, piece.size,
                         result.extract()->data);
         return result;
     }
@@ -1033,7 +1034,7 @@ namespace cl
         Owned<TValue<String>> source(TValue<String>::from_value_assumed(self));
         Owned<TValue<String>> separator(
             TValue<String>::from_value_assumed(sep_value));
-        std::vector<StrSplitPiece> pieces;
+        absl::InlinedVector<StrSplitPiece, 8> pieces;
         {
             auto view = string_view(source.value());
             auto sep = string_view(separator.value());

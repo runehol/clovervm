@@ -60,6 +60,18 @@ def check_overlaps_and_width():
             assert source.rpartition(sep) == ('', '', source)
 
 
+def check_many_pieces():
+    # Cover offset storage both below and above its inline capacity.
+    for count in (7, 8, 9, 64):
+        for sep in (':', repeat_search_text('\u0100\U00010000', 9)):
+            source = repeat_search_text('field' + sep, count) + 'last'
+            for parts in (source.split(sep), source.rsplit(sep)):
+                assert len(parts) == count + 1
+                for index in range(count):
+                    assert parts[index] == 'field'
+                assert parts[-1] == 'last'
+
+
 class SearchString(str):
     def __len__(self):
         raise AssertionError
@@ -99,4 +111,5 @@ def check_subclass_and_errors():
 
 check_wide_separators()
 check_overlaps_and_width()
+check_many_pieces()
 check_subclass_and_errors()
