@@ -1,4 +1,4 @@
-"""Bounded Base16, Base32, Base64, and Base85 conversion for bytes and bytearray.
+"""Bounded Base16, Base32, Base64, Base85, and Ascii85 conversion for bytes and bytearray.
 
 Uses stored payloads; subclass length, indexing, and transformation overrides
 are outside this slice, except explicit altchars/map01 length assertions.
@@ -8,7 +8,7 @@ resize guards are unsupported.
 # Wrappers and decoder state machine adapted from CPython v3.14.5,
 # Lib/base64.py and Modules/binascii.c.
 # Bytearray support and callback ordering checked against CPython v3.14.10.
-# Base85 semantics referenced to CPython v3.14.10, Lib/base64.py.
+# Base85/Ascii85 semantics referenced to CPython v3.14.10, Lib/base64.py.
 # Copyright (c) Python Software Foundation.
 # The derived portions are licensed under the PSF License Agreement.
 
@@ -17,7 +17,8 @@ import binascii
 __all__ = ["b64encode", "b64decode", "standard_b64encode",
            "standard_b64decode", "urlsafe_b64encode", "urlsafe_b64decode",
            "b16encode", "b16decode", "b32encode", "b32decode",
-           "b32hexencode", "b32hexdecode", "b85encode", "b85decode"]
+           "b32hexencode", "b32hexdecode", "b85encode", "b85decode",
+           "a85encode", "a85decode"]
 
 _alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _decode_table = []
@@ -332,8 +333,8 @@ for _i in range(85):
     _b85_decode_table[_b85alphabet[_i]] = _i
 
 
-def b85encode(b, pad=False):
-    """Encode stored bytes using Base85, optionally keeping zero padding."""
+def _85encode(b, alphabet, pad, ascii85=False, foldspaces=False):
+    # Snapshot before any option callbacks; all words come from this payload.
     b = _encode_input(b)
     result = []
     length = len(b)
@@ -341,13 +342,31 @@ def b85encode(b, pad=False):
         word = 0
         for j in range(4):
             word = (word << 8) | (b[i + j] if i + j < length else 0)
+        if ascii85:
+            if not word:
+                result.append(122)
+                continue
+            # Capture one truth test per nonzero word, like the other wrappers.
+            fold = True if foldspaces else False
+            if fold and word == 538976288:
+                result.append(121)
+                continue
         for divisor in (52200625, 614125, 7225, 85, 1):
-            result.append(_b85alphabet[word // divisor % 85])
+            result.append(alphabet[word // divisor % 85])
     padding = (-length) % 4
-    # CPython only tests pad for a partial group, after consuming the input.
+    # Only partial groups test pad, after consuming all words and foldspaces.
     if padding and not pad:
+        if ascii85 and result[-1] == 122:
+            # A partial zero group must expand z before dropping tail digits.
+            result.pop()
+            result.extend((33, 33, 33, 33, 33))
         result = result[:-padding]
     return bytes(result)
+
+
+def b85encode(b, pad=False):
+    """Encode stored bytes using Base85, optionally keeping zero padding."""
+    return _85encode(b, _b85alphabet, pad)
 
 
 def b85decode(b):
@@ -370,6 +389,96 @@ def b85decode(b):
         for shift in (24, 16, 8, 0):
             result.append((acc >> shift) & 255)
     padding = (-length) % 5
+    if padding:
+        result = result[:-padding]
+    return bytes(result)
+
+
+_a85alphabet = b"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstu"
+
+
+def a85encode(b, *, foldspaces=False, wrapcol=0, pad=False, adobe=False):
+    """Encode stored bytes as Ascii85, with optional folding, wrapping and framing."""
+    result = _85encode(b, _a85alphabet, pad, True, foldspaces)
+    if adobe:
+        result = b'<~' + result
+    if wrapcol:
+        wrapcol = max(2 if adobe else 1, wrapcol)
+        # Validate before iterating, even for empty output. Bound native range
+        # and slice arguments by the output size, allowing huge builtin widths.
+        from operator import index as _index
+        step = _index(wrapcol)
+        length = len(result)
+        if step < 0:
+            step = -1
+        elif step > length:
+            step = length if length else 1
+        chunks = []
+        for i in range(0, length, step):
+            end = i + wrapcol
+            if end is not None:
+                end = _index(end)
+                if end > length:
+                    end = length
+                elif end < -length:
+                    end = 0
+            chunks.append(result[i:end])
+        if adobe:
+            if len(chunks[-1]) + 2 > wrapcol:
+                chunks.append(b'')
+        result = b'\n'.join(chunks)
+    if adobe:
+        result += b'~>'
+    return result
+
+
+def a85decode(b, *, foldspaces=False, adobe=False, ignorechars=b' \t\n\r\v'):
+    """Decode Ascii85 bytes or ASCII text, allowing selected ignored characters."""
+    b = _decode_input(b)
+    if adobe:
+        # Adobe's truth callback sees live mutable data; framing then freezes it.
+        b = _encode_input(b)
+        if not b.endswith(b'~>'):
+            raise ValueError("Ascii85 encoded byte sequences must end with b'~>'")
+        if b.startswith(b'<~'):
+            b = b[2:-2]
+        else:
+            b = b[:-2]
+    else:
+        b = _encode_input(b)
+    result = []
+    acc = 0
+    count = 0
+    # Four literal sentinel digits preserve short-tail overflow validation.
+    # Scanning this immutable copy isolates subsequent callbacks from input edits.
+    b = b + b'uuuu'
+    for i in range(len(b)):
+        ch = b[i]
+        if 33 <= ch <= 117:
+            acc = acc * 85 + ch - 33
+            count += 1
+            if count == 5:
+                if acc > 4294967295:
+                    raise ValueError('Ascii85 overflow')
+                for shift in (24, 16, 8, 0):
+                    result.append((acc >> shift) & 255)
+                acc = 0
+                count = 0
+        elif ch == 122:
+            if count:
+                raise ValueError('z inside Ascii85 5-tuple')
+            result.extend((0, 0, 0, 0))
+        else:
+            fold = True if foldspaces else False
+            if fold and ch == 121:
+                if count:
+                    raise ValueError('y inside Ascii85 5-tuple')
+                result.extend((32, 32, 32, 32))
+            elif ch in ignorechars:
+                continue
+            else:
+                raise ValueError('Non-Ascii85 digit found: ' + chr(ch))
+    padding = 4 - count
     if padding:
         result = result[:-padding]
     return bytes(result)

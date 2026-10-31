@@ -232,6 +232,10 @@ namespace cl
                 return operator_walk_raise_type_error(
                     thread, L"unsupported operand type for unary arithmetic");
 
+            case OperatorDispatchTableId::Contains:
+                return operator_walk_raise_type_error(
+                    thread, L"argument is not a container or iterable");
+
             case OperatorDispatchTableId::GetItem:
                 return operator_walk_raise_type_error(
                     thread, L"object is not subscriptable");
@@ -260,7 +264,6 @@ namespace cl
             case OperatorDispatchTableId::CompareLe:
             case OperatorDispatchTableId::CompareGt:
             case OperatorDispatchTableId::CompareGe:
-            case OperatorDispatchTableId::Contains:
             case OperatorDispatchTableId::Truthiness:
             case OperatorDispatchTableId::Count:
                 break;

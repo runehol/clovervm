@@ -268,6 +268,22 @@ TEST(PythonSourceFiles, Base64BytearraySurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, Ascii85SurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/test_ascii85_module.py",
+                           "tests/python/test_ascii85_errors.py",
+                           "tests/python/test_ascii85_callbacks.py",
+                           "tests/python/test_ascii85_limits.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(PythonSourceFiles, Base85SurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_base85_module.py",
