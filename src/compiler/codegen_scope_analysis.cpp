@@ -319,7 +319,10 @@ namespace cl
                 {
                     int32_t binding_idx = find_binding_idx(analysis, name);
                     assert(binding_idx >= 0);
-                    if(checks_presence &&
+                    // Unreachable annotations must not change entry storage,
+                    // and initially bound slots already contain valid values.
+                    if(checks_presence && state.reachable &&
+                       binding.initial_presence != Presence::Present &&
                        state.local_presence[size_t(binding_idx)] !=
                            Presence::Present &&
                        state.may_be_entry_value[size_t(binding_idx)])

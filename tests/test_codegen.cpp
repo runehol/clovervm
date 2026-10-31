@@ -2484,6 +2484,32 @@ TEST(Codegen, unreachable_normal_joins_do_not_request_gc_entry_clears)
     }
 }
 
+TEST(Codegen, unreachable_accesses_do_not_request_entry_clears)
+{
+    const wchar_t *sources[] = {
+        L"def f(x):\n    return x\n    x\n",
+        L"def f(x):\n    return x\n    del x\n",
+        L"def f(x):\n    return x\n    if x:\n        y = 1\n",
+        L"def f():\n    return None\n    x\n    x = 1\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        // Unreachable accesses still receive annotations, but must not
+        // request a clear that executes before reachable instructions.
+        EXPECT_EQ(std::string::npos,
+                  bytecode_str_from_file(source).find("ClearLocal "));
+    }
+}
+
+TEST(Codegen, deleting_a_parameter_keeps_checks_without_clearing_its_argument)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def f(x, flag):\n    if flag:\n        del x\n    return x\n");
+    EXPECT_EQ(std::string::npos, actual.find("ClearLocal "));
+    EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked p0"));
+}
+
 TEST(Codegen, gc_entry_clear_does_not_make_a_local_semantically_bound)
 {
     std::string actual = bytecode_str_from_file(

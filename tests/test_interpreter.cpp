@@ -9482,6 +9482,49 @@ assert obj.__class__ is Valid
     EXPECT_FALSE(runner.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, unreachable_accesses_do_not_destroy_arguments)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+def unread(x):
+    return x
+    x
+def undeleted(x):
+    return x
+    del x
+def unbranched(x):
+    return x
+    if x:
+        y = 1
+def conditional_delete(x, flag):
+    if flag:
+        del x
+    return x
+def repeated_delete(x):
+    del x
+    del x
+assert unread(7) == 7
+assert undeleted(8) == 8
+assert unbranched(9) == 9
+assert conditional_delete(10, False) == 10
+try:
+    conditional_delete(10, True)
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("deleted argument must be unbound")
+try:
+    repeated_delete(11)
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("deleting an unbound argument must fail")
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
 TEST(Interpreter, selective_gc_entry_clears_preserve_bindings_and_walrus_values)
 {
     test::VmTestContext context;
