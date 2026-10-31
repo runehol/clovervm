@@ -116,6 +116,25 @@ callbacks; CPython can instead raise from a length hint before consuming items.
 Empty-result interning is unspecified. Checked result lengths use the VM's SMI
 storage limit, and heap exhaustion retains the existing fatal VM heap policy.
 
+### `str.join` uses stored strings and the existing iterator subset
+
+`str.join(iterable, /)` accepts stored strings, including subclasses, and
+returns exact str. Exact list/tuple inputs use their native contents; subclasses
+and other supported iterables are fully consumed before element validation.
+Iteration errors therefore take precedence over invalid-element errors. Stored
+payloads bypass conversion, length, and indexing hooks. A singleton exact str
+is returned unchanged; a singleton subclass is copied into exact str.
+
+As with `bytes.join`, sequence-only fallback and length-hint callbacks remain
+unsupported. Iterator-return validation retains the existing runtime limitation:
+a custom `__iter__` returning a list can be consumed instead of being rejected
+as CPython requires. This slice does not change generic iterator acquisition.
+Empty-result interning is unspecified. Both methods share native
+checked sizing, ownership and copying: lengths are bounded by SMI storage and
+allocation-byte arithmetic, and payload views are reacquired after allocation.
+Heap exhaustion retains the existing fatal VM heap policy. Bytes iteration is
+not introduced by this method; acceptance follows existing iterator support.
+
 ### `bytearray` provides a bounded mutable byte container
 
 `bytearray` supports empty/zero-filled construction, stored bytes/bytearray

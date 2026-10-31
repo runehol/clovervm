@@ -20,6 +20,7 @@ namespace cl
 
     class ClassObject;
     class List;
+    class ModuleObject;
     class Shape;
     class ThreadState;
     class Tuple;
@@ -153,8 +154,6 @@ namespace cl
         [[nodiscard]] TValue<String> lstrip(const String *chars) const;
         [[nodiscard]] TValue<String> rstrip() const;
         [[nodiscard]] TValue<String> rstrip(const String *chars) const;
-        [[nodiscard]] TValue<String> join_list(const List *sequence) const;
-        [[nodiscard]] TValue<String> join_tuple(const Tuple *sequence) const;
         bool isascii() const;
         bool isalpha() const;
         bool isdigit() const;
@@ -236,6 +235,8 @@ namespace cl
     try_make_string_from_utf8(ThreadState *thread, std::string_view bytes);
     BuiltinClassDefinition make_str_class(VirtualMachine *vm);
     void install_str_class_methods(VirtualMachine *vm);
+    void install_str_helpers(VirtualMachine *vm, ModuleObject *module);
+    void install_str_python_methods(VirtualMachine *vm, ModuleObject *module);
 
     static inline bool string_eq(TValue<String> a, TValue<String> b)
     {

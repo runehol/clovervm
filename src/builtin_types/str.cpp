@@ -1,7 +1,9 @@
 #include "builtin_types/str.h"
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
+#include "builtin_types/join.h"
 #include "builtin_types/list.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
@@ -9,6 +11,7 @@
 #include "builtin_types/tuple.h"
 #include "builtin_types/unicode.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/native_function.h"
 #include "object_model/owned.h"
 #include "object_model/value_string.h"
@@ -1231,40 +1234,34 @@ namespace cl
             .raw_value();
     }
 
-    static bool is_string_sequence(Value value)
-    {
-        return has_native_layout<List>(value) ||
-               has_native_layout<Tuple>(value);
-    }
-
-    static Value native_str_join(ThreadState *thread, Value self,
-                                 Value sequence)
+    [[nodiscard]] static Value
+    native_str_join_sequence(ThreadState *thread, Value self, Value source)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"join"));
-        if(!is_string_sequence(sequence))
+        if(source.is_ptr())
         {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"str.join expects a list or tuple");
+            auto *cls = source.get_ptr<Object>()->get_shape()->get_class();
+            auto *vm = thread->get_machine();
+            if(cls == vm->list_class() || cls == vm->tuple_class())
+                return source;
         }
+        return Value::None();
+    }
 
-        if(has_native_layout<List>(sequence))
-        {
-            List *list = sequence.get_ptr<List>();
-            for(size_t idx = 0; idx < list->size(); ++idx)
-            {
-                CL_PROPAGATE_EXCEPTION(require_string_argument(
-                    list->item_unchecked(idx), L"sequence item must be str"));
-            }
-            return self.get_ptr<String>()->join_list(list).raw_value();
-        }
-
-        Tuple *tuple = sequence.get_ptr<Tuple>();
-        for(size_t idx = 0; idx < tuple->size(); ++idx)
-        {
-            CL_PROPAGATE_EXCEPTION(require_string_argument(
-                tuple->item_unchecked(idx), L"sequence item must be str"));
-        }
-        return self.get_ptr<String>()->join_tuple(tuple).raw_value();
+    [[nodiscard]] static Value
+    native_str_join_finish(ThreadState *thread, Value self, Value sequence)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"join"));
+        return join_sequence<String, cl_wchar>(
+            thread, TValue<String>::from_value_assumed(self), sequence,
+            [](Value item) -> std::optional<std::span<const cl_wchar>> {
+                if(!has_native_layout<String>(item))
+                    return std::nullopt;
+                auto view =
+                    string_view(TValue<String>::from_value_assumed(item));
+                return std::span<const cl_wchar>(view.data(), view.size());
+            },
+            L"str instance", L"join() result is too long for a Python string");
     }
 
     static Value native_str_isalpha(ThreadState *thread, Value self)
@@ -1741,41 +1738,6 @@ namespace cl
         return strip_string(this, false, true, chars);
     }
 
-    static void append_join_item(std::wstring &result,
-                                 std::wstring_view separator, bool need_sep,
-                                 Value item)
-    {
-        if(need_sep)
-        {
-            result.append(separator);
-        }
-        result.append(string_view(TValue<String>::from_value_assumed(item)));
-    }
-
-    TValue<String> String::join_list(const List *sequence) const
-    {
-        std::wstring_view separator(data, size_t(count.extract()));
-        std::wstring result;
-        for(size_t idx = 0; idx < sequence->size(); ++idx)
-        {
-            append_join_item(result, separator, idx != 0,
-                             sequence->item_unchecked(idx));
-        }
-        return active_thread()->make_object_value<String>(result);
-    }
-
-    TValue<String> String::join_tuple(const Tuple *sequence) const
-    {
-        std::wstring_view separator(data, size_t(count.extract()));
-        std::wstring result;
-        for(size_t idx = 0; idx < sequence->size(); ++idx)
-        {
-            append_join_item(result, separator, idx != 0,
-                             sequence->item_unchecked(idx));
-        }
-        return active_thread()->make_object_value<String>(result);
-    }
-
     static bool classify_string(const String *str,
                                 int (*predicate)(std::wint_t))
     {
@@ -2102,8 +2064,6 @@ namespace cl
                                              L"Return a right-stripped copy."),
                     chars_names, 1, 1),
                 str_strip_defaults.value()),
-            builtin_intrinsic_method(L"join", native_str_join,
-                                     L"Join list or tuple of strings."),
             builtin_intrinsic_method(
                 L"isalpha", native_str_isalpha,
                 L"Return whether all chars are alphabetic."),
@@ -2240,4 +2200,37 @@ namespace cl
         return 0;
     }
 
+    void install_str_helpers(VirtualMachine *vm, ModuleObject *module)
+    {
+        BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_str_join_sequence",
+                                     native_str_join_sequence),
+            builtin_intrinsic_method(L"_clover_str_join_finish",
+                                     native_str_join_finish)};
+        for(const auto &helper: helpers)
+        {
+            auto function = unwrap_bootstrap_expected(
+                vm, make_intrinsic_function(vm, helper), "creating str helper");
+            unwrap_bootstrap_expected(
+                vm,
+                module->set_own_property(
+                    vm->get_or_create_interned_string_value(helper.name),
+                    function.raw_value()),
+                "installing str helper");
+        }
+    }
+
+    void install_str_python_methods(VirtualMachine *vm, ModuleObject *module)
+    {
+        Value function = module->get_own_property(
+            vm->get_or_create_interned_string_value(L"_clover_str_join"));
+        if(!has_native_layout<Function>(function))
+            fatal("missing str Python method");
+        bool stored = vm->str_class()->define_own_property(
+            vm->get_or_create_interned_string_value(L"join"), function,
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+                descriptor_flag(DescriptorFlag::StableSlot));
+        assert(stored);
+        (void)stored;
+    }
 }  // namespace cl
