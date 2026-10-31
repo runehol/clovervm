@@ -211,8 +211,6 @@ namespace cl
             roots.add_conservative_value(*slot);
         }
 
-        roots.add_conservative_value(record.accumulator_or_not_present);
-        roots.add_conservative_value(record.active_code_object_or_not_present);
         auto add_root = [&](HeapReferenceSlot slot) {
             if(HeapObject *object = slot.load_pointer())
             {
@@ -221,6 +219,7 @@ namespace cl
                 roots.add_conservative_value(value);
             }
         };
+        thread.visit_published_root_slots(add_root);
         thread.visit_native_root_slots(add_root);
         thread.visit_persistent_root_slots(add_root);
     }

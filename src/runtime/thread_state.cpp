@@ -58,6 +58,14 @@ namespace cl
         visitor(HeapReferenceSlot(&pending_exception.stop_iteration_value));
     }
 
+    void ThreadState::visit_published_root_slots(StrongSlotVisitor visitor)
+    {
+        visitor(HeapReferenceSlot(
+            &safepoint_scan_record_.accumulator_or_not_present));
+        visitor(HeapReferenceSlot(
+            &safepoint_scan_record_.active_code_object_or_not_present));
+    }
+
     PendingException::PendingException()
         : object(Optional<TValue<Exception>>::none()),
           stop_iteration_value(Value::not_present())
@@ -159,15 +167,16 @@ namespace cl
             active_code_object_or_not_present;
     }
 
-    void ThreadState::handle_safepoint(Value accumulator, Value *fp,
-                                       const uint8_t *pc,
-                                       CodeObject *code_object)
+    Value ThreadState::handle_safepoint(Value accumulator, Value *fp,
+                                        const uint8_t *pc,
+                                        CodeObject *code_object)
     {
         machine->run_safepoint_callback_for_testing(
             this, accumulator, fp, code_object,
             code_object->offset_for_interpreted_pc(pc), safepoint_scan_record_);
         NoActiveThreadScope no_active_thread;
         machine->complete_safepoint();
+        return safepoint_scan_record_.accumulator_or_not_present;
     }
 
     static Value *entry_frame_pointer(Value *caller_fp, CodeObject *code_object)

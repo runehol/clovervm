@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4b.3 working tree based on `b3dfa048` (2026-10-30) |
+| Validated against | Slice 4c working tree based on `ec30af7b` (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -320,10 +320,20 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
   reaches child objects, and restored child-cell rewrites leave class/name
   identities and map lookups unchanged. Nursery collections use remembered
   owners; initialization and mutation barriers remain in stage 5.
-- **4c: Published interpreter state.** Expose writable accumulator publication,
-  protect saved publication state across native reentry, and reload before
-  dispatch resumes. Keeping code objects non-moving does not remove their
-  tracing requirement.
+- **4c: Published interpreter state (implemented).**
+  `ThreadState::visit_published_root_slots` exposes the initialized accumulator
+  and active-code cells, not the conservative stack range or native frontier.
+  Current reclamation consumes this visitor read-only. The live-accumulator
+  interpreter safepoint slow path assigns the updated accumulator returned by
+  `handle_safepoint` before dispatch resumes; the dead-accumulator path publishes
+  `not_present()` and discards the return value. `NativeHandleRootRegion`
+  registers its saved accumulator and active-code cells with `ScopedRoot`,
+  so nested reentry restores updated values. Code objects remain non-moving
+  but still require tracing; no PC rebasing is introduced. Controlled rewrite
+  tests cover resumed execution,
+  nested restoration, and RC-neutral writes. AArch64 `Uninitialized` emission
+  now writes `not_present()` so recovery cannot publish stale register bits.
+  No evacuation or new safepoints.
 - **4d: Precise frame roots.** Distinguish parameters, locals, temporaries,
   saved code objects, and continuation operands from native PCs, frame pointers,
   padding, and scalar metadata.

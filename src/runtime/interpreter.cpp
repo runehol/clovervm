@@ -537,7 +537,8 @@ namespace cl
         thread->publish_safepoint_scan_record(
             lowest_live_stack_slot_for_safepoint(fp, pc, code_object),
             accumulator, Value::from_oop(code_object));
-        thread->handle_safepoint(accumulator, fp, pc, code_object);
+        accumulator =
+            thread->handle_safepoint(accumulator, fp, pc, code_object);
 
         START(0);
         COMPLETE();

@@ -36,6 +36,11 @@ namespace cl
           previous_active_code_object_or_not_present(
               thread->safepoint_scan_record()
                   .active_code_object_or_not_present),
+          previous_accumulator_root(
+              *thread, HeapReferenceSlot(&previous_accumulator_or_not_present)),
+          previous_active_code_object_root(
+              *thread,
+              HeapReferenceSlot(&previous_active_code_object_or_not_present)),
           begin(nullptr), end(nullptr)
     {
         assert(thread != nullptr);

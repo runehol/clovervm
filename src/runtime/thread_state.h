@@ -117,6 +117,10 @@ namespace cl
         // state and scoped native roots have separate enumeration paths.
         void visit_persistent_root_slots(StrongSlotVisitor visitor);
 
+        // Published accumulator and active code only, not the conservative
+        // stack range. Resume must reload a live accumulator after collection.
+        void visit_published_root_slots(StrongSlotVisitor visitor);
+
         void refresh_class_for_native_layout_cache();
         void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls);
         void cache_exact_dict_shapes(Shape *string_key_shape,
@@ -214,8 +218,8 @@ namespace cl
         void publish_safepoint_scan_record(
             Value *lowest_live_stack_slot, Value accumulator_or_not_present,
             Value active_code_object_or_not_present = Value::not_present());
-        void handle_safepoint(Value accumulator, Value *fp, const uint8_t *pc,
-                              CodeObject *code_object);
+        Value handle_safepoint(Value accumulator, Value *fp, const uint8_t *pc,
+                               CodeObject *code_object);
         const SafepointScanRecord &safepoint_scan_record() const
         {
             return safepoint_scan_record_;
