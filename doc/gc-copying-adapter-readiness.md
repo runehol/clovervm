@@ -52,40 +52,43 @@ encoding. Stable is not synonymous with immortal or interned.
 ## Proposed Transitional Header
 
 The accepted representation is now specified in
-[GC Object Header](gc-object-header.md). The first RC transition retains the
-current eight-byte prefix and appends one eight-byte GC word. Normal generation
-is an actual byte at offset eight: Young `0x01`, Old `0x02`, OldRemembered `0x03`.
-All current allocations initially use Old, with no nursery or copying enabled.
+[GC Object Header](gc-object-header.md). The RC transition stays eight bytes:
+one byte of GC state, one byte of native-layout ID, two bytes of aux count, and
+four bytes of RC. Generation occupies bits 0--2 of the state byte and RC
+lifecycle bits 3--4. All current allocations initially use Old/Normal, with no
+nursery or copying enabled.
 
-A forwarding store replaces that GC word with an unmodified non-null target
+A forwarding store would replace the entire header with an unmodified non-null target
 pointer. A low-state-byte test, `(byte & 0x07) == 0`, recognizes all pointer byte
 encodings; it is not a whole-byte comparison against one pointer tag. There are
-no generation bits retained alongside a forwarding pointer. This supersedes
-both the unpacked 24-byte candidate and the generation-preserving two-bit packed
-candidate previously described here.
+no generation bits retained alongside a forwarding pointer. RC is also
+overwritten, so this slice does not enable production forwarding of RC objects.
+Any future RC/copying overlap requires forwarding-aware ZCT/epoch/reclamation
+handling before source RC reads; root repair alone is insufficient. The
+accepted tracing-cutover staging remains unchanged. This supersedes the sixteen-/twenty-four-byte candidates and the
+generation-preserving packed candidate previously described here.
 
 After RC retirement, the final eight-byte normal header has a one-byte GC state,
 one reserved byte, a 16-bit native-layout ID, and a 32-bit aux count. Forwarding
 overwrites that entire header. The final wider fields require an explicit later
-migration; the first RC transition preserves the legacy prefix widths/offsets.
+migration; the first RC transition preserves the native-ID/aux widths but moves
+their offsets and RC's offset to fit the new state byte.
 Source selection, layout inspection, and weak resolution must be compatible
 with loss of the normal source metadata after forwarding. This does not approve
 production forwarding or settle the remaining relocation/lifetime gates.
 
-Verify the sixteen-byte size and eight-byte alignment. The allocator rounds
-reservations to 32-byte strides: Float grows from 32 to 40 bytes, making its
-stride 64 rather than 32. Measure construction and representative record/slab
-occupancy before and after. Header growth also changes Object field offsets
-used by the JIT; audit offset-derived code and structural tests, not only
-`sizeof` assertions. Marking can continue using its existing temporary side set.
+Verify the eight-byte size and alignment, RC offset four, and descriptor/JIT
+metadata offsets. Float remains 32 bytes with a 32-byte stride. Measure
+construction and representative record/slab occupancy before and after rather
+than assuming all derived layouts are unaffected by the alignment change.
+Marking can continue using its existing temporary side set.
 No movement-pin or lock protocol is introduced; stable placement and slab
 reclamation pins retain their separate contracts.
 
 ### Why This Helps Shape-Derived Queries
 
 `Instance::object_size_in_bytes()` reads `get_shape()->get_inline_slot_capacity()`.
-The first transitional representation leaves the legacy metadata and payload
-intact, but the final representation overwrites normal header metadata. Layout
+The transitional and final forwarding representations overwrite normal header metadata. Layout
 queries must resolve forwarded shapes before requiring their normal header;
 they must not depend on generation/native-ID/aux fields remaining available in
 the source. No recursive tracing of the shape's outgoing references is needed
@@ -310,7 +313,7 @@ source selection, not complete full-heap tracing or reclamation.
    empty span. Raw backings report their full extent for both sizes and no
    ordinary pointers. Neither size is optional. No retired-backing audit or new
    historical-reservation field is part of this work.
-4. **Transitional header.** Implement the accepted sixteen-byte
+4. **Transitional header.** Implement the accepted eight-byte
    [header encoding](gc-object-header.md), preserve RC,
    default current allocations Old, test independent GC state, and measure
    header/stride/construction costs. Do not publish real forwarding in RC mode.

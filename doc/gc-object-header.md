@@ -5,10 +5,10 @@
 | Document type | Architecture contract |
 | Status | Accepted design; not implemented |
 | Implementation | Current HeapObject remains the eight-byte RC/native-layout header |
-| Scope | Final eight-byte header, byte-sized GC state, destructive forwarding, and relationship to the RC transition |
+| Scope | Eight-byte transitional and final headers, byte-sized GC state, and destructive forwarding |
 | Owning layers | Object model owns header access; memory owns construction/placement; GC owns forwarding publication |
 | Validated against | Header design agreed 2026-10-31; source inspected at `1f56180b` |
-| Supersedes | Earlier separate forwarding-bit and generation-preserving packed-word proposals in the copying-adapter investigation |
+| Supersedes | Earlier sixteen-byte transition, separate forwarding-bit, and generation-preserving packed-word proposals |
 
 ## Final Eight-Byte Layout
 
@@ -71,8 +71,9 @@ bool forwarded = (state_byte & 0x07) == 0;
 // Forwarded byte values: 0x00, 0x08, 0x10, ... 0xf8.
 ```
 
-The other low-three-bit codes and the upper five normal-state bits are reserved
-for future definitions. No normal state may use a low-three-bit-zero encoding,
+The other low-three-bit codes are reserved. During the RC transition bits 3--4
+hold RC lifecycle and bits 5--7 are reserved; after RC retirement the upper five
+normal-state bits are available for future definitions. No normal state may use a low-three-bit-zero encoding,
 regardless of future flags. Unassigned normal encodings are not silently treated
 as a valid generation.
 
@@ -125,33 +126,57 @@ forwarded headers. A separate nullable target coexisting with generation is not
 the final representation. Returning to normal state requires initializing a
 normal header, not clearing a pointer while preserving nonexistent source flags.
 
-## Relationship To The Sixteen-Byte RC Transition
+## Eight-Byte RC Transition
 
-Do not remove RC before tracing replaces its lifetime contract. The first
-transitional header retains the existing eight-byte prefix, including its
-current native-ID/aux widths and field offsets, and appends one eight-byte GC
-word. In normal state that second word has the byte-sized `gc_state` at offset
-eight and zeroed reserved bytes. In forwarded state the second word holds the
-unmodified target pointer. The total is sixteen bytes, aligned to eight.
+Keep RC until tracing replaces its lifetime contract, but retain the current
+eight-byte total size rather than adding a second word:
 
-This replaces the earlier proposal to retain generation in two low bits beside
-a forwarding pointer. Generation is not preserved in the forwarded GC word.
-The legacy prefix remains physically intact during the transition, but new GC
-code must not depend on it to evade the final destructive-forwarding contract.
-No production forwarding is enabled merely by adding the word.
+| Offset | Bytes | Transitional field |
+|---:|---:|---|
+| 0 | 1 | `uint8_t gc_state`: generation plus RC lifecycle |
+| 1 | 1 | Current 8-bit native-layout ID |
+| 2 | 2 | Current 16-bit auxiliary count |
+| 4 | 4 | `int32_t refcount` |
 
-Removing the legacy RC prefix and migrating native-layout/aux access into the
-final eight-byte normal representation is a later, explicit cutover. The
-16-/32-bit final field widths do not silently widen the legacy fields in the
-first transition slice. Widening requires auditing declarations, accessors,
+The header is eight-byte aligned. RC moves from offset zero to four; native ID
+moves from five to one, and aux count from six to two. Payload offsets must be
+audited rather than assumed to move: Float remains 32 bytes with a 32-byte
+allocator stride, unlike the superseded sixteen-byte transition.
+
+The existing lifecycle state remains necessary. Pack it into the state byte:
+
+```text
+bits 0--2: generation (Young = 1, Old = 2, OldRemembered = 3)
+bits 3--4: RC lifecycle (Normal = 0, InZct = 1, Reclaiming = 2, Dead = 3)
+bits 5--7: reserved, initially zero
+```
+
+Generation access loads the actual byte and masks its low three bits. Lifecycle
+access loads that same byte and extracts bits 3--4. Updating either preserves
+the other and the reserved bits. Every valid normal combination has nonzero low
+three bits, so lifecycle changes cannot accidentally make a forwarded header.
+Constructors initialize Old/Normal, native metadata, and zero RC. Lifecycle
+users migrate to accessors; no RC transition or reclamation state is discarded.
+
+A forwarding pointer would overwrite all eight bytes, including RC and native
+metadata. **This slice does not permit production forwarding of RC objects.**
+Encoding tests may use disposable synthetic headers, but no RC reclamation path
+may observe a header whose refcount has become pointer bits. This is not a claim
+that RC and copying cannot coexist: such a transition would need to preserve RC
+in the destination and retarget, skip, or follow forwarded sources in ZCT,
+epoch, and reclamation bookkeeping before RC reads. Precise mutator-root repair
+alone does not establish that protocol. It remains a separate activation gate;
+this header slice does not change the accepted tracing-cutover staging.
+The first slice changes header representation, not allocator policy, barriers,
+nursery allocation, marking storage, or collector activation.
+
+When RC and lifecycle bookkeeping can be removed, repack to the final layout
+above: the freed four bytes fund the wider native-layout ID, wider aux count,
+and reserved byte. Widening still requires auditing declarations, accessors,
 count limits, and layout formulas together.
 
-The transitional word changes object sizes and payload offsets. For example,
-Float grows from 32 to 40 bytes and crosses from a 32-byte to a 64-byte allocator
-stride. Before/after Release measurements, representative layout/stride checks,
-descriptor tests, and JIT offset audits remain required before implementing that
-slice. The final eight-byte layout is a path back from this temporary cost, not
-a promise that widening count limits has no other cost.
+Before/after Release measurements, representative layout/stride checks,
+descriptor tests, RC load/store audits, and JIT offset checks remain required.
 
 ## Future Lock State
 
@@ -176,5 +201,7 @@ stop-the-world collection contract.
 - Verify normal construction never produces a forwarded/null-target header.
 - For the final cutover, prove that layout inspection, source selection, and
   weak repair do not read overwritten normal metadata.
+- Test all generation/lifecycle combinations and preservation in both setter
+  directions; verify RC accesses now use offset four.
 - Keep header representation changes separate from movement activation,
   relocation admission, and RC retirement.

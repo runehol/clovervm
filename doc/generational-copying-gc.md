@@ -231,17 +231,21 @@ The GC-specific object state needed for ordinary copied objects is much smaller:
 
 The current eight-byte header is occupied by deferred-refcount and native-layout
 state. Collector migration must not remove that state before its replacement is
-working. The transition therefore accepts an oversized header carrying both the
-existing refcount/lifecycle fields and the new GC fields. Once tracing is the
-lifetime authority and the ZCT is retired, the refcount fields can be removed
-and the final header repacked.
+working. The transition keeps eight bytes by retaining narrow native-layout/aux
+fields and packing generation plus RC lifecycle into one byte, alongside the
+four-byte refcount. Once tracing is lifetime authority and the ZCT is retired,
+RC and lifecycle can be removed and the final header repacked with wider fields.
 
 The accepted layout and encoding are specified in
-[GC Object Header](gc-object-header.md): a sixteen-byte RC transition and a final
+[GC Object Header](gc-object-header.md): an eight-byte RC transition and a final
 eight-byte header with byte-sized GC state, a reserved byte, a 16-bit native
 layout ID, and a 32-bit aux count. The final header is destructively replaced by
 an unmodified forwarding pointer. The low three bits of its first byte identify
-forwarding; generation checks on normal objects use actual byte loads.
+forwarding; generation checks on normal objects use actual byte loads, masking
+off the RC lifecycle bits during the transition. Forwarding also overwrites RC,
+so this header slice does not enable production forwarding. Any future overlap
+with RC requires a separate forwarding-aware reclamation/metadata protocol;
+the accepted staging still transfers lifetime authority before evacuation.
 
 The GC state must represent generation/remembered state and any state required
 by the eventual old-generation and stable-heap collection policies. Allocation

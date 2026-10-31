@@ -450,13 +450,16 @@ movement or remove conservative root discovery.
 
 ### 5. Introduce Barriers Alongside Refcounting
 
-Add generation and remembered state alongside the current header fields. Accept
-the temporary larger header; do not remove refcount, lifecycle, or native-layout
-state to make room. The accepted sixteen-byte transition and final eight-byte
+Add generation and remembered state without removing refcount, lifecycle, or
+native-layout state. Keep the total header eight bytes: state byte, 8-bit native
+ID, 16-bit aux count, and 32-bit RC. Generation uses state bits 0--2 and lifecycle
+bits 3--4; preserve both through accessor-based updates. The accepted eight-byte transition and final eight-byte
 target are specified in [GC Object Header](gc-object-header.md). Implement the
 transition's byte-state/raw-pointer encoding without enabling production
-forwarding; migrate to the wider final native-ID/aux fields only in an explicit
-later layout cutover. Generation is not retained after forwarding.
+forwarding, since a raw pointer store would destroy RC too. Migrate to the wider
+final native-ID/aux fields only in an explicit later layout cutover. Generation
+is not retained after forwarding. Audit moved RC/native-ID/aux offsets and
+measure performance even though total header size is unchanged.
 
 Introduce object-level remembered sets and barrier entry points following the
 GC design's hot-path lessons. Cover ordinary members, raw pointer stores,
