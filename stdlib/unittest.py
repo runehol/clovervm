@@ -1,5 +1,5 @@
 # Lifecycle and assertion behavior adapted from CPython Lib/unittest/case.py
-# at v3.14.5. Copyright (c) Python Software Foundation.
+# at v3.14.5 and v3.14.10. Copyright (c) Python Software Foundation.
 # Adapted portions are licensed under the PSF License Agreement.
 
 """Explicitly runnable unittest subset for CloverVM.
@@ -15,6 +15,12 @@ Assertions use minimal messages: failures pass msg unchanged to fail(), even
 for invalid container arguments. There are no generated diffs, longMessage or
 maxDiff handling. Typed list/tuple equality shares a private helper; generic
 assertSequenceEqual is not provided.
+
+Subclass and attribute assertions use the existing issubclass/hasattr subset:
+stored classes, class tuples and stored attributes, without subclass or
+attribute-lookup hooks or descriptor execution. As in issubclass, nonclass
+left operands are rejected even with an empty superclass tuple. Diagnostic-only
+tuple rescans, repr calls and attribute reads are omitted.
 """
 
 
@@ -200,6 +206,34 @@ class TestCase:
 
     def assertNotIsInstance(self, obj, cls, msg=None):
         if isinstance(obj, cls):
+            self.fail(msg)
+
+    def assertIsSubclass(self, cls, superclass, msg=None):
+        try:
+            if issubclass(cls, superclass):
+                return
+        except TypeError:
+            if not isinstance(cls, type):
+                self.fail(msg)
+            raise
+        self.fail(msg)
+
+    def assertNotIsSubclass(self, cls, superclass, msg=None):
+        try:
+            if not issubclass(cls, superclass):
+                return
+        except TypeError:
+            if not isinstance(cls, type):
+                self.fail(msg)
+            raise
+        self.fail(msg)
+
+    def assertHasAttr(self, obj, name, msg=None):
+        if not hasattr(obj, name):
+            self.fail(msg)
+
+    def assertNotHasAttr(self, obj, name, msg=None):
+        if hasattr(obj, name):
             self.fail(msg)
 
     def assertRaises(self, expected_exception, *args, **kwargs):
