@@ -11,6 +11,13 @@ exhaustive plan or a claim that all dependencies can be predicted in advance.
 
 ## Investigate enough to show the real change
 
+Every parallel task uses its own worktree, including research/readiness work and
+prerequisites launched from worker chats. Verify the actual working directory;
+a branch in the primary checkout or another task's worktree is not isolation.
+If an existing research chat was started in a shared checkout, move the task
+and any task-owned edits into its own worktree before implementation, preserving
+unrelated work. Implementing an approved sketch does not waive this requirement.
+
 Read current code, applicable instructions, and existing patterns. For Python
 semantics use matching CPython sources and bounded probes, with the stdlib skill
 where relevant. Test the awkward assumption that could invalidate the proposed

@@ -175,6 +175,11 @@ against current main, not automatic reuse of the old implementation approval.
 Carry forward the human's standing constraints and accepted compatibility choices;
 reopen them only when new evidence materially affects the decision.
 
+Any authorized parallel prerequisite chat gets its own worktree, even when a
+worker launches it or the human omits that detail. Before research becomes
+implementation, verify the task is in its own worktree; move it and its own
+edits there first if necessary, preserving unrelated shared-checkout changes.
+
 9. Update the stdlib bringup checklist.
 
 For clovervm, update `doc/stdlib-module-bringup-checklist.md` before
@@ -190,6 +195,10 @@ Use the task's established host resource controls for all build/check commands,
 including examples here and commands in referenced review skills. In a shared
 parallel wave, run substantive checks under the agreed build lock and parallelism
 limit. The examples name required checks; they do not waive those controls.
+
+With an exclusive build lock, let Ninja use its default parallelism: omit `-j`
+and remove explicit parallelism overrides from build wrappers.
+Performance timing remains exclusive and free of competing builds/tests.
 
 Run the repository-required formatter on touched native/C++ files. For clovervm specifically, run:
 
