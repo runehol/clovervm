@@ -7,7 +7,7 @@
 | Implementation | Header representation implemented in the working tree; production forwarding disabled |
 | Scope | Release performance, layout, and code-generation checks for the eight-byte contained HeapHeader |
 | Owning layers | Object model and memory |
-| Validated against | Baseline 8d3bb678 versus the contained-header working tree based on it, 2026-10-31 |
+| Validated against | Initial contained-header comparison based on `8d3bb678`, 2026-10-31; generation-preserving revision based on `21303dce`, 2026-11-01 |
 | Supersedes | N/A |
 
 ## Method
@@ -247,3 +247,97 @@ Raw local JSON: `/private/tmp/clover-header-baseline.json`,
 Layout CSVs: `/private/tmp/clover-header-layout-{baseline,after}.csv`.
 Profiles: `/private/tmp/clover-header-profile-{method,tuple}-{a,b}.txt`.
 These paths are local measurement artifacts, not repository dependencies.
+
+## Generation-Preserving Forwarding Revision
+
+This is a separate, focused comparison on 2026-11-01, not a rerun of the full
+92-case suite above. A is the saved Release benchmark executable from
+`21303dce`; B is the same checkout with generation in bits 0--1, a forwarded
+flag in bit 2, and RC lifecycle in bits 6--7. Header size, alignment, field
+offsets, and benchmark inputs do not change. Both builds have runtime JIT
+tiering disabled. The executable has no VM-library dependency, and these
+workloads import no native extensions, so rebuilding B does not alter A.
+
+The selected question is normal-mode RC/construction/reclamation overhead.
+Production forwarding is disabled in both binaries; these measurements do not
+measure forwarding or copying throughput. This focus thread bypassed the shared
+build lock as authorized. Its own builds, tests, and timed runs were sequential;
+CPU-time variation and ordinary shared-machine noise still apply.
+
+Three A/B/B/A rounds give six independent CPU-time samples per binary and case:
+
+```sh
+BENCH_BINARY --benchmark_filter='^BM_(ClassInstantiationNoInit|ClassInstantiationWithInit|GlobalRefcountedWrite|InstanceAttributeRefcountedWrite|MemoryReclamation)/100000$' \
+  --benchmark_min_time=0.5s --benchmark_counters_tabular=true \
+  --benchmark_out=RESULT.json --benchmark_out_format=json
+```
+
+Times below are medians in milliseconds per benchmark iteration. Positive
+improvement means faster: `(before / after - 1) * 100`. CV is sample standard
+deviation divided by mean, in percent.
+
+| Case, each with argument 100000 | Before ms | After ms | Improvement | CV before / after |
+|---|---:|---:|---:|---:|
+| ClassInstantiationNoInit | 1.7338 | 1.7936 | -3.33% | 2.28% / 3.75% |
+| ClassInstantiationWithInit | 2.8092 | 2.7995 | +0.35% | 0.64% / 1.71% |
+| GlobalRefcountedWrite | 0.559572 | 0.559800 | -0.04% | 0.18% / 0.30% |
+| InstanceAttributeRefcountedWrite | 0.767118 | 0.767091 | +0.00% | 0.54% / 0.51% |
+| MemoryReclamation | 6.3329 | 6.4237 | -1.41% | 1.50% / 1.00% |
+
+The two slower cases were repeated in three more A/B/B/A rounds with a
+two-second minimum per sample, using the same command with this narrower filter:
+
+```text
+^BM_(ClassInstantiationNoInit|MemoryReclamation)/100000$
+```
+
+| Confirmation case | Before ms | After ms | Improvement | CV before / after |
+|---|---:|---:|---:|---:|
+| ClassInstantiationNoInit | 1.7402 | 1.7073 | +1.93% | 3.09% / 3.91% |
+| MemoryReclamation | 6.3308 | 6.5139 | -2.81% | 1.89% / 3.32% |
+
+The construction result changes sign and does not establish a repeatable
+regression. Refcounted writes are essentially unchanged in the initial series.
+Reclamation is slower in both series, approximately 1--3%, with variation; this
+must not be rounded into a blanket performance-neutral claim. No instruction-level
+cause is established, and the forwarding mask is not exercised by these RC-mode
+workloads. Separate native samples are not included in the timing statistics.
+
+Two-second native samples show the same broad hotspots in both binaries:
+reclamation, tuple construction, interpreter work, and memory initialization.
+They also include benchmark-harness/reference work. These coarse samples do
+not isolate an instruction-level explanation for the small reclamation change.
+
+### Revision Code Generation and Correctness
+
+Clang `-std=c++20 -O3 -DNDEBUG` probes against the baseline and revised headers
+produce the following AArch64 sequences, omitting returns:
+
+| Accessor | Baseline | Revision |
+|---|---|---|
+| Generation | `ldrb; and #7` | `ldrb; and #3` |
+| Forwarded predicate | `ldrb; tst #7; cset eq` | `ldrb; ubfx #2, #1` |
+| Forwarding target | `ldr` | `ldr; and #0xfffffffffffffff8` |
+| Install forwarding | `str` | `ldrb; and #3; orr target; orr #4; str` |
+| RC lifecycle read | `ldrb; ubfx #3, #2` | `ldrb; lsr #6` |
+| RC lifecycle write | `ldrb; and; orr; strb` | `ldrb; bfi; strb` |
+| Refcount read | `ldr w0, [x0, #4]` | unchanged |
+
+The normal lifecycle store is one instruction shorter in this probe; that is
+not evidence of an overall reclamation speedup. Header and HeapObject remain
+eight bytes, and Float remains 32 bytes with its value at offset 24. The
+interpreter-object hot-opcode frame checker emits no diagnostics before or after.
+
+Validation passed: 153 focused header/layout/reclamation/GC tests, full Debug
+`all check` with 2,342 passed, and full Release with 2,328 passed. Each full
+suite has three existing JIT-disabled skips and one disabled test. New Debug
+death tests reject normal-only access after forwarding, invalid generation
+zero, null/unaligned targets, and repeated forwarding. These do not activate
+production movement or allow RC reclamation to inspect forwarded sources.
+
+Raw local artifacts for this revision are in
+`/private/tmp/clover-generation-header.twImkM/`: initial JSON
+`{before,after}-ROUND-SLOT.json`, confirmation JSON
+`confirm-{before,after}-ROUND-SLOT.json`, assembly `header-{before,after}.s`,
+validation logs, saved binaries, and separate `sample-{before,after}.txt`
+native profiles. These are local evidence, not repository dependencies.

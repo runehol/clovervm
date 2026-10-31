@@ -88,7 +88,7 @@ TEST(HeapObjectHeader, GenerationAndLifecycleUpdatesPreserveOtherState)
             object.refcount() = 123;
             set_state_byte(object,
                            state_byte(object) |
-                               0xa0);  // Synthetic future reserved flags.
+                               0x28);  // Synthetic spare bits 3 and 5.
             object.set_generation(generation);
             object.set_lifecycle(lifecycle);
 
@@ -98,7 +98,7 @@ TEST(HeapObjectHeader, GenerationAndLifecycleUpdatesPreserveOtherState)
                 EXPECT_EQ(next, object.generation());
                 EXPECT_EQ(lifecycle, object.lifecycle());
                 EXPECT_FALSE(object.is_forwarded());
-                EXPECT_EQ(0xa0u, state_byte(object) & 0xe0);
+                EXPECT_EQ(0x28u, state_byte(object) & 0x38);
             }
             object.set_generation(generation);
             for(HeapLifecycleState next: lifecycles)
@@ -107,7 +107,7 @@ TEST(HeapObjectHeader, GenerationAndLifecycleUpdatesPreserveOtherState)
                 EXPECT_EQ(generation, object.generation());
                 EXPECT_EQ(next, object.lifecycle());
                 EXPECT_FALSE(object.is_forwarded());
-                EXPECT_EQ(0xa0u, state_byte(object) & 0xe0);
+                EXPECT_EQ(0x28u, state_byte(object) & 0x38);
             }
             EXPECT_EQ(NativeLayoutId::TestOnly, object.native_layout());
             EXPECT_EQ(0xbeefu, object.aux_count());
@@ -116,30 +116,30 @@ TEST(HeapObjectHeader, GenerationAndLifecycleUpdatesPreserveOtherState)
     }
 }
 
-TEST(HeapObjectHeader, ExactlyThirtyTwoStateBytesMeanForwarded)
+TEST(HeapObjectHeader, ForwardedDiscriminatorIsBitTwoForAllStateBytes)
 {
     size_t forwarded = 0;
     for(unsigned value = 0; value < 256; ++value)
     {
         HeapHeader object(NativeLayoutId::TestOnly);
         set_state_byte(object, static_cast<uint8_t>(value));
-        // Only inspect the discriminator. Some non-forwarded byte patterns
-        // remain reserved rather than valid normal generation encodings.
-        EXPECT_EQ(value % 8 == 0, object.is_forwarded());
+        // The discriminator is independent of generation validity. Generation
+        // zero remains invalid whether the forwarded bit is set or not.
+        EXPECT_EQ((value & 0x04) != 0, object.is_forwarded());
         forwarded += object.is_forwarded();
     }
-    EXPECT_EQ(32u, forwarded);
+    EXPECT_EQ(128u, forwarded);
 }
 
-TEST(HeapObjectHeader, ForwardingStoresExactPointerAcrossAllLowBytePatterns)
+TEST(HeapObjectHeader, ForwardingPreservesGenerationAndRecoversExactPointer)
 {
     alignas(256) std::array<std::byte, 256> target_storage{};
     for(size_t offset = 0; offset < target_storage.size(); offset += 8)
     {
         // Synthetic aligned pointer values are never dereferenced. These
         // disposable source headers never enter production RC bookkeeping.
-        // Exercise every forwarded low-byte value, including both address
-        // tags and varying bits 5--7, without reserving or tagging the pointer.
+        // Exercise all aligned target low-byte patterns, including both
+        // address tags and bits 6--7 that must not be treated as RC lifecycle.
         auto *target =
             reinterpret_cast<HeapObject *>(target_storage.data() + offset);
         for(HeapGenerationState generation: generations)
@@ -150,13 +150,19 @@ TEST(HeapObjectHeader, ForwardingStoresExactPointerAcrossAllLowBytePatterns)
                 source.refcount() = 0x12345678;
                 source.set_generation(generation);
                 source.set_lifecycle(lifecycle);
+                // Spare flags and lifecycle must not leak into the target.
+                set_state_byte(source, state_byte(source) | 0x38);
                 source.install_forwarding_target(target);
                 EXPECT_TRUE(source.is_forwarded());
+                EXPECT_EQ(generation, source.generation());
                 EXPECT_EQ(target, source.forwarding_target());
                 uintptr_t stored;
                 std::memcpy(&stored, &source, sizeof(stored));
-                EXPECT_EQ(reinterpret_cast<uintptr_t>(target), stored);
-                EXPECT_EQ(offset, state_byte(source));
+                uintptr_t expected = reinterpret_cast<uintptr_t>(target) |
+                                     uintptr_t{0x04} |
+                                     static_cast<uintptr_t>(generation);
+                EXPECT_EQ(expected, stored);
+                EXPECT_EQ(static_cast<uint8_t>(expected), state_byte(source));
             }
         }
     }
@@ -171,8 +177,10 @@ TEST(HeapObjectHeader, ObjectForwardingTouchesOnlyContainedHeader)
     };
     Record source;
     Record destination;
+    source.set_generation_state(HeapGenerationState::Young);
     source.install_forwarding_target(&destination);
     EXPECT_TRUE(source.is_forwarded());
+    EXPECT_EQ(HeapGenerationState::Young, source.generation_state());
     EXPECT_EQ(&destination, source.forwarding_target());
     EXPECT_EQ(uint64_t{0x0123456789abcdef}, source.payload);
     EXPECT_FALSE(destination.is_forwarded());
@@ -205,7 +213,56 @@ TEST(HeapObjectHeader, RealRefcountAndZctUpdatesPreserveGenerationAndMetadata)
     // reads. ZCT publication changes lifecycle but preserves generation.
     EXPECT_EQ(0, raw->refcount());
     EXPECT_EQ(HeapLifecycleState::InZct, raw->lifecycle_state());
+    EXPECT_EQ(0x41u,
+              std::bit_cast<HeaderBytes>(*static_cast<HeapObject *>(raw))[0]);
     EXPECT_EQ(HeapGenerationState::Young, raw->generation_state());
     EXPECT_EQ(Float::native_layout, raw->native_layout_id());
     EXPECT_EQ(0u, raw->native_layout_aux_count_value());
 }
+
+#ifndef NDEBUG
+TEST(HeapObjectHeaderDeathTest, NormalOnlyAccessorsRejectForwardedHeaders)
+{
+    HeapHeader source(NativeLayoutId::TestOnly);
+    HeapObject destination(NativeLayoutId::TestOnly);
+    source.install_forwarding_target(&destination);
+    const HeapHeader &constant = source;
+    EXPECT_EQ(HeapGenerationState::Old, source.generation());
+    EXPECT_EQ(&destination, source.forwarding_target());
+    EXPECT_DEATH((void)source.lifecycle(), "!is_forwarded");
+    EXPECT_DEATH(source.set_lifecycle(HeapLifecycleState::Normal),
+                 "!is_forwarded");
+    EXPECT_DEATH((void)source.native_layout(), "!is_forwarded");
+    EXPECT_DEATH((void)source.aux_count(), "!is_forwarded");
+    EXPECT_DEATH(source.set_aux_count(0), "!is_forwarded");
+    EXPECT_DEATH((void)source.refcount(), "!is_forwarded");
+    EXPECT_DEATH((void)constant.refcount(), "!is_forwarded");
+    EXPECT_DEATH(source.set_generation(HeapGenerationState::Young),
+                 "!is_forwarded");
+    EXPECT_DEATH(source.install_forwarding_target(&destination),
+                 "!is_forwarded");
+}
+
+TEST(HeapObjectHeaderDeathTest, GenerationZeroIsInvalidInEitherForm)
+{
+    HeapHeader source(NativeLayoutId::TestOnly);
+    set_state_byte(source, 0);
+    EXPECT_FALSE(source.is_forwarded());
+    EXPECT_DEATH((void)source.generation(), "bits >=");
+    set_state_byte(source, 0x04);
+    EXPECT_TRUE(source.is_forwarded());
+    EXPECT_DEATH((void)source.generation(), "bits >=");
+}
+
+TEST(HeapObjectHeaderDeathTest, ForwardingRequiresANonNullAlignedTarget)
+{
+    HeapHeader source(NativeLayoutId::TestOnly);
+    EXPECT_DEATH(source.install_forwarding_target(nullptr),
+                 "target != nullptr");
+    alignas(8) std::array<std::byte, 16> storage;
+    auto *unaligned = reinterpret_cast<HeapObject *>(storage.data() + 1);
+    EXPECT_DEATH(source.install_forwarding_target(unaligned),
+                 "forwarding_metadata_mask");
+    EXPECT_DEATH((void)source.forwarding_target(), "is_forwarded");
+}
+#endif

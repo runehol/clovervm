@@ -54,19 +54,20 @@ encoding. Stable is not synonymous with immortal or interned.
 The accepted representation is now specified in
 [GC Object Header](gc-object-header.md). The RC transition stays eight bytes:
 one byte of GC state, one byte of native-layout ID, two bytes of aux count, and
-four bytes of RC. Generation occupies bits 0--2 of the state byte and RC
-lifecycle bits 3--4. All current allocations initially use Old/Normal, with no
-nursery or copying enabled.
+four bytes of RC. Generation occupies bits 0--1, bit 2 marks forwarding,
+bits 3--5 are spare in normal headers, and bits 6--7 hold normal RC lifecycle.
+All current allocations initialize as Old/Normal; nursery/copying remain disabled.
 
-A forwarding store would replace the entire header with an unmodified non-null target
-pointer. A low-state-byte test, `(byte & 0x07) == 0`, recognizes all pointer byte
-encodings; it is not a whole-byte comparison against one pointer tag. There are
-no generation bits retained alongside a forwarding pointer. RC is also
-overwritten, so this slice does not enable production forwarding of RC objects.
-Any future RC/copying overlap requires forwarding-aware ZCT/epoch/reclamation
-handling before source RC reads; root repair alone is insufficient. The
-accepted tracing-cutover staging remains unchanged. This supersedes the sixteen-/twenty-four-byte candidates and the
-generation-preserving packed candidate previously described here.
+A forwarding store replaces the header with the encoded target address plus
+the source generation and forwarded flag. Target alignment leaves bits 0--2
+available. Reading the target masks only those bits; generation remains a byte
+load and low-two-bit mask in both forms. The source may be Young while its
+destination is Old; callers must not substitute the destination generation.
+
+RC, lifecycle, native ID, aux count, and normal spare state are still overwritten.
+Reclamation and forwarding cannot operate on the same RC-managed source without
+a separately approved transition protocol. The accepted tracing-cutover staging
+is unchanged.
 
 After RC retirement, the final eight-byte normal header has a one-byte GC state,
 one reserved byte, a 16-bit native-layout ID, and a 32-bit aux count. Forwarding
@@ -90,8 +91,8 @@ reclamation pins retain their separate contracts.
 `Instance::object_size_in_bytes()` reads `get_shape()->get_inline_slot_capacity()`.
 The transitional and final forwarding representations overwrite normal header metadata. Layout
 queries must resolve forwarded shapes before requiring their normal header;
-they must not depend on generation/native-ID/aux fields remaining available in
-the source. No recursive tracing of the shape's outgoing references is needed
+they must not depend on native-ID/aux fields remaining available in the source.
+Source generation is the explicit exception and remains readable. No recursive tracing of the shape's outgoing references is needed
 just to obtain scalar capacity. Initially Shape is stable anyway, because its
 custom destruction excludes it from ordinary moving storage. The final
 forwarding-aware query contract must be established before that changes.

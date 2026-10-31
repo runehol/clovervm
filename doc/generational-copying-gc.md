@@ -237,10 +237,12 @@ The accepted layout and encoding are specified in
 [GC Object Header](gc-object-header.md): an eight-byte RC transition and a final
 eight-byte header with byte-sized GC state, a reserved byte, a 16-bit native
 layout ID, and a 32-bit aux count. The final header is destructively replaced by
-an unmodified forwarding pointer. The low three bits of its first byte identify
-forwarding; generation checks on normal objects use actual byte loads, masking
-off the RC lifecycle bits during the transition. Forwarding also overwrites RC,
-so this header slice does not enable production forwarding. Any future overlap
+an encoded forwarding pointer that preserves source generation in bits 0--1.
+Bit 2 marks forwarding; normal-state RC lifecycle occupies bits 6--7.
+Generation reads use a byte load and low-two-bit mask in either header form.
+Forwarding-target reads clear only bits 0--2, preserving every address bit above
+them. Forwarding overwrites RC and lifecycle, so this header slice does not
+enable production forwarding. Any future overlap
 with RC requires a separate forwarding-aware reclamation/metadata protocol;
 the accepted staging still transfers lifetime authority before evacuation.
 
@@ -287,8 +289,9 @@ minor GC must scan it. The state is conservative: an object may remain
 rescans it and clears the state.
 
 Forwarding is a temporary evacuation representation, not a fourth generation.
-It replaces normal state: generation is no longer readable from a forwarded
-source header. `OldRemembered` is a persistent normal-state barrier fact.
+It replaces normal metadata but preserves source generation, even when the
+destination belongs to a different generation. `OldRemembered` remains an
+object-level barrier fact; a forwarded source retains its pre-copy generation.
 Layout inspection, source selection, and weak repair must follow the
 [destructive-forwarding contract](gc-object-header.md#destructive-forwarding-contract).
 

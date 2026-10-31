@@ -30,8 +30,9 @@ namespace cl
         OldRemembered = 0x03,
     };
 
-    // Normal metadata and an unmodified forwarding pointer share this word.
-    // This representation does not authorize forwarding live RC objects.
+    // Normal metadata and a generation-preserving forwarding word share
+    // storage. This representation does not authorize forwarding live RC
+    // objects.
     struct alignas(uintptr_t) HeapHeader
     {
         explicit HeapHeader(NativeLayoutId layout, uint16_t aux = 0)
@@ -44,11 +45,10 @@ namespace cl
             static_assert(offsetof(HeapHeader, rc_) == 4);
         }
 
-        bool is_forwarded() const { return (state_ & generation_mask) == 0; }
+        bool is_forwarded() const { return (state_ & forwarded_bit) != 0; }
 
         HeapGenerationState generation() const
         {
-            assert(!is_forwarded());
             uint8_t bits = state_ & generation_mask;
             assert(bits >= static_cast<uint8_t>(HeapGenerationState::Young) &&
                    bits <= static_cast<uint8_t>(
@@ -114,26 +114,34 @@ namespace cl
         HeapObject *forwarding_target() const
         {
             assert(is_forwarded());
-            HeapObject *target;
-            std::memcpy(&target, this, sizeof(target));
+            uintptr_t encoded;
+            std::memcpy(&encoded, this, sizeof(encoded));
+            auto *target = reinterpret_cast<HeapObject *>(
+                encoded & ~forwarding_metadata_mask);
             assert(target != nullptr);
             return target;
         }
 
-        // Collector-only: source RC/native metadata are gone after this store.
+        // Collector-only: only source generation survives this store. It must
+        // not copy normal lifecycle/spare bits into the target address.
         void install_forwarding_target(HeapObject *target)
         {
             assert(!is_forwarded());
             assert(target != nullptr);
-            assert((reinterpret_cast<uintptr_t>(target) & generation_mask) ==
-                   0);
-            std::memcpy(this, &target, sizeof(HeapHeader));
+            uintptr_t address = reinterpret_cast<uintptr_t>(target);
+            assert((address & forwarding_metadata_mask) == 0);
+            uintptr_t encoded =
+                address | forwarded_bit | static_cast<uintptr_t>(generation());
+            std::memcpy(this, &encoded, sizeof(encoded));
         }
 
     private:
-        static constexpr uint8_t generation_mask = 0x07;
-        static constexpr uint8_t lifecycle_mask = 0x18;
-        static constexpr unsigned lifecycle_shift = 3;
+        static constexpr uint8_t generation_mask = 0x03;
+        static constexpr uint8_t forwarded_bit = 0x04;
+        static constexpr uintptr_t forwarding_metadata_mask =
+            generation_mask | forwarded_bit;
+        static constexpr uint8_t lifecycle_mask = 0xc0;
+        static constexpr unsigned lifecycle_shift = 6;
 
         uint8_t state_;
         NativeLayoutId layout_;
@@ -146,6 +154,7 @@ namespace cl
     static_assert((value_refcounted_ptr_tag & 0x07) == 0);
     static_assert((value_interned_ptr_tag & 0x07) == 0);
     static_assert(sizeof(HeapHeader) == 8);
+    static_assert(sizeof(uintptr_t) == sizeof(HeapHeader));
     static_assert(alignof(HeapHeader) == 8);
     static_assert(std::is_standard_layout_v<HeapHeader>);
     static_assert(std::is_trivially_copyable_v<HeapHeader>);
