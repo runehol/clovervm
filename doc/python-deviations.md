@@ -773,3 +773,35 @@ unsupported. Builtin bytearray data is snapshotted before encoding, so a pad
 truth callback may resize the original without changing the encoded result.
 The callback runs only for an incomplete four-byte input group, after the
 input has been consumed, matching CPython. No native buffer export is held.
+
+
+### Ascii85 uses the same stored-payload boundary
+
+`base64.a85encode(b, *, foldspaces=False, wrapcol=0, pad=False, adobe=False)`
+and `a85decode(b, *, foldspaces=False, adobe=False, ignorechars=b' \t\n\r\v')`
+share Base85's stored bytes/subclass, builtin bytearray and ASCII-text decoder
+normalization policy. Subclass framing, length, indexing, addition and string
+encoding hooks are bypassed; general buffers and bytearray subclasses remain
+unsupported. Custom wrap-width `__index__` is outside the existing `operator.index`
+subset. Existing `operator.index` (imported only when wrapping) validates
+widths; range steps and slice bounds are limited by output length, so arbitrarily
+large builtin integer widths work.
+Supported builtin numeric widths retain reference clamping and errors.
+Managed argument-binding/type-error wording can differ from CPython.
+
+The encoder shares bounded radix arithmetic with `b85encode`; decoders remain
+separate. Encoding freezes mutable input before option callbacks. `foldspaces`
+is truth-tested for each nonzero word, including words other than four spaces;
+`pad` is tested only for a partial group, after folding. Adobe and wrapping
+options retain their separate conditional evaluations. Decoding normalizes text
+before the Adobe callback, freezes binary input after that callback and framing,
+and scans an immutable copy. Later fold/membership callbacks cannot alter this
+copy, but `ignorechars` itself stays live and uses ordinary membership dispatch.
+Its validation is lazy: digits and enabled shorthand take precedence. Default
+ignored characters exclude form feed, matching CPython 3.14.10.
+
+Fixed literals replace CPython's repeated padding bytes; no binary repetition,
+struct module, Cartesian lookup table, native API, buffer export, or GC change
+is required. Managed per-byte processing and result lists remain linear in the
+input/output size; no native-codec throughput claim is made. Z85 and file/legacy
+line-wrapping APIs remain outside this slice.
