@@ -4,6 +4,7 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/int.h"
+#include "builtin_types/line_tab.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/search_range.h"
@@ -678,6 +679,55 @@ namespace cl
             .raw_value();
     }
 
+    [[nodiscard]] static Value
+    native_bytearray_splitlines(ThreadState *thread, Value self, Value keepends)
+    {
+        CL_TRY(receiver(self, L"splitlines"));
+        assert(keepends.is_bool());
+        Owned<TValue<ByteArray>> source(
+            TValue<ByteArray>::from_value_assumed(self));
+        Owned<TValue<List>> result(thread->make_object_value<List>());
+        size_t start = 0;
+        while(auto piece = next_line<LineBoundaryKind::Binary>(
+                  source.extract()->view(), start,
+                  keepends == Value::True() ? KeepLineEnds::Keep
+                                            : KeepLineEnds::Discard))
+        {
+            Owned<TValue<ByteArray>> part(
+                copy_split_piece(source.value(), {piece->start, piece->size}));
+            result.extract()->append(part.raw_value());
+            start = piece->next;
+        }
+        return result.raw_value();
+    }
+
+    [[nodiscard]] static Value native_bytearray_expandtabs(ThreadState *thread,
+                                                           Value self,
+                                                           Value tabsize_value)
+    {
+        CL_TRY(receiver(self, L"expandtabs"));
+        int32_t tabsize = CL_TRY(stored_tabsize(tabsize_value));
+        Owned<TValue<ByteArray>> source(
+            TValue<ByteArray>::from_value_assumed(self));
+        const size_t limit = size_t(value_smi_max);
+        auto plan = expand_tabs<TabPass::Measure>(source.extract()->view(),
+                                                  tabsize, limit);
+        if(!plan)
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"expanded result exceeds storage limit");
+
+        Owned<TValue<ByteArray>> result(thread->make_object_value<ByteArray>());
+        result.extract()->items.resize(plan->size);
+        // Allocation is complete. Reacquire both payloads before the native
+        // fill.
+        auto written = expand_tabs<TabPass::Write>(
+            source.extract()->view(), tabsize, limit,
+            std::span<uint8_t>(result.extract()->items.data(), plan->size));
+        assert(written && written->size == plan->size);
+        (void)written;
+        return result.raw_value();
+    }
+
     template <SearchDirection Direction>
     [[nodiscard]] static Value native_split(ThreadState *, Value self,
                                             Value separator, Value limit)
@@ -1191,6 +1241,11 @@ namespace cl
         Owned<TValue<Tuple>> strip_defaults(
             active_thread()->make_object_value<Tuple>(1));
         strip_defaults.extract()->initialize_item_unchecked(0, Value::None());
+        Owned<TValue<Tuple>> tab_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        tab_defaults.extract()->initialize_item_unchecked(0,
+                                                          Value::from_smi(8));
+        static constexpr const wchar_t *tab_names[] = {L"tabsize"};
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(
                               L"strip", native_strip<StripMode::Both>),
@@ -1201,6 +1256,11 @@ namespace cl
             with_defaults(builtin_intrinsic_method(
                               L"rstrip", native_strip<StripMode::Right>),
                           strip_defaults.value()),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(
+                                  L"expandtabs", native_bytearray_expandtabs),
+                              tab_defaults.value()),
+                tab_names, 1, 1),
             with_keyword_parameter_names(
                 with_defaults(
                     builtin_intrinsic_method(
@@ -1307,6 +1367,8 @@ namespace cl
     void install_bytearray_helpers(VirtualMachine *vm, ModuleObject *module)
     {
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bytearray_splitlines_impl",
+                                     native_bytearray_splitlines),
             builtin_intrinsic_method(L"_clover_bytearray_allocate", allocate),
             builtin_intrinsic_method(L"_clover_bytearray_initialize_native",
                                      initialize_native),
@@ -1332,9 +1394,10 @@ namespace cl
     void install_bytearray_python_methods(VirtualMachine *vm,
                                           ModuleObject *module)
     {
-        const wchar_t *names[] = {L"__new__", L"extend"};
+        const wchar_t *names[] = {L"__new__", L"extend", L"splitlines"};
         const wchar_t *helpers[] = {L"_clover_bytearray_new",
-                                    L"_clover_bytearray_extend"};
+                                    L"_clover_bytearray_extend",
+                                    L"_clover_bytearray_splitlines"};
         for(size_t n = 0; n < std::size(names); ++n)
         {
             Value function = module->get_own_property(

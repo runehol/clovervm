@@ -2,6 +2,7 @@
 #include "builtin_types/binary_split.h"
 #include "builtin_types/binary_strip.h"
 #include "builtin_types/bytearray.h"
+#include "builtin_types/line_tab.h"
 
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
@@ -943,6 +944,69 @@ namespace cl
             .raw_value();
     }
 
+    [[nodiscard]] static Value
+    native_bytes_splitlines(ThreadState *thread, Value self, Value keepends)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"splitlines"));
+        assert(keepends.is_bool());
+        Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
+        Owned<TValue<List>> result(thread->make_object_value<List>());
+        size_t start = 0;
+        while(auto piece = next_line<LineBoundaryKind::Binary>(
+                  bytes_view(source.value()), start,
+                  keepends == Value::True() ? KeepLineEnds::Keep
+                                            : KeepLineEnds::Discard))
+        {
+            if(piece->start == 0 &&
+               piece->size == bytes_view(source.value()).size() &&
+               thread->class_of_value(self) ==
+                   thread->get_machine()->bytes_class())
+                result.extract()->append(self);
+            else
+            {
+                Owned<TValue<Bytes>> part(copy_bytes_piece(
+                    source.value(), {piece->start, piece->size}));
+                result.extract()->append(part.raw_value());
+            }
+            start = piece->next;
+        }
+        return result.raw_value();
+    }
+
+    [[nodiscard]] static Value native_bytes_expandtabs(ThreadState *thread,
+                                                       Value self,
+                                                       Value tabsize_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"expandtabs"));
+        int32_t tabsize = CL_TRY(stored_tabsize(tabsize_value));
+        Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
+        const size_t limit =
+            std::min(size_t(value_smi_max),
+                     (std::numeric_limits<size_t>::max() - sizeof(Bytes)) /
+                         sizeof(uint8_t));
+        auto plan = expand_tabs<TabPass::Measure>(bytes_view(source.value()),
+                                                  tabsize, limit);
+        if(!plan)
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"expanded result exceeds storage limit");
+
+        // CPython reuses the exact empty bytes object; nonempty inputs are
+        // copied even when no tab occurs.
+        if(source.extract()->count.extract() == 0 &&
+           thread->class_of_value(self) == thread->get_machine()->bytes_class())
+            return self;
+        TValue<Bytes> result = thread->make_object_value<Bytes>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(plan->size)));
+        // Allocation is complete. Reacquire both payloads before the native
+        // fill.
+        auto written = expand_tabs<TabPass::Write>(
+            bytes_view(source.value()), tabsize, limit,
+            std::span<uint8_t>(result.extract()->data, plan->size));
+        assert(written && written->size == plan->size);
+        (void)written;
+        return result.raw_value();
+    }
+
     static Value split_bytes(Value self, Value separator, Value limit,
                              SearchDirection direction)
     {
@@ -1722,6 +1786,11 @@ namespace cl
         Owned<TValue<Tuple>> strip_defaults(
             active_thread()->make_object_value<Tuple>(1));
         strip_defaults.extract()->initialize_item_unchecked(0, Value::None());
+        Owned<TValue<Tuple>> tab_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        tab_defaults.extract()->initialize_item_unchecked(0,
+                                                          Value::from_smi(8));
+        static constexpr const wchar_t *tab_names[] = {L"tabsize"};
         BuiltinIntrinsicMethod methods[] = {
             with_defaults(builtin_intrinsic_method(
                               L"strip", native_bytes_strip<StripMode::Both>),
@@ -1732,6 +1801,11 @@ namespace cl
             with_defaults(builtin_intrinsic_method(
                               L"rstrip", native_bytes_strip<StripMode::Right>),
                           strip_defaults.value()),
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(L"expandtabs",
+                                                       native_bytes_expandtabs),
+                              tab_defaults.value()),
+                tab_names, 1, 1),
             builtin_intrinsic_method(L"__iter__", native_bytes_iter),
             with_keyword_parameter_names(
                 with_defaults(
@@ -1876,6 +1950,8 @@ namespace cl
     void install_bytes_helpers(VirtualMachine *vm, ModuleObject *module)
     {
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bytes_splitlines_impl",
+                                     native_bytes_splitlines),
             builtin_intrinsic_method(L"_clover_bytes_join_sequence",
                                      native_bytes_join_sequence),
             builtin_intrinsic_method(L"_clover_bytes_join_finish",
@@ -1896,15 +1972,21 @@ namespace cl
 
     void install_bytes_python_methods(VirtualMachine *vm, ModuleObject *module)
     {
-        Value function = module->get_own_property(
-            vm->get_or_create_interned_string_value(L"_clover_bytes_join"));
-        if(!has_native_layout<Function>(function))
-            fatal("missing bytes Python method");
-        bool stored = vm->bytes_class()->define_own_property(
-            vm->get_or_create_interned_string_value(L"join"), function,
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-                descriptor_flag(DescriptorFlag::StableSlot));
-        assert(stored);
-        (void)stored;
+        const wchar_t *names[] = {L"join", L"splitlines"};
+        const wchar_t *helpers[] = {L"_clover_bytes_join",
+                                    L"_clover_bytes_splitlines"};
+        for(size_t n = 0; n < std::size(names); ++n)
+        {
+            Value function = module->get_own_property(
+                vm->get_or_create_interned_string_value(helpers[n]));
+            if(!has_native_layout<Function>(function))
+                fatal("missing bytes Python method");
+            bool stored = vm->bytes_class()->define_own_property(
+                vm->get_or_create_interned_string_value(names[n]), function,
+                descriptor_flag(DescriptorFlag::ReadOnly) |
+                    descriptor_flag(DescriptorFlag::StableSlot));
+            assert(stored);
+            (void)stored;
+        }
     }
 }  // namespace cl

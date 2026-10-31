@@ -1,3 +1,4 @@
+#include "object_model/function.h"
 #include "test_helpers.h"
 #include <algorithm>
 #include <cctype>
@@ -93,6 +94,22 @@ TEST(PythonSourceFiles, AugmentedArithmeticSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/augmented_arithmetic.py",
                            "tests/python/augmented_arithmetic_protocol.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
+TEST(PythonSourceFiles, StatisticsQuantilesSurvivesEverySafepointReclamation)
+{
+    for(const char *path:
+        {"tests/python/test_statistics_quantiles.py",
+         "tests/python/test_statistics_quantiles_callbacks.py",
+         "tests/python/test_statistics_sorting.py"})
     {
         SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);
@@ -444,3 +461,30 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(SelfCheckingPythonFiles, PythonSourceFileTest,
                          testing::ValuesIn(python_source_files()),
                          source_file_test_name);
+
+TEST(PythonSourceFiles, LineTabSurvivesEverySafepointReclamation)
+{
+    std::wstring source = read_source_file("tests/python/line_tab_methods.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    // Record actual wrapper tiering coverage, rather than inferring it from
+    // the build option or the repeated-call count. Publication alone does not
+    // imply that every operation runs without interpreter side exits.
+    cl::ClassObject *classes[] = {context.vm().str_class(),
+                                  context.vm().bytes_class(),
+                                  context.vm().bytearray_class()};
+    const char *properties[] = {"str_splitlines_tier", "bytes_splitlines_tier",
+                                "bytearray_splitlines_tier"};
+    auto name = context.vm().get_or_create_interned_string_value(L"splitlines");
+    for(size_t i = 0; i < std::size(classes); ++i)
+    {
+        cl::Value function = classes[i]->get_own_property(name);
+        ASSERT_TRUE(cl::has_native_layout<cl::Function>(function));
+        auto *code = function.get_ptr<cl::Function>()->code_object.extract();
+        RecordProperty(properties[i], code->get_jit_code() != nullptr
+                                          ? "published"
+                                          : "interpreted");
+    }
+}

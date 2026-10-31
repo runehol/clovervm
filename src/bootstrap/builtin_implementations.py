@@ -1565,3 +1565,24 @@ def _clover_unicode_decode_str(self, /):
     return _clover_unicode_decode_format(
         self.encoding, self.object, self.start, self.end, self.reason
     )
+
+
+def _clover_str_splitlines(self, /, keepends=False):
+    if not isinstance(self, str):
+        raise TypeError("str.splitlines expects a str receiver")
+    keepends = True if keepends else False
+    return _clover_str_splitlines_impl(self, keepends)
+
+
+def _clover_bytes_splitlines(self, /, keepends=False):
+    if not isinstance(self, bytes):
+        raise TypeError("bytes.splitlines expects a bytes receiver")
+    keepends = True if keepends else False
+    return _clover_bytes_splitlines_impl(self, keepends)
+
+
+def _clover_bytearray_splitlines(self, /, keepends=False):
+    if not isinstance(self, bytearray):
+        raise TypeError("bytearray.splitlines expects a bytearray receiver")
+    keepends = True if keepends else False
+    return _clover_bytearray_splitlines_impl(self, keepends)

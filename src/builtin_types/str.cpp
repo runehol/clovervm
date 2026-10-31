@@ -2,6 +2,7 @@
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/join.h"
+#include "builtin_types/line_tab.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/search_range.h"
@@ -1032,6 +1033,70 @@ namespace cl
         return result;
     }
 
+    [[nodiscard]] static Value native_str_splitlines(ThreadState *thread,
+                                                     Value self, Value keepends)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"splitlines"));
+        assert(keepends.is_bool());
+        Owned<TValue<String>> source(TValue<String>::from_value_assumed(self));
+        Owned<TValue<List>> result(thread->make_object_value<List>());
+        size_t start = 0;
+        while(auto piece = next_line<LineBoundaryKind::Unicode>(
+                  std::span<const wchar_t>(
+                      source.extract()->data,
+                      size_t(source.extract()->count.extract())),
+                  start,
+                  keepends == Value::True() ? KeepLineEnds::Keep
+                                            : KeepLineEnds::Discard))
+        {
+            if(piece->start == 0 &&
+               piece->size == size_t(source.extract()->count.extract()) &&
+               is_exact_string(thread, self))
+                result.extract()->append(self);
+            else
+            {
+                Owned<TValue<String>> part(copy_str_split_piece(
+                    source.value(), {piece->start, piece->size}));
+                result.extract()->append(part.raw_value());
+            }
+            start = piece->next;
+        }
+        return result.raw_value();
+    }
+
+    [[nodiscard]] static Value
+    native_str_expandtabs(ThreadState *thread, Value self, Value tabsize_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"expandtabs"));
+        int32_t tabsize = CL_TRY(stored_tabsize(tabsize_value));
+        Owned<TValue<String>> source(TValue<String>::from_value_assumed(self));
+        const size_t limit =
+            std::min(size_t(value_smi_max),
+                     (std::numeric_limits<size_t>::max() - sizeof(String)) /
+                         sizeof(wchar_t));
+        auto plan = expand_tabs<TabPass::Measure>(
+            std::span<const wchar_t>(source.extract()->data,
+                                     size_t(source.extract()->count.extract())),
+            tabsize, limit);
+        if(!plan)
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"expanded result exceeds storage limit");
+        if(!plan->has_tabs && is_exact_string(thread, self))
+            return self;
+        TValue<String> result = thread->make_object_value<String>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(plan->size)));
+        // Allocation is complete. Reacquire both payloads before the native
+        // fill.
+        auto written = expand_tabs<TabPass::Write>(
+            std::span<const wchar_t>(source.extract()->data,
+                                     size_t(source.extract()->count.extract())),
+            tabsize, limit,
+            std::span<wchar_t>(result.extract()->data, plan->size));
+        assert(written && written->size == plan->size);
+        (void)written;
+        return result.raw_value();
+    }
+
     static Value split_explicit(Value self, Value sep_value, int64_t maxsplit,
                                 SearchDirection direction)
     {
@@ -1876,7 +1941,17 @@ namespace cl
                                                                 L"maxsplit"};
         static constexpr const wchar_t *replace_names[] = {L"old", L"new",
                                                            L"count"};
+        Owned<TValue<Tuple>> tab_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        tab_defaults.extract()->initialize_item_unchecked(0,
+                                                          Value::from_smi(8));
+        static constexpr const wchar_t *tab_names[] = {L"tabsize"};
         BuiltinIntrinsicMethod methods[] = {
+            with_keyword_parameter_names(
+                with_defaults(builtin_intrinsic_method(L"expandtabs",
+                                                       native_str_expandtabs),
+                              tab_defaults.value()),
+                tab_names, 1, 1),
             with_defaults(builtin_intrinsic_method(L"__new__", native_str_new,
                                                    L"Create a str object."),
                           str_new_defaults.value()),
@@ -2196,6 +2271,8 @@ namespace cl
     void install_str_helpers(VirtualMachine *vm, ModuleObject *module)
     {
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_str_splitlines_impl",
+                                     native_str_splitlines),
             builtin_intrinsic_method(L"_clover_str_join_sequence",
                                      native_str_join_sequence),
             builtin_intrinsic_method(L"_clover_str_join_finish",
@@ -2215,15 +2292,21 @@ namespace cl
 
     void install_str_python_methods(VirtualMachine *vm, ModuleObject *module)
     {
-        Value function = module->get_own_property(
-            vm->get_or_create_interned_string_value(L"_clover_str_join"));
-        if(!has_native_layout<Function>(function))
-            fatal("missing str Python method");
-        bool stored = vm->str_class()->define_own_property(
-            vm->get_or_create_interned_string_value(L"join"), function,
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-                descriptor_flag(DescriptorFlag::StableSlot));
-        assert(stored);
-        (void)stored;
+        const wchar_t *names[] = {L"join", L"splitlines"};
+        const wchar_t *helpers[] = {L"_clover_str_join",
+                                    L"_clover_str_splitlines"};
+        for(size_t n = 0; n < std::size(names); ++n)
+        {
+            Value function = module->get_own_property(
+                vm->get_or_create_interned_string_value(helpers[n]));
+            if(!has_native_layout<Function>(function))
+                fatal("missing str Python method");
+            bool stored = vm->str_class()->define_own_property(
+                vm->get_or_create_interned_string_value(names[n]), function,
+                descriptor_flag(DescriptorFlag::ReadOnly) |
+                    descriptor_flag(DescriptorFlag::StableSlot));
+            assert(stored);
+            (void)stored;
+        }
     }
 }  // namespace cl

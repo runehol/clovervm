@@ -151,7 +151,8 @@ not introduced by this method; acceptance follows existing iterator support.
 copies, integer iterables, length/truth, indexing and slicing, item/slice
 assignment and deletion, `append`, `extend`, `clear`, `pop`, `insert`, `remove`,
 `reverse`, `copy`, `find`, `rfind`, `index`, `rindex`, `count`, `startswith`,
-`endswith`, `split`, `rsplit`, `partition`, `rpartition`, repr/str, all six
+`endswith`, `split`, `rsplit`, `partition`, `rpartition`, `splitlines`,
+`expandtabs`, repr/str, all six
 comparisons with bytes/bytearray, and live integer iteration. `bytes(bytearray)` copies into
 an independent immutable bytes object; bytes immutability and hashing are unchanged.
 
@@ -635,3 +636,37 @@ the native constructor
 and can override methods and store additional attributes. See
 [Native FileIO](file-io.md) for operation, validation, attribute-introspection and
 platform boundaries.
+
+### String and binary line/tab methods
+
+`str`, `bytes` and `bytearray` support `splitlines(keepends=False)` and
+`expandtabs(tabsize=8)`, including named keywords, against CPython 3.14.10.
+String line splitting recognizes LF, VT, FF, CR, U+001C–U+001E, U+0085,
+U+2028 and U+2029; binary splitting recognizes CR and LF only. CRLF is one
+boundary, and a final boundary adds no trailing empty result. `keepends` uses
+ordinary truth conversion, including callbacks, before native payload access.
+A bytearray mutation in that callback is visible to the split. Existing VM
+truth-conversion limits still apply, including the deliberately retained
+[older NotImplemented behavior](#notimplemented-retains-its-older-boolean-behavior)
+and non-integer length-result coercion limits.
+
+Tab expansion counts stored code points for strings and bytes for binary data;
+only CR and LF reset columns. Nonpositive sizes remove tabs. Sizes accept
+stored ints, bools and int-subclass payloads within signed 32-bit bounds;
+custom non-int `__index__` is unsupported and raises `TypeError` without calling
+it. Conversion and range checks apply even to empty inputs and inputs without
+tabs. Results have the corresponding base type. Exact strings without tabs
+retain their identity, as do exact empty bytes; nonempty binary tab-expansion
+results are fresh, and
+bytearray line results are independent mutable copies. Exact immutable inputs
+can be reused for a whole-input split line, including a retained final boundary.
+Incidental empty/single-character interning identities are not promised.
+Bytearray subclassing retains its existing unsupported status.
+
+Shared character templates handle boundary scanning and two-pass tab expansion;
+type-owned wrappers retain receivers, allocate results and reacquire payloads
+after allocation. Output arithmetic is checked against native storage and tagged
+length limits before allocation and raises `OverflowError` on overflow. Actual
+allocation exhaustion retains the existing VM allocator policy; recoverable
+`MemoryError` parity is outside this slice. No buffer exports, new conversion
+protocols, object layouts or dispatch changes are introduced.

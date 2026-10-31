@@ -18,6 +18,7 @@ target_sources(test_clovervm PRIVATE
 	test_codec_c.c
 	test_bytes_iterator.cpp
 	test_bytearray.cpp
+	test_line_tab.cpp
 	test_separator_search.cpp
 	test_bigint.cpp
 	test_bytecode.cpp
