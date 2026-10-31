@@ -9482,6 +9482,96 @@ assert obj.__class__ is Valid
     EXPECT_FALSE(runner.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, loop_entry_clears_preserve_bindings_and_control_flow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+def last(items):
+    for value in items:
+        pass
+    return value
+def condition_value(n):
+    while (value := n):
+        payload = [n]
+        n -= 1
+    return value
+def flow(n, stop):
+    seen = 0
+    while n:
+        n -= 1
+        if n == 1:
+            continue
+        value = [n]
+        seen += value[0]
+        if stop:
+            break
+    else:
+        finished = 1
+    return seen
+def else_value(flag):
+    while flag:
+        break
+    else:
+        value = [7]
+    return value
+def for_else_value(item, items):
+    for item in items:
+        break
+    else:
+        value = [8]
+    return value
+def deleted(n):
+    while n:
+        value = [n]
+        del value
+        n -= 1
+    return value
+def preserve_parameter(value, items):
+    for value in items:
+        pass
+    return value
+def nested(rows):
+    total = 0
+    for row in rows:
+        for item in row:
+            payload = [item]
+            total += payload[0]
+    return total
+assert last([1]) == 1
+assert last([1, 2, 3]) == 3
+assert condition_value(0) == 0
+assert condition_value(3) == 0
+assert flow(0, False) == 0
+assert flow(3, False) == 2
+assert flow(3, True) == 2
+assert else_value(False) == [7]
+assert for_else_value(0, []) == [8]
+assert preserve_parameter([4], []) == [4]
+assert preserve_parameter([4], [[5], [6]]) == [6]
+assert nested([]) == 0
+assert nested([[], [1, 2], [3]]) == 6
+for case in [(last, []), (else_value, True), (deleted, 0), (deleted, 2)]:
+    try:
+        case[0](case[1])
+    except UnboundLocalError:
+        pass
+    else:
+        raise AssertionError("loop local must remain semantically unbound")
+try:
+    for_else_value(0, [1])
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("break must skip the loop else binding")
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
 TEST(Interpreter, unreachable_accesses_do_not_destroy_arguments)
 {
     test::VmTestContext context;

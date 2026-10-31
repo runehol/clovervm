@@ -1465,7 +1465,9 @@ static void BM_IntBaseFormatting(benchmark::State &state)
 BENCHMARK(BM_IntBaseFormatting)->DenseRange(0, 5);
 
 // Isolate the invocation cost of selectively clearing locals, without heap
-// allocation in the callee. Modes: definite writes, one mixed local, eight.
+// allocation in the callee for modes 0-4 and 6. Modes: definite writes,
+// one/eight mixed locals, one/eight loop locals, for target, definite loop
+// local.
 static void BM_LocalEntryClears(benchmark::State &state)
 {
     constexpr const char *path = "benchmark/local_entry_clears.py";
@@ -1486,7 +1488,7 @@ static void BM_LocalEntryClears(benchmark::State &state)
         state.SkipWithError(err.what());
     }
 }
-BENCHMARK(BM_LocalEntryClears)->DenseRange(0, 2);
+BENCHMARK(BM_LocalEntryClears)->DenseRange(0, 6);
 
 int main(int argc, char **argv)
 {

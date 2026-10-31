@@ -1285,6 +1285,17 @@ namespace cl
                                             : std::optional<FlowState>(source);
             }
 
+            void request_gc_loop_entry_clears(AnalysisState &analysis,
+                                              FlowState entry,
+                                              const LocalTouches &touches) const
+            {
+                // A later iteration may carry a bound value where the first
+                // iteration still has untouched entry storage. Use a GC-only
+                // summary: source-level presence facts must not change.
+                apply_loop_exit_conservatism(entry, touches);
+                request_gc_entry_clears(analysis, entry);
+            }
+
             void append_abrupt_exits(FlowSummary &target,
                                      const FlowSummary &source) const
             {
@@ -1477,6 +1488,10 @@ namespace cl
             {
                 LocalTouches body_touches =
                     collect_local_touches(analysis, children[1]);
+                LocalTouches loop_touches = body_touches;
+                merge_local_touches(
+                    loop_touches, collect_local_touches(analysis, children[0]));
+                request_gc_loop_entry_clears(analysis, state, loop_touches);
                 FlowState condition_state = state;
                 degrade_deleted_to_maybe(condition_state, body_touches);
 
@@ -1511,7 +1526,8 @@ namespace cl
                 for(FlowState break_state: body.breaks)
                 {
                     degrade_deleted_to_maybe(break_state, body_touches);
-                    merge_fallthrough(result.fallthrough, break_state);
+                    merge_normal_fallthrough(analysis, result.fallthrough,
+                                             break_state);
                 }
                 return result;
             }
@@ -1548,6 +1564,12 @@ namespace cl
                     }
                 }
 
+                LocalTouches loop_touches = body_touches;
+                merge_local_touches(
+                    loop_touches, collect_local_touches(analysis, target_idx));
+                request_gc_loop_entry_clears(analysis, iterated_state,
+                                             loop_touches);
+
                 FlowState body_state = iterated_state;
                 annotate_for_target_store(analysis, target_idx, body_state);
                 degrade_deleted_to_maybe(body_state, body_touches,
@@ -1572,7 +1594,8 @@ namespace cl
                 for(FlowState break_state: body.breaks)
                 {
                     degrade_deleted_to_maybe(break_state, body_touches);
-                    merge_fallthrough(result.fallthrough, break_state);
+                    merge_normal_fallthrough(analysis, result.fallthrough,
+                                             break_state);
                 }
                 return result;
             }

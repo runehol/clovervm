@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | 4d.1 implemented through `9271f055`; 4d.2a working tree (2026-10-31) |
+| Validated against | 4d.2a and parameter-clear fix through `7db447f0`; 4d.2b.1 working tree (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -376,11 +376,25 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
       Implemented with structural codegen checks and interpreter regressions;
       before/after runtime measurements are recorded in
       [the selective-entry-clear performance report](gc-local-entry-clears-performance.md).
-    - **4d.2b: Loop and exceptional-flow summaries.** Extend the same codegen
-      decision to backedges, zero-iteration exits, break/continue, handlers,
-      finally, and suppressed exceptions. Never clear a live binding on a
-      backedge or at handler entry; any required normalization remains a safe
-      prologue clear. Keep this as a separate readiness review.
+    - **4d.2b.1: Loop summaries.** Extend the same codegen decision to loop
+      headers/backedges, zero-iteration exits, break/continue, and loop `else`.
+      Use a GC-only copy of the entry flow state with the existing conservative
+      local-touch summary; include assignments in a repeated `while` condition
+      and in a `for` target as well as its body. Do not change source-level
+      presence facts. Normalize joins between break exits and the normal/else
+      exit with the same entry-clear request as other normal joins. All clears
+      remain in the function prologue, never on a backedge or in the loop body.
+      Touch summaries can conservatively request redundant clears; this is not
+      a minimal-clear analysis. Verify structural placement, semantics, and
+      before/after runtime cost before claiming loop-slot coverage.
+      Implemented and verified in the working tree; see the
+      [loop-entry-clear performance report](gc-loop-entry-clears-performance.md)
+      for the full comparison and unresolved performance outlier.
+    - **4d.2b.2: Exceptional-flow summaries.** Extend the decision to handlers,
+      finally, and suppressed exceptions, accounting for partial execution
+      before an exception. Never clear live bindings at handler entry; any
+      required normalization remains a safe prologue clear. Separate readiness
+      review; not implemented by the loop slice.
     - **4d.2c: Read-only map derivation and verification.** Analyze emitted
       bytecode, including handwritten builders, to derive ordinary-frame root
       selections. Retain potentially bound locals even when bytecode-dead;
