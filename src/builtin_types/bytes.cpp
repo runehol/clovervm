@@ -1,4 +1,5 @@
 #include "builtin_types/bytes.h"
+#include "builtin_types/binary_case.h"
 #include "builtin_types/binary_split.h"
 #include "builtin_types/binary_strip.h"
 #include "builtin_types/bytearray.h"
@@ -42,6 +43,24 @@ namespace cl
                 L"TypeError", message.c_str());
         }
         return Value::None();
+    }
+
+    template <BinaryCase Mode>
+    [[nodiscard]] static Value native_case(ThreadState *thread, Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(
+            require_bytes_receiver(self, binary_case_name<Mode>()));
+        Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
+        const auto count = source.extract()->count.value();
+        if(count.extract() == 0 &&
+           thread->class_of_value(self) == thread->get_machine()->bytes_class())
+            return self;
+        auto result = thread->make_object_value<Bytes>(count);
+        // Allocation is complete before acquiring either payload pointer.
+        transform_binary_case<Mode>(source.extract()->data,
+                                    result.extract()->data,
+                                    static_cast<size_t>(count.extract()));
+        return result.raw_value();
     }
 
     static Value require_bytes_argument(Value value, const wchar_t *message)
@@ -1910,6 +1929,13 @@ namespace cl
                     builtin_intrinsic_method(L"rsplit", native_bytes_rsplit),
                     bytes_split_defaults.value()),
                 split_names, 2, 1),
+            builtin_intrinsic_method(L"lower", native_case<BinaryCase::Lower>),
+            builtin_intrinsic_method(L"upper", native_case<BinaryCase::Upper>),
+            builtin_intrinsic_method(L"swapcase",
+                                     native_case<BinaryCase::Swapcase>),
+            builtin_intrinsic_method(L"capitalize",
+                                     native_case<BinaryCase::Capitalize>),
+            builtin_intrinsic_method(L"title", native_case<BinaryCase::Title>),
             builtin_intrinsic_method(L"partition", native_bytes_partition),
             builtin_intrinsic_method(L"rpartition", native_bytes_rpartition),
             with_defaults(builtin_intrinsic_method(L"__new__", native_bytes_new,

@@ -295,6 +295,19 @@ native argument error wording can differ from CPython. Bytearray subclassing
 remains unavailable. No changes to interpreter, codegen, JIT, layout, cache or
 buffer protocols are involved.
 
+### Binary ASCII case conversion
+
+`bytes` and `bytearray` provide zero-argument `lower`, `upper`, `swapcase`,
+`capitalize`, and `title`, referenced to CPython 3.14.10. Only ASCII letters
+change; all other bytes are preserved and reset the word boundary for `title`.
+`capitalize` uppercases byte zero only and lowercases subsequent ASCII letters.
+Results use the base type and bypass stored-payload subclass conversion,
+length, indexing, and iteration hooks. Nonempty bytes results are independent
+copies even when unchanged; exact empty bytes may reuse their receiver.
+Bytearray results are always independent, including empty and unchanged inputs.
+Bytearray subclass construction remains unsupported. Native argument-error
+wording follows the existing VM conventions. String casing is unchanged.
+
 ### String padding uses stored integers and bounded native storage
 
 `str.ljust(width, fillchar=' ', /)`, `rjust` and `center` with the same
