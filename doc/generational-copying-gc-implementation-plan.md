@@ -452,7 +452,11 @@ movement or remove conservative root discovery.
 
 Add generation and remembered state alongside the current header fields. Accept
 the temporary larger header; do not remove refcount, lifecycle, or native-layout
-state to make room. Settle the concrete transitional header in its own review.
+state to make room. The accepted sixteen-byte transition and final eight-byte
+target are specified in [GC Object Header](gc-object-header.md). Implement the
+transition's byte-state/raw-pointer encoding without enabling production
+forwarding; migrate to the wider final native-ID/aux fields only in an explicit
+later layout cutover. Generation is not retained after forwarding.
 
 Introduce object-level remembered sets and barrier entry points following the
 GC design's hot-path lessons. Cover ordinary members, raw pointer stores,

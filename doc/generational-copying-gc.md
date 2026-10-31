@@ -236,6 +236,13 @@ existing refcount/lifecycle fields and the new GC fields. Once tracing is the
 lifetime authority and the ZCT is retired, the refcount fields can be removed
 and the final header repacked.
 
+The accepted layout and encoding are specified in
+[GC Object Header](gc-object-header.md): a sixteen-byte RC transition and a final
+eight-byte header with byte-sized GC state, a reserved byte, a 16-bit native
+layout ID, and a 32-bit aux count. The final header is destructively replaced by
+an unmodified forwarding pointer. The low three bits of its first byte identify
+forwarding; generation checks on normal objects use actual byte loads.
+
 The GC state must represent generation/remembered state and any state required
 by the eventual old-generation and stable-heap collection policies. Allocation
 space determines whether an object may move: objects in the stable heap never
@@ -267,9 +274,9 @@ The first implementation should use object-level generation state in the header:
 
 ```cpp
 enum class HeapGenerationState : uint8_t {
-    Young,
-    Old,
-    OldRemembered,
+    Young         = 0x01,
+    Old           = 0x02,
+    OldRemembered = 0x03,
 };
 ```
 
@@ -278,9 +285,11 @@ minor GC must scan it. The state is conservative: an object may remain
 `OldRemembered` after a young reference is overwritten until a minor collection
 rescans it and clears the state.
 
-Forwarding state is separate from generation state. `Forwarded` is a temporary
-evacuation state that changes how from-space memory is interpreted.
-`OldRemembered` is a persistent generational barrier state.
+Forwarding is a temporary evacuation representation, not a fourth generation.
+It replaces normal state: generation is no longer readable from a forwarded
+source header. `OldRemembered` is a persistent normal-state barrier fact.
+Layout inspection, source selection, and weak repair must follow the
+[destructive-forwarding contract](gc-object-header.md#destructive-forwarding-contract).
 
 ## Generational Barriers and Minor Collection
 
@@ -827,7 +836,6 @@ scanning is a material minor-GC cost.
 - Should NaNs use relocation-stable per-object identity hashes or bit-pattern
   hashes, and should float identity semantics change independently? Account for
   same-payload NaN collisions without implicitly changing `is` or `id()`.
-- What is the transitional and final packed GC header layout?
 - How are export shadows indexed, rooted, repaired after original movement, and
   reclaimed, and can their storage/lookup be shared with `id()` shadows?
 - What alias and synchronization contracts permit mutable backing-store
