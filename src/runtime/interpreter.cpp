@@ -522,9 +522,9 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_committed_safepoint_slow(PARAMS)
     {
-        thread->publish_safepoint_scan_record(
-            lowest_live_stack_slot_for_safepoint(fp, pc, code_object),
-            Value::not_present(), Value::from_oop(code_object));
+        thread->publish_safepoint_scan_record(SafepointScanRecord::interpreter(
+            lowest_live_stack_slot_for_safepoint(fp, pc, code_object), fp, pc,
+            *code_object, Value::not_present()));
         thread->handle_safepoint(accumulator, fp, pc, code_object);
 
         START(0);
@@ -534,10 +534,11 @@ namespace cl
     NOINLINE static INTERP_CC Value
     op_committed_safepoint_with_accumulator_slow(PARAMS)
     {
-        thread->publish_safepoint_scan_record(
-            lowest_live_stack_slot_for_safepoint(fp, pc, code_object),
-            accumulator, Value::from_oop(code_object));
-        thread->handle_safepoint(accumulator, fp, pc, code_object);
+        thread->publish_safepoint_scan_record(SafepointScanRecord::interpreter(
+            lowest_live_stack_slot_for_safepoint(fp, pc, code_object), fp, pc,
+            *code_object, accumulator));
+        accumulator =
+            thread->handle_safepoint(accumulator, fp, pc, code_object);
 
         START(0);
         COMPLETE();

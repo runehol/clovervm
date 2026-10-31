@@ -1,6 +1,7 @@
 #ifndef CL_EXTENSION_HANDLE_H
 #define CL_EXTENSION_HANDLE_H
 
+#include "memory/scoped_root.h"
 #include "object_model/refcount.h"
 #include "object_model/value.h"
 
@@ -172,9 +173,11 @@ namespace cl
     private:
         ThreadState *thread;
         Value *previous_frontier;
-        Value *previous_lowest_live_stack_slot;
-        Value previous_accumulator_or_not_present;
-        Value previous_active_code_object_or_not_present;
+        SafepointScanRecord previous_scan_record;
+        // Reentry may replace the current publication. Keep the saved cells
+        // independently writable until the destructor restores them.
+        ScopedRoot previous_accumulator_root;
+        ScopedRoot previous_active_code_object_root;
         Value *begin;
         Value *end;
     };

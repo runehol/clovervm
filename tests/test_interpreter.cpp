@@ -8750,6 +8750,8 @@ static void check_return_continuation_roots(void *opaque, ThreadState *thread,
                                             const SafepointScanRecord &record)
 {
     auto &check = *static_cast<ReturnContinuationSafepointCheck *>(opaque);
+    EXPECT_EQ(fp, record.frame_pointer);
+    EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
     if(pc_offset >= code->code.size() ||
        bytecode_info(Bytecode(code->code[pc_offset])).compound_role !=
            check.role)
@@ -8896,10 +8898,12 @@ struct TruthinessSafepointCheck
 
 static void check_truthiness_callback_roots(void *opaque, ThreadState *, Value,
                                             Value *fp, CodeObject *code,
-                                            uint32_t,
+                                            uint32_t pc_offset,
                                             const SafepointScanRecord &record)
 {
     auto &check = *static_cast<TruthinessSafepointCheck *>(opaque);
+    EXPECT_EQ(fp, record.frame_pointer);
+    EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
     if(code != check.callback)
         return;
     Value *caller_fp =
@@ -9476,6 +9480,188 @@ except TypeError as error:
 assert obj.__class__ is Valid
 )");
     EXPECT_FALSE(runner.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, loop_entry_clears_preserve_bindings_and_control_flow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+def last(items):
+    for value in items:
+        pass
+    return value
+def condition_value(n):
+    while (value := n):
+        payload = [n]
+        n -= 1
+    return value
+def flow(n, stop):
+    seen = 0
+    while n:
+        n -= 1
+        if n == 1:
+            continue
+        value = [n]
+        seen += value[0]
+        if stop:
+            break
+    else:
+        finished = 1
+    return seen
+def else_value(flag):
+    while flag:
+        break
+    else:
+        value = [7]
+    return value
+def for_else_value(item, items):
+    for item in items:
+        break
+    else:
+        value = [8]
+    return value
+def deleted(n):
+    while n:
+        value = [n]
+        del value
+        n -= 1
+    return value
+def preserve_parameter(value, items):
+    for value in items:
+        pass
+    return value
+def nested(rows):
+    total = 0
+    for row in rows:
+        for item in row:
+            payload = [item]
+            total += payload[0]
+    return total
+assert last([1]) == 1
+assert last([1, 2, 3]) == 3
+assert condition_value(0) == 0
+assert condition_value(3) == 0
+assert flow(0, False) == 0
+assert flow(3, False) == 2
+assert flow(3, True) == 2
+assert else_value(False) == [7]
+assert for_else_value(0, []) == [8]
+assert preserve_parameter([4], []) == [4]
+assert preserve_parameter([4], [[5], [6]]) == [6]
+assert nested([]) == 0
+assert nested([[], [1, 2], [3]]) == 6
+for case in [(last, []), (else_value, True), (deleted, 0), (deleted, 2)]:
+    try:
+        case[0](case[1])
+    except UnboundLocalError:
+        pass
+    else:
+        raise AssertionError("loop local must remain semantically unbound")
+try:
+    for_else_value(0, [1])
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("break must skip the loop else binding")
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, unreachable_accesses_do_not_destroy_arguments)
+{
+    test::VmTestContext context;
+    Value result = context.run_file(LR"(
+def unread(x):
+    return x
+    x
+def undeleted(x):
+    return x
+    del x
+def unbranched(x):
+    return x
+    if x:
+        y = 1
+def conditional_delete(x, flag):
+    if flag:
+        del x
+    return x
+def repeated_delete(x):
+    del x
+    del x
+assert unread(7) == 7
+assert undeleted(8) == 8
+assert unbranched(9) == 9
+assert conditional_delete(10, False) == 10
+try:
+    conditional_delete(10, True)
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("deleted argument must be unbound")
+try:
+    repeated_delete(11)
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("deleting an unbound argument must fail")
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, selective_gc_entry_clears_preserve_bindings_and_walrus_values)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+def optional(flag):
+    if flag:
+        x = 7
+    return x
+def both(flag):
+    if flag:
+        x = 7
+    else:
+        x = 9
+    return x
+def preserve_parameter(x, flag):
+    if flag:
+        x = 12
+    return x
+def preserve_old_operand(x, flag):
+    return x + ((x := 9) if flag else 3)
+def deleted(flag):
+    if flag:
+        x = 7
+        del x
+    return None
+assert optional(True) == 7
+try:
+    optional(False)
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("cleared storage must still be unbound")
+assert both(True) == 7
+assert both(False) == 9
+assert preserve_parameter(4, False) == 4
+assert preserve_parameter(4, True) == 12
+assert preserve_old_operand(10, True) == 19
+assert preserve_old_operand(10, False) == 13
+assert deleted(True) is None
+assert deleted(False) is None
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
 }
 
 TEST(Interpreter, functools_reduce_retains_state_across_reclamation_and_reentry)

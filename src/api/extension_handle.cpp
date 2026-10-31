@@ -29,13 +29,14 @@ namespace cl
 
     NativeHandleRootRegion::NativeHandleRootRegion(ThreadState *_thread)
         : thread(_thread), previous_frontier(thread->clover_frame_frontier()),
-          previous_lowest_live_stack_slot(
-              thread->safepoint_scan_record().lowest_live_stack_slot),
-          previous_accumulator_or_not_present(
-              thread->safepoint_scan_record().accumulator_or_not_present),
-          previous_active_code_object_or_not_present(
-              thread->safepoint_scan_record()
-                  .active_code_object_or_not_present),
+          previous_scan_record(thread->safepoint_scan_record()),
+          previous_accumulator_root(
+              *thread, HeapReferenceSlot(
+                           &previous_scan_record.accumulator_or_not_present)),
+          previous_active_code_object_root(
+              *thread,
+              HeapReferenceSlot(
+                  &previous_scan_record.active_code_object_or_not_present)),
           begin(nullptr), end(nullptr)
     {
         assert(thread != nullptr);
@@ -50,9 +51,9 @@ namespace cl
                 *slot = Value::not_present();
             }
             thread->set_clover_frame_frontier(begin);
-            thread->publish_safepoint_scan_record(
-                begin, previous_accumulator_or_not_present,
-                previous_active_code_object_or_not_present);
+            SafepointScanRecord record = previous_scan_record;
+            record.lowest_live_stack_slot = begin;
+            thread->publish_safepoint_scan_record(record);
         }
     }
 
@@ -61,10 +62,7 @@ namespace cl
         if constexpr(native_handle_detail::cl_indirect_handles)
         {
             thread->set_clover_frame_frontier(previous_frontier);
-            thread->publish_safepoint_scan_record(
-                previous_lowest_live_stack_slot,
-                previous_accumulator_or_not_present,
-                previous_active_code_object_or_not_present);
+            thread->publish_safepoint_scan_record(previous_scan_record);
         }
     }
 }  // namespace cl

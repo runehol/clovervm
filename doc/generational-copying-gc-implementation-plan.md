@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4b.3 working tree based on `b3dfa048` (2026-10-30) |
+| Validated against | 4d.2a and parameter-clear fix through `7db447f0`; 4d.2b.1 working tree (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -320,13 +320,96 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
   reaches child objects, and restored child-cell rewrites leave class/name
   identities and map lookups unchanged. Nursery collections use remembered
   owners; initialization and mutation barriers remain in stage 5.
-- **4c: Published interpreter state.** Expose writable accumulator publication,
-  protect saved publication state across native reentry, and reload before
-  dispatch resumes. Keeping code objects non-moving does not remove their
-  tracing requirement.
+- **4c: Published interpreter state (implemented).**
+  `ThreadState::visit_published_root_slots` exposes the initialized accumulator
+  and active-code cells, not the conservative stack range or native frontier.
+  Current reclamation consumes this visitor read-only. The live-accumulator
+  interpreter safepoint slow path assigns the updated accumulator returned by
+  `handle_safepoint` before dispatch resumes; the dead-accumulator path publishes
+  `not_present()` and discards the return value. `NativeHandleRootRegion`
+  registers its saved accumulator and active-code cells with `ScopedRoot`,
+  so nested reentry restores updated values. Code objects remain non-moving
+  but still require tracing; no PC rebasing is introduced. Controlled rewrite
+  tests cover resumed execution,
+  nested restoration, and RC-neutral writes. AArch64 `Uninitialized` emission
+  now writes `not_present()` so recovery cannot publish stale register bits.
+  No evacuation or new safepoints.
 - **4d: Precise frame roots.** Distinguish parameters, locals, temporaries,
   saved code objects, and continuation operands from native PCs, frame pointers,
   padding, and scalar metadata.
+  - **4d.1: Publish exact frame position (implemented).**
+    `SafepointScanRecord` carries the frame pointer and resume bytecode PC,
+    alongside the existing stack bound and root cells. Active interpreter
+    safepoints publish the actual current frame and PC, including the restored
+    caller at continuation safepoints. An absent interpreter position is
+    represented by null frame/PC fields. Named `idle(lowest)` and
+    `interpreter(lowest, fp, pc, code, accumulator_or_not_present)` factories
+    distinguish construction of these states; the interpreter factory requires
+    a code-object reference and an explicit accumulator value. Publication
+    takes a complete record. `NativeHandleRootRegion` saves/restores that record
+    while registering its
+    saved accumulator and code cells as before. Reserving native handle storage
+    changes only the lower bound, not the saved frame position. Position fields
+    are native metadata, not root cells; the current conservative scan and
+    mutable-root visitors are unchanged. This supplies context for the later
+    frame walker, not complete frame-root coverage or a claim that a completed
+    interpreter activation remains live after returning to native code.
+  - **4d.2: Codegen establishes ordinary-slot safety; analysis describes it.**
+    Extend the existing `BindingInfo::needs_entry_clear` decision in scope
+    analysis and continue emitting clears through the existing function
+    prologue. Do not add blanket frame initialization, runtime initialization
+    bitmaps, edge-clear insertion, or a bytecode repair pass. Additional clears
+    are selective, once per invocation for affected locals, not per store or
+    loop iteration. Parameters and globals must not be cleared.
+    - **4d.2a: Reachable normal joins.** Use the existing
+      `Presence` and `may_be_entry_value` facts. A non-parameter function local
+      that may be bound after a reachable normal join, but may still contain
+      untouched entry storage, requests `needs_entry_clear`. Add only the
+      internal reachability bookkeeping needed to keep unreachable annotation
+      paths from requesting GC-driven clears. Existing source-level unbound
+      checks remain independent and continue to request their own clears.
+      Normalize normal joins conservatively, without coupling this decision
+      to the current interpreter/JIT polling locations. This may clear a local
+      that is overwritten again before an actual poll; minimizing such clears
+      is not part of the first slice. Do not claim loop/exception coverage or
+      enable precise frame scanning yet.
+      Implemented with structural codegen checks and interpreter regressions;
+      before/after runtime measurements are recorded in
+      [the selective-entry-clear performance report](gc-local-entry-clears-performance.md).
+    - **4d.2b.1: Loop summaries.** Extend the same codegen decision to loop
+      headers/backedges, zero-iteration exits, break/continue, and loop `else`.
+      Use a GC-only copy of the entry flow state with the existing conservative
+      local-touch summary; include assignments in a repeated `while` condition
+      and in a `for` target as well as its body. Do not change source-level
+      presence facts. Normalize joins between break exits and the normal/else
+      exit with the same entry-clear request as other normal joins. All clears
+      remain in the function prologue, never on a backedge or in the loop body.
+      Touch summaries can conservatively request redundant clears; this is not
+      a minimal-clear analysis. Verify structural placement, semantics, and
+      before/after runtime cost before claiming loop-slot coverage.
+      Implemented and verified in the working tree; see the
+      [loop-entry-clear performance report](gc-loop-entry-clears-performance.md)
+      for the full comparison and unresolved performance outlier.
+    - **4d.2b.2: Exceptional-flow summaries.** Extend the decision to handlers,
+      finally, and suppressed exceptions, accounting for partial execution
+      before an exception. Never clear live bindings at handler entry; any
+      required normalization remains a safe prologue clear. Separate readiness
+      review; not implemented by the loop slice.
+    - **4d.2c: Read-only map derivation and verification.** Analyze emitted
+      bytecode, including handwritten builders, to derive ordinary-frame root
+      selections. Retain potentially bound locals even when bytecode-dead;
+      wholly unbound locals can be omitted without inspecting untouched
+      storage. Mixed bound/untouched states at GC observation points identify
+      an incomplete producer contract, not permission to rewrite bytecode or
+      drop a possible reference. Fix the producing codegen/builder instead.
+      A deleted local contains a valid sentinel, not an object reference.
+      Temporary liveness and instruction/exception write ordering require their
+      own audit before these results can drive root enumeration.
+  - **4d.3: Suspended calls and continuations.** Identify live caller state and
+    binary, ternary, and truthiness prefix operands, excluding dispatch metadata.
+  - **4d.4: Assemble the frame walk.** Cover native-entry boundaries and connect
+    precise frame enumeration to reclamation without dropping coverage for
+    native/JIT state that still awaits conversion.
 - **4e: Native handles and callers.** Migrate safepoint-crossing native locals
   and settle handle-cell address stability, overflow chunks, and interior
   pointers.

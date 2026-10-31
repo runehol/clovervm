@@ -329,6 +329,29 @@ def delete_equality():
         EXPECT_EQ(input_bits, execute_published_jit(code, {input_bits}));
     }
 
+    TEST(AArch64Execution, MaterializesUninitializedAsNotPresent)
+    {
+        CompilationSession session{test::compiler_thread()};
+        GraphBuilder builder(session, IRLevel::Machine);
+        Block *entry = builder.emplace_block();
+        UninitializedInstruction value =
+            builder.emplace_instruction<UninitializedInstruction>(entry);
+        builder.emplace_instruction<BareReturnInstruction>(
+            entry, TaggedValueRef(value));
+        ControlFlowGraph *graph = builder.finalize();
+        LocationAssignments locations = assign_program_values_to_x0(*graph);
+        CodeCache cache;
+        auto emission = emit_aarch64_from_cfg(*graph, locations, cache,
+                                              no_side_exit_thunk());
+        ASSERT_TRUE(emission);
+        PublishedCode code = std::move(emission).value();
+
+        // Poison incoming argument registers: the definition must write its
+        // sentinel rather than expose whatever previously occupied x0.
+        EXPECT_EQ(static_cast<uint64_t>(Value::not_present().as.integer),
+                  execute_published_jit(code, {0x12345678, 0xabcdef00}));
+    }
+
     TEST(AArch64Execution, ExecutesBinaryLogicalSMIFamily)
     {
         auto execute = []<typename Operation>(Value lhs, Value rhs) {
@@ -1534,6 +1557,38 @@ def run(): return reduce(subtract, [10, 2, 3])
             true);
         fixture.request_safepoint();
         EXPECT_EQ(Value::from_smi(5), fixture.call(L"run"));
+    }
+
+    TEST(AArch64Execution, RecoversUnavailableEntryAccumulatorAsNotPresent)
+    {
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(L"def value(): return 7\n"
+                               L"def run(): return value()\n");
+        ASSERT_TRUE(fixture.jit_compile(L"run"));
+        bool observed = false;
+        fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+            [](void *opaque, ThreadState *, Value accumulator, Value *,
+               CodeObject *code, uint32_t pc_offset,
+               const SafepointScanRecord &record) {
+                if(!code->has_jit_code() || pc_offset != 0)
+                {
+                    return;
+                }
+                // The entry LoadGlobal exits before defining an accumulator.
+                // Check the actual recovered value, not whether arbitrary
+                // stale register bits happen to look like a legal tag.
+                *static_cast<bool *>(opaque) = true;
+                EXPECT_EQ(Value::not_present(), accumulator);
+                EXPECT_EQ(Value::not_present(),
+                          record.accumulator_or_not_present);
+            },
+            &observed);
+        fixture.request_safepoint();
+        Value result = fixture.call(L"run");
+        fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+            nullptr, nullptr);
+        EXPECT_TRUE(observed);
+        EXPECT_EQ(Value::from_smi(7), result);
     }
 
     TEST(AArch64Execution, RootsJitReturnValueAtInterpreterReentrySafepoint)

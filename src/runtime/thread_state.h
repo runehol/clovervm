@@ -64,7 +64,23 @@ namespace cl
 
     struct SafepointScanRecord
     {
+        static SafepointScanRecord idle(Value *lowest_live_stack_slot)
+        {
+            SafepointScanRecord record;
+            record.lowest_live_stack_slot = lowest_live_stack_slot;
+            return record;
+        }
+
+        static SafepointScanRecord
+        interpreter(Value *lowest_live_stack_slot, Value *frame_pointer,
+                    const uint8_t *resume_pc, CodeObject &code,
+                    Value accumulator_or_not_present);
+
         Value *lowest_live_stack_slot = nullptr;
+        // Native position metadata, never reference cells. Both are null when
+        // no interpreter frame position is published.
+        Value *frame_pointer = nullptr;
+        const uint8_t *resume_pc = nullptr;
         Value accumulator_or_not_present = Value::not_present();
         Value active_code_object_or_not_present = Value::not_present();
     };
@@ -116,6 +132,10 @@ namespace cl
         // Cached classes/shapes and pending-exception cells only. Interpreter
         // state and scoped native roots have separate enumeration paths.
         void visit_persistent_root_slots(StrongSlotVisitor visitor);
+
+        // Published accumulator and active code only, not the conservative
+        // stack range. Resume must reload a live accumulator after collection.
+        void visit_published_root_slots(StrongSlotVisitor visitor);
 
         void refresh_class_for_native_layout_cache();
         void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls);
@@ -211,11 +231,9 @@ namespace cl
         {
             return *safepoint_requested_ptr;
         }
-        void publish_safepoint_scan_record(
-            Value *lowest_live_stack_slot, Value accumulator_or_not_present,
-            Value active_code_object_or_not_present = Value::not_present());
-        void handle_safepoint(Value accumulator, Value *fp, const uint8_t *pc,
-                              CodeObject *code_object);
+        void publish_safepoint_scan_record(const SafepointScanRecord &record);
+        Value handle_safepoint(Value accumulator, Value *fp, const uint8_t *pc,
+                               CodeObject *code_object);
         const SafepointScanRecord &safepoint_scan_record() const
         {
             return safepoint_scan_record_;

@@ -64,11 +64,13 @@ TEST(PersistentRoots, CoversClassArrayShapesAndInitializedExceptionCellsOnly)
     thread.add_to_zero_count_table_if_needed(garbage);
     Owned<TValue<String>> native(thread.make_object_value<String>(L"native"));
     ScopedRoot root(thread, HeapReferenceSlot(&native));
-    thread.publish_safepoint_scan_record(thread.clover_frame_sentinel(),
-                                         native.raw_value());
+    SafepointScanRecord record =
+        SafepointScanRecord::idle(thread.clover_frame_sentinel());
+    record.accumulator_or_not_present = native.raw_value();
+    thread.publish_safepoint_scan_record(record);
     EXPECT_EQ(expected, persistent_roots(thread));
-    thread.publish_safepoint_scan_record(thread.clover_frame_sentinel(),
-                                         Value::not_present());
+    thread.publish_safepoint_scan_record(
+        SafepointScanRecord::idle(thread.clover_frame_sentinel()));
 }
 
 TEST(PersistentRoots, RewritesEveryCachedCellWithoutChangingOwnership)

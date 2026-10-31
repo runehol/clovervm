@@ -1728,9 +1728,11 @@ TEST(Codegen, local_augmented_assignment_in_loop_uses_dominating_binding)
                                                 L"    return acc\n");
 
     EXPECT_NE(std::string::npos,
-              actual.find("   19 Ldar1\n"
-                          "   20 InPlaceAdd r0, operator_ic[0]\n"
-                          "   24 Star0\n"));
+              actual.find("   21 Ldar1\n"
+                          "   22 InPlaceAdd r0, operator_ic[0]\n"
+                          "   26 Star0\n"));
+    EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r1"));
+    EXPECT_EQ(std::string::npos, actual.find("ClearLocal r0"));
     EXPECT_EQ(std::string::npos, actual.find("LoadLocalChecked r0"));
 }
 
@@ -2416,6 +2418,210 @@ TEST(Codegen, expression_assigned_local_still_uses_direct_register_copy)
                                                   L"    return y\n");
     EXPECT_NE(std::string::npos, bytecode.find("Mov r0, p0"));
     EXPECT_EQ(std::string::npos, bytecode.find("Ldar p0"));
+}
+
+TEST(Codegen, normal_joins_clear_maybe_bound_entry_storage_without_later_reads)
+{
+    const wchar_t *sources[] = {
+        L"def f(flag):\n    if flag:\n        x = 1\n    return None\n",
+        (L"def f(flag):\n    if flag == 1:\n        x = 1\n"
+         L"    elif flag == 2:\n        x = 2\n    return None\n"),
+        L"def f(flag):\n    (x := 1) if flag else 0\n    return None\n",
+        L"def f(flag):\n    flag and (x := 1)\n    return None\n",
+        L"def f(flag):\n    flag or (x := 1)\n    return None\n",
+        L"def f(flag):\n    flag < 1 < (x := 2)\n    return None\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        std::string actual = bytecode_str_from_file(source);
+        // A single prologue clear, not a clear on either branch or at the
+        // later observation point. These bindings have no Python read.
+        EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r0"));
+        size_t clear = actual.find("ClearLocal ");
+        ASSERT_NE(std::string::npos, clear);
+        EXPECT_EQ(std::string::npos, actual.find("ClearLocal ", clear + 1));
+    }
+}
+
+TEST(Codegen, normal_joins_do_not_blanket_clear_local_storage)
+{
+    const wchar_t *sources[] = {
+        L"def f(flag):\n    x = 1\n    if flag:\n        x = 2\n"
+        L"    return None\n",
+        L"def f(flag):\n    if flag:\n        x = 1\n"
+        L"    else:\n        x = 2\n    return None\n",
+        L"def f(flag):\n    (x := 1) if flag else (x := 2)\n"
+        L"    return None\n",
+        L"def f(flag):\n    (x := flag) and 1\n    return None\n",
+        L"def f(x, flag):\n    if flag:\n        x = 1\n    return None\n",
+        L"def f(flag):\n    global x\n    if flag:\n        x = 1\n"
+        L"    return None\n",
+        L"def f(flag):\n    if flag:\n        x = 1\n        del x\n"
+        L"    return None\n",
+        L"def f(flag):\n    if flag:\n        x = 1\n        return None\n"
+        L"    return None\n",
+        L"class C:\n    if True:\n        x = 1\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        EXPECT_EQ(std::string::npos,
+                  bytecode_str_from_file(source).find("ClearLocal "));
+    }
+}
+
+TEST(Codegen, unreachable_normal_joins_do_not_request_gc_entry_clears)
+{
+    const wchar_t *sources[] = {
+        L"def f():\n    return None\n    if True:\n        x = 1\n",
+        L"def f():\n    return None\n    True and (x := 1)\n",
+        L"def f():\n    return None\n    (x := 1) if True else 0\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        EXPECT_EQ(std::string::npos,
+                  bytecode_str_from_file(source).find("ClearLocal "));
+    }
+}
+
+TEST(Codegen, loop_mixed_storage_is_cleared_only_in_the_prologue)
+{
+    struct Case
+    {
+        const wchar_t *source;
+        size_t clears;
+    };
+    const Case cases[] = {
+        {L"def f(flag):\n    while flag:\n        x = 1\n"
+         L"    return None\n",
+         1},
+        {L"def f(flag):\n    while flag:\n        x = 1\n"
+         L"        continue\n    return None\n",
+         1},
+        {L"def f(flag):\n    while flag:\n        x = 1\n"
+         L"        break\n    return None\n",
+         1},
+        {L"def f(next_value):\n    while (x := next_value()):\n"
+         L"        y = x\n    return None\n",
+         2},
+        {L"def f(items):\n    for item in items:\n        pass\n"
+         L"    return None\n",
+         1},
+        {L"def f(items):\n    for item in items:\n        x = item\n"
+         L"    return None\n",
+         2},
+        {L"def f(items):\n    for outer in items:\n"
+         L"        for inner in items:\n            value = inner\n"
+         L"    return None\n",
+         3},
+        {L"def f(flag):\n    while flag:\n        break\n"
+         L"    else:\n        x = 1\n    return None\n",
+         1},
+        {L"def f(item, items):\n    for item in items:\n        break\n"
+         L"    else:\n        x = 1\n    return None\n",
+         1},
+        {L"def f(flag):\n    while flag:\n        x = 1\n"
+         L"        del x\n        break\n    return None\n",
+         1},
+    };
+    for(const Case &test_case: cases)
+    {
+        SCOPED_TRACE(test_case.source);
+        std::string actual = bytecode_str_from_file(test_case.source);
+        std::string prologue;
+        for(size_t idx = 0; idx < test_case.clears; ++idx)
+        {
+            prologue += fmt::format("{:5} ClearLocal r{}\n", idx * 2, idx);
+        }
+        // Every expected clear must be contiguous at function entry. There
+        // must be no additional clear in a body, backedge, or loop exit.
+        size_t start = actual.find(prologue);
+        ASSERT_NE(std::string::npos, start) << actual;
+        EXPECT_EQ(std::string::npos,
+                  actual.find("ClearLocal ", start + prologue.size()));
+    }
+}
+
+TEST(Codegen, loop_clearing_does_not_blanket_initialize_bindings)
+{
+    const wchar_t *sources[] = {
+        L"def f(x, flag):\n    while flag:\n        x = 1\n"
+        L"        break\n    return x\n",
+        L"def f(flag):\n    x = 1\n    while flag:\n        x = 2\n"
+        L"        break\n    return x\n",
+        L"def f(items):\n    item = 0\n    x = 0\n"
+        L"    for item in items:\n        x = item\n    return x\n",
+        L"def f(flag):\n    global x\n    while flag:\n        x = 1\n"
+        L"        break\n    return None\n",
+        L"def f():\n    return None\n    while True:\n        x = 1\n",
+        L"def f(items):\n    return None\n    for item in items:\n        x = "
+        L"1\n",
+        L"def f(flag):\n    while flag:\n        pass\n"
+        L"    else:\n        x = 1\n    return None\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        EXPECT_EQ(std::string::npos,
+                  bytecode_str_from_file(source).find("ClearLocal "));
+    }
+}
+
+TEST(Codegen, loop_entry_clears_preserve_unbound_checks)
+{
+    const wchar_t *sources[] = {
+        L"def f(flag):\n    while flag:\n        x = 1\n"
+        L"        break\n    return x\n",
+        L"def f(items):\n    for x in items:\n        pass\n    return x\n",
+        L"def f(flag):\n    while flag:\n        x = 1\n"
+        L"        del x\n        break\n    return x\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        std::string actual = bytecode_str_from_file(source);
+        EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r0"));
+        EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
+    }
+}
+
+TEST(Codegen, unreachable_accesses_do_not_request_entry_clears)
+{
+    const wchar_t *sources[] = {
+        L"def f(x):\n    return x\n    x\n",
+        L"def f(x):\n    return x\n    del x\n",
+        L"def f(x):\n    return x\n    if x:\n        y = 1\n",
+        L"def f():\n    return None\n    x\n    x = 1\n",
+    };
+    for(const wchar_t *source: sources)
+    {
+        SCOPED_TRACE(source);
+        // Unreachable accesses still receive annotations, but must not
+        // request a clear that executes before reachable instructions.
+        EXPECT_EQ(std::string::npos,
+                  bytecode_str_from_file(source).find("ClearLocal "));
+    }
+}
+
+TEST(Codegen, deleting_a_parameter_keeps_checks_without_clearing_its_argument)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def f(x, flag):\n    if flag:\n        del x\n    return x\n");
+    EXPECT_EQ(std::string::npos, actual.find("ClearLocal "));
+    EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked p0"));
+}
+
+TEST(Codegen, gc_entry_clear_does_not_make_a_local_semantically_bound)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def f(flag):\n    if flag:\n        x = 1\n    return x\n");
+    EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r0"));
+    EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
+    size_t clear = actual.find("ClearLocal ");
+    ASSERT_NE(std::string::npos, clear);
+    EXPECT_EQ(std::string::npos, actual.find("ClearLocal ", clear + 1));
 }
 
 TEST(Codegen, walrus_skipped_paths_require_checked_local_loads)
