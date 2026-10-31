@@ -286,16 +286,17 @@ TEST(PythonSourceFiles, Base85SurvivesEverySafepointReclamation)
 
 TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
 {
-    for(const char *path: {"tests/python/itertools_selection.py",
-                           "tests/python/itertools_pairwise.py",
-                           "tests/python/itertools_count.py",
-                           "tests/python/itertools_count_mixed_numbers.py",
-                           "tests/python/itertools_count_reentry.py",
-                           "tests/python/itertools_accumulate.py",
-                           "tests/python/itertools_batched.py",
-                           "tests/python/itertools_zip_longest.py",
-                           "tests/python/itertools_product.py",
-                           "tests/python/itertools_combinatorial.py"})
+    for(const char *path:
+        {"tests/python/itertools_selection.py",
+         "tests/python/itertools_pairwise.py",
+         "tests/python/itertools_cycle.py", "tests/python/itertools_count.py",
+         "tests/python/itertools_count_mixed_numbers.py",
+         "tests/python/itertools_count_reentry.py",
+         "tests/python/itertools_accumulate.py",
+         "tests/python/itertools_batched.py",
+         "tests/python/itertools_zip_longest.py",
+         "tests/python/itertools_product.py",
+         "tests/python/itertools_combinatorial.py"})
     {
         SCOPED_TRACE(path);
         std::wstring source = read_source_file(path);

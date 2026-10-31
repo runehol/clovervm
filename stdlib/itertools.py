@@ -1,8 +1,8 @@
 """Lazy iteration building blocks supported by CloverVM.
 
 The supported subset provides chain, repeat, islice, starmap, compress,
-filterfalse, takewhile, dropwhile, pairwise, count, accumulate, batched, zip_longest,
-product, combinations, combinations_with_replacement, and permutations.
+filterfalse, takewhile, dropwhile, pairwise, cycle, count, accumulate, batched,
+zip_longest, product, combinations, combinations_with_replacement, and permutations.
 Integer bounds use operator.index's builtin-int/bool support; custom __index__
 is not supported yet. Limits match the VM's current signed 64-bit platforms.
 count accepts builtin ints/bools/floats and their subclasses, not arbitrary numeric objects.
@@ -12,6 +12,8 @@ subclass-preserving construction are deferred. starmap uses the VM's existing
 call support, as do predicate iterators; callable instances and first-class
 bound methods are not supported. Inputs use existing VM iterable types.
 Repr, pickling, copy, and CPython's tuple recycling are outside this subset.
+cycle caches yielded objects lazily by reference and releases the source on
+exhaustion. Infinite inputs grow the cache without bound.
 batched builds batches incrementally rather than preallocating n tuple slots;
 CPython's eager allocation failures and their timing are not reproduced.
 zip_longest keeps final exhaustion sticky across input reentry, rather than
@@ -33,7 +35,7 @@ from operator import index as _index
 __all__ = (
     "chain", "repeat", "islice", "starmap",
     "compress", "filterfalse", "takewhile", "dropwhile",
-    "pairwise", "count", "accumulate", "batched", "zip_longest", "product",
+    "pairwise", "cycle", "count", "accumulate", "batched", "zip_longest", "product",
     "combinations", "combinations_with_replacement", "permutations",
 )
 
@@ -390,6 +392,51 @@ class chain:
             except StopIteration:
                 self._active = None
         raise StopIteration
+
+
+class cycle:
+    def __init__(self, /, *args, **options):
+        # Construction lives in CPython's __new__; reinitialization is a no-op.
+        if hasattr(self, "_saved"):
+            return
+        if options:
+            raise TypeError("cycle() takes no keyword arguments")
+        if len(args) != 1:
+            raise TypeError("cycle() expects exactly one argument")
+        source = _iter(args[0])
+        self._iterator = source
+        self._index = -1
+        # Publish complete state after acquiring the source.
+        self._saved = []
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        index = self._index
+        if index < 0:
+            # Retain the source across callbacks that can reenter and clear it.
+            source = self._iterator
+            try:
+                item = _next(source)
+            except StopIteration:
+                # Exhaustion is permanent even for a resumable source.
+                index = 0
+                self._index = 0
+                self._iterator = None
+            else:
+                # Nested exhaustion does not cancel this successful outer call.
+                self._saved.append(item)
+                return item
+        saved = self._saved
+        if not saved:
+            raise StopIteration
+        item = saved[index]
+        index += 1
+        if index >= len(saved):
+            index = 0
+        self._index = index
+        return item
 
 
 class repeat:
