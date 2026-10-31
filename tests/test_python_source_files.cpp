@@ -168,6 +168,20 @@ TEST(PythonSourceFiles, BinasciiCRCSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, Base64BytearraySurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/test_base64_bytearray.py",
+                           "tests/python/test_base64_bytearray_mutation.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/itertools_selection.py",
