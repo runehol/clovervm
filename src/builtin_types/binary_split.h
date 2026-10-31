@@ -24,8 +24,8 @@ namespace cl
     // Constant-space Two-Way search. The critical factorization follows
     // CPython Objects/stringlib/fastsearch.h at v3.14.10 (PSF License;
     // Copyright (c) 2001 Python Software Foundation; All Rights Reserved).
-    // See LICENSE-CPYTHON. This is the core algorithm
-    // without CPython's skip table or readable-end-sentinel assumptions.
+    // This is the core algorithm without CPython's skip table or
+    // readable-end-sentinel assumptions.
     // The separator is borrowed only within the caller's synchronous scan:
     // no VM allocation, callbacks, mutation or safepoints may occur here.
     class BinarySeparatorSearch

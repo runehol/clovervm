@@ -180,8 +180,8 @@ use constant-space Two-Way search in either direction. Separator factorization
 is reused across split ranges, giving linear total scanning/preprocessing time
 in source plus separator length. Shorter separators retain a bounded library
 search path. Search state and payload views expire before result allocation.
-The adapted factorization's source and license are recorded in
-`src/builtin_types/binary_split.h` and `LICENSE-CPYTHON`.
+The adapted factorization's source and license attribution are recorded in
+`src/builtin_types/binary_split.h`.
 Run `python3.14 tests/host/test_bytearray_split.py [path/to/clovervm]` using
 CPython 3.14.10 for the supported-input differential trace.
 
