@@ -9482,6 +9482,55 @@ assert obj.__class__ is Valid
     EXPECT_FALSE(runner.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, selective_gc_entry_clears_preserve_bindings_and_walrus_values)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = context.run_file(LR"(
+def optional(flag):
+    if flag:
+        x = 7
+    return x
+def both(flag):
+    if flag:
+        x = 7
+    else:
+        x = 9
+    return x
+def preserve_parameter(x, flag):
+    if flag:
+        x = 12
+    return x
+def preserve_old_operand(x, flag):
+    return x + ((x := 9) if flag else 3)
+def deleted(flag):
+    if flag:
+        x = 7
+        del x
+    return None
+assert optional(True) == 7
+try:
+    optional(False)
+except UnboundLocalError:
+    pass
+else:
+    raise AssertionError("cleared storage must still be unbound")
+assert both(True) == 7
+assert both(False) == 9
+assert preserve_parameter(4, False) == 4
+assert preserve_parameter(4, True) == 12
+assert preserve_old_operand(10, True) == 19
+assert preserve_old_operand(10, False) == 13
+assert deleted(True) is None
+assert deleted(False) is None
+True
+)");
+    EXPECT_EQ(Value::True(), result);
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
 TEST(Interpreter, functools_reduce_retains_state_across_reclamation_and_reentry)
 {
     test::VmTestContext context;

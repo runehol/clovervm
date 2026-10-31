@@ -39,6 +39,7 @@ namespace cl
         BindingScope scope = BindingScope::Global;
         uint32_t local_slot_idx = 0;
         Presence initial_presence = Presence::Missing;
+        // Required by checked accesses or GC-visible normal-flow joins.
         bool needs_entry_clear = false;
     };
 

@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4d.1 working tree based on `6834b70b` (2026-10-31) |
+| Validated against | 4d.1 implemented through `9271f055`; 4d.2a working tree (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -354,10 +354,43 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
     mutable-root visitors are unchanged. This supplies context for the later
     frame walker, not complete frame-root coverage or a claim that a completed
     interpreter activation remains live after returning to native code.
-  - **4d.2: Ordinary slot selection.** Establish the initialization and
-    liveness contract for parameters, locals, and temporaries at each position.
-    Capacity alone does not prove a slot initialized; the current compiler only
-    clears selected locals. Settle this in its own readiness review.
+  - **4d.2: Codegen establishes ordinary-slot safety; analysis describes it.**
+    Extend the existing `BindingInfo::needs_entry_clear` decision in scope
+    analysis and continue emitting clears through the existing function
+    prologue. Do not add blanket frame initialization, runtime initialization
+    bitmaps, edge-clear insertion, or a bytecode repair pass. Additional clears
+    are selective, once per invocation for affected locals, not per store or
+    loop iteration. Parameters and globals must not be cleared.
+    - **4d.2a: Reachable normal joins.** Use the existing
+      `Presence` and `may_be_entry_value` facts. A non-parameter function local
+      that may be bound after a reachable normal join, but may still contain
+      untouched entry storage, requests `needs_entry_clear`. Add only the
+      internal reachability bookkeeping needed to keep unreachable annotation
+      paths from requesting GC-driven clears. Existing source-level unbound
+      checks remain independent and continue to request their own clears.
+      Normalize normal joins conservatively, without coupling this decision
+      to the current interpreter/JIT polling locations. This may clear a local
+      that is overwritten again before an actual poll; minimizing such clears
+      is not part of the first slice. Do not claim loop/exception coverage or
+      enable precise frame scanning yet.
+      Implemented with structural codegen checks and interpreter regressions;
+      before/after runtime measurements are recorded in
+      [the selective-entry-clear performance report](gc-local-entry-clears-performance.md).
+    - **4d.2b: Loop and exceptional-flow summaries.** Extend the same codegen
+      decision to backedges, zero-iteration exits, break/continue, handlers,
+      finally, and suppressed exceptions. Never clear a live binding on a
+      backedge or at handler entry; any required normalization remains a safe
+      prologue clear. Keep this as a separate readiness review.
+    - **4d.2c: Read-only map derivation and verification.** Analyze emitted
+      bytecode, including handwritten builders, to derive ordinary-frame root
+      selections. Retain potentially bound locals even when bytecode-dead;
+      wholly unbound locals can be omitted without inspecting untouched
+      storage. Mixed bound/untouched states at GC observation points identify
+      an incomplete producer contract, not permission to rewrite bytecode or
+      drop a possible reference. Fix the producing codegen/builder instead.
+      A deleted local contains a valid sentinel, not an object reference.
+      Temporary liveness and instruction/exception write ordering require their
+      own audit before these results can drive root enumeration.
   - **4d.3: Suspended calls and continuations.** Identify live caller state and
     binary, ternary, and truthiness prefix operands, excluding dispatch metadata.
   - **4d.4: Assemble the frame walk.** Cover native-entry boundaries and connect

@@ -58,6 +58,7 @@ namespace cl
         {
             std::vector<Presence> local_presence;
             std::vector<bool> may_be_entry_value;
+            bool reachable = true;
         };
 
         struct FlowSummary
@@ -1137,11 +1138,20 @@ namespace cl
             FlowState merge_flow_states(const FlowState &left,
                                         const FlowState &right) const
             {
+                if(!left.reachable && right.reachable)
+                {
+                    return right;
+                }
+                if(left.reachable && !right.reachable)
+                {
+                    return left;
+                }
                 assert(left.local_presence.size() ==
                        right.local_presence.size());
                 assert(left.may_be_entry_value.size() ==
                        right.may_be_entry_value.size());
                 FlowState merged;
+                merged.reachable = left.reachable || right.reachable;
                 merged.local_presence.reserve(left.local_presence.size());
                 merged.may_be_entry_value.reserve(
                     left.may_be_entry_value.size());
@@ -1156,10 +1166,59 @@ namespace cl
                 return merged;
             }
 
+            void request_gc_entry_clears(AnalysisState &analysis,
+                                         const FlowState &joined) const
+            {
+                if(!joined.reachable ||
+                   analysis.result.mode != CodegenMode::Function)
+                {
+                    return;
+                }
+                for(size_t idx = 0; idx < analysis.result.bindings.size();
+                    ++idx)
+                {
+                    BindingInfo &binding = analysis.result.bindings[idx];
+                    if(binding.scope == BindingScope::Local &&
+                       binding.initial_presence != Presence::Present &&
+                       joined.local_presence[idx] != Presence::Missing &&
+                       joined.may_be_entry_value[idx])
+                    {
+                        // A bound value and untouched entry storage can meet
+                        // here even without a later source-level local read.
+                        // Clear storage in the prologue, not on either edge,
+                        // and do not change the binding's semantic presence.
+                        binding.needs_entry_clear = true;
+                    }
+                }
+            }
+
+            FlowState merge_normal_flow_states(AnalysisState &analysis,
+                                               const FlowState &left,
+                                               const FlowState &right) const
+            {
+                FlowState joined = merge_flow_states(left, right);
+                if(left.reachable && right.reachable)
+                {
+                    request_gc_entry_clears(analysis, joined);
+                }
+                return joined;
+            }
+
+            void merge_normal_fallthrough(AnalysisState &analysis,
+                                          std::optional<FlowState> &target,
+                                          const FlowState &source) const
+            {
+                target =
+                    target.has_value()
+                        ? merge_normal_flow_states(analysis, *target, source)
+                        : std::optional<FlowState>(source);
+            }
+
             FlowState
             conservative_flow_state(const AnalysisState &analysis) const
             {
                 FlowState state;
+                state.reachable = false;
                 state.local_presence.resize(analysis.result.bindings.size(),
                                             Presence::Maybe);
                 state.may_be_entry_value.resize(analysis.result.bindings.size(),
@@ -1319,7 +1378,8 @@ namespace cl
                 analyze_child_as_expression(analysis, children[0], state);
                 FlowState rhs_state = state;
                 analyze_child_as_expression(analysis, children[1], rhs_state);
-                return fallthrough_summary(merge_flow_states(state, rhs_state));
+                return fallthrough_summary(
+                    merge_normal_flow_states(analysis, state, rhs_state));
             }
 
             FlowSummary analyze_comparison_expression(AnalysisState &analysis,
@@ -1334,7 +1394,7 @@ namespace cl
                 for(size_t idx = 2; idx < children.size(); ++idx)
                 {
                     analyze_child_as_expression(analysis, children[idx], state);
-                    exits = merge_flow_states(exits, state);
+                    exits = merge_normal_flow_states(analysis, exits, state);
                 }
                 return fallthrough_summary(exits);
             }
@@ -1370,8 +1430,9 @@ namespace cl
                         append_abrupt_exits(result, branch);
                         if(branch.fallthrough.has_value())
                         {
-                            merge_fallthrough(result.fallthrough,
-                                              *branch.fallthrough);
+                            merge_normal_fallthrough(analysis,
+                                                     result.fallthrough,
+                                                     *branch.fallthrough);
                         }
                     }
 
@@ -1393,14 +1454,16 @@ namespace cl
                         append_abrupt_exits(result, else_summary);
                         if(else_summary.fallthrough.has_value())
                         {
-                            merge_fallthrough(result.fallthrough,
-                                              *else_summary.fallthrough);
+                            merge_normal_fallthrough(analysis,
+                                                     result.fallthrough,
+                                                     *else_summary.fallthrough);
                         }
                     }
                 }
                 else if(next_condition.has_value())
                 {
-                    merge_fallthrough(result.fallthrough, *next_condition);
+                    merge_normal_fallthrough(analysis, result.fallthrough,
+                                             *next_condition);
                 }
                 return result;
             }
@@ -1851,8 +1914,8 @@ namespace cl
                                                         body_state);
                             analyze_child_as_expression(analysis, children[2],
                                                         alternative_state);
-                            return fallthrough_summary(merge_flow_states(
-                                body_state, alternative_state));
+                            return fallthrough_summary(merge_normal_flow_states(
+                                analysis, body_state, alternative_state));
                         }
 
                     case AstNodeKind::STATEMENT_IF:

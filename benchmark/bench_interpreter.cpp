@@ -1464,6 +1464,30 @@ static void BM_IntBaseFormatting(benchmark::State &state)
 }
 BENCHMARK(BM_IntBaseFormatting)->DenseRange(0, 5);
 
+// Isolate the invocation cost of selectively clearing locals, without heap
+// allocation in the callee. Modes: definite writes, one mixed local, eight.
+static void BM_LocalEntryClears(benchmark::State &state)
+{
+    constexpr const char *path = "benchmark/local_entry_clears.py";
+    constexpr int64_t n = 10000;
+    try
+    {
+        CloverProgram program(path, state.range(0));
+        verify_benchmark_result(path, state.range(0), n * (n - 1) / 2,
+                                program.run());
+        for(auto _: state)
+        {
+            benchmark::DoNotOptimize(program.run());
+        }
+        state.SetItemsProcessed(state.iterations() * n);
+    }
+    catch(const std::exception &err)
+    {
+        state.SkipWithError(err.what());
+    }
+}
+BENCHMARK(BM_LocalEntryClears)->DenseRange(0, 2);
+
 int main(int argc, char **argv)
 {
     try
