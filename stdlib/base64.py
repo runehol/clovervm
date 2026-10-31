@@ -1,4 +1,4 @@
-"""Bounded Base16, Base32, and Base64 conversion for bytes and bytearray.
+"""Bounded Base16, Base32, Base64, and Base85 conversion for bytes and bytearray.
 
 Uses stored payloads; subclass length, indexing, and transformation overrides
 are outside this slice, except explicit altchars/map01 length assertions.
@@ -8,6 +8,7 @@ resize guards are unsupported.
 # Wrappers and decoder state machine adapted from CPython v3.14.5,
 # Lib/base64.py and Modules/binascii.c.
 # Bytearray support and callback ordering checked against CPython v3.14.10.
+# Base85 semantics referenced to CPython v3.14.10, Lib/base64.py.
 # Copyright (c) Python Software Foundation.
 # The derived portions are licensed under the PSF License Agreement.
 
@@ -16,7 +17,7 @@ import binascii
 __all__ = ["b64encode", "b64decode", "standard_b64encode",
            "standard_b64decode", "urlsafe_b64encode", "urlsafe_b64decode",
            "b16encode", "b16decode", "b32encode", "b32decode",
-           "b32hexencode", "b32hexdecode"]
+           "b32hexencode", "b32hexdecode", "b85encode", "b85decode"]
 
 _alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _decode_table = []
@@ -321,3 +322,54 @@ def b32hexencode(s):
 def b32hexdecode(s, casefold=False):
     """Decode extended hexadecimal Base32, optionally folding lowercase."""
     return _b32decode(_b32hex_decode_table, s, casefold)
+
+
+_b85alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~"
+_b85_decode_table = []
+for _i in range(256):
+    _b85_decode_table.append(-1)
+for _i in range(85):
+    _b85_decode_table[_b85alphabet[_i]] = _i
+
+
+def b85encode(b, pad=False):
+    """Encode stored bytes using Base85, optionally keeping zero padding."""
+    b = _encode_input(b)
+    result = []
+    length = len(b)
+    for i in range(0, length, 4):
+        word = 0
+        for j in range(4):
+            word = (word << 8) | (b[i + j] if i + j < length else 0)
+        for divisor in (52200625, 614125, 7225, 85, 1):
+            result.append(_b85alphabet[word // divisor % 85])
+    padding = (-length) % 4
+    # CPython only tests pad for a partial group, after consuming the input.
+    if padding and not pad:
+        result = result[:-padding]
+    return bytes(result)
+
+
+def b85decode(b):
+    """Decode Base85 bytes or ASCII text, rejecting bad digits and overflow."""
+    b = _encode_input(_bytes_from_decode_data(b))
+    result = []
+    length = len(b)
+    for i in range(0, length, 5):
+        acc = 0
+        for j in range(5):
+            # Missing tail digits are virtual '~' characters (digit 84).
+            digit = _b85_decode_table[b[i + j]] if i + j < length else 84
+            if digit < 0:
+                raise ValueError("bad base85 character at position " + str(i + j))
+            acc = acc * 85 + digit
+        # Check after all five digits, so invalid characters take precedence
+        # over overflow within the same group, but not over an earlier group.
+        if acc > 4294967295:
+            raise ValueError("base85 overflow in hunk starting at byte " + str(i))
+        for shift in (24, 16, 8, 0):
+            result.append((acc >> shift) & 255)
+    padding = (-length) % 5
+    if padding:
+        result = result[:-padding]
+    return bytes(result)

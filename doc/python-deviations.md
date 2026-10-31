@@ -640,3 +640,18 @@ length limits before allocation and raises `OverflowError` on overflow. Actual
 allocation exhaustion retains the existing VM allocator policy; recoverable
 `MemoryError` parity is outside this slice. No buffer exports, new conversion
 protocols, object layouts or dispatch changes are introduced.
+
+
+## Base85 subclass normalization
+
+`base64.b85encode` and `base64.b85decode` consume stored bytes payloads,
+including bytes subclasses, rather than invoking subclass length, indexing,
+addition or conversion hooks. ASCII decoding similarly bypasses str-subclass
+encoding hooks. CPython 3.14.10's managed Base85 implementation can observe
+length/addition hooks and calls `str.encode` for text inputs. These exclusions
+follow the existing bounded Base16/32 normalization policy; general buffers,
+memoryview, custom conversion protocols and bytearray subclasses remain
+unsupported. Builtin bytearray data is snapshotted before encoding, so a pad
+truth callback may resize the original without changing the encoded result.
+The callback runs only for an incomplete four-byte input group, after the
+input has been consumed, matching CPython. No native buffer export is held.
