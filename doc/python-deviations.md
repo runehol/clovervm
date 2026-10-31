@@ -826,3 +826,55 @@ struct module, Cartesian lookup table, native API, buffer export, or GC change
 is required. Managed per-byte processing and result lists remain linear in the
 input/output size; no native-codec throughput claim is made. Z85 and file/legacy
 line-wrapping APIs remain outside this slice.
+
+## URL percent conversion uses stored payloads and existing strict codecs
+
+`urllib.parse` provides `quote_from_bytes(bs, safe='/')`,
+`unquote_to_bytes(string)`, `quote(string, safe='/', encoding=None, errors=None)`
+and `quote_plus(string, safe='', encoding=None, errors=None)`, referenced to
+CPython 3.14.10. The package does not provide URL parsing/result classes,
+networking, query parsing/encoding, or text `unquote`/`unquote_plus`.
+
+Inputs are stored str/bytes payloads (including subclasses) and builtin
+bytearrays. Input-subclass length, indexing, iteration, membership, encoding,
+stripping, decoding and splitting hooks are bypassed. Empty text passed to
+`quote` is returned unchanged, including subclass identity. Unchanged exact bytes
+passed to `unquote_to_bytes` retain identity. Bytearray subclasses, general
+buffers/memoryview and arbitrary input conversion protocols are excluded.
+Ordinary invalid inputs without a `split` attribute retain `AttributeError` in
+`unquote_to_bytes`; duck objects with that attribute are not accepted as inputs.
+General class-call/descriptor limitations remain separate VM concerns.
+
+Text quoting delegates to the existing UTF-8/Latin-1 codecs with strict errors
+and their supported aliases. Other encodings raise `LookupError`; non-strict
+error policies raise the existing `NotImplementedError` when encoding is reached.
+The empty-text shortcut returns before checking unused safe/codec options.
+Binary quoting rejects non-None encoding/errors options, including empty inputs.
+Unescaped text in `unquote_to_bytes` is encoded as strict UTF-8.
+
+Safe strings use stored ASCII characters directly, ignoring non-ASCII characters
+and bypassing custom `encode` hooks. This is local character filtering, not an
+ASCII codec or an `ignore` error handler. Non-string safe values use ordinary
+iteration and byte construction after filtering values >= 128; unsupported
+custom element conversion protocols remain subject to the existing bytes
+constructor limits. Safe-iterator callbacks finish before mutable input is
+snapshotted. `quote_plus` preserves the no-space str/bytes shortcut and otherwise
+performs `safe + space` before calling `quote`, so safe addition callbacks and
+errors retain their order; builtin bytearray always takes the addition path.
+These callbacks can reenter without sharing a mutable quoter/decode cache.
+
+All RFC 3986 unreserved characters remain safe; escapes use uppercase hex.
+Malformed or incomplete escapes in str/bytes are preserved bytewise. As in
+CPython 3.14.10, `unquote_to_bytes` returns bytes for a bytearray without `%`, but
+raises `TypeError` for any bytearray containing `%`, even an incomplete/invalid
+escape. This preserves the reference's unhashable-bytearray lookup error by
+explicit policy; no lookup table dependency is introduced.
+
+The implementation is managed Python with linear per-byte work, temporary lists
+and a per-call safe lookup table; it makes no native-throughput claim. Interpreter
+assertions, safe callback mutation/reentry cases and explicit slice-limit tests
+also run with every-safepoint reclamation. Run
+`python3.14 tests/host/test_urllib_percent.py --vm build-debug/src/clovervm` for
+CPython 3.14.10 signatures, shared assertions and deterministic differential
+coverage against the real VM package. Managed argument-binding/type-error wording
+may differ from CPython.
