@@ -338,12 +338,22 @@ namespace cl::jit
             case Bytecode::Pos:
             case Bytecode::Invert:
             case Bytecode::TernaryPow:
-                if(!lower_non_fastpathed_operator(block, instruction, inputs,
-                                                  state, outputs))
                 {
-                    return;
+                    const OperatorInlineCache *cache =
+                        instruction.operator_cache();
+                    assert(cache != nullptr);
+                    if(cache->empty())
+                    {
+                        emit_unsupported(block, instruction, state);
+                        return;
+                    }
+                    if(!lower_non_fastpathed_operator(block, instruction,
+                                                      inputs, state, outputs))
+                    {
+                        return;
+                    }
+                    break;
                 }
-                break;
 
             case Bytecode::Nop:
                 break;

@@ -976,6 +976,119 @@ namespace cl::jit
                       .instruction_id());
     }
 
+    TEST(JitCoreBytecodeTranslator, EmptyUnaryCachesResumeBeforeOperator)
+    {
+        for(Bytecode opcode: {Bytecode::Neg, Bytecode::Pos, Bytecode::Invert})
+        {
+            SCOPED_TRACE(int(opcode));
+            TranslatorFixture fixture;
+            fixture.code_builder.emit_lda_smi(0, 19).value();
+            uint32_t operator_pc =
+                fixture.code_builder
+                    .emit_unary_op(0, opcode, OperatorBytecodeFormat::WithCache)
+                    .value();
+            fixture.code_builder.emit_return(0).value();
+
+            ControlFlowGraph *graph = fixture.translate();
+            Block *entry = graph->normal_entry_block();
+            auto snapshots =
+                instructions_of_kind(entry, InstructionKind::Snapshot);
+            auto resumes = instructions_of_kind(
+                entry, InstructionKind::ResumeInInterpreter);
+            auto constants =
+                instructions_of_kind(entry, InstructionKind::Const);
+            ASSERT_EQ(1u, snapshots.size());
+            ASSERT_EQ(1u, resumes.size());
+            ASSERT_EQ(1u, constants.size());
+            SnapshotInstruction snapshot =
+                snapshots.front().as<SnapshotInstruction>();
+            EXPECT_EQ(operator_pc, snapshot.resume_pc_offset());
+            EXPECT_EQ(bytecode_state_size(*graph),
+                      snapshot.captured_values().size());
+            EXPECT_EQ(
+                constants.front().id(),
+                snapshot
+                    .captured_values()[BytecodeStateOrder::AccumulatorPosition]
+                    .instruction_id());
+            EXPECT_EQ(snapshot.id(), resumes.front()
+                                         .as<ResumeInInterpreterInstruction>()
+                                         .snapshot()
+                                         .instruction_id());
+            EXPECT_EQ(
+                resumes.front().id(),
+                entry->instruction_at(entry->instructions().size() - 1).id());
+            EXPECT_TRUE(
+                instructions_of_kind(entry, InstructionKind::TrustedHandlerCall)
+                    .empty());
+        }
+    }
+
+    TEST(JitCoreBytecodeTranslator,
+         EmptyTernaryCachePreservesOperandsAtOperator)
+    {
+        TranslatorFixture fixture;
+        uint32_t operator_pc;
+        int32_t first_offset;
+        int32_t second_offset;
+        {
+            CodeObjectBuilder::TemporaryReg temporaries(fixture.code_builder,
+                                                        2);
+            fixture.code_builder.emit_lda_smi(0, 2).value();
+            fixture.code_builder.emit_star(0, temporaries).value();
+            fixture.code_builder.emit_lda_smi(0, 3).value();
+            fixture.code_builder.emit_star(0, uint32_t(temporaries) + 1)
+                .value();
+            fixture.code_builder.emit_lda_smi(0, 5).value();
+            operator_pc =
+                fixture.code_builder
+                    .emit_ternary_operator(0, Bytecode::TernaryPow, temporaries,
+                                           uint32_t(temporaries) + 1)
+                    .value();
+            fixture.code_builder.emit_return(0).value();
+            first_offset = fixture.code_builder.encode_reg(temporaries);
+            second_offset =
+                fixture.code_builder.encode_reg(uint32_t(temporaries) + 1);
+        }
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->normal_entry_block();
+        auto snapshots = instructions_of_kind(entry, InstructionKind::Snapshot);
+        auto resumes =
+            instructions_of_kind(entry, InstructionKind::ResumeInInterpreter);
+        auto constants = instructions_of_kind(entry, InstructionKind::Const);
+        ASSERT_EQ(1u, snapshots.size());
+        ASSERT_EQ(1u, resumes.size());
+        ASSERT_EQ(3u, constants.size());
+        SnapshotInstruction snapshot =
+            snapshots.front().as<SnapshotInstruction>();
+        EXPECT_EQ(operator_pc, snapshot.resume_pc_offset());
+        EXPECT_EQ(bytecode_state_size(*graph),
+                  snapshot.captured_values().size());
+        const BytecodeStateOrder &order = *graph->bytecode_state_order();
+        EXPECT_EQ(constants[0].id(),
+                  snapshot
+                      .captured_values()[order.position_for_frame_offset(
+                          first_offset)]
+                      .instruction_id());
+        EXPECT_EQ(constants[1].id(),
+                  snapshot
+                      .captured_values()[order.position_for_frame_offset(
+                          second_offset)]
+                      .instruction_id());
+        EXPECT_EQ(
+            constants[2].id(),
+            snapshot.captured_values()[BytecodeStateOrder::AccumulatorPosition]
+                .instruction_id());
+        EXPECT_EQ(snapshot.id(), resumes.front()
+                                     .as<ResumeInInterpreterInstruction>()
+                                     .snapshot()
+                                     .instruction_id());
+        EXPECT_EQ(resumes.front().id(),
+                  entry->instruction_at(entry->instructions().size() - 1).id());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::TrustedHandlerCall)
+                .empty());
+    }
+
     TEST(JitCoreBytecodeTranslator, LowersUnaryAndTernaryTrustedHandlerCalls)
     {
         TranslatorFixture fixture;
