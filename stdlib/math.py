@@ -85,6 +85,7 @@ def isinf(x):
 
 
 def isnan(x):
+    x = _as_real(x)
     return x != x
 
 
@@ -113,10 +114,31 @@ def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
     return False
 
 
+def _log(x):
+    if isinstance(x, int):
+        # Read the builtin payload, bypassing subclass arithmetic/conversion.
+        x = int.__int__(x)
+        if x <= 0:
+            raise ValueError("math domain error")
+        try:
+            number = float(x)
+        except OverflowError:
+            # Integer true division rounds the normalized ratio to binary64
+            # without first converting the entire integer to a float.
+            exponent = int.bit_length(x)
+            mantissa = x / (1 << exponent)
+            if mantissa == 1.0:
+                mantissa = 0.5
+                exponent = exponent + 1
+            return _math.log(mantissa) + _math.log(2.0) * exponent
+        return _math.log(number)
+    return _math.log(x)
+
+
 def log(x, base=None):
     if base is None:
-        return _math.log(x)
-    return _math.log(x) / _math.log(base)
+        return _log(x)
+    return _log(x) / _log(base)
 
 
 def nextafter(x, y, steps=None):

@@ -462,6 +462,32 @@ added.
 
 ## Numeric Semantics
 
+### `math.log` and `math.isnan` use builtin numeric payloads
+
+`math.log` supports builtin ints/bools and int subclasses, including positive
+integers too large for binary64. It reads the builtin integer payload through
+`int.__int__`, ignoring subclass conversion and arithmetic overrides. The
+overflow fallback uses existing correctly rounded integer true division to
+normalize a mantissa before calling native libm; it allocates a power-of-two
+denominator proportional to the input size. Numerical accuracy assumes binary64
+round-to-nearest and platform libm accuracy; results are not guaranteed to be
+correctly rounded or bit-identical to CPython.
+
+`math.isnan` uses the existing builtin float/int/bool conversion helper before
+comparing the converted float. Nonnumeric values raise `TypeError`, and integers
+outside binary64 range raise `OverflowError`, including negative huge integers
+encountered during `statistics.geometric_mean` validation. Numeric subclasses
+use stored payloads; custom `__float__`/`__index__` protocols remain unsupported.
+In particular, CPython calls an int subclass's `__float__` in `isnan` but ignores
+that hook in `log`. CloverVM does not reproduce the `isnan` hook behavior.
+
+Existing wrapper call conventions remain: `log` and `isnan` accept keywords,
+and an explicit `log(x, None)` uses the natural logarithm. CPython rejects these
+forms. Other math functions, including `log2`/`log10` conversion and broader
+`isfinite`/`isclose` coercion behavior, are outside this repair. This supplies
+math prerequisites for the builtin numeric subset; it does not implement
+`statistics.geometric_mean`.
+
 ### Base-conversion builtins accept stored integer payloads only
 
 `bin(number, /)`, `oct(number, /)`, and `hex(number, /)` support tagged integers,
