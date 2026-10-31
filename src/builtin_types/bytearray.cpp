@@ -650,12 +650,12 @@ namespace cl
         return result.value();
     }
 
-    template <BinarySplitDirection Direction>
+    template <SearchDirection Direction>
     [[nodiscard]] static Value native_split(ThreadState *, Value self,
                                             Value separator, Value limit)
     {
         constexpr const wchar_t *method =
-            Direction == BinarySplitDirection::Left ? L"split" : L"rsplit";
+            Direction == SearchDirection::Forward ? L"split" : L"rsplit";
         Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
         int64_t maxsplit = CL_TRY(binary_maxsplit(limit));
         Owned<Value> separator_owner(separator);
@@ -685,13 +685,13 @@ namespace cl
         return result.raw_value();
     }
 
-    template <BinarySplitDirection Direction>
+    template <SearchDirection Direction>
     [[nodiscard]] static Value native_partition(ThreadState *, Value self,
                                                 Value separator)
     {
-        constexpr const wchar_t *method =
-            Direction == BinarySplitDirection::Left ? L"partition"
-                                                    : L"rpartition";
+        constexpr const wchar_t *method = Direction == SearchDirection::Forward
+                                              ? L"partition"
+                                              : L"rpartition";
         Owned<TValue<ByteArray>> source(CL_TRY(receiver(self, method)));
         CL_PROPAGATE_EXCEPTION(require_split_separator(separator));
         Owned<Value> separator_owner(separator);
@@ -704,12 +704,11 @@ namespace cl
                     L"ValueError", L"empty separator");
             size_t found = sep.size() > view.size()
                                ? std::string_view::npos
-                               : BinarySeparatorSearch(sep, Direction)
+                               : SeparatorSearch<char>(sep, Direction)
                                      .find(view, 0, view.size());
             if(found == std::string_view::npos)
             {
-                size_t original =
-                    Direction == BinarySplitDirection::Left ? 0 : 2;
+                size_t original = Direction == SearchDirection::Forward ? 0 : 2;
                 pieces[original] = {0, view.size()};
             }
             else
@@ -1165,19 +1164,19 @@ namespace cl
             with_keyword_parameter_names(
                 with_defaults(
                     builtin_intrinsic_method(
-                        L"split", native_split<BinarySplitDirection::Left>),
+                        L"split", native_split<SearchDirection::Forward>),
                     split_defaults.value()),
                 split_names, 2, 1),
             with_keyword_parameter_names(
                 with_defaults(
                     builtin_intrinsic_method(
-                        L"rsplit", native_split<BinarySplitDirection::Right>),
+                        L"rsplit", native_split<SearchDirection::Reverse>),
                     split_defaults.value()),
                 split_names, 2, 1),
             builtin_intrinsic_method(
-                L"partition", native_partition<BinarySplitDirection::Left>),
+                L"partition", native_partition<SearchDirection::Forward>),
             builtin_intrinsic_method(
-                L"rpartition", native_partition<BinarySplitDirection::Right>),
+                L"rpartition", native_partition<SearchDirection::Reverse>),
             builtin_intrinsic_method(L"__len__", native_len),
             builtin_intrinsic_method(L"__repr__", native_repr),
             builtin_intrinsic_method(L"__str__", native_repr),

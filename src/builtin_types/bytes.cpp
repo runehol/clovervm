@@ -980,7 +980,7 @@ namespace cl
     }
 
     static Value split_bytes(Value self, Value separator, Value limit,
-                             BinarySplitDirection direction)
+                             SearchDirection direction)
     {
         int64_t maxsplit = CL_TRY(binary_maxsplit(limit));
         if(!separator.is_none())
@@ -1027,20 +1027,18 @@ namespace cl
                                     Value maxsplit)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"split"));
-        return split_bytes(self, separator, maxsplit,
-                           BinarySplitDirection::Left);
+        return split_bytes(self, separator, maxsplit, SearchDirection::Forward);
     }
 
     static Value native_bytes_rsplit(ThreadState *, Value self, Value separator,
                                      Value maxsplit)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"rsplit"));
-        return split_bytes(self, separator, maxsplit,
-                           BinarySplitDirection::Right);
+        return split_bytes(self, separator, maxsplit, SearchDirection::Reverse);
     }
 
     static Value partition_bytes(Value self, Value separator,
-                                 BinarySplitDirection direction)
+                                 SearchDirection direction)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_separator(separator));
         Owned<TValue<Bytes>> source(TValue<Bytes>::from_value_assumed(self));
@@ -1058,14 +1056,14 @@ namespace cl
             sep_size = sep.size();
             found = sep_size > source_size
                         ? std::string_view::npos
-                        : BinarySeparatorSearch(sep, direction)
+                        : SeparatorSearch<char>(sep, direction)
                               .find(view, 0, source_size);
         }
         Owned<TValue<Tuple>> result(
             active_thread()->make_object_value<Tuple>(3));
         if(found == std::string_view::npos)
         {
-            size_t original = direction == BinarySplitDirection::Left ? 0 : 2;
+            size_t original = direction == SearchDirection::Forward ? 0 : 2;
             for(size_t idx = 0; idx < 3; ++idx)
             {
                 if(idx == original)
@@ -1096,14 +1094,14 @@ namespace cl
                                         Value separator)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"partition"));
-        return partition_bytes(self, separator, BinarySplitDirection::Left);
+        return partition_bytes(self, separator, SearchDirection::Forward);
     }
 
     static Value native_bytes_rpartition(ThreadState *, Value self,
                                          Value separator)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"rpartition"));
-        return partition_bytes(self, separator, BinarySplitDirection::Right);
+        return partition_bytes(self, separator, SearchDirection::Reverse);
     }
 
     static Value native_bytes_replace(ThreadState *thread, Value self,

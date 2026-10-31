@@ -3,6 +3,7 @@
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
 #include "builtin_types/search_range.h"
+#include "builtin_types/separator_search.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/string_iterator.h"
@@ -1006,60 +1007,75 @@ namespace cl
         return result.value().raw_value();
     }
 
-    static Value split_explicit(Value self, const String *separator,
-                                int64_t maxsplit, bool reverse)
+    struct StrSplitPiece
     {
-        std::wstring_view view(self.get_ptr<String>()->data,
-                               size_t(self.get_ptr<String>()->count.extract()));
-        std::wstring_view sep_view(separator->data,
-                                   size_t(separator->count.extract()));
-        if(sep_view.empty())
-        {
-            return split_empty_separator_error();
-        }
+        size_t start;
+        size_t size;
+    };
 
-        Owned<TValue<List>> result(active_thread()->make_object_value<List>());
-        if(!reverse)
+    static TValue<String> copy_str_split_piece(TValue<String> source,
+                                               StrSplitPiece piece)
+    {
+        Owned<TValue<String>> owner(source);
+        auto result = active_thread()->make_object_value<String>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(piece.size)));
+        // Acquire payload pointers after allocation. Only offsets survive
+        // the scan; no managed operation occurs during this copy.
+        if(piece.size != 0)
+            std::copy_n(owner.extract()->data + piece.start, piece.size,
+                        result.extract()->data);
+        return result;
+    }
+
+    static Value split_explicit(Value self, Value sep_value, int64_t maxsplit,
+                                SearchDirection direction)
+    {
+        Owned<TValue<String>> source(TValue<String>::from_value_assumed(self));
+        Owned<TValue<String>> separator(
+            TValue<String>::from_value_assumed(sep_value));
+        std::vector<StrSplitPiece> pieces;
         {
-            size_t pos = 0;
-            int64_t splits = 0;
-            while(maxsplit < 0 || splits < maxsplit)
+            auto view = string_view(source.value());
+            auto sep = string_view(separator.value());
+            if(sep.empty())
+                return split_empty_separator_error();
+            size_t start = 0;
+            size_t end = view.size();
+            if(maxsplit != 0 && sep.size() <= view.size())
             {
-                size_t found = view.find(sep_view, pos);
-                if(found == std::wstring_view::npos)
+                SeparatorSearch<wchar_t> search(sep, direction);
+                while(maxsplit != 0)
                 {
-                    break;
+                    size_t found = search.find(view, start, end);
+                    if(found == std::wstring_view::npos)
+                        break;
+                    if(direction == SearchDirection::Forward)
+                    {
+                        pieces.push_back({start, found - start});
+                        start = found + sep.size();
+                    }
+                    else
+                    {
+                        pieces.push_back(
+                            {found + sep.size(), end - found - sep.size()});
+                        end = found;
+                    }
+                    if(maxsplit > 0)
+                        --maxsplit;
                 }
-                append_string_slice(result.value(),
-                                    view.substr(pos, found - pos));
-                pos = found + sep_view.size();
-                ++splits;
             }
-            append_string_slice(result.value(), view.substr(pos));
-            return result.value().raw_value();
+            pieces.push_back({start, end - start});
         }
-
-        std::vector<std::wstring_view> pieces;
-        size_t end = view.size();
-        int64_t splits = 0;
-        while((maxsplit < 0 || splits < maxsplit) && end >= sep_view.size())
+        if(direction == SearchDirection::Reverse)
+            std::reverse(pieces.begin(), pieces.end());
+        Owned<TValue<List>> result(active_thread()->make_object_value<List>());
+        for(auto piece: pieces)
         {
-            size_t found = view.rfind(sep_view, end - sep_view.size());
-            if(found == std::wstring_view::npos)
-            {
-                break;
-            }
-            pieces.push_back(view.substr(found + sep_view.size(),
-                                         end - found - sep_view.size()));
-            end = found;
-            ++splits;
+            Owned<TValue<String>> part(
+                copy_str_split_piece(source.value(), piece));
+            result.extract()->append(part.raw_value());
         }
-        pieces.push_back(view.substr(0, end));
-        for(auto it = pieces.rbegin(); it != pieces.rend(); ++it)
-        {
-            append_string_slice(result.value(), *it);
-        }
-        return result.value().raw_value();
+        return result.raw_value();
     }
 
     static Value native_str_split(ThreadState *thread, Value self,
@@ -1074,8 +1090,8 @@ namespace cl
         }
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(sep_value, L"split arg must be str"));
-        return split_explicit(self, sep_value.get_ptr<String>(), maxsplit,
-                              false);
+        return split_explicit(self, sep_value, maxsplit,
+                              SearchDirection::Forward);
     }
 
     static Value native_str_rsplit(ThreadState *thread, Value self,
@@ -1090,80 +1106,75 @@ namespace cl
         }
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(sep_value, L"rsplit arg must be str"));
-        return split_explicit(self, sep_value.get_ptr<String>(), maxsplit,
-                              true);
+        return split_explicit(self, sep_value, maxsplit,
+                              SearchDirection::Reverse);
     }
 
-    static Value partition_string(Value self, Value sep_value, bool reverse)
+    static Value partition_string(Value self, Value sep_value,
+                                  SearchDirection direction)
     {
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(sep_value, L"separator must be str"));
-        String *str = self.get_ptr<String>();
-        String *separator = sep_value.get_ptr<String>();
-        std::wstring_view view(str->data, size_t(str->count.extract()));
-        std::wstring_view sep_view(separator->data,
-                                   size_t(separator->count.extract()));
-        if(sep_view.empty())
+        Owned<TValue<String>> source(TValue<String>::from_value_assumed(self));
+        Owned<TValue<String>> separator(
+            TValue<String>::from_value_assumed(sep_value));
+        size_t found;
+        size_t source_size;
+        size_t sep_size;
         {
-            return split_empty_separator_error();
+            auto view = string_view(source.value());
+            auto sep = string_view(separator.value());
+            if(sep.empty())
+                return split_empty_separator_error();
+            source_size = view.size();
+            sep_size = sep.size();
+            found = sep_size > source_size
+                        ? std::wstring_view::npos
+                        : SeparatorSearch<wchar_t>(sep, direction)
+                              .find(view, 0, source_size);
         }
-        size_t found = reverse ? view.rfind(sep_view) : view.find(sep_view);
-
         Owned<TValue<Tuple>> result(
             active_thread()->make_object_value<Tuple>(3));
         if(found == std::wstring_view::npos)
         {
-            if(reverse)
+            size_t original = direction == SearchDirection::Forward ? 0 : 2;
+            for(size_t index = 0; index < 3; ++index)
             {
-                result.extract()->initialize_item_unchecked(
-                    0, active_thread()
-                           ->make_object_value<String>(std::wstring_view())
-                           .raw_value());
-                result.extract()->initialize_item_unchecked(
-                    1, active_thread()
-                           ->make_object_value<String>(std::wstring_view())
-                           .raw_value());
-                result.extract()->initialize_item_unchecked(2, self);
+                Owned<TValue<String>> part(
+                    index == original
+                        ? source.value()
+                        : copy_str_split_piece(source.value(), {0, 0}));
+                result.extract()->initialize_item_unchecked(index,
+                                                            part.raw_value());
             }
-            else
-            {
-                result.extract()->initialize_item_unchecked(0, self);
-                result.extract()->initialize_item_unchecked(
-                    1, active_thread()
-                           ->make_object_value<String>(std::wstring_view())
-                           .raw_value());
-                result.extract()->initialize_item_unchecked(
-                    2, active_thread()
-                           ->make_object_value<String>(std::wstring_view())
-                           .raw_value());
-            }
-            return result.value().raw_value();
         }
-        result.extract()->initialize_item_unchecked(
-            0, active_thread()
-                   ->make_object_value<String>(view.substr(0, found))
-                   .raw_value());
-        result.extract()->initialize_item_unchecked(1, sep_value);
-        result.extract()->initialize_item_unchecked(
-            2, active_thread()
-                   ->make_object_value<String>(
-                       view.substr(found + sep_view.size()))
-                   .raw_value());
-        return result.value().raw_value();
+        else
+        {
+            Owned<TValue<String>> before(
+                copy_str_split_piece(source.value(), {0, found}));
+            result.extract()->initialize_item_unchecked(0, before.raw_value());
+            result.extract()->initialize_item_unchecked(1,
+                                                        separator.raw_value());
+            Owned<TValue<String>> after(copy_str_split_piece(
+                source.value(),
+                {found + sep_size, source_size - found - sep_size}));
+            result.extract()->initialize_item_unchecked(2, after.raw_value());
+        }
+        return result.raw_value();
     }
 
     static Value native_str_partition(ThreadState *thread, Value self,
                                       Value sep_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"partition"));
-        return partition_string(self, sep_value, false);
+        return partition_string(self, sep_value, SearchDirection::Forward);
     }
 
     static Value native_str_rpartition(ThreadState *thread, Value self,
                                        Value sep_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rpartition"));
-        return partition_string(self, sep_value, true);
+        return partition_string(self, sep_value, SearchDirection::Reverse);
     }
 
     static Value native_str_replace(ThreadState *thread, Value self,

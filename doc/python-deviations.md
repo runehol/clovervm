@@ -181,9 +181,19 @@ is reused across split ranges, giving linear total scanning/preprocessing time
 in source plus separator length. Shorter separators retain a bounded library
 search path. Search state and payload views expire before result allocation.
 The adapted factorization's source and license attribution are recorded in
-`src/builtin_types/binary_split.h`.
+`src/builtin_types/separator_search.h`.
 Run `python3.14 tests/host/test_bytearray_split.py [path/to/clovervm]` using
 CPython 3.14.10 for the supported-input differential trace.
+
+The same `SeparatorSearch<CharT>` matcher serves explicit-separator `str.split`,
+`rsplit`, `partition`, and `rpartition`, using full-width unsigned character
+comparisons and a separately measured eight-character library-search cutoff.
+String validation, whitespace splitting, and result identity policies are
+unchanged. Explicit-separator scans retain their owners and finish before
+result allocation; only offsets survive the scan. Other string search methods
+are outside this change.
+Run `python3.14 tests/host/test_string_separator_search.py [path/to/clovervm]`
+using CPython 3.14.10 for the string search oracle.
 
 Item access, assignment, and deletion enter native code, with trusted handlers
 for SMI and slice keys. Slice assignment inspects the replacement on every
