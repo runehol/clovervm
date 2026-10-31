@@ -4,6 +4,7 @@
 
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
+#include "builtin_types/join.h"
 #include "builtin_types/list.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/search_range.h"
@@ -856,89 +857,16 @@ namespace cl
     native_bytes_join_finish(ThreadState *thread, Value self, Value sequence)
     {
         CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"join"));
-        Owned<TValue<Bytes>> separator(TValue<Bytes>::from_value_assumed(self));
-        Owned<Value> items(sequence);
-        const bool is_list = has_native_layout<List>(sequence);
-        assert(is_list || has_native_layout<Tuple>(sequence));
-        const size_t count = is_list ? sequence.get_ptr<List>()->size()
-                                     : sequence.get_ptr<Tuple>()->size();
-        auto item_at = [&](size_t index) {
-            return is_list
-                       ? items.value().get_ptr<List>()->item_unchecked(index)
-                       : items.value().get_ptr<Tuple>()->item_unchecked(index);
-        };
-        if(count == 1)
-        {
-            Value item = item_at(0);
-            if(has_native_layout<Bytes>(item) &&
-               item.get_ptr<Bytes>()->get_shape()->get_class() ==
-                   thread->get_machine()->bytes_class())
-                return item;
-        }
-        const size_t separator_size =
-            size_t(separator.extract()->count.extract());
-        const size_t limit = size_t(value_smi_max);
-        size_t total = 0;
-        for(size_t index = 0; index < count; ++index)
-        {
-            Value item = item_at(index);
-            if(!has_native_layout<Bytes>(item) &&
-               !has_native_layout<ByteArray>(item))
-            {
-                auto name = thread->class_of_value(item)->get_name();
-                std::wstring message = L"sequence item " +
-                                       std::to_wstring(index) +
-                                       L": expected a bytes-like object, ";
-                message.append(name.extract()->data,
-                               std::min(size_t(name.extract()->count.extract()),
-                                        size_t(80)));
-                message += L" found";
-                return thread->set_pending_builtin_exception_string(
-                    L"TypeError", message.c_str());
-            }
-            size_t size = has_native_layout<Bytes>(item)
-                              ? size_t(item.get_ptr<Bytes>()->count.extract())
-                              : item.get_ptr<ByteArray>()->size();
-            if(size > limit - total)
-                return thread->set_pending_builtin_exception_string(
-                    L"OverflowError", L"join() result is too long");
-            total += size;
-            if(index != 0)
-            {
-                if(separator_size > limit - total)
-                    return thread->set_pending_builtin_exception_string(
-                        L"OverflowError", L"join() result is too long");
-                total += separator_size;
-            }
-        }
-        auto result = thread->make_object_value<Bytes>(
-            TValue<SMI>::from_smi(static_cast<int64_t>(total)));
-        // Allocation may reclaim/move storage. Reacquire every payload only
-        // after it, and do no allocations, callbacks or safepoints while
-        // copying.
-        size_t offset = 0;
-        for(size_t index = 0; index < count; ++index)
-        {
-            if(index != 0 && separator_size != 0)
-            {
-                std::memcpy(result.extract()->data + offset,
-                            separator.extract()->data, separator_size);
-                offset += separator_size;
-            }
-            Value item = item_at(index);
-            auto view =
-                has_native_layout<Bytes>(item)
-                    ? bytes_view(TValue<Bytes>::from_value_assumed(item))
-                    : item.get_ptr<ByteArray>()->view();
-            if(!view.empty())
-            {
-                std::memcpy(result.extract()->data + offset, view.data(),
-                            view.size());
-                offset += view.size();
-            }
-        }
-        assert(offset == total);
-        return result.raw_value();
+        return join_sequence<Bytes, uint8_t>(
+            thread, TValue<Bytes>::from_value_assumed(self), sequence,
+            [](Value item) -> std::optional<std::span<const uint8_t>> {
+                if(has_native_layout<Bytes>(item))
+                    return bytes_view(TValue<Bytes>::from_value_assumed(item));
+                if(has_native_layout<ByteArray>(item))
+                    return item.get_ptr<ByteArray>()->view();
+                return std::nullopt;
+            },
+            L"a bytes-like object", L"join() result is too long");
     }
 
     static Value require_bytes_separator(Value value)

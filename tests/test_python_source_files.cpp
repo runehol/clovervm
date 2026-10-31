@@ -160,6 +160,20 @@ TEST(PythonSourceFiles, BytesJoinSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles, StringJoinSurvivesEverySafepointReclamation)
+{
+    for(const char *path:
+        {"tests/python/str_join.py", "tests/python/str_join_limits.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(PythonSourceFiles, IntegerBaseFormattingSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/builtin_int_bases.py");

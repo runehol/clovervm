@@ -844,6 +844,21 @@ def _clover_bytes_join(self, iterable, /):
     return _clover_bytes_join_finish(self, sequence)
 
 
+def _clover_str_join(self, iterable, /):
+    sequence = _clover_str_join_sequence(self, iterable)
+    if sequence is None:
+        # CPython acquires an iterator, then materializes that iterator. Keep
+        # both __iter__ calls, but retain Clover's no-length-hint boundary.
+        try:
+            iterator = iter(iterable)
+        except TypeError:
+            raise TypeError("can only join an iterable")
+        sequence = []
+        for item in iterator:
+            __clover_list_append__(sequence, item)
+    return _clover_str_join_finish(self, sequence)
+
+
 # bytearray uses the same new-only construction boundary as dict. Native
 # storage operations never enter Python; callbacks live in these managed loops.
 def _clover_bytearray_new(cls, /, source=()):
