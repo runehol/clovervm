@@ -137,6 +137,22 @@ TEST(PythonSourceFiles, StatisticsQuantilesSurvivesEverySafepointReclamation)
     }
 }
 
+TEST(PythonSourceFiles,
+     StatisticsGeometricMeanSurvivesEverySafepointReclamation)
+{
+    for(const char *path:
+        {"tests/python/test_statistics_geometric_mean.py",
+         "tests/python/test_statistics_geometric_callbacks.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(PythonSourceFiles, MathLogAndIsnanSurviveEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_math_log_integers.py",

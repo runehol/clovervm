@@ -528,7 +528,7 @@ Existing wrapper call conventions remain: `log` and `isnan` accept keywords,
 and an explicit `log(x, None)` uses the natural logarithm. CPython rejects these
 forms. Other math functions, including `log2`/`log10` conversion and broader
 `isfinite`/`isclose` coercion behavior, are outside this repair. This supplies
-math prerequisites for the builtin numeric subset; it does not implement
+math prerequisites for the builtin numeric subset used by
 `statistics.geometric_mean`.
 
 ### Float NaNs use a canonical hash
@@ -826,3 +826,34 @@ struct module, Cartesian lookup table, native API, buffer export, or GC change
 is required. Managed per-byte processing and result lists remain linear in the
 input/output size; no native-codec throughput claim is made. Z85 and file/legacy
 line-wrapping APIs remain outside this slice.
+
+### Geometric mean inherits managed math accuracy and numeric limits
+
+`statistics.geometric_mean(data)` follows CPython 3.14.10 validation and special
+value policy using a private managed iterator, existing `math.log`/`math.fsum`,
+and final `math.exp`. Zeros (including negative zero) count toward the sample:
+finite data mixed with zero returns positive zero, zero mixed with positive
+infinity returns NaN, and NaN takes precedence over zero. These values do not
+short-circuit consumption or hide later source/type/negative-input errors.
+Empty data raises StatisticsError. Negative inputs normally raise StatisticsError
+with the original value in `args`; huge negative integers can first raise
+OverflowError through `math.isnan`, matching the builtin reference behavior.
+StopIteration from source acquisition or validation callbacks becomes RuntimeError,
+as in the reference generator; ordinary source exhaustion ends the stream.
+
+Builtin int/bool/float values and numeric subclasses use the existing math
+payload policy. Comparisons still use ordinary dispatch, but custom conversion
+hooks, Decimal/Fraction, and unsupported iterable protocols remain excluded.
+The adapter retains only the current input and source, rather than accumulating
+input history. Exact refcount-dependent finalization and generator frame metadata
+are not reproduced.
+
+No input product is formed, avoiding naive product overflow/underflow. Results
+still inherit binary64/log/exp rounding and platform libm differences. In
+particular, the existing huge-integer log normalization can differ from CPython
+by one log ULP, which exp can amplify: `[10**1000, 1, 1, 1]` currently yields
+`9.999999999998855e249`, 720 result ULPs below the rounded exact mean `1e250`,
+while CPython 3.14.10 yields `9.999999999999991e249`. Tests use independent
+high-precision Decimal expectations, exact range/cancellation identities and
+explicit per-fixture ULP budgets; they do not establish universal correctly
+rounded results or bit identity with CPython.
