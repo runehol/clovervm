@@ -104,8 +104,8 @@ TEST(BuiltinClassRoots, RewritesChildCellsWithoutMovingClassOrChangingMap)
         replacement.extract()->initialize_item_unchecked(
             index, original.extract()->item_unchecked(index));
     auto roots = builtin_roots(vm);
-    int32_t original_refs = original.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
+    int32_t original_refs = original.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
     size_t zct_size = thread.zero_count_table_size();
     size_t rewrites = 0;
     auto visited = trace_builtin_roots(vm, [&](HeapReferenceSlot slot) {
@@ -121,8 +121,8 @@ TEST(BuiltinClassRoots, RewritesChildCellsWithoutMovingClassOrChangingMap)
     EXPECT_EQ(cls, vm.builtin_class_by_name(name));
     EXPECT_EQ(name, cls->get_name());
     EXPECT_EQ(roots, builtin_roots(vm));
-    EXPECT_EQ(original_refs, original.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
+    EXPECT_EQ(original_refs, original.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
 
     // Simulated relocation between live tuples: restore ownership before RC

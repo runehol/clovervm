@@ -12,12 +12,19 @@
 
 ## Current Model
 
-Every VM heap record derives from `HeapObject`. `HeapObject` carries:
+Every VM heap record derives from `HeapObject`. It contains one eight-byte
+`HeapHeader`, whose normal representation carries:
 
 - `refcount`
-- `HeapLifecycleState`
-- `NativeLayoutId native_layout_id_`
-- `uint16_t native_layout_aux_count`
+- one state byte combining generation and `HeapLifecycleState`
+- an eight-bit `NativeLayoutId`
+- a sixteen-bit auxiliary count
+
+The standalone header owns the representation. HeapObject delegates through
+inline accessors; raw fields are private. Header layout, destructive forwarding,
+and the later widening after RC retirement are specified in
+[GC Object Header](gc-object-header.md). This representation does not enable
+production movement or change deferred RC's lifetime authority.
 
 `NativeLayoutId` is the descriptor dispatch key for all reclaimable heap
 records, including internal records that are not Python-visible `Object`s.

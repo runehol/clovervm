@@ -549,16 +549,16 @@ namespace cl
         assert(obj != nullptr);
         assert((reinterpret_cast<uintptr_t>(obj) & value_ptr_mask) ==
                value_refcounted_ptr_tag);
-        assert(obj->lifecycle_state != HeapLifecycleState::Reclaiming);
-        assert(obj->lifecycle_state != HeapLifecycleState::Dead);
-        if(obj->lifecycle_state == HeapLifecycleState::InZct)
+        assert(obj->lifecycle_state() != HeapLifecycleState::Reclaiming);
+        assert(obj->lifecycle_state() != HeapLifecycleState::Dead);
+        if(obj->lifecycle_state() == HeapLifecycleState::InZct)
         {
             return;
         }
 
-        assert(obj->lifecycle_state == HeapLifecycleState::Normal);
-        assert(obj->refcount == 0);
-        obj->lifecycle_state = HeapLifecycleState::InZct;
+        assert(obj->lifecycle_state() == HeapLifecycleState::Normal);
+        assert(obj->refcount() == 0);
+        obj->set_lifecycle_state(HeapLifecycleState::InZct);
         zero_count_table.push_back(obj);
     }
 

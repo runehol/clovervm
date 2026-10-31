@@ -229,8 +229,8 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
     std::array<int32_t, 7> destination_refs;
     for(size_t idx = 0; idx < sources().size(); ++idx)
     {
-        source_refs[idx] = sources()[idx]->refcount;
-        destination_refs[idx] = destinations()[idx]->refcount;
+        source_refs[idx] = sources()[idx]->refcount();
+        destination_refs[idx] = destinations()[idx]->refcount();
     }
     size_t zct_size = thread->zero_count_table_size();
     repair_late_units(owner.get(),
@@ -304,8 +304,8 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
     EXPECT_EQ(9u, op.resume_index);
     for(size_t idx = 0; idx < sources().size(); ++idx)
     {
-        EXPECT_EQ(source_refs[idx], sources()[idx]->refcount);
-        EXPECT_EQ(destination_refs[idx], destinations()[idx]->refcount);
+        EXPECT_EQ(source_refs[idx], sources()[idx]->refcount());
+        EXPECT_EQ(destination_refs[idx], destinations()[idx]->refcount());
     }
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
     // These are simulated relocations, not actual copies. Restore references
@@ -501,14 +501,14 @@ TEST_F(WeakReferenceProcessing,
     auto name = context.vm().get_or_create_interned_string_value(L"x");
     Shape *child =
         old_shape.get()->derive_transition(name, ShapeTransitionVerb::Add);
-    int32_t old_refs = old_shape.get()->refcount;
-    int32_t new_refs = new_shape.get()->refcount;
+    int32_t old_refs = old_shape.get()->refcount();
+    int32_t new_refs = new_shape.get()->refcount();
     size_t zct_size = thread->zero_count_table_size();
     repair_late_units(child,
                       [&](HeapObject *object) { return resolve(object); });
     EXPECT_EQ(new_shape.get(), child->get_previous_shape());
-    EXPECT_EQ(old_refs, old_shape.get()->refcount);
-    EXPECT_EQ(new_refs, new_shape.get()->refcount);
+    EXPECT_EQ(old_refs, old_shape.get()->refcount());
+    EXPECT_EQ(new_refs, new_shape.get()->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
     repair_late_units(
         child, [&](HeapObject *object) { return resolve(object, true); });
@@ -518,8 +518,8 @@ TEST_F(WeakReferenceProcessing,
         return nullptr;
     });
     EXPECT_EQ(nullptr, child->get_previous_shape());
-    EXPECT_EQ(old_refs, old_shape.get()->refcount);
-    EXPECT_EQ(new_refs, new_shape.get()->refcount);
+    EXPECT_EQ(old_refs, old_shape.get()->refcount());
+    EXPECT_EQ(new_refs, new_shape.get()->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
     repair_late_units(child, [&](HeapObject *) -> HeapObject * {
         ADD_FAILURE() << "cleared back-link reached resolver";
@@ -539,8 +539,8 @@ TEST_F(WeakReferenceProcessing,
     String *plan_only = thread->make_object_raw<String>(L"plan-only");
     expanded.binding_plan->keyword_names.emplace_back(
         TValue<String>::from_oop(plan_only));
-    ASSERT_EQ(2, old_value.extract()->refcount);
-    ASSERT_EQ(1, plan_only->refcount);
+    ASSERT_EQ(2, old_value.extract()->refcount());
+    ASSERT_EQ(1, plan_only->refcount());
     repair_late_units(owner.get(), [&](HeapObject *object) -> HeapObject * {
         // A strongly owned keyword is not weak: it must
         // not reach this resolver.
@@ -549,17 +549,17 @@ TEST_F(WeakReferenceProcessing,
         return object;
     });
     EXPECT_NE(nullptr, expanded.binding_plan);
-    EXPECT_EQ(2, old_value.extract()->refcount);
+    EXPECT_EQ(2, old_value.extract()->refcount());
     size_t zct_size = thread->zero_count_table_size();
     repair_late_units(owner.get(), [&](HeapObject *object) {
         return object == old_function.get() ? nullptr : object;
     });
     EXPECT_EQ(nullptr, expanded.binding_plan);
     EXPECT_TRUE(expanded.guard_value.is_not_present());
-    EXPECT_EQ(1, old_value.extract()->refcount);
+    EXPECT_EQ(1, old_value.extract()->refcount());
     EXPECT_EQ(zct_size + 1, thread->zero_count_table_size());
-    EXPECT_EQ(0, plan_only->refcount);
-    EXPECT_EQ(HeapLifecycleState::InZct, plan_only->lifecycle_state);
+    EXPECT_EQ(0, plan_only->refcount());
+    EXPECT_EQ(HeapLifecycleState::InZct, plan_only->lifecycle_state());
     EXPECT_TRUE(thread->zero_count_table_contains_for_testing(plan_only));
 }
 
@@ -701,7 +701,7 @@ TEST_F(WeakReferenceProcessing, DeadDominatesPendingAndReleasesExpandedPlan)
     populate();
     auto &expanded = owner.get()->inline_caches.expanded_call_caches[0];
     expanded.binding_plan->keyword_names.emplace_back(old_value.value());
-    ASSERT_EQ(2, old_value.extract()->refcount);
+    ASSERT_EQ(2, old_value.extract()->refcount());
     auto enumerated = units();
     size_t calls = 0;
     for(WeakRepairUnit unit: enumerated)
@@ -725,7 +725,7 @@ TEST_F(WeakReferenceProcessing, DeadDominatesPendingAndReleasesExpandedPlan)
     EXPECT_EQ(nullptr, expanded.function);
     EXPECT_EQ(nullptr, expanded.validity_cell);
     EXPECT_TRUE(expanded.guard_value.is_not_present());
-    EXPECT_EQ(1, old_value.extract()->refcount);
+    EXPECT_EQ(1, old_value.extract()->refcount());
     // Resetting one entry must not invalidate any other stored unit's address.
     for(WeakRepairUnit unit: enumerated)
     {
@@ -774,7 +774,7 @@ TEST_F(WeakReferenceProcessing, FullCacheClearIncludesKeywordAndExpandedEntries)
     auto &caches = owner.get()->inline_caches;
     caches.expanded_call_caches[0].binding_plan->keyword_names.emplace_back(
         old_value.value());
-    ASSERT_EQ(2, old_value.extract()->refcount);
+    ASSERT_EQ(2, old_value.extract()->refcount());
     caches.clear();
     const auto &keyword = caches.keyword_call_caches[0];
     EXPECT_TRUE(keyword.guard_value.is_not_present());
@@ -784,5 +784,5 @@ TEST_F(WeakReferenceProcessing, FullCacheClearIncludesKeywordAndExpandedEntries)
     EXPECT_EQ(nullptr, keyword.keyword_dest_regs);
     EXPECT_EQ(UINT8_MAX, keyword.n_pos_args);
     EXPECT_EQ(nullptr, caches.expanded_call_caches[0].binding_plan);
-    EXPECT_EQ(1, old_value.extract()->refcount);
+    EXPECT_EQ(1, old_value.extract()->refcount());
 }

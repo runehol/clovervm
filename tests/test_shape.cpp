@@ -1234,7 +1234,7 @@ TEST(Shape, ZeroInlineNativeLayoutUsesCommonOverflowStorage)
     ASSERT_TRUE(list.extract()
                     ->set_own_property(names[0], Value::from_oop(child))
                     .value());
-    ASSERT_EQ(1, child->refcount);
+    ASSERT_EQ(1, child->refcount());
     auto read = resolve_attr_read_descriptor(list.raw_value(), names[0]);
     auto write = resolve_attr_write_descriptor(list.raw_value(), names[0]);
     ASSERT_TRUE(read.is_cacheable());
@@ -1253,11 +1253,11 @@ TEST(Shape, ZeroInlineNativeLayoutUsesCommonOverflowStorage)
     // Replaced arrays retain their cells until their zero-count entries are
     // reclaimed.
     context.vm().run_heap_reclamation();
-    EXPECT_EQ(1, child->refcount);
+    EXPECT_EQ(1, child->refcount());
     ASSERT_TRUE(
         store_attr_from_plan(list.raw_value(), write.plan, Value::from_smi(42))
             .value());
-    EXPECT_EQ(0, child->refcount);
+    EXPECT_EQ(0, child->refcount());
     EXPECT_EQ(Value::from_smi(42),
               load_attr_from_plan(list.raw_value(), read.plan));
     ASSERT_TRUE(list.extract()->delete_own_property(names[0]));

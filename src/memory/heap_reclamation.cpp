@@ -24,7 +24,8 @@ namespace cl
             void reclaim_object(HeapObject *obj)
             {
                 assert(obj != nullptr);
-                assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
+                assert(obj->lifecycle_state() ==
+                       HeapLifecycleState::Reclaiming);
                 const ReleaseDescriptor &descriptor =
                     native_layout_descriptor_for(obj->native_layout_id())
                         .release;
@@ -72,16 +73,17 @@ namespace cl
                 assert(obj != nullptr);
                 assert((reinterpret_cast<uintptr_t>(obj) & value_ptr_mask) ==
                        value_refcounted_ptr_tag);
-                assert(obj->lifecycle_state != HeapLifecycleState::Reclaiming);
-                assert(obj->lifecycle_state != HeapLifecycleState::Dead);
-                if(obj->lifecycle_state == HeapLifecycleState::InZct)
+                assert(obj->lifecycle_state() !=
+                       HeapLifecycleState::Reclaiming);
+                assert(obj->lifecycle_state() != HeapLifecycleState::Dead);
+                if(obj->lifecycle_state() == HeapLifecycleState::InZct)
                 {
                     return;
                 }
 
-                assert(obj->lifecycle_state == HeapLifecycleState::Normal);
-                assert(obj->refcount == 0);
-                obj->lifecycle_state = HeapLifecycleState::InZct;
+                assert(obj->lifecycle_state() == HeapLifecycleState::Normal);
+                assert(obj->refcount() == 0);
+                obj->set_lifecycle_state(HeapLifecycleState::InZct);
                 current_zct.push_back(obj);
             }
 
@@ -93,7 +95,7 @@ namespace cl
                 }
 
                 HeapObject *child = value.as.ptr;
-                if(--child->refcount == 0)
+                if(--child->refcount() == 0)
                 {
                     add_to_current_zero_count_table_if_needed(child);
                 }
@@ -117,7 +119,7 @@ namespace cl
             {
                 SlabAllocator *slab =
                     refcounted_heap.slab_for_object_unlocked(obj);
-                obj->lifecycle_state = HeapLifecycleState::Dead;
+                obj->set_lifecycle_state(HeapLifecycleState::Dead);
                 slab->clear_valid_object(obj);
                 remember_release_candidate(slab);
             }
@@ -141,21 +143,21 @@ namespace cl
             {
                 HeapObject *obj = zero_count_table[scan++];
                 assert(obj != nullptr);
-                assert(obj->lifecycle_state == HeapLifecycleState::InZct);
+                assert(obj->lifecycle_state() == HeapLifecycleState::InZct);
 
-                if(obj->refcount > 0)
+                if(obj->refcount() > 0)
                 {
-                    obj->lifecycle_state = HeapLifecycleState::Normal;
+                    obj->set_lifecycle_state(HeapLifecycleState::Normal);
                     continue;
                 }
 
-                assert(obj->refcount == 0);
+                assert(obj->refcount() == 0);
                 if(roots.contains(obj))
                 {
                     zero_count_table[keep++] = obj;
                     continue;
                 }
-                obj->lifecycle_state = HeapLifecycleState::Reclaiming;
+                obj->set_lifecycle_state(HeapLifecycleState::Reclaiming);
                 context.reclaim_object(obj);
             }
 
@@ -166,32 +168,32 @@ namespace cl
             ThreadLocalHeap &heap, std::vector<HeapObject *> &zero_count_table,
             const ReclamationRootSet &roots, ReclamationContext &context)
         {
-            heap.for_each_epoch_slab(
-                [&zero_count_table, &roots, &context](SlabAllocator *slab) {
-                    slab->for_each_valid_object([&zero_count_table, &roots,
-                                                 &context](HeapObject *obj) {
-                        assert(obj != nullptr);
-                        if(obj->refcount > 0)
-                        {
-                            return;
-                        }
-                        if(obj->lifecycle_state != HeapLifecycleState::Normal)
-                        {
-                            return;
-                        }
+            heap.for_each_epoch_slab([&zero_count_table, &roots,
+                                      &context](SlabAllocator *slab) {
+                slab->for_each_valid_object([&zero_count_table, &roots,
+                                             &context](HeapObject *obj) {
+                    assert(obj != nullptr);
+                    if(obj->refcount() > 0)
+                    {
+                        return;
+                    }
+                    if(obj->lifecycle_state() != HeapLifecycleState::Normal)
+                    {
+                        return;
+                    }
 
-                        assert(obj->refcount == 0);
-                        if(roots.contains(obj))
-                        {
-                            obj->lifecycle_state = HeapLifecycleState::InZct;
-                            zero_count_table.push_back(obj);
-                            return;
-                        }
+                    assert(obj->refcount() == 0);
+                    if(roots.contains(obj))
+                    {
+                        obj->set_lifecycle_state(HeapLifecycleState::InZct);
+                        zero_count_table.push_back(obj);
+                        return;
+                    }
 
-                        obj->lifecycle_state = HeapLifecycleState::Reclaiming;
-                        context.reclaim_object(obj);
-                    });
+                    obj->set_lifecycle_state(HeapLifecycleState::Reclaiming);
+                    context.reclaim_object(obj);
                 });
+            });
         }
     }  // namespace
 
@@ -243,7 +245,7 @@ namespace cl
         for(HeapObject *obj: thread.zero_count_table)
         {
             assert(obj != nullptr);
-            assert(obj->lifecycle_state == HeapLifecycleState::InZct);
+            assert(obj->lifecycle_state() == HeapLifecycleState::InZct);
             bool inserted = seen.insert(obj).second;
             assert(inserted && "duplicate heap object in zero count table");
         }

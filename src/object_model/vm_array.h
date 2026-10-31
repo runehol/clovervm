@@ -367,7 +367,7 @@ namespace cl
             }
 
             *slot = incref(value);
-            if(old.is_refcounted_ptr() && --old.as.ptr->refcount == 0)
+            if(old.is_refcounted_ptr() && --old.as.ptr->refcount() == 0)
             {
                 return old.as.ptr;
             }

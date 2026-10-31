@@ -36,7 +36,7 @@ These preparatory changes do not require a nursery or physical relocation.
 
 | Current code | Established | Still missing for copying |
 |---|---|---|
-| [HeapObject](../src/object_model/heap_object.h) | Eight-byte RC/lifecycle/native-ID/aux header | Generation, remembered membership, forwarding |
+| [HeapObject](../src/object_model/heap_object.h) | Contains standalone eight-byte HeapHeader with generation/lifecycle/native-ID/aux/RC and tested forwarding encoding | Real source classification, remembered coverage, and admitted production forwarding |
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
@@ -51,67 +51,50 @@ encoding. Stable is not synonymous with immortal or interned.
 
 ## Proposed Transitional Header
 
-Keep the current eight-byte prefix intact. A deliberately unpacked reference
-version adds generation and a nullable forwarding pointer:
+The accepted representation is now specified in
+[GC Object Header](gc-object-header.md). The RC transition stays eight bytes:
+one byte of GC state, one byte of native-layout ID, two bytes of aux count, and
+four bytes of RC. Generation occupies bits 0--2 of the state byte and RC
+lifecycle bits 3--4. All current allocations initially use Old/Normal, with no
+nursery or copying enabled.
 
-```cpp
-// Proposed fields, not implemented code.
-int32_t refcount;
-HeapLifecycleState lifecycle_state;
-NativeLayoutId native_layout_id_;
-uint16_t native_layout_aux_count;
+A forwarding store would replace the entire header with an unmodified non-null target
+pointer. A low-state-byte test, `(byte & 0x07) == 0`, recognizes all pointer byte
+encodings; it is not a whole-byte comparison against one pointer tag. There are
+no generation bits retained alongside a forwarding pointer. RC is also
+overwritten, so this slice does not enable production forwarding of RC objects.
+Any future RC/copying overlap requires forwarding-aware ZCT/epoch/reclamation
+handling before source RC reads; root repair alone is insufficient. The
+accepted tracing-cutover staging remains unchanged. This supersedes the sixteen-/twenty-four-byte candidates and the
+generation-preserving packed candidate previously described here.
 
-HeapGenerationState generation_state_; // Young / Old / OldRemembered
-HeapObject *forwarding_target_;         // nullptr means not forwarded
-```
+After RC retirement, the final eight-byte normal header has a one-byte GC state,
+one reserved byte, a 16-bit native-layout ID, and a 32-bit aux count. Forwarding
+overwrites that entire header. The final wider fields require an explicit later
+migration; the first RC transition preserves the native-ID/aux widths but moves
+their offsets and RC's offset to fit the new state byte.
+Source selection, layout inspection, and weak resolution must be compatible
+with loss of the normal source metadata after forwarding. This does not approve
+production forwarding or settle the remaining relocation/lifetime gates.
 
-On the current 64-bit ABI this version would have an expected 24-byte header,
-including alignment padding. Verify that explicitly in the header slice. Do
-not claim its cost is just sixteen extra bytes: the allocator rounds record
-reservations to 32-byte strides, so some records cross an allocation boundary.
-Measure allocation throughput and representative record/slab occupancy before
-and after. Header growth also changes Object field offsets used by the JIT;
-audit offset-derived code and structural tests, not only `sizeof` assertions.
-
-All existing allocations should initially be Old and not forwarded. There is
-no nursery today. Generation classification tests can exercise synthetic Young
-objects without enabling copying or changing RC behavior. Marking can continue
-using the existing temporary side set; this proposal does not add copied-object
-tri-colour fields or settle the future stable-heap mark representation.
-
-The forwarded source keeps its generation, native layout ID, aux count, shape
-pointer, and ordinary payload. Only its dedicated forwarding field changes.
-The destination gets its own normal GC state and Old generation. Source storage
-is retained through strong and weak repair. Do not overlay forwarding on the
-RC word, native metadata, or Object's shape field in this first version.
-
-A sixteen-byte total header is also a concrete candidate: retain the RC/native
-prefix and use a second `uintptr_t` GC word. The three generation states fit
-in two low bits; all current managed pointer encodings leave those bits clear.
-The remaining bits can hold a nullable forwarding target. Generation remains
-available after forwarding, and extracting a target masks out the generation
-bits without stripping the refcounted/interned address tag. This uses explicit
-generation metadata, not address-derived generation. Alignment/encoding
-assertions and all state/target combinations need tests before choosing it.
-
-The proposed invariant is separate GC storage, not an insistence on 24 bytes.
-Compare these two representations in the header readiness review; neither is
-approved by this investigation. The algorithm should depend on named generation
-and forwarding accessors, not either word layout. No movement-pin field is
-proposed: the current main design requires stable placement rather than pinning
-inside moving space. Slab pins are reclamation blockers, not object pins.
+Verify the eight-byte size and alignment, RC offset four, and descriptor/JIT
+metadata offsets. Float remains 32 bytes with a 32-byte stride. Measure
+construction and representative record/slab occupancy before and after rather
+than assuming all derived layouts are unaffected by the alignment change.
+Marking can continue using its existing temporary side set.
+No movement-pin or lock protocol is introduced; stable placement and slab
+reclamation pins retain their separate contracts.
 
 ### Why This Helps Shape-Derived Queries
 
 `Instance::object_size_in_bytes()` reads `get_shape()->get_inline_slot_capacity()`.
-With a dedicated forwarding field, the old Shape's capacity remains readable
-even when the Shape has a forwarding target. No recursive tracing or repaired
-class pointer is needed to read that scalar. Initially Shape is stable anyway,
-because its custom destruction excludes it from ordinary moving storage.
-
-Later source-header compaction must preserve this guarantee or introduce an
-explicit forwarding-aware metadata query. That cannot be an incidental change
-to how a forwarding pointer is stored.
+The transitional and final forwarding representations overwrite normal header metadata. Layout
+queries must resolve forwarded shapes before requiring their normal header;
+they must not depend on generation/native-ID/aux fields remaining available in
+the source. No recursive tracing of the shape's outgoing references is needed
+just to obtain scalar capacity. Initially Shape is stable anyway, because its
+custom destruction excludes it from ordinary moving storage. The final
+forwarding-aware query contract must be established before that changes.
 
 ## Extents: Do Not Copy the Allocation Blindly
 
@@ -330,9 +313,11 @@ source selection, not complete full-heap tracing or reclamation.
    empty span. Raw backings report their full extent for both sizes and no
    ordinary pointers. Neither size is optional. No retired-backing audit or new
    historical-reservation field is part of this work.
-4. **Transitional header.** Review the sixteen-/twenty-four-byte candidates, preserve RC,
-   default current allocations Old, test independent GC state, and measure
-   header/stride/construction costs. Do not publish real forwarding in RC mode.
+4. **Transitional header (implemented).** The accepted eight-byte
+   [header encoding](gc-object-header.md) preserves RC and initializes current
+   allocations as Old. Independent state tests and before/after benchmarks are
+   complete. HeapObject contains HeapHeader, with fully inline accessors and
+   memcpy forwarding; production forwarding remains disabled.
 5. **Collector-only reservation and admission tests.** Use dedicated storage
    with no mutator reentry. Settle C++ relocation lifetime, per-layout admission,
    tag-compatible group placement, publication, and slab ownership before real

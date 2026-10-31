@@ -77,8 +77,8 @@ namespace cl
         context.vm().run_heap_reclamation();
 
         ASSERT_TRUE(slab_has_valid_object(shape_slab, general_shape));
-        EXPECT_NE(HeapLifecycleState::Dead, general_shape->lifecycle_state);
-        EXPECT_GT(general_shape->refcount, 0);
+        EXPECT_NE(HeapLifecycleState::Dead, general_shape->lifecycle_state());
+        EXPECT_GT(general_shape->refcount(), 0);
         EXPECT_EQ(general_shape, thread->get_exact_dict_general_shape());
         EXPECT_EQ(context.vm().dict_class(), general_shape->get_class());
         EXPECT_GE(
@@ -92,7 +92,7 @@ namespace cl
                          ->set_item(thread, Value::from_smi(2), Value::None())
                          .has_exception());
         EXPECT_EQ(general_shape, dict.value().extract()->get_shape());
-        EXPECT_NE(HeapLifecycleState::Dead, general_shape->lifecycle_state);
+        EXPECT_NE(HeapLifecycleState::Dead, general_shape->lifecycle_state());
     }
 
     TEST(HeapReclamation, RootCollectionIncludesFrameSlotRoot)
@@ -175,13 +175,13 @@ namespace cl
         String *string = thread->make_object_raw<String>(L"retained");
         thread->add_to_zero_count_table_if_needed(string);
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
-        ASSERT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        ASSERT_EQ(HeapLifecycleState::InZct, string->lifecycle_state());
 
         incref_heap_ptr(string);
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(1, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
+        EXPECT_EQ(1, string->refcount());
+        EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(string));
         decref_heap_ptr(string);
     }
@@ -197,7 +197,7 @@ namespace cl
         thread->add_to_zero_count_table_if_needed(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
 
-        object->lifecycle_state = HeapLifecycleState::Normal;
+        object->set_lifecycle_state(HeapLifecycleState::Normal);
         thread->add_to_zero_count_table_if_needed(object);
         ASSERT_EQ(2u, thread->zero_count_table_size());
 
@@ -222,7 +222,7 @@ namespace cl
                     first_thread->make_internal_raw<ValidityCell>(
                         ValidityCellDependencyMutability::Mutable);
                 first_thread->add_to_zero_count_table_if_needed(object);
-                object->lifecycle_state = HeapLifecycleState::Normal;
+                object->set_lifecycle_state(HeapLifecycleState::Normal);
                 second_thread->add_to_zero_count_table_if_needed(object);
 
                 validate_zero_count_tables_for_reclamation(threads);
@@ -245,8 +245,8 @@ namespace cl
         thread->publish_safepoint_scan_record(SafepointScanRecord::idle(slot));
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(0, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        EXPECT_EQ(0, string->refcount());
+        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state());
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(string));
         *slot = Value::not_present();
     }
@@ -286,7 +286,7 @@ namespace cl
         String *child = thread->make_object_raw<String>(L"zct-child");
         Tuple *owner = thread->make_object_raw<Tuple>(1);
         owner->initialize_item_unchecked(0, Value::from_oop(child));
-        ASSERT_EQ(1, child->refcount);
+        ASSERT_EQ(1, child->refcount());
         thread->add_to_zero_count_table_if_needed(owner);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(owner));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
@@ -324,7 +324,7 @@ namespace cl
                    slab_has_valid_object(heap.slab_for_object_unlocked(object),
                                          object);
         };
-        ASSERT_EQ(1, source_ptr->refcount);
+        ASSERT_EQ(1, source_ptr->refcount());
         EXPECT_EQ(sizeof(StringIterator), object_size_in_bytes(iterator));
 
         // Only the iterator is rooted; the source must survive reclamation.
@@ -335,7 +335,7 @@ namespace cl
         context.vm().run_heap_reclamation();
         ASSERT_TRUE(object_is_valid(iterator));
         ASSERT_TRUE(object_is_valid(source_ptr));
-        EXPECT_EQ(1, source_ptr->refcount);
+        EXPECT_EQ(1, source_ptr->refcount());
         EXPECT_EQ(std::wstring_view(L"source"), string_view(iterator->string));
 
         // Dropping the iterator reclaims both objects via its Member edge.
@@ -359,8 +359,8 @@ namespace cl
         OverflowSlots *storage = thread->make_internal_raw<OverflowSlots>(1, 4);
         storage->set(0, Value::from_oop(child));
         owner->overflow_storage = storage;
-        ASSERT_EQ(1, storage->refcount);
-        ASSERT_EQ(1, child->refcount);
+        ASSERT_EQ(1, storage->refcount());
+        ASSERT_EQ(1, child->refcount());
         auto *owner_slab = heap.slab_for_object_unlocked(owner);
         auto *storage_slab = heap.slab_for_object_unlocked(storage);
         auto *child_slab = heap.slab_for_object_unlocked(child);
@@ -382,7 +382,7 @@ namespace cl
             context.vm().get_or_create_interned_string_value(L"<module>");
         ModuleObject *module = context.make_test_module_object(
             module_name, context.vm().global_builtins_module().raw_value());
-        int32_t module_refs = module->refcount;
+        int32_t module_refs = module->refcount();
 
         // Not heap-registered: exercise the two phases separately without
         // scheduling this object for reclamation again after destruction.
@@ -395,21 +395,21 @@ namespace cl
         auto &cache = code->inline_caches.expanded_call_caches.back();
         cache.binding_plan = std::make_unique<ExpandedCallCachedPlan>();
         cache.binding_plan->keyword_names.emplace_back(child.value());
-        ASSERT_EQ(4, child.extract()->refcount);
-        ASSERT_EQ(module_refs + 1, module->refcount);
+        ASSERT_EQ(4, child.extract()->refcount());
+        ASSERT_EQ(module_refs + 1, module->refcount());
 
         const ReleaseDescriptor &descriptor =
             native_layout_descriptor_for(CodeObject::native_layout).release;
         descriptor.custom_release(code);
-        EXPECT_EQ(1, child.extract()->refcount);
-        EXPECT_EQ(module_refs, module->refcount);
+        EXPECT_EQ(1, child.extract()->refcount());
+        EXPECT_EQ(module_refs, module->refcount());
         EXPECT_TRUE(code->constant_table.empty());
         EXPECT_EQ(nullptr, cache.binding_plan);
         size_t zct_size = thread->zero_count_table_size();
 
         descriptor.destroy(code);
-        EXPECT_EQ(1, child.extract()->refcount);
-        EXPECT_EQ(module_refs, module->refcount);
+        EXPECT_EQ(1, child.extract()->refcount());
+        EXPECT_EQ(module_refs, module->refcount());
         EXPECT_EQ(zct_size, thread->zero_count_table_size());
     }
 
@@ -434,8 +434,8 @@ namespace cl
         OverflowSlots *storage = thread->make_internal_raw<OverflowSlots>(1, 4);
         storage->set(0, Value::from_oop(overflow_child));
         code_object->overflow_storage = storage;
-        ASSERT_EQ(1, storage->refcount);
-        ASSERT_EQ(1, overflow_child->refcount);
+        ASSERT_EQ(1, storage->refcount());
+        ASSERT_EQ(1, overflow_child->refcount());
         auto *storage_slab = heap.slab_for_object_unlocked(storage);
         auto *overflow_child_slab =
             heap.slab_for_object_unlocked(overflow_child);
@@ -449,7 +449,7 @@ namespace cl
             FunctionCallInlineCache{});
         code_object->inline_caches.function_call_caches.back().guard_value =
             Value::from_oop(child);
-        ASSERT_EQ(2, child->refcount);
+        ASSERT_EQ(2, child->refcount());
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         SlabAllocator *module_slab = heap.slab_for_object_unlocked(module);
         SlabAllocator *code_object_slab =
@@ -490,26 +490,26 @@ namespace cl
                                0, 0, shape_flag(ShapeFlag::None), 0);
         OwnedHeapPtr<Shape> next(
             shape->derive_transition(name.value(), ShapeTransitionVerb::Add));
-        int32_t class_refs = cls->refcount;
+        int32_t class_refs = cls->refcount();
         // Builtin classes can be immortal; only refcounted storage contributes
         // a reference-count decrement during the release phase.
         int32_t class_release_count = heap_ptr_is_refcounted(cls) ? 1 : 0;
-        int32_t name_refs = name.extract()->refcount;
-        ASSERT_EQ(2, next.get()->refcount);
+        int32_t name_refs = name.extract()->refcount();
+        ASSERT_EQ(2, next.get()->refcount());
 
         const ReleaseDescriptor &descriptor =
             native_layout_descriptor_for(Shape::native_layout).release;
         descriptor.custom_release(shape);
         EXPECT_EQ(0u, shape->transition_count());
-        EXPECT_EQ(class_refs - class_release_count, cls->refcount);
-        EXPECT_EQ(name_refs - 1, name.extract()->refcount);
-        EXPECT_EQ(1, next.get()->refcount);
+        EXPECT_EQ(class_refs - class_release_count, cls->refcount());
+        EXPECT_EQ(name_refs - 1, name.extract()->refcount());
+        EXPECT_EQ(1, next.get()->refcount());
         size_t zct_size = thread->zero_count_table_size();
 
         descriptor.destroy(shape);
-        EXPECT_EQ(class_refs - class_release_count, cls->refcount);
-        EXPECT_EQ(name_refs - 1, name.extract()->refcount);
-        EXPECT_EQ(1, next.get()->refcount);
+        EXPECT_EQ(class_refs - class_release_count, cls->refcount());
+        EXPECT_EQ(name_refs - 1, name.extract()->refcount());
+        EXPECT_EQ(1, next.get()->refcount());
         EXPECT_EQ(zct_size, thread->zero_count_table_size());
     }
 
@@ -529,7 +529,7 @@ namespace cl
             0, 0, 0, shape_flag(ShapeFlag::None), 0);
         Shape *child_shape =
             root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
-        ASSERT_EQ(1, child_shape->refcount);
+        ASSERT_EQ(1, child_shape->refcount());
 
         thread->add_to_zero_count_table_if_needed(root_shape);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(root_shape));
@@ -561,7 +561,7 @@ namespace cl
         HeapPtrArrayBacking *backing =
             thread->make_internal_raw<HeapPtrArrayBacking>(1);
         backing->elements[0] = incref_heap_ptr(child);
-        ASSERT_EQ(1, child->refcount);
+        ASSERT_EQ(1, child->refcount());
 
         thread->add_to_zero_count_table_if_needed(backing);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(backing));
@@ -588,7 +588,7 @@ namespace cl
         String *child = thread->make_object_raw<String>(L"tuple-child");
         Tuple *owner = thread->make_object_raw<Tuple>(1);
         owner->initialize_item_unchecked(0, Value::from_oop(child));
-        ASSERT_EQ(1, child->refcount);
+        ASSERT_EQ(1, child->refcount());
         thread->add_to_zero_count_table_if_needed(owner);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(owner));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
@@ -682,7 +682,7 @@ namespace cl
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
         ASSERT_EQ(1u, slab->slab_pin_count());
-        ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
+        ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state());
 
         context.vm().run_heap_reclamation();
 
@@ -703,7 +703,7 @@ namespace cl
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
         ASSERT_EQ(1u, slab->slab_pin_count());
-        ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
+        ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state());
 
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(tuple);
@@ -714,7 +714,7 @@ namespace cl
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_EQ(0u, slab->slab_pin_count());
         EXPECT_EQ(1u, slab->count_valid_objects_slow());
-        EXPECT_EQ(HeapLifecycleState::InZct, tuple->lifecycle_state);
+        EXPECT_EQ(HeapLifecycleState::InZct, tuple->lifecycle_state());
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
     }
 
@@ -731,15 +731,15 @@ namespace cl
             ValidityCellDependencyMutability::Mutable);
         incref_heap_ptr(object);
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(object));
-        ASSERT_EQ(1, object->refcount);
-        ASSERT_EQ(HeapLifecycleState::Normal, object->lifecycle_state);
+        ASSERT_EQ(1, object->refcount());
+        ASSERT_EQ(HeapLifecycleState::Normal, object->lifecycle_state());
         ASSERT_EQ(valid_objects_before_alloc + 1,
                   heap.count_valid_objects_slow());
 
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(1, object->refcount);
-        EXPECT_EQ(HeapLifecycleState::Normal, object->lifecycle_state);
+        EXPECT_EQ(1, object->refcount());
+        EXPECT_EQ(HeapLifecycleState::Normal, object->lifecycle_state());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(object));
         EXPECT_EQ(valid_objects_before_alloc + 1,
                   heap.count_valid_objects_slow());
@@ -763,20 +763,21 @@ namespace cl
             ValidityCellDependencyMutability::Mutable);
         ValidityCell *dead = thread->make_internal_raw<ValidityCell>(
             ValidityCellDependencyMutability::Mutable);
-        in_zct->lifecycle_state = HeapLifecycleState::InZct;
-        reclaiming->lifecycle_state = HeapLifecycleState::Reclaiming;
-        dead->lifecycle_state = HeapLifecycleState::Dead;
+        in_zct->set_lifecycle_state(HeapLifecycleState::InZct);
+        reclaiming->set_lifecycle_state(HeapLifecycleState::Reclaiming);
+        dead->set_lifecycle_state(HeapLifecycleState::Dead);
         ASSERT_EQ(valid_objects_before_alloc + 3,
                   heap.count_valid_objects_slow());
 
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(0, in_zct->refcount);
-        EXPECT_EQ(0, reclaiming->refcount);
-        EXPECT_EQ(0, dead->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, in_zct->lifecycle_state);
-        EXPECT_EQ(HeapLifecycleState::Reclaiming, reclaiming->lifecycle_state);
-        EXPECT_EQ(HeapLifecycleState::Dead, dead->lifecycle_state);
+        EXPECT_EQ(0, in_zct->refcount());
+        EXPECT_EQ(0, reclaiming->refcount());
+        EXPECT_EQ(0, dead->refcount());
+        EXPECT_EQ(HeapLifecycleState::InZct, in_zct->lifecycle_state());
+        EXPECT_EQ(HeapLifecycleState::Reclaiming,
+                  reclaiming->lifecycle_state());
+        EXPECT_EQ(HeapLifecycleState::Dead, dead->lifecycle_state());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(in_zct));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(reclaiming));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(dead));

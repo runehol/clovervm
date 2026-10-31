@@ -69,16 +69,16 @@ TEST(Owned, StoresTypedWrapperAndRetainsRawValue)
     static_assert(sizeof(Owned<TValue<String>>) == sizeof(TValue<String>));
     static_assert(!HasReleaseRef<Owned<TValue<String>>>::value);
 
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
     {
         Owned<TValue<String>> owned(typed_string);
 
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         EXPECT_EQ(typed_string.raw_value(), owned.raw_value());
         EXPECT_EQ(string, owned.value().extract());
         EXPECT_EQ(string, (*owned).extract());
     }
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
 }
 
 TEST(Owned, StoresRawValueAndRetainsIt)
@@ -97,16 +97,16 @@ TEST(Owned, StoresRawValueAndRetainsIt)
         std::is_default_constructible_v<Owned<Optional<TValue<String>>>>);
     static_assert(!HasReleaseRef<Owned<Value>>::value);
 
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
     {
         Owned<Value> owned(value);
 
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         EXPECT_EQ(value, owned.raw_value());
         EXPECT_EQ(value, owned.value());
         EXPECT_EQ(value, raw_value_from_value(owned));
     }
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
 }
 
 TEST(Owned, DefaultConstructsWhenWrappedTypeHasDefault)
@@ -137,18 +137,18 @@ TEST(Owned, CopyRetainsRawValue)
     String *string = context.thread()->make_internal_raw<String>(L"owned2");
     TValue<String> typed_string = TValue<String>::from_oop(string);
 
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
     {
         Owned<TValue<String>> first(typed_string);
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         {
             Owned<TValue<String>> second(first);
-            EXPECT_EQ(2, string->refcount);
+            EXPECT_EQ(2, string->refcount());
             EXPECT_EQ(string, second.value().extract());
         }
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
     }
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
 }
 
 TEST(Owned, ComparesByRawValue)
@@ -179,19 +179,19 @@ TEST(Member, StoresTypedWrapperAndRetainsRawValue)
         std::is_same_v<Member<TValue<String>>::semantic_type, String>);
     static_assert(sizeof(Member<TValue<String>>) == sizeof(TValue<String>));
 
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
     {
         Member<TValue<String>> member(typed_string);
 
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         EXPECT_EQ(typed_string.raw_value(), member.raw_value());
         EXPECT_EQ(string, member.value().extract());
         EXPECT_EQ(string, (*member).extract());
     }
-    EXPECT_EQ(1, string->refcount);
+    EXPECT_EQ(1, string->refcount());
 
     decref(Value::from_oop(string));
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
 }
 
 TEST(Member, StoresRawValueAndRetainsIt)
@@ -210,16 +210,16 @@ TEST(Member, StoresRawValueAndRetainsIt)
         std::is_default_constructible_v<Member<Optional<TValue<String>>>>);
     static_assert(HasReleaseRef<Member<Value>>::value);
 
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
     Member<Value> member(value);
 
-    EXPECT_EQ(1, string->refcount);
+    EXPECT_EQ(1, string->refcount());
     EXPECT_EQ(value, member.raw_value());
     EXPECT_EQ(value, member.value());
     EXPECT_EQ(value, raw_value_from_value(member));
 
     member.release_ref();
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
 }
 
 TEST(Member, DefaultConstructsWhenWrappedTypeHasDefault)
@@ -275,11 +275,11 @@ TEST(Member, ReleaseRefReleasesRawValueForDealloc)
     TValue<String> typed_string = TValue<String>::from_oop(string);
     Member<TValue<String>> member(typed_string);
 
-    EXPECT_EQ(1, string->refcount);
+    EXPECT_EQ(1, string->refcount());
 
     member.release_ref();
 
-    EXPECT_EQ(0, string->refcount);
+    EXPECT_EQ(0, string->refcount());
 }
 
 TEST(Member, AssignmentRetainsNewValueAndReleasesOldValue)
@@ -293,15 +293,15 @@ TEST(Member, AssignmentRetainsNewValueAndReleasesOldValue)
 
     Member<MaybeString> member(
         MaybeString::some(TValue<String>::from_oop(first)));
-    EXPECT_EQ(1, first->refcount);
-    EXPECT_EQ(0, second->refcount);
+    EXPECT_EQ(1, first->refcount());
+    EXPECT_EQ(0, second->refcount());
 
     member = MaybeString::some(TValue<String>::from_oop(second));
-    EXPECT_EQ(0, first->refcount);
-    EXPECT_EQ(1, second->refcount);
+    EXPECT_EQ(0, first->refcount());
+    EXPECT_EQ(1, second->refcount());
     EXPECT_EQ(second, member.value().value().extract());
 
     member = MaybeString::none();
-    EXPECT_EQ(0, second->refcount);
+    EXPECT_EQ(0, second->refcount());
     EXPECT_TRUE(member.raw_value().is_none());
 }

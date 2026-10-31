@@ -84,8 +84,8 @@ namespace cl
         size_t zct_size_before = thread->zero_count_table_size();
         String *string = thread->make_object_raw<String>(L"zct");
 
-        EXPECT_EQ(0, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
+        EXPECT_EQ(0, string->refcount());
+        EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state());
         EXPECT_EQ(zct_size_before, thread->zero_count_table_size());
     }
 
@@ -102,7 +102,7 @@ namespace cl
 
         thread->add_to_zero_count_table_if_needed(string);
 
-        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state());
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
     }
 
@@ -118,11 +118,11 @@ namespace cl
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
 
         incref_heap_ptr(string);
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         decref_heap_ptr(string);
 
-        EXPECT_EQ(0, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        EXPECT_EQ(0, string->refcount());
+        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state());
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
     }
 
@@ -168,12 +168,12 @@ namespace cl
         Owned<Value> owner(Value::from_oop(old_string));
         Owned<Value> keep_new(Value::from_oop(new_string));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
-        ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+        ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state());
 
         owner = Value::from_oop(new_string);
 
-        EXPECT_EQ(0, old_string->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+        EXPECT_EQ(0, old_string->refcount());
+        EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state());
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
     }
@@ -188,12 +188,12 @@ namespace cl
         Member<Value> member(Value::from_oop(old_string));
         Owned<Value> keep_new(Value::from_oop(new_string));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
-        ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+        ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state());
 
         member = Value::from_oop(new_string);
 
-        EXPECT_EQ(0, old_string->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+        EXPECT_EQ(0, old_string->refcount());
+        EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state());
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
         member.release_ref();

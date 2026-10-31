@@ -99,9 +99,9 @@ TEST(PersistentRoots, RewritesEveryCachedCellWithoutChangingOwnership)
     std::vector<int32_t> refcounts;
     for(HeapObject *original: originals)
     {
-        refcounts.push_back(original == nullptr ? 0 : original->refcount);
+        refcounts.push_back(original == nullptr ? 0 : original->refcount());
     }
-    int32_t replacement_refs = replacement_shape.get()->refcount;
+    int32_t replacement_refs = replacement_shape.get()->refcount();
     size_t zct_size = thread.zero_count_table_size();
     thread.visit_persistent_root_slots([&](HeapReferenceSlot slot) {
         if(HeapObject *original = slot.load_pointer())
@@ -127,10 +127,10 @@ TEST(PersistentRoots, RewritesEveryCachedCellWithoutChangingOwnership)
     {
         if(originals[idx] != nullptr)
         {
-            EXPECT_EQ(refcounts[idx], originals[idx]->refcount);
+            EXPECT_EQ(refcounts[idx], originals[idx]->refcount());
         }
     }
-    EXPECT_EQ(replacement_refs, replacement_shape.get()->refcount);
+    EXPECT_EQ(replacement_refs, replacement_shape.get()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
 
     // No dispatch or collection while caches describe unrelated replacement
@@ -159,8 +159,8 @@ TEST(PersistentRoots, PendingExceptionObjectRewriteIsGetterVisibleAndRCNeutral)
     Owned<TValue<Exception>> replacement(thread.pending_exception_object());
     ASSERT_TRUE(thread.set_pending_exception_object(original.value())
                     .is_exception_marker());
-    int32_t original_refs = original.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
+    int32_t original_refs = original.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
     size_t zct_size = thread.zero_count_table_size();
     size_t rewrites = 0;
     thread.visit_persistent_root_slots([&](HeapReferenceSlot slot) {
@@ -174,8 +174,8 @@ TEST(PersistentRoots, PendingExceptionObjectRewriteIsGetterVisibleAndRCNeutral)
     EXPECT_EQ(PendingExceptionKind::Object, thread.pending_exception_kind());
     EXPECT_EQ(replacement.extract(),
               thread.pending_exception_object().extract());
-    EXPECT_EQ(original_refs, original.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
+    EXPECT_EQ(original_refs, original.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
     ReclamationRootSet roots;
     collect_reclamation_roots_from_thread(roots, thread);
@@ -205,8 +205,8 @@ TEST(PersistentRoots, PendingStopIterationVisitsPointerAndInlinePayloads)
     Owned<TValue<String>> replacement(thread.make_object_value<String>(L"new"));
     ASSERT_TRUE(thread.set_pending_stop_iteration_value(original.raw_value())
                     .is_exception_marker());
-    int32_t original_refs = original.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
+    int32_t original_refs = original.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
     size_t zct_size = thread.zero_count_table_size();
     size_t rewrites = 0;
     thread.visit_persistent_root_slots([&](HeapReferenceSlot slot) {
@@ -220,8 +220,8 @@ TEST(PersistentRoots, PendingStopIterationVisitsPointerAndInlinePayloads)
     EXPECT_EQ(PendingExceptionKind::StopIteration,
               thread.pending_exception_kind());
     EXPECT_EQ(replacement.raw_value(), thread.pending_stop_iteration_value());
-    EXPECT_EQ(original_refs, original.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
+    EXPECT_EQ(original_refs, original.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
     ReclamationRootSet roots;
     collect_reclamation_roots_from_thread(roots, thread);
@@ -257,11 +257,11 @@ TEST(PersistentRoots, CachedShapeKeepsZeroCountObjectAliveUntilCacheIsRestored)
     Shape *original = thread.get_exact_dict_general_shape();
     Shape *cached = original->clone_with_flags(original->flags());
     thread.add_to_zero_count_table_if_needed(cached);
-    ASSERT_EQ(0, cached->refcount);
+    ASSERT_EQ(0, cached->refcount());
     thread.cache_exact_dict_shapes(thread.get_exact_dict_string_key_shape(),
                                    cached);
     context.vm().run_heap_reclamation();
-    EXPECT_EQ(0, cached->refcount);
+    EXPECT_EQ(0, cached->refcount());
     EXPECT_TRUE(thread.zero_count_table_contains_for_testing(cached));
     EXPECT_EQ(cached, thread.get_exact_dict_general_shape());
 

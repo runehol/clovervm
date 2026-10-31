@@ -228,10 +228,10 @@ TEST(GCCloverHeapAdapter, OrdinaryCellsAreMarkedWithoutOwnershipChanges)
     std::array roots = {cl::Value::None(), cl::Value::not_present(),
                         cl::Value::from_smi(3)};
     auto original_roots = roots;
-    int32_t parent_refs = parent.get()->refcount;
-    int32_t child_refs = child.extract()->refcount;
-    auto parent_lifecycle = parent.get()->lifecycle_state;
-    auto child_lifecycle = child.extract()->lifecycle_state;
+    int32_t parent_refs = parent.get()->refcount();
+    int32_t child_refs = child.extract()->refcount();
+    auto parent_lifecycle = parent.get()->lifecycle_state();
+    auto child_lifecycle = child.extract()->lifecycle_state();
     size_t zct_size = thread->zero_count_table_size();
 
     cl::gc::CloverHeapAdapter adapter;
@@ -252,10 +252,10 @@ TEST(GCCloverHeapAdapter, OrdinaryCellsAreMarkedWithoutOwnershipChanges)
     EXPECT_EQ(child.raw_value(), parent.get()->get(0));
     EXPECT_EQ(child.raw_value(), parent.get()->get(1));
     EXPECT_EQ(cl::Value::from_smi(42), parent.get()->get(2));
-    EXPECT_EQ(parent_refs, parent.get()->refcount);
-    EXPECT_EQ(child_refs, child.extract()->refcount);
-    EXPECT_EQ(parent_lifecycle, parent.get()->lifecycle_state);
-    EXPECT_EQ(child_lifecycle, child.extract()->lifecycle_state);
+    EXPECT_EQ(parent_refs, parent.get()->refcount());
+    EXPECT_EQ(child_refs, child.extract()->refcount());
+    EXPECT_EQ(parent_lifecycle, parent.get()->lifecycle_state());
+    EXPECT_EQ(child_lifecycle, child.extract()->lifecycle_state());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
 }
 
@@ -280,11 +280,11 @@ TEST(GCCloverHeapAdapter, CustomStorageIsStrongButCacheTargetsAreWeak)
     expanded.binding_plan = std::make_unique<cl::ExpandedCallCachedPlan>();
     expanded.binding_plan->keyword_names.emplace_back(keyword.value());
     cl::Value root = cl::Value::from_oop(code.get());
-    int32_t code_refs = code.get()->refcount;
-    int32_t constant_refs = constant.extract()->refcount;
-    int32_t keyword_refs = keyword.extract()->refcount;
-    int32_t weak_refs = weak_only.extract()->refcount;
-    auto code_lifecycle = code.get()->lifecycle_state;
+    int32_t code_refs = code.get()->refcount();
+    int32_t constant_refs = constant.extract()->refcount();
+    int32_t keyword_refs = keyword.extract()->refcount();
+    int32_t weak_refs = weak_only.extract()->refcount();
+    auto code_lifecycle = code.get()->lifecycle_state();
     size_t zct_size = thread->zero_count_table_size();
 
     cl::gc::CloverHeapAdapter adapter;
@@ -301,10 +301,10 @@ TEST(GCCloverHeapAdapter, CustomStorageIsStrongButCacheTargetsAreWeak)
     EXPECT_EQ(keyword.value(), expanded.binding_plan->keyword_names[0].value());
     EXPECT_EQ(weak_only.raw_value(),
               caches.function_call_caches.back().guard_value);
-    EXPECT_EQ(code_refs, code.get()->refcount);
-    EXPECT_EQ(constant_refs, constant.extract()->refcount);
-    EXPECT_EQ(keyword_refs, keyword.extract()->refcount);
-    EXPECT_EQ(weak_refs, weak_only.extract()->refcount);
-    EXPECT_EQ(code_lifecycle, code.get()->lifecycle_state);
+    EXPECT_EQ(code_refs, code.get()->refcount());
+    EXPECT_EQ(constant_refs, constant.extract()->refcount());
+    EXPECT_EQ(keyword_refs, keyword.extract()->refcount());
+    EXPECT_EQ(weak_refs, weak_only.extract()->refcount());
+    EXPECT_EQ(code_lifecycle, code.get()->lifecycle_state());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
 }

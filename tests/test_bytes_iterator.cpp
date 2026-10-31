@@ -38,8 +38,8 @@ TEST(BytesIterator, DescriptorAndSourceSlotAreCompleteAndRewritable)
               release.static_release_count);
     EXPECT_EQ(sizeof(BytesIterator), object_size_in_bytes(iterator.extract()));
     EXPECT_EQ(nullptr, release.custom_trace_strong);
-    int32_t source_refs = source.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
+    int32_t source_refs = source.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
     size_t source_slots = 0;
     visit_strong_reference_slots(
         iterator.extract(), [&](HeapReferenceSlot slot) {
@@ -51,8 +51,8 @@ TEST(BytesIterator, DescriptorAndSourceSlotAreCompleteAndRewritable)
         });
     EXPECT_EQ(1u, source_slots);
     EXPECT_EQ(replacement.value(), iterator.extract()->source.value().value());
-    EXPECT_EQ(source_refs, source.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
+    EXPECT_EQ(source_refs, source.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
     // Collector slot rewriting deliberately bypasses RC; restore before RAII
     // release.
     visit_strong_reference_slots(
@@ -71,11 +71,11 @@ TEST(BytesIterator, SourceSurvivesReclamationAndIsReleasedOnExhaustion)
     auto source = thread->make_object_value<Bytes>(std::span(payload));
     Owned<TValue<BytesIterator>> iterator(
         thread->make_object_value<BytesIterator>(source));
-    EXPECT_EQ(1, source.extract()->refcount);
+    EXPECT_EQ(1, source.extract()->refcount());
     thread->publish_safepoint_scan_record(
         SafepointScanRecord::idle(thread->clover_frame_sentinel()));
     context.vm().run_heap_reclamation();
-    EXPECT_EQ(1, source.extract()->refcount);
+    EXPECT_EQ(1, source.extract()->refcount());
     auto next_name =
         context.vm().get_or_create_interned_string_value(L"__next__");
     EXPECT_EQ(Value::from_smi(255),
@@ -85,7 +85,7 @@ TEST(BytesIterator, SourceSurvivesReclamationAndIsReleasedOnExhaustion)
         // Keep a separate owner while inspecting the reference count after
         // the iterator releases its edge; exception transport may safepoint.
         Owned<TValue<Bytes>> observer(source);
-        EXPECT_EQ(2, source.extract()->refcount);
+        EXPECT_EQ(2, source.extract()->refcount());
         ASSERT_TRUE(
             thread->call_clovervm_method(iterator.raw_value(), next_name)
                 .is_exception_marker());
@@ -95,7 +95,7 @@ TEST(BytesIterator, SourceSurvivesReclamationAndIsReleasedOnExhaustion)
                 thread->pending_exception_object().raw_value()));
         thread->clear_pending_exception();
         EXPECT_FALSE(iterator.extract()->source.value());
-        EXPECT_EQ(1, source.extract()->refcount);
+        EXPECT_EQ(1, source.extract()->refcount());
     }
     context.vm().run_heap_reclamation();
     ASSERT_TRUE(thread->call_clovervm_method(iterator.raw_value(), next_name)

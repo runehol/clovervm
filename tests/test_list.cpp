@@ -109,7 +109,7 @@ TEST(List, ReserveTransfersBackingElementOwnership)
     list->reserve(8);
 
     EXPECT_EQ(Value::from_oop(item), list->item_unchecked(0));
-    EXPECT_EQ(1, item->refcount);
+    EXPECT_EQ(1, item->refcount());
 }
 
 TEST(List, CheckedIndexingSupportsNegativeIndices)
@@ -141,13 +141,13 @@ TEST(List, SetItemUncheckedEnqueuesOverwrittenObject)
     Owned<Value> keep_new(Value::from_oop(new_string));
     list->append(Value::from_oop(old_string));
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
-    ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+    ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state());
 
     list->set_item_unchecked(0, Value::from_oop(new_string));
 
     EXPECT_EQ(Value::from_oop(new_string), list->item_unchecked(0));
-    EXPECT_EQ(0, old_string->refcount);
-    EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+    EXPECT_EQ(0, old_string->refcount());
+    EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state());
     EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
     EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
 }
@@ -224,16 +224,16 @@ TEST(List, ToTupleRetainsElementsAndPreservesSource)
     Owned<TValue<List>> element(thread->make_object_value<List>());
     source.extract()->append(element.raw_value());
     source.extract()->append(Value::from_smi(42));
-    int32_t refs_before = element.extract()->refcount;
+    int32_t refs_before = element.extract()->refcount();
     Owned<TValue<Tuple>> tuple(source.extract()->to_tuple(thread));
-    EXPECT_EQ(refs_before + 1, element.extract()->refcount);
+    EXPECT_EQ(refs_before + 1, element.extract()->refcount());
     ASSERT_EQ(2u, tuple.extract()->size());
     EXPECT_EQ(element.raw_value(), tuple.extract()->item_unchecked(0));
     EXPECT_EQ(Value::from_smi(42), tuple.extract()->item_unchecked(1));
     EXPECT_EQ(2u, source.extract()->size());
     source.extract()->clear();
     EXPECT_EQ(element.raw_value(), tuple.extract()->item_unchecked(0));
-    EXPECT_EQ(refs_before, element.extract()->refcount);
+    EXPECT_EQ(refs_before, element.extract()->refcount());
     Owned<TValue<Tuple>> empty(source.extract()->to_tuple(thread));
     EXPECT_TRUE(empty.extract()->empty());
     EXPECT_EQ(context.vm().tuple_class(),
@@ -776,7 +776,7 @@ keys
     List *observed = keys.value().get_ptr<List>();
     ASSERT_EQ(5u, observed->size());
     for(size_t index = 0; index < observed->size(); ++index)
-        EXPECT_EQ(1, observed->item_unchecked(index).get_ptr()->refcount);
+        EXPECT_EQ(1, observed->item_unchecked(index).get_ptr()->refcount());
 }
 
 TEST(List, SortPreservesExistingCallableLimitations)
