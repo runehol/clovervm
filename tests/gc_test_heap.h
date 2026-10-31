@@ -155,12 +155,27 @@ namespace cl::gc::test
         StableDestination,
     };
 
+    enum class TestGeneration : uint8_t
+    {
+        Young,
+        Old,
+    };
+
+    // Full selects old as well as young movable sources. It does not model
+    // full-collector marking/sweeping of non-moving objects.
+    enum class TestCollectionKind : uint8_t
+    {
+        YoungOnly,
+        Full,
+    };
+
     struct TestObject
     {
         uint64_t logical_identity;
         TestHeader header = TestHeader::normal();
         // Test-heap allocation metadata survives source header forwarding.
         TestStorage storage = TestStorage::Source;
+        TestGeneration generation = TestGeneration::Young;
         EvacuationDestination preferred_destination =
             EvacuationDestination::Ordinary;
         TestObject *exclusive_owner = nullptr;  // Not a traced edge.
@@ -230,6 +245,7 @@ namespace cl::gc::test
                 ++size_;
                 destination->header = TestHeader::normal();
                 destination->storage = storage;
+                destination->generation = TestGeneration::Old;
                 destination->exclusive_owner = nullptr;
                 return destination;
             }
@@ -352,7 +368,14 @@ namespace cl::gc::test
 
         // Test-only lifecycle boundary. The caller must finish strong and weak
         // repair first, and stop using source objects and source slot handles.
-        void discard_source_storage() { objects_.clear(); }
+        void discard_source_storage(TestCollectionKind kind)
+        {
+            std::erase_if(objects_, [&](const auto &object) {
+                return object->storage == TestStorage::Source &&
+                       (kind == TestCollectionKind::Full ||
+                        object->generation == TestGeneration::Young);
+            });
+        }
 
     private:
         DestinationArena &arena_for(EvacuationDestination destination)
@@ -388,23 +411,27 @@ namespace cl::gc::test
         using Group = AllocationGroup<Object>;
         using WeakUnit = WeakRepairUnit<Object>;
 
-        explicit TestHeapAdapter(TestHeap &heap) : heap_(heap) {}
+        TestHeapAdapter(TestHeap &heap, TestCollectionKind collection_kind)
+            : heap_(heap), collection_kind_(collection_kind)
+        {
+        }
 
         bool is_collected_source(Object *object) const
         {
-            return object->storage == TestStorage::Source;
+            return object->storage == TestStorage::Source &&
+                   (collection_kind_ == TestCollectionKind::Full ||
+                    object->generation == TestGeneration::Young);
         }
 
         Group allocation_group(Object *source) const
         {
             assert(is_collected_source(source));
             assert(source->header.kind == TestHeaderKind::Normal);
-            assert(source->exclusive_owner == nullptr);
             Object *companion = Slot(source->companion).load_pointer();
-            if(companion != nullptr)
+            if(companion != nullptr && is_collected_source(companion) &&
+               forwarded_to(companion) == nullptr)
             {
                 assert(companion->exclusive_owner == source);
-                assert(is_collected_source(companion));
                 assert(Slot(companion->companion).load_pointer() == nullptr);
                 assert(companion->header.kind == TestHeaderKind::Normal);
                 return Group::pair(source, companion);
@@ -428,6 +455,10 @@ namespace cl::gc::test
         std::array<Object *, 2> copy_group(const Group &group,
                                            EvacuationDestination destination)
         {
+            for(size_t idx = 0; idx < group.count; ++idx)
+            {
+                assert(is_collected_source(group.members[idx]));
+            }
             return heap_.copy_group(group, destination);
         }
 
@@ -505,6 +536,7 @@ namespace cl::gc::test
 
     private:
         TestHeap &heap_;
+        TestCollectionKind collection_kind_;
         absl::flat_hash_set<Object *> marked_;
         absl::flat_hash_map<Object *, size_t> scan_counts_;
         absl::flat_hash_map<Object *, size_t> weak_scan_counts_;

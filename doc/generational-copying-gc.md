@@ -162,6 +162,10 @@ Fixed allocation groups of one or two objects allow an exclusively owned
 overflow object to be placed immediately after its relocated owner, with
 required alignment. Members retain separate headers and forwarding records,
 and every member is enqueued. The adapter owns that layout/placement knowledge.
+Pair formation requires both members to be in the current moving source set
+and the companion to be unforwarded. Otherwise copy the selected member alone;
+this includes young overflow reached through an old owner's remembered slot.
+The same rule applies when a full collection selects old movable sources.
 See the [adapter design](gc-collector-heap-adapter.md) for the concrete contract.
 
 Collector-only allocation during slot enumeration is allowed provided it cannot

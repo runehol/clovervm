@@ -55,7 +55,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, StableAndAlreadyForwardedUnitsCompleteEarly)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject stable{};
         stable.storage = TestStorage::StableDestination;
         TestObject *target = heap.make_object();
@@ -90,7 +90,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, PendingFieldDoesNotPreventOtherFieldsFromResolving)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *source = heap.make_object();
         TestObject *child = heap.make_object();
         TestObject *later = heap.make_object();
@@ -117,7 +117,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, AdjacentEntriesDeferIndependentlyAndResetWholePayload)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject stable{};
         stable.storage = TestStorage::StableDestination;
         TestObject *source = heap.make_object();
@@ -159,7 +159,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, ExplicitUnitsAllowRootsToArriveBeforeFinish)
     {
         TestHeap heap;
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *target = heap.make_object();
         TestObject *dead = heap.make_object();
         TestObject *weak_root = target;
@@ -181,7 +181,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, InvalidGuardClearsPayloadWithoutDeferral)
     {
         TestHeap heap;
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *dead = heap.make_object();
         TestWeakEntry entry =
             TestWeakEntry::active(nullptr, dead, TestCell::reference(dead));
@@ -198,7 +198,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, DeferredUnitsSurviveQueueAndDestinationChunkGrowth)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *source = heap.make_object();
         TestObject *branch = heap.make_object();
         source->strong_cells = {TestCell::reference(branch)};
@@ -237,7 +237,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, ExternalOldOwnerNeedsOnlyItsExactRememberedUnit)
     {
         TestHeap heap;
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *target = heap.make_object();
         TestObject *dead = heap.make_object();
         std::array entries = {
@@ -287,7 +287,7 @@ namespace cl::gc::test
          FinishAllowsExplicitSourceDisposalWithoutDanglingHeapEdges)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         auto group = heap.make_pair();
         TestObject *child = heap.make_object();
         TestObject *dead = heap.make_object();
@@ -306,7 +306,7 @@ namespace cl::gc::test
         TestObject *child_copy = adapter.forwarded_to(child);
         ASSERT_NE(nullptr, companion_copy);
         ASSERT_NE(nullptr, child_copy);
-        heap.discard_source_storage();
+        heap.discard_source_storage(TestCollectionKind::Full);
         EXPECT_TRUE(heap.objects().empty());
         EXPECT_EQ(nullptr, weak_root);
         EXPECT_EQ(companion_copy, pointer(copy->companion));
@@ -323,7 +323,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, NativeAllocationFailureDuringEarlyAndLateRepairIsFatal)
     {
         TestHeap heap;
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *root = nullptr;
         Evacuation<TestHeapAdapter> collection(adapter);
         EXPECT_DEATH(collection.add_weak_root(Unit::bind<throw_early>(root)),
@@ -338,7 +338,7 @@ namespace cl::gc::test
     TEST(GCWeakRepair, FinishSealsCollectionAgainstNewStrongOrWeakRoots)
     {
         TestHeap heap;
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         Evacuation<TestHeapAdapter> collection(adapter);
         collection.finish();
         TestCell root = TestCell::reference(nullptr);

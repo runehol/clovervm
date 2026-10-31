@@ -11,7 +11,7 @@ namespace cl::gc::test
     TEST(GCEvacuationPrimitives, SingletonCopyPreservesUnrepairedReferences)
     {
         TestHeap heap;
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *source = heap.make_object();
         TestObject *child = heap.make_object();
         source->strong_cells = {TestCell::immediate(42),
@@ -47,7 +47,7 @@ namespace cl::gc::test
     TEST(GCEvacuationPrimitives, PairIsAdjacentAndForwardingIsExplicit)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         auto sources = heap.make_pair();
         auto group = adapter.allocation_group(sources.members[0]);
         ASSERT_EQ(2u, group.count);
@@ -83,7 +83,7 @@ namespace cl::gc::test
          ChunkGrowthDoesNotSplitGroupsOrMoveEarlierCopies)
     {
         TestHeap heap(2);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         TestObject *first = heap.make_object();
         first->strong_cells = {TestCell::immediate(123)};
         auto initial = adapter.copy_group(adapter.allocation_group(first),
@@ -111,7 +111,7 @@ namespace cl::gc::test
     TEST(GCEvacuationPrimitives, StablePreferenceAppliesToWholeGroup)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         auto pair = heap.make_pair();
         pair.members[1]->preferred_destination = EvacuationDestination::Stable;
         EXPECT_EQ(EvacuationDestination::Stable, adapter.destination_for(pair));
@@ -135,7 +135,7 @@ namespace cl::gc::test
     {
         TestHeap heap;
         auto pair = heap.make_pair();
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         size_t references = 0;
         adapter.visit_strong_slots(pair.members[0], [&](TestSlot slot) {
             if(slot.load_pointer() != nullptr)
@@ -156,7 +156,7 @@ namespace cl::gc::test
             {EvacuationDestination::Ordinary, EvacuationDestination::Stable})
         {
             TestHeap heap(1);
-            TestHeapAdapter adapter(heap);
+            TestHeapAdapter adapter(heap, TestCollectionKind::Full);
             auto group = adapter.allocation_group(heap.make_object());
             auto copy = adapter.copy_group(group, destination);
             adapter.install_forwarding(group.members[0], copy[0]);

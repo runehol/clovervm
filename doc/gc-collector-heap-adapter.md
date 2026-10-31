@@ -7,7 +7,7 @@
 | Implementation | Partial; isolated collector and CloverVM weak-unit enumeration implemented; production copying and weak remembered-set integration not implemented |
 | Scope | One collector algorithm instantiated against a test heap and CloverVM |
 | Owning layers | `src/gc/` owns traversal and the CloverVM adapter; memory layouts own slot enumeration; tests own the synthetic heap |
-| Validated against | CloverVM unit-enumeration working tree based on `649dca5b` (2026-10-31); earlier verification recorded below |
+| Validated against | Conditional-group working tree based on `977b2581` (2026-10-31); earlier verification recorded below |
 | Supersedes | N/A |
 
 This expands the collector boundary in the
@@ -415,11 +415,13 @@ No live-size prepass or whole-heap reservation is implied.
 
 ### Exclusively Owned Overflow Storage
 
-CloverVM overflow storage has one owning object and is reached through that
-owner, not through another object's strong edge or an independent collection
-root. On first evacuating the owner, its overflow storage therefore has not
-already been discovered/forwarded independently. This is an ownership and
-discovery invariant, not a best-effort placement heuristic.
+CloverVM overflow storage has one owning object. Group formation still depends
+on the current collection's moving source set: pair an owner with its companion
+only when both are selected and the companion is not already forwarded. An old
+owner's remembered slot can lead directly to a selected young companion, which
+must then be copied alone. An already-forwarded or unselected companion is not
+recopied merely to obtain adjacency. The ownership backlink in the test fixture
+is non-traced metadata; a companion root must not keep its owner alive.
 
 When relocating the owner and its overflow storage together, reserve their
 destination extents together and put the overflow object immediately after
@@ -439,12 +441,13 @@ group. The collector must see every source/destination pair so that forwarding
 publication and scan scheduling remain algorithm-owned. Do not hide recursive
 tracing in a group-copy helper.
 
-This records co-placement for a group being relocated; it does not silently
-decide to move an object outside the current collection or override pinning and
-stable placement. Mixed-generation/non-moving groups need an explicit policy
-before production integration. A path that exposes overflow storage as an
-independent root would violate the stated discovery invariant and must be
-reviewed rather than quietly downgrading adjacency to best-effort.
+This records co-placement when both members are relocated together; it does not
+move an object outside the current collection or override stable placement.
+The adapter's source selection is independent of generation: a full collection
+can select old movable sources as well as young ones. Fresh destinations remain
+outside that selection even though promotion makes their generation Old.
+Non-moving full-collection marking/sweeping and weak liveness are separate
+integration work, not supplied by conditional copying groups.
 
 Test independent alignment/extent accounting, adjacency, distinct forwarding
 records, exactly-once scanning of both objects, shared/cyclic outgoing values,
@@ -549,6 +552,11 @@ movement. The mark phase remains usable and unchanged throughout.
    reviews. Do not add stub production copying methods or move real VM objects
    merely to make the isolated template compile.
 
+   The [copying-adapter investigation](gc-copying-adapter-readiness.md) records
+   current code evidence and preparatory slices. Conditional grouping is
+   implemented in the isolated heap; backing metadata and transitional header
+   candidates remain proposals, not accepted runtime policy or movement.
+
 The first slice's test-only source header models normal versus forwarded state;
 it does not impose a production header layout. Existing mark tests still use
 the same representation/adapter and must continue to pass. The synthetic heap
@@ -595,6 +603,32 @@ fixed-seed generated graphs and a 50,000-object chain. Real-object adapter tests
 check known ordinary/custom strong edges, weak-only target exclusion, and
 unchanged references, refcounts, lifecycle fields, and ZCT size. These assertions
 do not claim an independent oracle for the entire VM metadata graph.
+
+## Conditional Groups and Collection Selection
+
+The test heap now separates generation (`TestGeneration::Young`/`Old`) from
+storage membership, and requires an explicit `TestCollectionKind::YoungOnly`
+or `Full` when constructing its adapter. Full includes old movable source
+records; neither mode includes fresh destinations or stable storage. Copying
+promotes the destination to Old without changing the source's generation, so
+source membership remains valid after forwarding. The generic collector and
+production runtime are unchanged by this slice.
+
+Only selected, unforwarded companions join a pair. Standalone companions do
+not retain their owners through the fixture's non-traced ownership metadata.
+Adjacency is asserted only when both members are actually copied as a group,
+not inferred merely from both being live. The graph oracle uses its own source
+selection and verifies mixed-generation graphs in both modes. Test source
+retirement takes the completed phase's selection and preserves excluded records.
+
+Working-tree verification on 2026-10-31, based on `977b2581`: all 39 focused GC
+tests passed. The group matrix covers 32 combinations of collection kind,
+owner/companion generation, root order, and destination kind. Additional cases
+cover stable owners, standalone companions, old weak-only targets, source
+retirement, and the independent graph oracle. Full Debug `all check` passed
+2,297 tests and full Release `all check` passed 2,287 tests; each configuration
+had three existing JIT-disabled skips and one disabled test. These are selected
+copying-source tests, not full non-moving marking/sweeping or production GC.
 
 ## Tests and Proof Boundary
 

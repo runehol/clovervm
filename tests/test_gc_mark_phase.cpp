@@ -23,6 +23,7 @@ namespace
 {
     namespace fixture = cl::gc::test;
     using fixture::TestCell;
+    using fixture::TestCollectionKind;
     using fixture::TestHeap;
     using fixture::TestHeapAdapter;
     using fixture::TestObject;
@@ -78,7 +79,7 @@ namespace
             original_companions.push_back(object->companion);
         }
 
-        TestHeapAdapter adapter(heap);
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         cl::gc::StrongClosure<TestHeapAdapter> mark(adapter);
         for(TestCell &root: roots)
         {
