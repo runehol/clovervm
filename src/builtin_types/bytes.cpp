@@ -4,11 +4,13 @@
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/native_function.h"
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
@@ -831,6 +833,111 @@ namespace cl
         return self.get_ptr<Bytes>()
             ->removesuffix(suffix_value.get_ptr<Bytes>())
             .raw_value();
+    }
+
+    // Exact sequences need no managed callbacks. Other sources are fully
+    // materialized by the Python wrapper before any element is inspected.
+    [[nodiscard]] static Value
+    native_bytes_join_sequence(ThreadState *thread, Value self, Value source)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"join"));
+        if(source.is_ptr())
+        {
+            auto *cls = source.get_ptr<Object>()->get_shape()->get_class();
+            auto *vm = thread->get_machine();
+            if(cls == vm->list_class() || cls == vm->tuple_class())
+                return source;
+        }
+        return Value::None();
+    }
+
+    [[nodiscard]] static Value
+    native_bytes_join_finish(ThreadState *thread, Value self, Value sequence)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"join"));
+        Owned<TValue<Bytes>> separator(TValue<Bytes>::from_value_assumed(self));
+        Owned<Value> items(sequence);
+        const bool is_list = has_native_layout<List>(sequence);
+        assert(is_list || has_native_layout<Tuple>(sequence));
+        const size_t count = is_list ? sequence.get_ptr<List>()->size()
+                                     : sequence.get_ptr<Tuple>()->size();
+        auto item_at = [&](size_t index) {
+            return is_list
+                       ? items.value().get_ptr<List>()->item_unchecked(index)
+                       : items.value().get_ptr<Tuple>()->item_unchecked(index);
+        };
+        if(count == 1)
+        {
+            Value item = item_at(0);
+            if(has_native_layout<Bytes>(item) &&
+               item.get_ptr<Bytes>()->get_shape()->get_class() ==
+                   thread->get_machine()->bytes_class())
+                return item;
+        }
+        const size_t separator_size =
+            size_t(separator.extract()->count.extract());
+        const size_t limit = size_t(value_smi_max);
+        size_t total = 0;
+        for(size_t index = 0; index < count; ++index)
+        {
+            Value item = item_at(index);
+            if(!has_native_layout<Bytes>(item) &&
+               !has_native_layout<ByteArray>(item))
+            {
+                auto name = thread->class_of_value(item)->get_name();
+                std::wstring message = L"sequence item " +
+                                       std::to_wstring(index) +
+                                       L": expected a bytes-like object, ";
+                message.append(name.extract()->data,
+                               std::min(size_t(name.extract()->count.extract()),
+                                        size_t(80)));
+                message += L" found";
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", message.c_str());
+            }
+            size_t size = has_native_layout<Bytes>(item)
+                              ? size_t(item.get_ptr<Bytes>()->count.extract())
+                              : item.get_ptr<ByteArray>()->size();
+            if(size > limit - total)
+                return thread->set_pending_builtin_exception_string(
+                    L"OverflowError", L"join() result is too long");
+            total += size;
+            if(index != 0)
+            {
+                if(separator_size > limit - total)
+                    return thread->set_pending_builtin_exception_string(
+                        L"OverflowError", L"join() result is too long");
+                total += separator_size;
+            }
+        }
+        auto result = thread->make_object_value<Bytes>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(total)));
+        // Allocation may reclaim/move storage. Reacquire every payload only
+        // after it, and do no allocations, callbacks or safepoints while
+        // copying.
+        size_t offset = 0;
+        for(size_t index = 0; index < count; ++index)
+        {
+            if(index != 0 && separator_size != 0)
+            {
+                std::memcpy(result.extract()->data + offset,
+                            separator.extract()->data, separator_size);
+                offset += separator_size;
+            }
+            Value item = item_at(index);
+            auto view =
+                has_native_layout<Bytes>(item)
+                    ? bytes_view(TValue<Bytes>::from_value_assumed(item))
+                    : item.get_ptr<ByteArray>()->view();
+            if(!view.empty())
+            {
+                std::memcpy(result.extract()->data + offset, view.data(),
+                            view.size());
+                offset += view.size();
+            }
+        }
+        assert(offset == total);
+        return result.raw_value();
     }
 
     enum class BytesSplitDirection
@@ -1835,4 +1942,38 @@ namespace cl
             "installing intrinsic methods");
     }
 
+    void install_bytes_helpers(VirtualMachine *vm, ModuleObject *module)
+    {
+        BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_bytes_join_sequence",
+                                     native_bytes_join_sequence),
+            builtin_intrinsic_method(L"_clover_bytes_join_finish",
+                                     native_bytes_join_finish)};
+        for(const auto &helper: helpers)
+        {
+            auto function = unwrap_bootstrap_expected(
+                vm, make_intrinsic_function(vm, helper),
+                "creating bytes helper");
+            unwrap_bootstrap_expected(
+                vm,
+                module->set_own_property(
+                    vm->get_or_create_interned_string_value(helper.name),
+                    function.raw_value()),
+                "installing bytes helper");
+        }
+    }
+
+    void install_bytes_python_methods(VirtualMachine *vm, ModuleObject *module)
+    {
+        Value function = module->get_own_property(
+            vm->get_or_create_interned_string_value(L"_clover_bytes_join"));
+        if(!has_native_layout<Function>(function))
+            fatal("missing bytes Python method");
+        bool stored = vm->bytes_class()->define_own_property(
+            vm->get_or_create_interned_string_value(L"join"), function,
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+                descriptor_flag(DescriptorFlag::StableSlot));
+        assert(stored);
+        (void)stored;
+    }
 }  // namespace cl
