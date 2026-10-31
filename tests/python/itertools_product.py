@@ -56,12 +56,7 @@ def test_values_and_calls():
     assert list(product(42, None, repeat=False)) == [()]
     assert list(product([1, 2], repeat=True)) == [(1,), (2,)]
     assert list(product({'a': 1, 'b': 2})) == [('a',), ('b',)]
-    # bytes iteration is an existing generic-iterator limitation, outside this
-    # module's supported-input boundary. bytearray iteration is supported.
-    if 'clovervm' in sys.version:
-        raises(TypeError, product, b'ab')
-    else:
-        assert list(product(b'ab')) == [(97,), (98,)]
+    assert list(product(b'ab')) == [(97,), (98,)]
     assert list(product(bytearray(b'ab'))) == [(97,), (98,)]
     raises(TypeError, product, 42)
     raises(TypeError, product, [1], 2)

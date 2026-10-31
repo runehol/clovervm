@@ -16,6 +16,7 @@ target_sources(test_clovervm PRIVATE
 	test_codec.cpp
 	test_incremental_codec.cpp
 	test_codec_c.c
+	test_bytes_iterator.cpp
 	test_bytearray.cpp
 	test_bigint.cpp
 	test_bytecode.cpp

@@ -1192,6 +1192,7 @@ namespace cl
         register_builtin_class(make_string_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
         register_builtin_class(make_bytearray_iterator_class(this));
+        register_builtin_class(make_bytes_iterator_class(this));
         register_builtin_class(make_dict_keys_view_class(this));
         register_builtin_class(make_dict_values_view_class(this));
         register_builtin_class(make_dict_items_view_class(this));

@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 
 namespace cl
 {
@@ -124,6 +125,28 @@ namespace cl
             }
         }
     };
+
+    class BytesIterator : public Object
+    {
+    public:
+        static constexpr uint32_t kPredefinedInlineSlotCount = 0;
+        static constexpr NativeLayoutId native_layout =
+            NativeLayoutId::BytesIterator;
+        BytesIterator(ClassObject *cls, TValue<Bytes> source)
+            : Object(cls, native_layout),
+              source(Optional<TValue<Bytes>>::some(source)),
+              index(TValue<SMI>::from_smi(0))
+        {
+        }
+
+        Member<Optional<TValue<Bytes>>> source;
+        Member<TValue<SMI>> index;
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(BytesIterator, Object, 2);
+        CL_DECLARE_STATIC_OBJECT_SIZE(BytesIterator);
+    };
+
+    static_assert(std::is_trivially_destructible_v<BytesIterator>);
+    BuiltinClassDefinition make_bytes_iterator_class(VirtualMachine *vm);
 
     std::span<const uint8_t> bytes_view(TValue<Bytes> value);
     uint64_t bytes_hash(TValue<Bytes> value);
