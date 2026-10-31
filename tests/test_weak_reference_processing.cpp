@@ -1,5 +1,6 @@
 #include "builtin_types/float.h"
 #include "bytecode/code_object.h"
+#include "gc/clover_heap_adapter.h"
 #include "memory/native_layout_descriptor.h"
 #include "object_model/function.h"
 #include "object_model/shape.h"
@@ -13,11 +14,30 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 using namespace cl;
 
 namespace
 {
+    // Exercise late-only behavior through the same per-unit API used by the
+    // collector. This is a test convenience, not a second runtime repair path.
+    void
+    repair_late_units(HeapObject *owner,
+                      absl::FunctionRef<HeapObject *(HeapObject *)> resolver)
+    {
+        visit_weak_reference_units(owner, [&](WeakRepairUnit unit) {
+            gc::WeakRepairResult result =
+                unit.try_repair([&](HeapObject *target) {
+                    HeapObject *replacement = resolver(target);
+                    return replacement != nullptr
+                               ? WeakResolution::resolved(replacement)
+                               : WeakResolution::dead();
+                });
+            EXPECT_EQ(gc::WeakRepairResult::Complete, result);
+        });
+    }
+
     Value native_handler(ThreadState *, Value value, Value) { return value; }
 
     class WeakReferenceProcessing : public testing::Test
@@ -88,6 +108,16 @@ namespace
             }
             ADD_FAILURE() << "resolver received an inactive or non-heap field";
             return pointer;
+        }
+
+        std::vector<WeakRepairUnit> units()
+        {
+            std::vector<WeakRepairUnit> result;
+            gc::CloverHeapAdapter adapter;
+            adapter.visit_weak_units(owner.get(), [&](WeakRepairUnit unit) {
+                result.push_back(unit);
+            });
+            return result;
         }
 
         void populate()
@@ -203,8 +233,8 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
         destination_refs[idx] = destinations()[idx]->refcount;
     }
     size_t zct_size = thread->zero_count_table_size();
-    process_weak_references(
-        owner.get(), [&](HeapObject *object) { return resolve(object); });
+    repair_late_units(owner.get(),
+                      [&](HeapObject *object) { return resolve(object); });
     for(size_t idx = 0; idx < caches.attribute_read_caches.size(); ++idx)
     {
         const auto &cache = caches.attribute_read_caches[idx];
@@ -280,7 +310,7 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
     // These are simulated relocations, not actual copies. Restore references
     // before allowing ordinary refcount teardown to observe the graph.
-    process_weak_references(
+    repair_late_units(
         owner.get(), [&](HeapObject *object) { return resolve(object, true); });
 }
 
@@ -290,7 +320,7 @@ TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
     {
         SCOPED_TRACE(dead);
         populate();
-        process_weak_references(owner.get(), [&](HeapObject *object) {
+        repair_late_units(owner.get(), [&](HeapObject *object) {
             return object == dead ? nullptr : resolve(object);
         });
         auto &caches = owner.get()->inline_caches;
@@ -385,7 +415,7 @@ TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
             EXPECT_TRUE(op.trusted_handler.is_null());
             EXPECT_EQ(UINT32_MAX, op.resume_index);
         }
-        process_weak_references(owner.get(), [&](HeapObject *object) {
+        repair_late_units(owner.get(), [&](HeapObject *object) {
             return resolve(object, true);
         });
     }
@@ -408,7 +438,7 @@ TEST_F(WeakReferenceProcessing,
         caches.keyword_call_caches[0].validity_cell = nullptr;
         caches.expanded_call_caches[0].guard_value = old_value.raw_value();
         caches.expanded_call_caches[0].validity_cell = nullptr;
-        process_weak_references(owner.get(), [&](HeapObject *object) {
+        repair_late_units(owner.get(), [&](HeapObject *object) {
             return object == dead ? nullptr : resolve(object);
         });
         EXPECT_TRUE(
@@ -421,7 +451,7 @@ TEST_F(WeakReferenceProcessing,
             caches.expanded_call_caches[0].guard_value.is_not_present());
         EXPECT_EQ(nullptr, caches.expanded_call_caches[0].function);
         EXPECT_EQ(nullptr, caches.expanded_call_caches[0].binding_plan);
-        process_weak_references(owner.get(), [&](HeapObject *object) {
+        repair_late_units(owner.get(), [&](HeapObject *object) {
             return resolve(object, true);
         });
     }
@@ -438,7 +468,7 @@ TEST_F(WeakReferenceProcessing,
     caches.function_call_caches[0].guard_value = Value::from_smi(7);
     caches.function_call_caches[0].validity_cell = nullptr;
     size_t calls = 0;
-    process_weak_references(owner.get(), [&](HeapObject *object) {
+    repair_late_units(owner.get(), [&](HeapObject *object) {
         ++calls;
         resolve(
             object);  // Validates that no inline/sentinel/native bits arrive.
@@ -454,17 +484,15 @@ TEST_F(WeakReferenceProcessing,
     caches = InlineCacheTables{};
     caches.function_call_caches.resize(1);
     caches.operator_caches.resize(1);
-    process_weak_references(
-        owner.get(), [&](HeapObject *object) -> HeapObject * {
-            ADD_FAILURE() << "empty cache reached resolver: " << object;
-            return nullptr;
-        });
+    repair_late_units(owner.get(), [&](HeapObject *object) -> HeapObject * {
+        ADD_FAILURE() << "empty cache reached resolver: " << object;
+        return nullptr;
+    });
     Owned<TValue<Float>> floating(thread->make_object_value<Float>(1));
-    process_weak_references(
-        floating.extract(), [&](HeapObject *) -> HeapObject * {
-            ADD_FAILURE() << "layout with no weak callback reached resolver";
-            return nullptr;
-        });
+    repair_late_units(floating.extract(), [&](HeapObject *) -> HeapObject * {
+        ADD_FAILURE() << "layout with no weak callback reached resolver";
+        return nullptr;
+    });
 }
 
 TEST_F(WeakReferenceProcessing,
@@ -476,16 +504,16 @@ TEST_F(WeakReferenceProcessing,
     int32_t old_refs = old_shape.get()->refcount;
     int32_t new_refs = new_shape.get()->refcount;
     size_t zct_size = thread->zero_count_table_size();
-    process_weak_references(
-        child, [&](HeapObject *object) { return resolve(object); });
+    repair_late_units(child,
+                      [&](HeapObject *object) { return resolve(object); });
     EXPECT_EQ(new_shape.get(), child->get_previous_shape());
     EXPECT_EQ(old_refs, old_shape.get()->refcount);
     EXPECT_EQ(new_refs, new_shape.get()->refcount);
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
-    process_weak_references(
+    repair_late_units(
         child, [&](HeapObject *object) { return resolve(object, true); });
     EXPECT_EQ(old_shape.get(), child->get_previous_shape());
-    process_weak_references(child, [&](HeapObject *object) -> HeapObject * {
+    repair_late_units(child, [&](HeapObject *object) -> HeapObject * {
         EXPECT_EQ(old_shape.get(), object);
         return nullptr;
     });
@@ -493,7 +521,7 @@ TEST_F(WeakReferenceProcessing,
     EXPECT_EQ(old_refs, old_shape.get()->refcount);
     EXPECT_EQ(new_refs, new_shape.get()->refcount);
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
-    process_weak_references(child, [&](HeapObject *) -> HeapObject * {
+    repair_late_units(child, [&](HeapObject *) -> HeapObject * {
         ADD_FAILURE() << "cleared back-link reached resolver";
         return nullptr;
     });
@@ -513,18 +541,17 @@ TEST_F(WeakReferenceProcessing,
         TValue<String>::from_oop(plan_only));
     ASSERT_EQ(2, old_value.extract()->refcount);
     ASSERT_EQ(1, plan_only->refcount);
-    process_weak_references(owner.get(),
-                            [&](HeapObject *object) -> HeapObject * {
-                                // A strongly owned keyword is not weak: it must
-                                // not reach this resolver.
-                                EXPECT_NE(old_value.extract(), object);
-                                EXPECT_NE(plan_only, object);
-                                return object;
-                            });
+    repair_late_units(owner.get(), [&](HeapObject *object) -> HeapObject * {
+        // A strongly owned keyword is not weak: it must
+        // not reach this resolver.
+        EXPECT_NE(old_value.extract(), object);
+        EXPECT_NE(plan_only, object);
+        return object;
+    });
     EXPECT_NE(nullptr, expanded.binding_plan);
     EXPECT_EQ(2, old_value.extract()->refcount);
     size_t zct_size = thread->zero_count_table_size();
-    process_weak_references(owner.get(), [&](HeapObject *object) {
+    repair_late_units(owner.get(), [&](HeapObject *object) {
         return object == old_function.get() ? nullptr : object;
     });
     EXPECT_EQ(nullptr, expanded.binding_plan);
@@ -534,6 +561,211 @@ TEST_F(WeakReferenceProcessing,
     EXPECT_EQ(0, plan_only->refcount);
     EXPECT_EQ(HeapLifecycleState::InZct, plan_only->lifecycle_state);
     EXPECT_TRUE(thread->zero_count_table_contains_for_testing(plan_only));
+}
+
+TEST_F(WeakReferenceProcessing,
+       EnumerationExposesIndividualEntriesWithoutRepair)
+{
+    populate();
+    auto &caches = owner.get()->inline_caches;
+    std::vector<void *> expected;
+    auto append = [&](auto &table) {
+        for(auto &entry: table)
+        {
+            expected.push_back(&entry);
+        }
+    };
+    append(caches.attribute_read_caches);
+    append(caches.attribute_mutation_caches);
+    append(caches.module_global_read_caches);
+    append(caches.module_global_mutation_caches);
+    append(caches.function_call_caches);
+    append(caches.keyword_call_caches);
+    append(caches.expanded_call_caches);
+    append(caches.operator_caches);
+    auto *binding = caches.expanded_call_caches[0].binding_plan.get();
+    auto *keyword = caches.keyword_call_caches[0].keyword_dest_regs.get();
+    auto enumerated = units();
+    ASSERT_EQ(15u, enumerated.size());
+    ASSERT_EQ(expected.size(), enumerated.size());
+    for(size_t idx = 0; idx < expected.size(); ++idx)
+    {
+        EXPECT_EQ(expected[idx], enumerated[idx].address);
+        EXPECT_NE(nullptr, enumerated[idx].repair);
+    }
+    EXPECT_EQ(old_shape.get(), caches.attribute_read_caches[0].receiver_shape);
+    EXPECT_EQ(old_value.raw_value(),
+              caches.attribute_read_caches[0].plan.constant_value);
+    EXPECT_EQ(binding, caches.expanded_call_caches[0].binding_plan.get());
+    EXPECT_EQ(keyword, caches.keyword_call_caches[0].keyword_dest_regs.get());
+}
+
+TEST_F(WeakReferenceProcessing, PendingFieldsDoNotShortCircuitAnyCacheFamily)
+{
+    // Independent counts from populate()'s active arms. Function guards and
+    // function targets can be the same object but are distinct weak fields.
+    constexpr std::array<size_t, 7> expected_calls = {3, 7, 7, 10, 3, 15, 1};
+    constexpr std::array<size_t, 7> expected_pending_units = {3, 4,  7, 10,
+                                                              3, 15, 1};
+    auto targets = sources();
+    for(size_t pending = 0; pending < targets.size(); ++pending)
+    {
+        SCOPED_TRACE(pending);
+        populate();
+        auto enumerated = units();
+        std::array<size_t, 7> calls{};
+        std::vector<WeakRepairUnit> deferred;
+        for(WeakRepairUnit unit: enumerated)
+        {
+            gc::WeakRepairResult result =
+                unit.try_repair([&](HeapObject *object) {
+                    bool found = false;
+                    for(size_t idx = 0; idx < targets.size(); ++idx)
+                    {
+                        if(object == targets[idx])
+                        {
+                            ++calls[idx];
+                            found = true;
+                        }
+                    }
+                    EXPECT_TRUE(found);
+                    return object == targets[pending]
+                               ? WeakResolution::pending()
+                               : WeakResolution::resolved(object);
+                });
+            if(result == gc::WeakRepairResult::Pending)
+            {
+                deferred.push_back(unit);
+            }
+        }
+        EXPECT_EQ(expected_calls, calls);
+        EXPECT_EQ(expected_pending_units[pending], deferred.size());
+        for(WeakRepairUnit unit: deferred)
+        {
+            EXPECT_EQ(gc::WeakRepairResult::Complete,
+                      unit.try_repair([](HeapObject *object) {
+                          return WeakResolution::resolved(object);
+                      }));
+        }
+    }
+}
+
+TEST_F(WeakReferenceProcessing, PartialRepairDefersOnlyOneAdjacentEntry)
+{
+    populate();
+    auto enumerated = units();
+    auto &caches = owner.get()->inline_caches;
+    std::vector<WeakRepairUnit> deferred;
+    for(WeakRepairUnit unit: enumerated)
+    {
+        gc::WeakRepairResult result = unit.try_repair([&](HeapObject *object) {
+            if(unit.address == &caches.attribute_read_caches[0] &&
+               object == old_shape.get())
+            {
+                return WeakResolution::pending();
+            }
+            return WeakResolution::resolved(resolve(object));
+        });
+        if(result == gc::WeakRepairResult::Pending)
+        {
+            deferred.push_back(unit);
+        }
+    }
+    ASSERT_EQ(1u, deferred.size());
+    EXPECT_EQ(&caches.attribute_read_caches[0], deferred[0].address);
+    EXPECT_EQ(old_shape.get(), caches.attribute_read_caches[0].receiver_shape);
+    EXPECT_EQ(new_cell.get(),
+              caches.attribute_read_caches[0].lookup_validity_cell);
+    EXPECT_EQ(new_value.raw_value(),
+              caches.attribute_read_caches[0].plan.constant_value);
+    EXPECT_EQ(new_shape.get(), caches.attribute_read_caches[1].receiver_shape);
+    size_t late_calls = 0;
+    EXPECT_EQ(gc::WeakRepairResult::Complete,
+              deferred[0].try_repair([&](HeapObject *object) {
+                  ++late_calls;
+                  EXPECT_TRUE(object == old_shape.get() ||
+                              object == new_cell.get() ||
+                              object == new_value.extract());
+                  return WeakResolution::resolved(
+                      object == old_shape.get() ? new_shape.get() : object);
+              }));
+    EXPECT_EQ(3u, late_calls);
+    EXPECT_EQ(new_shape.get(), caches.attribute_read_caches[0].receiver_shape);
+    // Restore simulated relocations before ordinary RC teardown.
+    repair_late_units(
+        owner.get(), [&](HeapObject *object) { return resolve(object, true); });
+}
+
+TEST_F(WeakReferenceProcessing, DeadDominatesPendingAndReleasesExpandedPlan)
+{
+    populate();
+    auto &expanded = owner.get()->inline_caches.expanded_call_caches[0];
+    expanded.binding_plan->keyword_names.emplace_back(old_value.value());
+    ASSERT_EQ(2, old_value.extract()->refcount);
+    auto enumerated = units();
+    size_t calls = 0;
+    for(WeakRepairUnit unit: enumerated)
+    {
+        if(unit.address != &expanded)
+        {
+            continue;
+        }
+        EXPECT_EQ(gc::WeakRepairResult::Complete,
+                  unit.try_repair([&](HeapObject *object) {
+                      ++calls;
+                      EXPECT_TRUE(object == old_function.get() ||
+                                  object == old_cell.get());
+                      return object == old_function.get()
+                                 ? WeakResolution::pending()
+                                 : WeakResolution::dead();
+                  }));
+    }
+    EXPECT_EQ(3u, calls);
+    EXPECT_EQ(nullptr, expanded.binding_plan);
+    EXPECT_EQ(nullptr, expanded.function);
+    EXPECT_EQ(nullptr, expanded.validity_cell);
+    EXPECT_TRUE(expanded.guard_value.is_not_present());
+    EXPECT_EQ(1, old_value.extract()->refcount);
+    // Resetting one entry must not invalidate any other stored unit's address.
+    for(WeakRepairUnit unit: enumerated)
+    {
+        EXPECT_EQ(gc::WeakRepairResult::Complete,
+                  unit.try_repair([](HeapObject *object) {
+                      return WeakResolution::resolved(object);
+                  }));
+    }
+}
+
+TEST_F(WeakReferenceProcessing, ShapeBacklinkCanBeDeferredWithoutMutation)
+{
+    auto name = context.vm().get_or_create_interned_string_value(L"pending");
+    Shape *child =
+        old_shape.get()->derive_transition(name, ShapeTransitionVerb::Add);
+    std::vector<WeakRepairUnit> enumerated;
+    visit_weak_reference_units(
+        child, [&](WeakRepairUnit unit) { enumerated.push_back(unit); });
+    ASSERT_EQ(1u, enumerated.size());
+    size_t calls = 0;
+    EXPECT_EQ(gc::WeakRepairResult::Pending,
+              enumerated[0].try_repair([&](HeapObject *object) {
+                  ++calls;
+                  EXPECT_EQ(old_shape.get(), object);
+                  return WeakResolution::pending();
+              }));
+    EXPECT_EQ(1u, calls);
+    EXPECT_EQ(old_shape.get(), child->get_previous_shape());
+    EXPECT_EQ(gc::WeakRepairResult::Complete,
+              enumerated[0].try_repair(
+                  [](HeapObject *) { return WeakResolution::dead(); }));
+    EXPECT_EQ(nullptr, child->get_previous_shape());
+}
+
+TEST_F(WeakReferenceProcessing, LayoutWithoutWeakUnitsDoesNotInvokeVisitor)
+{
+    Owned<TValue<Float>> value(thread->make_object_value<Float>(1.5));
+    visit_weak_reference_units(value.extract(), [&](WeakRepairUnit) {
+        ADD_FAILURE() << "layout without weak units invoked visitor";
+    });
 }
 
 TEST_F(WeakReferenceProcessing, FullCacheClearIncludesKeywordAndExpandedEntries)

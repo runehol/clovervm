@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Partial; isolated mark, strong evacuation, and weak repair implemented; production copying and weak-unit migration not implemented |
+| Implementation | Partial; isolated collector and CloverVM weak-unit enumeration implemented; production copying and weak remembered-set integration not implemented |
 | Scope | One collector algorithm instantiated against a test heap and CloverVM |
 | Owning layers | `src/gc/` owns traversal and the CloverVM adapter; memory layouts own slot enumeration; tests own the synthetic heap |
-| Validated against | Weak-repair working tree based on `72c64a3e` (2026-10-31); earlier verification recorded below |
+| Validated against | CloverVM unit-enumeration working tree based on `649dca5b` (2026-10-31); earlier verification recorded below |
 | Supersedes | N/A |
 
 This expands the collector boundary in the
@@ -493,8 +493,10 @@ and lifetime cutover remain separate review gates.
 The accepted [weak repair unit design](gc-weak-repair-units.md) specifies the
 tri-state resolver, borrowed address/callback API, per-IC enumeration, early
 repair, exact-unit deferral, coordinated payload reset, and lifetime/registration
-contracts. The isolated collector implements this protocol; current CloverVM
-hooks remain late-only and owner-wide until their own implementation slice.
+contracts. The isolated collector implements this protocol; CloverVM layout
+hooks enumerate individual IC entries and Shape backlinks through the same
+compact unit representation. Runtime copying and weak remembered-set coverage
+remain separate integration work.
 ## Evacuation Implementation Stages
 
 These are bounded slices of isolated copying, not permission to enable CloverVM
@@ -537,6 +539,9 @@ movement. The mark phase remains usable and unchanged throughout.
    and payload, owned-plan release, and stable deferred addresses. No production
    object movement or new frame-root discovery. This slice does not claim
    remembered-unit/barrier coverage; review that integration separately.
+   Unit enumeration and tri-state repair are implemented; the owner-wide
+   late-only hooks are removed. Real cache tests retain fake relocation maps,
+   not actual object movement.
 5. **CloverVM copying adapter readiness.** Review real header/forwarding state,
    source classification, collector-only slab allocation, layout copy admission,
    forwarding-safe metadata, source lifetime, and bitmap removal boundaries.

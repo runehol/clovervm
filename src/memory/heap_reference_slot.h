@@ -1,6 +1,7 @@
 #ifndef CL_HEAP_REFERENCE_SLOT_H
 #define CL_HEAP_REFERENCE_SLOT_H
 
+#include "gc/weak_repair.h"
 #include "object_model/heap_object.h"
 #include "object_model/value_tags.h"
 
@@ -67,11 +68,16 @@ namespace cl
     // mutation during enumeration. Visiting does not transfer ownership.
     using StrongSlotVisitor = absl::FunctionRef<void(HeapReferenceSlot)>;
 
-    // After strong closure: return the surviving address, or null for a dead
-    // target. Unmoved/uncollected objects return their original address. The
-    // resolver must preserve object type/storage class and must not mark,
-    // dereference dead inputs, allocate managed objects, or reenter the VM.
-    using WeakTargetResolver = absl::FunctionRef<HeapObject *(HeapObject *)>;
+    using WeakResolution = gc::WeakResolution<HeapObject>;
+    using WeakResolver = gc::WeakResolver<HeapObject>;
+    using WeakRepairUnit = gc::WeakRepairUnit<HeapObject>;
+
+    // Borrowed enumeration, not transitive tracing. Unit storage must be in
+    // its final destination or stable storage and remain valid through late
+    // repair; enumerating must not resize tables or reenter the VM. A reset
+    // must not invalidate another unit. Resolvers preserve type/storage class,
+    // never dereference dead targets, and never make weak edges strong.
+    using WeakUnitVisitor = absl::FunctionRef<void(WeakRepairUnit)>;
 
 }  // namespace cl
 

@@ -46,21 +46,26 @@ namespace cl
         bool operator==(ShapeKey other) const { return bits == other.bits; }
         bool operator!=(ShapeKey other) const { return bits != other.bits; }
 
-        bool repair_weak_reference(WeakTargetResolver resolver)
+        gc::WeakState repair_weak_reference(WeakResolver resolver)
         {
             if(!is_valid() || is_inline())
             {
-                return true;
+                return gc::WeakState::Resolved;
             }
-            HeapObject *replacement =
+            WeakResolution resolution =
                 resolver(reinterpret_cast<HeapObject *>(bits));
-            if(replacement == nullptr)
+            switch(resolution.state)
             {
-                *this = ShapeKey{};
-                return false;
+                case gc::WeakState::Resolved:
+                    HeapReferenceSlot(&bits).rewrite_pointer(resolution.target);
+                    break;
+                case gc::WeakState::Pending:
+                    break;
+                case gc::WeakState::Dead:
+                    *this = ShapeKey{};
+                    break;
             }
-            HeapReferenceSlot(&bits).rewrite_pointer(replacement);
-            return true;
+            return resolution.state;
         }
 
     private:

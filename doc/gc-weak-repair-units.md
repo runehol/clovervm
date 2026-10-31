@@ -4,11 +4,11 @@
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Isolated collector/test-heap protocol implemented; current CloverVM hooks remain late-only and owner-wide |
+| Implementation | Isolated collector and CloverVM layout/cache unit enumeration implemented; production copying and weak remembered-set integration remain deferred |
 | Scope | Enumerated weak repair units, early resolution, exact-unit deferral, and coordinated payload invalidation |
 | Owning layers | Layout/cache code enumerates units and owns reset semantics; the generic collector owns resolution phase and deferred scheduling |
-| Validated against | Isolated weak-repair working tree based on `72c64a3e` (2026-10-31); real IC fields and weak hooks previously inspected at `38936060` |
-| Supersedes | Whole-owner deferral proposed during collector design; existing runtime hooks are not yet replaced |
+| Validated against | CloverVM unit-enumeration working tree based on `649dca5b` (2026-10-31); earlier isolated verification recorded below |
+| Supersedes | Whole-owner deferral and the late-only owner-wide weak repair hooks |
 
 This is the weak-repair part of the
 [isolated collector/heap-adapter design](gc-collector-heap-adapter.md).
@@ -35,9 +35,10 @@ copies through a weak edge. Null/primitive/sentinel fields are handled by their
 unit's field-specific rules, not passed as object references to the resolver.
 
 The shared implementation in `src/gc/weak_repair.h` templates the following
-types on `Object`; the sketch below uses `HeapObject` to show the eventual
-CloverVM-facing form. This is not the existing late-only `WeakTargetResolver`
-API. The test adapter exposes `WeakRepairUnit<TestObject>` as `WeakUnit`.
+types on `Object`; the sketch below uses `HeapObject` to show the CloverVM-facing
+form. `memory/heap_reference_slot.h` exposes concrete aliases and the borrowed
+`WeakUnitVisitor`. The old pointer-or-null `WeakTargetResolver` API is removed.
+The test adapter exposes `WeakRepairUnit<TestObject>` as `WeakUnit`.
 
 ```cpp
 enum class WeakState { Resolved, Pending, Dead };
@@ -85,7 +86,7 @@ invalidation belongs inside that callback, not a second stored callback.
 
 ### Enumeration and Exact-Unit Deferral
 
-The adapter adds `visit_weak_units(object, visitor)`. For a `CodeObject`, its
+The adapter exposes `visit_weak_units(object, visitor)`. For a `CodeObject`, its
 layout implementation visits individual entries in each cache table, for example:
 
 ```cpp
@@ -128,9 +129,48 @@ collector itself does not release or reuse source storage.
 `tests/test_gc_weak_repair.cpp` verifies the two-word/trivially-copyable handle,
 early completion, partial repair, exact-unit deferral among adjacent entries,
 coordinated guard/payload reset, weak roots, external units, phase sealing,
-allocation failure, and explicit source disposal. The IC-like test entry is
-synthetic; production cache reset/ownership semantics still need their own
-integration review.
+allocation failure, and explicit source disposal. Its IC-like test entry is
+synthetic; real cache reset/ownership coverage is described below.
+
+### CloverVM Layout and Cache Enumeration
+
+`visit_weak_reference_units(object, visitor)` dispatches through the existing
+layout descriptor's `visit_weak_units` function pointer. It replaces the old
+owner-wide repair hook without growing the descriptor. Layouts without weak
+units do not invoke the visitor. `CloverHeapAdapter::visit_weak_units()` delegates
+to this common entry point; it still has no production copying operations.
+
+Shape enumerates one unit for its `previous_shape` field. CodeObject enumerates
+one unit per entry in all eight cache tables. Enumeration neither repairs nor
+changes ownership; the callback inspects every active weak field without
+short-circuiting Pending. Dead dominates Pending and resets the whole entry.
+Inline/invalid shape keys, null pointers, immediate tagged values, inactive
+payload arms, and native handler pointers never reach the resolver. A pending
+shape key retains its exact bits until a later repair.
+
+Callbacks use the entries' default-reset assignment to clear guards and payload
+together. Keyword-call reset frees its native register map; expanded-call reset
+releases its owned keyword-name plan. Successful pointer repair itself is
+RC-neutral and preserves storage class through `HeapReferenceSlot`. The caller
+must install an active thread when reset can enqueue zero-count objects, and
+must exclude reclamation, Python execution, safepoints, and table resizing.
+Resetting one entry does not invalidate another entry's repair-unit address.
+
+Existing fake-relocation tests now enumerate units and invoke their callbacks
+with a late resolver; there is no second runtime owner-wide repair path.
+Additional tests cover exact entry addresses, independent active-field counts
+across every cache family, partial repair with one adjacent deferred entry,
+pending/dead precedence, owned-plan release, and Shape backlink deferral.
+Real object movement and automatic weak remembered-unit discovery are not
+enabled or implied by this migration.
+
+CloverVM migration working-tree verification on 2026-10-31, based on
+`649dca5b`: all 92 focused layout/weak/collector tests passed. Full Debug
+`all check` passed 2,291 tests and full Release `all check` passed 2,281 tests;
+both had three existing JIT-disabled skips and one disabled test. Descriptor
+size remains 56 bytes. The populated cache fixture exposes 15 independent
+units and 46 active weak fields across all eight cache families; independent
+per-target counts verify that Pending never short-circuits the remaining fields.
 
 Working-tree verification on 2026-10-31, based on `72c64a3e`: all 33 focused
 GC tests passed. Full Debug `all check` passed 2,285 tests and full Release

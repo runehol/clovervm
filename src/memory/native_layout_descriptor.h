@@ -30,7 +30,7 @@ namespace cl
         void (*destroy)(HeapObject *);
         // Supplemental strong slots, independent of release and destruction.
         void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
-        void (*process_weak)(HeapObject *, WeakTargetResolver);
+        void (*visit_weak_units)(HeapObject *, WeakUnitVisitor);
 
         static constexpr ReleaseDescriptor
         static_span(uint64_t value_offset_words, uint32_t release_count)
@@ -199,9 +199,9 @@ namespace cl
                     descriptor.custom_trace_strong =
                         T::native_custom_trace_strong;
                 }
-                if constexpr(requires { T::native_process_weak; })
+                if constexpr(requires { T::native_visit_weak_units; })
                 {
-                    descriptor.process_weak = T::native_process_weak;
+                    descriptor.visit_weak_units = T::native_visit_weak_units;
                 }
                 return descriptor;
             }
@@ -428,12 +428,13 @@ namespace cl
     void visit_strong_reference_slots(HeapObject *object,
                                       StrongSlotVisitor visitor);
 
-    // Caller establishes strong closure first. Dead weak targets do not become
-    // strong. Clearing a cache can release its owned native plan's references,
-    // but must not run reclamation, Python code, or a safepoint.
-    // With RC enabled, install an active thread for any resulting ZCT enqueue.
-    void process_weak_references(HeapObject *object,
-                                 WeakTargetResolver resolver);
+    // Enumerates exact repair units, not entire owners for late rescanning.
+    // Callbacks may repair early or after strong closure. A callback resetting
+    // an entry can release its owned native plan's references, but must not run
+    // reclamation, Python code, or a safepoint. With RC enabled, install an
+    // active thread for any resulting ZCT enqueue.
+    void visit_weak_reference_units(HeapObject *object,
+                                    WeakUnitVisitor visitor);
 
 }  // namespace cl
 

@@ -83,15 +83,14 @@ namespace cl
         }
     }
 
-    void process_weak_references(HeapObject *object,
-                                 WeakTargetResolver resolver)
+    void visit_weak_reference_units(HeapObject *object, WeakUnitVisitor visitor)
     {
         assert(object != nullptr);
         const ReleaseDescriptor &descriptor =
             release_descriptor_for(object->native_layout_id());
-        if(descriptor.process_weak != nullptr)
+        if(descriptor.visit_weak_units != nullptr)
         {
-            descriptor.process_weak(object, resolver);
+            descriptor.visit_weak_units(object, visitor);
         }
     }
 

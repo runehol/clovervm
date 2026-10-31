@@ -7,7 +7,7 @@
 | Implementation | Implemented |
 | Scope | Descriptor-driven heap record sizing, strong scanning, weak processing, reference release, and teardown |
 | Owning layers | Heap metadata, runtime object layouts, allocator, and reclamation |
-| Validated against | Slice 3c working tree based on `aaf57767` (2026-10-30) |
+| Validated against | Weak-unit migration working tree based on `649dca5b` (2026-10-31) |
 | Supersedes | N/A |
 
 ## Current Model
@@ -159,12 +159,15 @@ change container structure during a visit. Object and slot storage stay valid
 until enumeration completes. Tests simulate substitutions and restore the
 ownership graph before refcount teardown.
 
-`process_weak_references(object, resolver)` invokes an optional descriptor weak
-callback after the caller has established strong closure. The borrowed
-`WeakTargetResolver` returns a surviving address, identity for an unmoved or
-uncollected object, or null for a dead target. It must not mark or dereference
-dead inputs, allocate managed objects, or reenter the VM. The callbacks do not
-run production collection or reclamation.
+`visit_weak_reference_units(object, visitor)` invokes an optional descriptor
+enumeration hook, exposing compact borrowed repair units. Shape exposes its
+back-link; CodeObject exposes individual IC entries, not an owner-wide late
+rescan. A borrowed `WeakResolver` reports Resolved, Pending, or Dead. Early
+repair leaves unresolved fields unchanged and defers only their exact unit;
+after strong closure, late resolution reports unforwarded source targets dead.
+It must not mark or dereference dead inputs, allocate managed objects, or
+reenter the VM. Unit addresses must remain valid through late repair. These
+hooks do not enable production collection or reclamation.
 
 Shape repairs or clears its non-owning back-link. CodeObject processes every
 cache family, respecting optional nulls, tagged immediates, invalid/inline shape
@@ -507,7 +510,7 @@ struct NativeLayoutDescriptor
     NativeLayoutInfo (*custom_query)(const HeapObject *);
 
     void (*custom_trace_strong)(HeapObject *, StrongSlotVisitor);
-    void (*process_weak)(HeapObject *, WeakTargetResolver);
+    void (*visit_weak_units)(HeapObject *, WeakUnitVisitor);
 
     void (*custom_release)(HeapObject *);
     void (*destroy)(HeapObject *);
@@ -519,11 +522,13 @@ A custom strong operation supplements the ordinary span with strong owned slots
 stored in C++ containers, pointer arrays, or other non-contiguous storage.
 Those references are followed and rewritten during strong closure.
 
-`process_weak` is called only after strong closure is complete. A weak target
-that was otherwise reached is rewritten to its forwarding address; an
-unreached target is cleared. For coherent structures such as inline caches, the
-operation repairs the complete entry or clears the complete entry rather than
-exposing partially valid cache state.
+`visit_weak_units` enumerates address/callback handles. Their callbacks can
+repair already-resolved fields early and report Pending without skipping other
+active fields. After strong closure the remaining units are repaired with the
+late resolver: surviving targets are rewritten and unreached targets are dead.
+For coherent structures such as inline caches, one dead dependency clears the
+complete entry and payload. No mutator observes a partially repaired entry.
+See [Weak Repair Units](gc-weak-repair-units.md) for lifetime and reset rules.
 
 `custom_release` releases exceptional strong ownership while deferred
 refcounting remains. `destroy` runs C++ destructors and releases native
@@ -618,7 +623,7 @@ CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base_type,
 CL_DECLARE_CUSTOM_RELEASE(type, function)
 CL_DECLARE_NATIVE_DESTROY(type, function)
 CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)
-CL_DECLARE_PROCESS_WEAK(type, function)
+CL_DECLARE_VISIT_WEAK_UNITS(type, function)
 ```
 
 Object-size declarations:

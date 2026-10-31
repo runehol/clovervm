@@ -153,8 +153,8 @@ namespace cl
 #define CL_DECLARE_CUSTOM_TRACE_STRONG(type, function)                         \
     static constexpr auto native_custom_trace_strong = function;
 
-#define CL_DECLARE_PROCESS_WEAK(type, function)                                \
-    static constexpr auto native_process_weak = function;
+#define CL_DECLARE_VISIT_WEAK_UNITS(type, function)                            \
+    static constexpr auto native_visit_weak_units = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \
     static constexpr ObjectSizeKind native_object_size_kind =                  \

@@ -20,6 +20,7 @@ namespace cl::gc
     public:
         using Object = HeapObject;
         using Slot = HeapReferenceSlot;
+        using WeakUnit = cl::WeakRepairUnit;
 
         bool try_mark(Object *object)
         {
@@ -37,6 +38,13 @@ namespace cl::gc
         {
             cl::visit_strong_reference_slots(
                 object, [&](Slot slot) { std::invoke(visitor, slot); });
+        }
+
+        template <typename Visitor>
+        void visit_weak_units(Object *object, Visitor &&visitor)
+        {
+            cl::visit_weak_reference_units(
+                object, [&](WeakUnit unit) { std::invoke(visitor, unit); });
         }
 
     private:

@@ -48,14 +48,14 @@ namespace
     public:
         static void destroy(HeapObject *) {}
         static void trace_strong_references(HeapObject *, StrongSlotVisitor) {}
-        static void process_weak_references(HeapObject *, WeakTargetResolver) {}
+        static void visit_weak_reference_units(HeapObject *, WeakUnitVisitor) {}
 
         CL_DECLARE_EMPTY_VALUE_SPAN(StaticReleaseWithDestroyTestObject);
         CL_DECLARE_NATIVE_DESTROY(StaticReleaseWithDestroyTestObject, destroy);
         CL_DECLARE_CUSTOM_TRACE_STRONG(StaticReleaseWithDestroyTestObject,
                                        trace_strong_references);
-        CL_DECLARE_PROCESS_WEAK(StaticReleaseWithDestroyTestObject,
-                                process_weak_references);
+        CL_DECLARE_VISIT_WEAK_UNITS(StaticReleaseWithDestroyTestObject,
+                                    visit_weak_reference_units);
     };
 
     struct TwoValueCells
@@ -77,7 +77,7 @@ namespace
         EXPECT_EQ(nullptr, release.custom_release);
         EXPECT_EQ(nullptr, release.destroy);
         EXPECT_EQ(nullptr, release.custom_trace_strong);
-        EXPECT_EQ(nullptr, release.process_weak);
+        EXPECT_EQ(nullptr, release.visit_weak_units);
 
         const ObjectSizeDescriptor &object_size =
             object_size_descriptor_for(T::native_layout);
@@ -117,8 +117,8 @@ TEST(NativeLayoutDescriptor,
     EXPECT_EQ(StaticReleaseWithDestroyTestObject::destroy, release.destroy);
     EXPECT_EQ(StaticReleaseWithDestroyTestObject::trace_strong_references,
               release.custom_trace_strong);
-    EXPECT_EQ(StaticReleaseWithDestroyTestObject::process_weak_references,
-              release.process_weak);
+    EXPECT_EQ(StaticReleaseWithDestroyTestObject::visit_weak_reference_units,
+              release.visit_weak_units);
 }
 
 TEST(NativeLayoutDescriptor, ResolvesOrdinaryStaticReferenceSpan)
@@ -880,7 +880,7 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomReleaseDescriptor)
     EXPECT_EQ(CodeObject::release_managed_references, release.custom_release);
     EXPECT_EQ(CodeObject::destroy, release.destroy);
     EXPECT_EQ(CodeObject::trace_strong_references, release.custom_trace_strong);
-    EXPECT_EQ(CodeObject::process_weak_references, release.process_weak);
+    EXPECT_EQ(CodeObject::visit_weak_reference_units, release.visit_weak_units);
 
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(CodeObject::native_layout);
@@ -898,7 +898,7 @@ TEST(NativeLayoutDescriptor, ShapeUsesCustomReleaseAndCustomObjectSize)
     EXPECT_EQ(Shape::release_managed_references, release.custom_release);
     EXPECT_EQ(Shape::destroy, release.destroy);
     EXPECT_EQ(Shape::trace_strong_references, release.custom_trace_strong);
-    EXPECT_EQ(Shape::process_weak_references, release.process_weak);
+    EXPECT_EQ(Shape::visit_weak_reference_units, release.visit_weak_units);
 
     const ObjectSizeDescriptor &object_size =
         object_size_descriptor_for(Shape::native_layout);

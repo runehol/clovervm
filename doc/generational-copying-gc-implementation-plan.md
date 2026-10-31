@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Mark-phase working tree based on `7ce87175`; further frame-state work paused (2026-10-31) |
+| Validated against | Weak-unit migration working tree based on `649dca5b`; further frame-state work paused (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -187,12 +187,14 @@ Implement this stage in bounded slices:
   rewriting, latent descriptor names, and tagged-only JIT pool rewriting.
 - **3c: audit remaining layouts and implement weak processing**, keeping
   coherent cache repair separate from strong tracing. Use a non-owning
-  `WeakTargetResolver` (`absl::FunctionRef<HeapObject *(HeapObject *)>`) and
-  an optional descriptor `process_weak` callback behind
-  `process_weak_references(object, resolver)`. Run only after strong closure;
-  the resolver returns a surviving address (including identity for uncollected
-  storage) or null for a dead target, without marking or dereferencing dead
-  inputs. Shape repairs/clears its back-link. CodeObject repairs all raw cache
+  `WeakResolver` returning Resolved/Pending/Dead and an optional descriptor
+  `visit_weak_units` callback behind
+  `visit_weak_reference_units(object, visitor)`. The initial owner-wide,
+  late-only interface has been replaced by per-unit enumeration and callbacks.
+  Early repair preserves unresolved references; after strong closure the
+  resolver reports an unforwarded source as dead, without marking or
+  dereferencing dead inputs. Shape exposes its back-link as one unit.
+  CodeObject exposes each IC entry as a unit and repairs all raw cache
   references, respecting shape-key sentinels and active union arms, or resets
   an entire entry if a target dies. Include keyword-call caches in full cache
   clearing. Successful repairs are RC-neutral; resetting an expanded-call
