@@ -103,7 +103,7 @@ namespace cl
         String *string = thread->make_object_raw<String>(L"root");
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(string);
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
+        thread->publish_safepoint_scan_record(SafepointScanRecord::idle(slot));
 
         ReclamationRootSet roots;
         collect_reclamation_roots_from_thread(roots, *thread);
@@ -117,8 +117,10 @@ namespace cl
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
         String *string = thread->make_object_raw<String>(L"accumulator");
-        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
-                                              Value::from_oop(string));
+        SafepointScanRecord record =
+            SafepointScanRecord::idle(thread->clover_frame_sentinel());
+        record.accumulator_or_not_present = Value::from_oop(string);
+        thread->publish_safepoint_scan_record(record);
 
         ReclamationRootSet roots;
         collect_reclamation_roots_from_thread(roots, *thread);
@@ -137,9 +139,10 @@ namespace cl
             name, context.vm().global_builtins_module().raw_value());
         CodeObject *code = thread->make_object_raw<CodeObject>(
             nullptr, TValue<ModuleObject>::from_oop(module), nullptr, name);
-        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
-                                              Value::not_present(),
-                                              Value::from_oop(code));
+        SafepointScanRecord record =
+            SafepointScanRecord::idle(thread->clover_frame_sentinel());
+        record.active_code_object_or_not_present = Value::from_oop(code);
+        thread->publish_safepoint_scan_record(record);
 
         ReclamationRootSet roots;
         collect_reclamation_roots_from_thread(roots, *thread);
@@ -155,7 +158,7 @@ namespace cl
         junk.as.integer = 0x1010;
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = junk;
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
+        thread->publish_safepoint_scan_record(SafepointScanRecord::idle(slot));
 
         ReclamationRootSet roots;
         collect_reclamation_roots_from_thread(roots, *thread);
@@ -239,7 +242,7 @@ namespace cl
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(string);
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
+        thread->publish_safepoint_scan_record(SafepointScanRecord::idle(slot));
         context.vm().run_heap_reclamation();
 
         EXPECT_EQ(0, string->refcount);
@@ -327,7 +330,7 @@ namespace cl
         // Only the iterator is rooted; the source must survive reclamation.
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(iterator);
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
+        thread->publish_safepoint_scan_record(SafepointScanRecord::idle(slot));
         thread->add_to_zero_count_table_if_needed(iterator);
         context.vm().run_heap_reclamation();
         ASSERT_TRUE(object_is_valid(iterator));
@@ -704,7 +707,7 @@ namespace cl
 
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(tuple);
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
+        thread->publish_safepoint_scan_record(SafepointScanRecord::idle(slot));
 
         context.vm().run_heap_reclamation();
 

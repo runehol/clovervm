@@ -136,8 +136,8 @@ TEST(ByteArray, ExhaustionReleasesSourceAndItsBackingWhileIteratorStaysAlive)
     EXPECT_EQ(1, source.extract()->refcount);
     source = thread->make_object_value<ByteArray>();
     ASSERT_EQ(thread->clover_frame_sentinel(), thread->clover_frame_frontier());
-    thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
-                                          Value::not_present());
+    thread->publish_safepoint_scan_record(
+        SafepointScanRecord::idle(thread->clover_frame_sentinel()));
     context.vm().run_heap_reclamation();
     context.vm().run_heap_reclamation();
     EXPECT_FALSE(context.vm()

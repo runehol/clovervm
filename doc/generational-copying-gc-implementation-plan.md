@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Slice 4c working tree based on `ec30af7b` (2026-10-31) |
+| Validated against | Slice 4d.1 working tree based on `6834b70b` (2026-10-31) |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -337,6 +337,32 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
 - **4d: Precise frame roots.** Distinguish parameters, locals, temporaries,
   saved code objects, and continuation operands from native PCs, frame pointers,
   padding, and scalar metadata.
+  - **4d.1: Publish exact frame position (implemented).**
+    `SafepointScanRecord` carries the frame pointer and resume bytecode PC,
+    alongside the existing stack bound and root cells. Active interpreter
+    safepoints publish the actual current frame and PC, including the restored
+    caller at continuation safepoints. An absent interpreter position is
+    represented by null frame/PC fields. Named `idle(lowest)` and
+    `interpreter(lowest, fp, pc, code, accumulator_or_not_present)` factories
+    distinguish construction of these states; the interpreter factory requires
+    a code-object reference and an explicit accumulator value. Publication
+    takes a complete record. `NativeHandleRootRegion` saves/restores that record
+    while registering its
+    saved accumulator and code cells as before. Reserving native handle storage
+    changes only the lower bound, not the saved frame position. Position fields
+    are native metadata, not root cells; the current conservative scan and
+    mutable-root visitors are unchanged. This supplies context for the later
+    frame walker, not complete frame-root coverage or a claim that a completed
+    interpreter activation remains live after returning to native code.
+  - **4d.2: Ordinary slot selection.** Establish the initialization and
+    liveness contract for parameters, locals, and temporaries at each position.
+    Capacity alone does not prove a slot initialized; the current compiler only
+    clears selected locals. Settle this in its own readiness review.
+  - **4d.3: Suspended calls and continuations.** Identify live caller state and
+    binary, ternary, and truthiness prefix operands, excluding dispatch metadata.
+  - **4d.4: Assemble the frame walk.** Cover native-entry boundaries and connect
+    precise frame enumeration to reclamation without dropping coverage for
+    native/JIT state that still awaits conversion.
 - **4e: Native handles and callers.** Migrate safepoint-crossing native locals
   and settle handle-cell address stability, overflow chunks, and interior
   pointers.

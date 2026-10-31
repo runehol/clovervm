@@ -8750,6 +8750,8 @@ static void check_return_continuation_roots(void *opaque, ThreadState *thread,
                                             const SafepointScanRecord &record)
 {
     auto &check = *static_cast<ReturnContinuationSafepointCheck *>(opaque);
+    EXPECT_EQ(fp, record.frame_pointer);
+    EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
     if(pc_offset >= code->code.size() ||
        bytecode_info(Bytecode(code->code[pc_offset])).compound_role !=
            check.role)
@@ -8896,10 +8898,12 @@ struct TruthinessSafepointCheck
 
 static void check_truthiness_callback_roots(void *opaque, ThreadState *, Value,
                                             Value *fp, CodeObject *code,
-                                            uint32_t,
+                                            uint32_t pc_offset,
                                             const SafepointScanRecord &record)
 {
     auto &check = *static_cast<TruthinessSafepointCheck *>(opaque);
+    EXPECT_EQ(fp, record.frame_pointer);
+    EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
     if(code != check.callback)
         return;
     Value *caller_fp =

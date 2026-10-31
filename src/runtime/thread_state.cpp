@@ -34,6 +34,20 @@ namespace cl
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 
+    SafepointScanRecord
+    SafepointScanRecord::interpreter(Value *lowest_live_stack_slot,
+                                     Value *frame_pointer,
+                                     const uint8_t *resume_pc, CodeObject &code,
+                                     Value accumulator_or_not_present)
+    {
+        SafepointScanRecord record = idle(lowest_live_stack_slot);
+        record.frame_pointer = frame_pointer;
+        record.resume_pc = resume_pc;
+        record.accumulator_or_not_present = accumulator_or_not_present;
+        record.active_code_object_or_not_present = Value::from_oop(&code);
+        return record;
+    }
+
     void ThreadState::visit_native_root_slots(StrongSlotVisitor visitor) const
     {
         for(const ScopedRoot *root = native_roots_; root != nullptr;
@@ -115,7 +129,7 @@ namespace cl
         clover_frame_sentinel_ptr = sentinel_fp;
         initialize_clover_frame_sentinel(sentinel_fp);
         set_clover_frame_frontier(sentinel_fp);
-        publish_safepoint_scan_record(sentinel_fp, Value::not_present());
+        publish_safepoint_scan_record(SafepointScanRecord::idle(sentinel_fp));
         refresh_class_for_native_layout_cache();
     }
 
@@ -155,16 +169,24 @@ namespace cl
     }
 
     void ThreadState::publish_safepoint_scan_record(
-        Value *lowest_live_stack_slot, Value accumulator_or_not_present,
-        Value active_code_object_or_not_present)
+        const SafepointScanRecord &record)
     {
-        assert(lowest_live_stack_slot >= stack.data());
-        assert(lowest_live_stack_slot <= clover_frame_sentinel_ptr);
-        safepoint_scan_record_.lowest_live_stack_slot = lowest_live_stack_slot;
-        safepoint_scan_record_.accumulator_or_not_present =
-            accumulator_or_not_present;
-        safepoint_scan_record_.active_code_object_or_not_present =
-            active_code_object_or_not_present;
+        assert(record.lowest_live_stack_slot >= stack.data());
+        assert(record.lowest_live_stack_slot <= clover_frame_sentinel_ptr);
+        assert((record.frame_pointer == nullptr) ==
+               (record.resume_pc == nullptr));
+        if(record.frame_pointer != nullptr)
+        {
+            assert(record.frame_pointer >= stack.data());
+            assert(record.frame_pointer <= clover_frame_sentinel_ptr);
+            assert(record.active_code_object_or_not_present.is_ptr());
+            CodeObject *code =
+                record.active_code_object_or_not_present.get_ptr<CodeObject>();
+            assert(record.resume_pc >= code->code.data());
+            assert(record.resume_pc < code->code.data() + code->code.size());
+            (void)code;
+        }
+        safepoint_scan_record_ = record;
     }
 
     Value ThreadState::handle_safepoint(Value accumulator, Value *fp,

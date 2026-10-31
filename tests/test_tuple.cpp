@@ -145,8 +145,8 @@ def fail(source):
         // not a conservative record left by a safepoint in the completed call.
         ASSERT_EQ(thread->clover_frame_sentinel(),
                   thread->clover_frame_frontier());
-        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
-                                              Value::not_present());
+        thread->publish_safepoint_scan_record(
+            SafepointScanRecord::idle(thread->clover_frame_sentinel()));
         // The epoch scan can enqueue a builder's backing storage after the
         // zero-count-table phase; the following pass releases that storage.
         context.vm().run_heap_reclamation();

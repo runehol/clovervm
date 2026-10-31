@@ -768,7 +768,7 @@ keys
     // Execution has returned to C++. Exclude obsolete interpreter slots from
     // the conservative scan before checking that temporary key arrays die.
     context.thread()->publish_safepoint_scan_record(
-        context.thread()->clover_frame_sentinel(), Value::not_present());
+        SafepointScanRecord::idle(context.thread()->clover_frame_sentinel()));
     // Stack-only temporaries are discovered by the bitmap scan. Drain their
     // newly enqueued child backings in the following reclamation epoch.
     context.vm().run_heap_reclamation();
