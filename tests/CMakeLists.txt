@@ -17,6 +17,7 @@ target_sources(test_clovervm PRIVATE
 	test_gc_mark_phase.cpp
 	test_gc_evacuation_primitives.cpp
 	test_gc_evacuation.cpp
+	test_gc_no_exceptions.cpp
 	test_gc_weak_repair.cpp
 	test_codec.cpp
 	test_incremental_codec.cpp
@@ -104,6 +105,9 @@ target_sources(test_clovervm PRIVATE
 	test_unicode.cpp
 	test_tuple.cpp
 	)
+
+set_source_files_properties(test_gc_no_exceptions.cpp PROPERTIES
+	COMPILE_OPTIONS "-fno-exceptions")
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)

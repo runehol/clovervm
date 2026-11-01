@@ -120,8 +120,10 @@ not a recoverable runtime protocol. Every unit must be supplied exactly once,
 without overlapping units that can invalidate each other's storage.
 
 Late callbacks must return `Complete`; the late resolver never returns
-`Pending`. Native allocation exceptions during early/late repair reach the
-same fatal adapter handler as copying and queue allocation. Source storage
+`Pending`. Public entry points are `noexcept`; a native allocation exception
+during early/late repair terminates instead of escaping to a caller. The generic
+collector does not catch C++ exceptions or promise the adapter's diagnostic for
+standard-library failures. Source storage
 remains valid until `finish()` returns; test-only explicit disposal then
 destroys source records without affecting destination records. The generic
 collector itself does not release or reuse source storage.
@@ -179,8 +181,10 @@ JIT-disabled skips and one disabled test. The phase-misuse assertion test is
 Debug-only. The generic header passed standalone C++20 compilation with Abseil
 but no VM headers. Queue handles are statically checked to be trivially copyable
 and 16 bytes on the 64-bit targets. Tests also exercise 512 deferred units
-through destination-chunk growth. Native allocation exceptions are injected at
-repair entry points; the standard deque allocator itself is not fault-injected.
+through destination-chunk growth. Test-only native allocation exceptions are
+injected at repair entry points to verify terminal noexcept boundaries, without
+asserting platform-specific termination messages. The standard deque allocator
+itself is not fault-injected.
 
 ### IC Repair and Payload Invalidation
 

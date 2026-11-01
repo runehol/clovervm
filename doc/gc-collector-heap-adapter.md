@@ -429,13 +429,17 @@ recoverable allocation result, raise Python `MemoryError`, roll back, or resume
 the mutator with a partially rewritten heap. This is the agreed initial policy,
 not an unresolved requirement for whole-collection reservation.
 
-The generic collector must route `std::bad_alloc` from its queue/collection
-entry paths to a non-returning allocation-failure primitive supplied by the
-adapter. Destination allocation must follow the same fatal contract. The test
-adapter terminates too; test injected exhaustion with subprocess/death tests,
-not a recoverable partially evacuated test heap. A non-returning adapter hook
-keeps the generic algorithm independent of VM logging/initialization without
-making recoverability a configurable collector strategy.
+The generic collector has no C++ exception handlers. Construction and public
+collection operations are `noexcept`, so an escaping native exception terminates
+rather than unwinding to a caller. Standard-container allocation failure need
+not pass through the adapter's diagnostic. Explicit adapter allocation failures
+use its non-returning allocation-failure primitive; a null `copy_object()` result
+is rejected through that primitive before publishing forwarding. Destination
+allocation follows the same fatal contract. The test adapter terminates too;
+test injected exhaustion with subprocess/death tests, not a recoverable
+partially evacuated heap. This keeps failure handling independent of VM logging
+and permits runtime instantiation with `-fno-exceptions`. Do not assume that
+this compiler flag makes ordinary `new` or standard allocators return null.
 
 Each object must be copied and initialized before publishing its forwarding
 association, then scheduled. Fatal failure can occur during that sequence:
@@ -475,9 +479,9 @@ movement. The mark phase remains usable and unchanged throughout.
    encounters, chunk growth during scanning, and large frontiers. Compare
    logical graph structure with an independent oracle and check that successful closure
    leaves no strong roots/slots pointing into collected source storage.
-   Add fatal handling for native allocation exceptions at collection entry
-   boundaries; test that failures terminate rather than escaping as recoverable
-   exceptions. No forwarding-state reset may allow a source to be copied twice.
+   Make collection entry boundaries `noexcept`; reject null copy results before
+   forwarding and test terminal failure. No forwarding-state reset may allow a
+   source to be copied twice. Instantiate the template with exceptions disabled.
 3. **Weak units in the isolated collector.** Add the tri-state resolver,
    borrowed unit/callback view, and test-adapter unit enumeration. Resolve old
    and already-forwarded targets early; defer only exact unresolved units.
@@ -577,17 +581,20 @@ roots/remembered slots with `add_root()` and reach strong closure with `drain()`
 outside-source targets are left alone, not implicitly scanned. The phase is
 noncopyable and nonmovable so pending scans cannot accidentally be duplicated.
 One deque schedules both ordinary and stable destinations. Forwarding is
-published for each object before it is scanned. Native allocation
-exceptions during construction, root evacuation, and draining reach the
-adapter's non-returning allocation-failure handler.
+published for each object before it is scanned. Construction and public entry
+points are `noexcept`; native allocation exceptions terminate without requiring
+C++ exception support in the collector. A null copy result reaches the adapter's
+non-returning allocation-failure handler before forwarding is published.
 
 `tests/test_gc_evacuation.cpp` compares copied graphs with a source-graph oracle
 that does not use adapter enumeration or forwarding to discover reachability.
 It checks graph identity/connections, source-payload preservation, exactly-once
 destination scanning, repaired weak targets, duplicate roots,
 cycles, ordinary/stable closure, chunk growth during scanning, and wide
-frontiers. Injected native allocation exceptions exercise the fatal public entry
-paths; destination-exhaustion death tests also cover the primitive layer.
+frontiers. A null-copy death test exercises the adapter failure path;
+destination-exhaustion death tests also cover the primitive layer. A separate
+translation unit explicitly instantiates the complete collector template with
+`-fno-exceptions`, and static assertions check the public noexcept contracts.
 This does not inject a failure into the standard library's deque allocator.
 Source storage remains alive through `finish()`, which follows strong closure
 with exact-unit weak repair. Source reclamation remains a caller responsibility;

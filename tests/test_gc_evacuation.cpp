@@ -6,11 +6,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <new>
 #include <random>
 #include <span>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -22,6 +22,15 @@ namespace cl::gc::test
             !std::is_copy_constructible_v<Evacuation<TestHeapAdapter>>);
         static_assert(
             !std::is_move_constructible_v<Evacuation<TestHeapAdapter>>);
+        using Collection = Evacuation<TestHeapAdapter>;
+        static_assert(
+            std::is_nothrow_constructible_v<Collection, TestHeapAdapter &>);
+        static_assert(noexcept(
+            std::declval<Collection &>().add_root(std::declval<TestSlot>())));
+        static_assert(noexcept(std::declval<Collection &>().drain()));
+        static_assert(noexcept(std::declval<Collection &>().add_weak_root(
+            std::declval<TestHeapAdapter::WeakUnit>())));
+        static_assert(noexcept(std::declval<Collection &>().finish()));
 
         TestObject *pointer(const TestCell &cell)
         {
@@ -211,22 +220,11 @@ namespace cl::gc::test
             }
         }
 
-        class FailingCopyAdapter : public TestHeapAdapter
+        class NullCopyAdapter : public TestHeapAdapter
         {
         public:
             using TestHeapAdapter::TestHeapAdapter;
-            Object *copy_object(Object *) { throw std::bad_alloc(); }
-        };
-
-        class FailingScanAdapter : public TestHeapAdapter
-        {
-        public:
-            using TestHeapAdapter::TestHeapAdapter;
-            template <typename Visitor>
-            void visit_strong_slots(Object *, Visitor &&)
-            {
-                throw std::bad_alloc();
-            }
+            Object *copy_object(Object *) { return nullptr; }
         };
     }  // namespace
 
@@ -673,18 +671,14 @@ namespace cl::gc::test
         }
     }
 
-    TEST(GCEvacuation, NativeAllocationExceptionsAreFatalAtPublicEntryPoints)
+    TEST(GCEvacuation, NullCopyIsFatalBeforePublishingForwarding)
     {
         TestHeap heap;
         TestCell root = TestCell::reference(heap.make_object());
-        FailingCopyAdapter failing_copy(heap, TestCollectionKind::Full);
-        Evacuation<FailingCopyAdapter> copying(failing_copy);
+        NullCopyAdapter failing_copy(heap, TestCollectionKind::Full);
+        Evacuation<NullCopyAdapter> copying(failing_copy);
         EXPECT_DEATH(copying.add_root(TestSlot(root)),
                      "test GC allocation failed");
-        FailingScanAdapter failing_scan(heap, TestCollectionKind::Full);
-        Evacuation<FailingScanAdapter> scanning(failing_scan);
-        scanning.add_root(TestSlot(root));
-        EXPECT_DEATH(scanning.drain(), "test GC allocation failed");
     }
 
     TEST(GCEvacuation, DestinationExhaustionDuringScanningIsFatal)
