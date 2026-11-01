@@ -56,20 +56,20 @@ namespace cl::gc::test
     {
         TestHeap heap(1);
         TestHeapAdapter adapter(heap, TestCollectionKind::Full);
-        TestObject stable{};
-        stable.storage = TestStorage::StableDestination;
+        TestObject *stable = heap.make_non_moving_object();
         TestObject *target = heap.make_object();
         TestObject *source = heap.make_object();
         source->strong_cells = {TestCell::reference(target)};
         source->weak_entries = {
-            TestWeakEntry::active(&stable, &stable, TestCell::immediate(17)),
-            TestWeakEntry::active(target, &stable,
-                                  TestCell::reference(target))};
+            TestWeakEntry::active(stable, stable, TestCell::immediate(17)),
+            TestWeakEntry::active(target, stable, TestCell::reference(target))};
         Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell stable_root = TestCell::reference(stable);
+        collection.add_root(TestSlot(stable_root));
         TestObject *copy = copy_root(collection, source);
         collection.drain();
         ASSERT_EQ(2u, copy->weak_entries.size());
-        EXPECT_EQ(&stable, copy->weak_entries[0].guards[0]);
+        EXPECT_EQ(stable, copy->weak_entries[0].guards[0]);
         EXPECT_EQ(TestCell::immediate(17), copy->weak_entries[0].payload);
         EXPECT_EQ(adapter.forwarded_to(target),
                   copy->weak_entries[1].guards[0]);
@@ -118,19 +118,20 @@ namespace cl::gc::test
     {
         TestHeap heap(1);
         TestHeapAdapter adapter(heap, TestCollectionKind::Full);
-        TestObject stable{};
-        stable.storage = TestStorage::StableDestination;
+        TestObject *stable = heap.make_non_moving_object();
         TestObject *source = heap.make_object();
         TestObject *dead_guard = heap.make_object();
         TestObject *dead_payload = heap.make_object();
         source->weak_entries = {
-            TestWeakEntry::active(&stable, &stable, TestCell::immediate(19)),
-            TestWeakEntry::active(dead_guard, &stable, TestCell::immediate(23)),
-            TestWeakEntry::active(&stable, &stable,
+            TestWeakEntry::active(stable, stable, TestCell::immediate(19)),
+            TestWeakEntry::active(dead_guard, stable, TestCell::immediate(23)),
+            TestWeakEntry::active(stable, stable,
                                   TestCell::reference(dead_payload)),
-            TestWeakEntry::active(&stable, &stable,
+            TestWeakEntry::active(stable, stable,
                                   TestCell::reference(nullptr))};
         Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell stable_root = TestCell::reference(stable);
+        collection.add_root(TestSlot(stable_root));
         TestObject *copy = copy_root(collection, source);
         collection.drain();
         EXPECT_EQ(1u, copy->weak_entries[1].repair_count);

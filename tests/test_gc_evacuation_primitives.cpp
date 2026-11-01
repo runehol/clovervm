@@ -6,6 +6,89 @@
 
 namespace cl::gc::test
 {
+    TEST(GCCollectionParticipation, NonMovingFactoryCreatesAnExistingOldObject)
+    {
+        TestHeap heap;
+        TestObject *before = heap.make_object();
+        TestObject *fixed = heap.make_non_moving_object();
+        TestObject *after = heap.make_object();
+        EXPECT_EQ(TestStorage::NonMoving, fixed->storage);
+        EXPECT_EQ(TestGeneration::Old, fixed->generation);
+        EXPECT_EQ(TestHeaderKind::Normal, fixed->header.kind);
+        EXPECT_TRUE(fixed->strong_cells.empty());
+        EXPECT_TRUE(fixed->weak_targets.empty());
+        EXPECT_TRUE(fixed->weak_entries.empty());
+        EXPECT_NE(before->logical_identity, fixed->logical_identity);
+        EXPECT_NE(after->logical_identity, fixed->logical_identity);
+        ASSERT_EQ(3u, heap.objects().size());
+        EXPECT_EQ(fixed, heap.objects()[1].get());
+        EXPECT_EQ(0u,
+                  heap.destination_object_count(EvacuationDestination::Stable));
+    }
+
+    TEST(GCCollectionParticipation, SeparatesParticipationFromMovingSources)
+    {
+        for(auto kind:
+            {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
+        {
+            TestHeap heap;
+            TestObject *young = heap.make_object();
+            TestObject *old = heap.make_object();
+            old->generation = TestGeneration::Old;
+            TestObject *fixed = heap.make_non_moving_object();
+            TestObject *promoted_source = heap.make_object();
+            promoted_source->preferred_destination =
+                EvacuationDestination::Stable;
+            TestHeapAdapter adapter(heap, kind);
+            TestObject *ordinary_copy = adapter.copy_object(young);
+            TestObject *stable_copy = adapter.copy_object(promoted_source);
+            EXPECT_TRUE(adapter.is_collected(young));
+            EXPECT_TRUE(adapter.is_collected_source(young));
+            EXPECT_EQ(kind == TestCollectionKind::Full,
+                      adapter.is_collected(old));
+            EXPECT_EQ(kind == TestCollectionKind::Full,
+                      adapter.is_collected_source(old));
+            EXPECT_EQ(kind == TestCollectionKind::Full,
+                      adapter.is_collected(fixed));
+            EXPECT_FALSE(adapter.is_collected_source(fixed));
+            // Existing Old NonMoving inputs and fresh Old stable copies have
+            // different participation, even though neither may be copied.
+            EXPECT_EQ(TestGeneration::Old, ordinary_copy->generation);
+            EXPECT_EQ(TestGeneration::Old, stable_copy->generation);
+            for(TestObject *copy: {ordinary_copy, stable_copy})
+            {
+                EXPECT_FALSE(adapter.is_collected(copy));
+                EXPECT_FALSE(adapter.is_collected_source(copy));
+                EXPECT_FALSE(adapter.is_marked(copy));
+                EXPECT_EQ(0u, adapter.scan_count(copy));
+            }
+            EXPECT_FALSE(adapter.is_marked(fixed));
+            EXPECT_EQ(0u, adapter.scan_count(fixed));
+        }
+    }
+
+    TEST(GCCollectionParticipation, ForwardingDoesNotChangeInputParticipation)
+    {
+        TestHeap heap;
+        TestHeapAdapter minor(heap, TestCollectionKind::YoungOnly);
+        TestHeapAdapter full(heap, TestCollectionKind::Full);
+        TestObject *young = heap.make_object();
+        TestObject *old = heap.make_object();
+        old->generation = TestGeneration::Old;
+        for(TestObject *source: {young, old})
+        {
+            EXPECT_TRUE(full.is_collected(source));
+            TestObject *copy = full.copy_object(source);
+            full.install_forwarding(source, copy);
+            EXPECT_TRUE(full.is_collected(source));
+            EXPECT_TRUE(full.is_collected_source(source));
+            EXPECT_EQ(source == young, minor.is_collected(source));
+            EXPECT_EQ(source == young, minor.is_collected_source(source));
+            EXPECT_FALSE(full.is_collected(copy));
+            EXPECT_FALSE(minor.is_collected(copy));
+        }
+    }
+
     TEST(GCEvacuationPrimitives, CopyPreservesUnrepairedReferences)
     {
         TestHeap heap;

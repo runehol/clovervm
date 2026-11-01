@@ -367,6 +367,14 @@ must integrate marking/scanning and stable-target weak liveness, distinguishing
 "not copied" from "not collected". Isolated tests cover full moving
 source selection, not complete full-heap tracing or reclamation.
 
+The isolated test adapter now prepares that distinction with `is_collected()`
+and an existing `TestStorage::NonMoving` category, separate from fresh stable
+destinations. Full participation includes those existing objects without making
+them moving sources; YoungOnly excludes them. The query is not consumed by
+Evacuation yet. Strong discovery and weak resolution must adopt participation
+together in the following slice; no VM adapter or lifetime-authority change is
+implied by the test contract.
+
 ## Follow-Up Slices Proposed for Review
 
 1. **Collection selection in the isolated heap (implemented).** Exercise old

@@ -149,6 +149,7 @@ namespace cl::gc::test
     enum class TestStorage : uint8_t
     {
         Source,
+        NonMoving,
         OrdinaryDestination,
         StableDestination,
     };
@@ -166,8 +167,9 @@ namespace cl::gc::test
         Old,
     };
 
-    // Full selects old as well as young movable sources. It does not model
-    // full-collector marking/sweeping of non-moving objects.
+    // Full participation includes existing non-moving objects as well as young
+    // and old movable sources. Evacuation does not consume is_collected yet;
+    // full non-moving tracing/weak liveness and sweeping remain separate work.
     enum class TestCollectionKind : uint8_t
     {
         YoungOnly,
@@ -278,6 +280,14 @@ namespace cl::gc::test
             TestObject *result = object.get();
             objects_.push_back(std::move(object));
             return result;
+        }
+
+        TestObject *make_non_moving_object()
+        {
+            TestObject *object = make_object();
+            object->storage = TestStorage::NonMoving;
+            object->generation = TestGeneration::Old;
+            return object;
         }
 
         TestObject *copy_object(TestObject *source)
@@ -391,6 +401,22 @@ namespace cl::gc::test
         TestHeapAdapter(TestHeap &heap, TestCollectionKind collection_kind)
             : heap_(heap), collection_kind_(collection_kind)
         {
+        }
+
+        bool is_collected(Object *object) const
+        {
+            switch(object->storage)
+            {
+                case TestStorage::Source:
+                    return collection_kind_ == TestCollectionKind::Full ||
+                           object->generation == TestGeneration::Young;
+                case TestStorage::NonMoving:
+                    return collection_kind_ == TestCollectionKind::Full;
+                case TestStorage::OrdinaryDestination:
+                case TestStorage::StableDestination:
+                    return false;
+            }
+            std::abort();
         }
 
         bool is_collected_source(Object *object) const

@@ -433,15 +433,16 @@ namespace cl::gc::test
             {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
         {
             TestHeap heap;
-            TestObject *owner = heap.make_object();
+            TestObject *owner = heap.make_non_moving_object();
             TestObject *backing = heap.make_object();
             owner->strong_cells = {TestCell::reference(backing)};
-            owner->generation = TestGeneration::Old;
-            owner->storage = TestStorage::StableDestination;
             TestHeapAdapter adapter(heap, kind);
             Evacuation<TestHeapAdapter> collection(adapter);
             TestCell root = TestCell::reference(owner);
             collection.add_root(TestSlot(root));
+            // The current copying phase does not trace existing NonMoving
+            // owners, even in Full mode. Supply its outgoing slot explicitly
+            // until the next slice integrates collection participation.
             collection.add_root(TestSlot(owner->strong_cells[0]));
             collection.finish();
             EXPECT_EQ(owner, pointer(root));
@@ -485,9 +486,7 @@ namespace cl::gc::test
             TestObject *young = heap.make_object();
             TestObject *old = heap.make_object();
             old->generation = TestGeneration::Old;
-            TestObject *stable = heap.make_object();
-            stable->generation = TestGeneration::Old;
-            stable->storage = TestStorage::StableDestination;
+            TestObject *stable = heap.make_non_moving_object();
             TestHeapAdapter adapter(heap, kind);
             Evacuation<TestHeapAdapter> collection(adapter);
             TestCell root = TestCell::reference(young);

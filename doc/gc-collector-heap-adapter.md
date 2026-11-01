@@ -555,19 +555,39 @@ do not claim an independent oracle for the entire VM metadata graph.
 
 ## Collection Selection
 
-The isolated adapter supports YoungOnly and Full moving-source selection.
-YoungOnly excludes old sources; Full can select young and old movable sources.
-Both exclude destination and stable storage. Membership survives forwarding.
-This is not a complete full collector: non-moving marking/sweeping and stable
-weak-target liveness remain separate runtime integration work.
+The isolated test adapter distinguishes collection participation
+(`is_collected`) from moving-source selection (`is_collected_source`). YoungOnly
+selects young movable sources. Full participation includes young/old movable
+sources and existing NonMoving objects, but NonMoving objects are never moving
+sources. Fresh ordinary/stable destinations are not selected inputs in either
+mode. Membership survives forwarding.
+
+`TestStorage::NonMoving` and `make_non_moving_object()` represent existing stable
+objects independently of fresh StableDestination copies. This preparatory slice
+adds the test-heap distinction and contract tests only. Evacuation still uses
+moving-source selection: the new participation query is not consumed yet.
+Canonical strong discovery and weak liveness must change together in the next
+slice. This is not a complete full collector, stable sweep, immortal-object
+policy, or VM adapter integration.
 
 Owner/backing graphs use ordinary strong cells. Selection and forwarding apply
 independently to each object, regardless of root order or preferred destination.
 An old owner's actual remembered slot must be supplied to repair a young target;
-rooting the target alone cannot repair that slot. Source retirement preserves
-excluded old and stable records.
+rooting the target alone cannot repair that slot. Source-storage retirement
+preserves NonMoving records and unselected old sources; it is not stable-object
+sweeping, even when Full participation includes those NonMoving records.
 
 ## Tests and Proof Boundary
+
+Collection-participation preparation on 2026-11-01, based on `4b212180`, passed
+74 focused Debug GC/storage/copy tests and 73 applicable Release tests. Full
+Debug `all check` passed 2,371 tests and full Release passed 2,355; each reports
+three existing runtime-JIT-disabled skips and one disabled test. Contract tests
+cover both selection modes, existing NonMoving versus fresh stable destinations,
+factory ownership/identity, and classification after forwarding. Existing stable
+weak-repair fixtures now use heap-owned NonMoving objects with explicit strong
+roots. Formatting and diff checks pass. No production collector code changed;
+the new query still does not implement full NonMoving tracing or weak liveness.
 
 Single-object simplification verification on 2026-11-01, based on `a7c007bf`:
 50 focused GC/storage tests passed; full Debug `all check` passed 2,339 tests
