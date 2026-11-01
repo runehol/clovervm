@@ -88,6 +88,11 @@ and real-adapter readiness**, detailed in the
 [copying-adapter sequence](gc-copying-adapter-readiness.md#follow-up-slices-proposed-for-review).
 These labels are local to that investigation, not implementation-plan stage
 numbers. Copies stay test-owned and unpublished; sources remain unchanged.
+The classification-only part of 5c now has `gc::CollectionSources`: a snapshot
+of selected HeapSpace mapping ranges with forwarding-safe generation/NonMoving
+checks. It distinguishes fresh destinations from selected sources without
+object enumeration or per-allocation bookkeeping. This does not wire evacuation
+into CloverHeapAdapter or implement full-collection stable-object liveness.
 Production activation still follows stages 4--9 below: precise roots/native
 references, barriers, tracing verification, tracing lifetime authority, then
 restricted movement. Byte-copy groundwork can proceed alongside integration;

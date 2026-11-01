@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace cl;
 
@@ -149,6 +151,49 @@ TEST(HeapSpace, OwnershipCannotBeCopiedOrMoved)
     static_assert(!std::is_move_constructible_v<HeapSpace>);
     static_assert(!std::is_move_assignable_v<HeapSpace>);
     static_assert(std::is_nothrow_constructible_v<HeapSpace>);
+}
+
+TEST(HeapSpace, VisitsHalfOpenMappingsWithoutEnumeratingObjects)
+{
+    HeapSpace space;
+    std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
+    auto record = [&](uintptr_t begin, uintptr_t end) {
+        ranges.emplace_back(begin, end);
+    };
+    space.visit_memory_ranges(record);
+    EXPECT_TRUE(ranges.empty());
+    std::byte *small = space.allocate(8);
+    space.visit_memory_ranges(record);
+    ASSERT_EQ(1u, ranges.size());
+    EXPECT_EQ(address(small) - value_refcounted_ptr_tag, ranges[0].first);
+    EXPECT_EQ(ranges[0].first + DefaultSlabSize, ranges[0].second);
+
+    size_t extent = DefaultSlabSize * 2 + 7;
+    std::byte *large = space.allocate(extent);
+    auto original = ranges[0];
+    ranges.clear();
+    space.visit_memory_ranges(record);
+    ASSERT_EQ(2u, ranges.size());
+    size_t small_matches = 0;
+    size_t large_matches = 0;
+    for(auto [begin, end]: ranges)
+    {
+        EXPECT_LT(begin, end);
+        EXPECT_EQ(0u, begin % SlabLookupGranuleSize);
+        EXPECT_EQ(0u, end % SlabLookupGranuleSize);
+        if(begin == original.first)
+        {
+            EXPECT_EQ(original.second, end);
+            ++small_matches;
+        }
+        if(begin <= address(large) && address(large) < end)
+        {
+            EXPECT_LE(address(large) + extent, end);
+            ++large_matches;
+        }
+    }
+    EXPECT_EQ(1u, small_matches);
+    EXPECT_EQ(1u, large_matches);
 }
 
 TEST(HeapSpaceDeathTest, RejectsZeroExtent)

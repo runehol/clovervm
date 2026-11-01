@@ -59,6 +59,17 @@ namespace cl
         }
     }
 
+    void HeapSpace::visit_memory_ranges(
+        absl::FunctionRef<void(uintptr_t begin, uintptr_t end)> visitor) const
+    {
+        for(const SlabListNode *node = slabs_.get(); node != nullptr;
+            node = node->next.get())
+        {
+            visitor(reinterpret_cast<uintptr_t>(node->slab.start()),
+                    reinterpret_cast<uintptr_t>(node->slab.end()));
+        }
+    }
+
     SlabAllocator &HeapSpace::add_slab(size_t allocation_size) noexcept
     {
         size_t mapping_size =

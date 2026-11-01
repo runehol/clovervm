@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Investigation |
 | Status | Proposed |
-| Implementation | Partial; isolated copying and live layout queries implemented; production copying remains unimplemented |
+| Implementation | Partial; isolated copying, live layout queries, and raw-space source classification implemented; production copying remains unimplemented |
 | Scope | Production adapter prerequisites and bounded preparatory slices, not permission to move runtime objects |
 | Owning layers | Memory owns header and allocation; layouts own extents and copy admission; runtime owns roots and lifetime mode; `src/gc/` owns traversal |
-| Validated against | Header revision `96cc60d0` and memcpy staging review (2026-11-01); runtime findings remain source inspection |
+| Validated against | Classification working tree based on `4467eced` (2026-11-01); earlier groundwork validation recorded below |
 | Supersedes | N/A; proposals below require their own implementation reviews |
 
 The [main GC design](generational-copying-gc.md),
@@ -19,8 +19,9 @@ placement, RC lifetime authority, or the paused frame-state work.
 ## Bottom Line
 
 The generic collector is ahead of the runtime adapter. Strong/weak slot repair
-is implemented. Real source classification, forwarding, admitted copying, and
-integrated destination ownership are not. Adding those methods to
+is implemented. A classification-only index now works with real headers in raw
+HeapSpace storage. Runtime source selection, forwarding, admitted copying, and
+integrated destination ownership are not wired into CloverHeapAdapter. Adding those methods to
 `CloverHeapAdapter` now would hide missing invariants behind an apparently
 complete interface.
 
@@ -35,12 +36,13 @@ These preparatory changes do not require a nursery or physical relocation.
 
 | Current code | Established | Still missing for copying |
 |---|---|---|
-| [HeapObject](../src/object_model/heap_object.h) | Contains standalone eight-byte HeapHeader with generation/lifecycle/native-ID/aux/RC and tested forwarding encoding | Real source classification, remembered coverage, and admitted production forwarding |
+| [HeapObject](../src/object_model/heap_object.h) | Contains standalone eight-byte HeapHeader with generation/lifecycle/native-ID/aux/RC and tested forwarding encoding | Runtime source-space selection, remembered coverage, and admitted production forwarding |
+| [CollectionSources](../src/gc/collection_sources.h) | Sorted selected-space mapping index; validates source generation/NonMoving state even after forwarding | Runtime space-role selection and lifetime, layout admission, and adapter integration |
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
 | [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol |
-| [HeapSpace](../src/memory/heap_space.h) | Owns a singly linked slab list and supplies checked single-object raw allocation | Generic byte copying, runtime ownership transfer, and publication |
+| [HeapSpace](../src/memory/heap_space.h) | Owns a singly linked slab list, supplies checked raw allocation, and visits mapping ranges | Runtime ownership transfer, source-role lifecycle, and publication |
 | [ThreadLocalHeap](../src/memory/thread_local_heap.cpp) | Mutator allocation and RC epoch bookkeeping | Destination allocation independent of RC reclamation scheduling |
 | [ReclamationRootSet](../src/memory/heap_reclamation.h) | Conservative object identities used to protect RC reclamation | Complete precise mutable root locations |
 | [Reclamation](../src/memory/heap_reclamation.cpp) | Reference release, native destruction, ZCT and bitmap retirement | Tracing lifetime authority and safe source abandonment |
@@ -261,6 +263,29 @@ Debug/Release checks. These checks do not enable production evacuation.
 
 ## Source Classification and Initial Admission
 
+The classification-only slice implements `HeapSpace::visit_memory_ranges()` and
+a collection-scoped `gc::CollectionSources` index. Callers supply a span of
+`CollectionSourceSpace` records containing a borrowed space pointer and expected
+Young or Old generation (Old also accepts OldRemembered headers). Construction
+enumerates the selected spaces' slab mappings once, sorts half-open integer
+address ranges, and rejects overlaps. Lookup uses binary search, with no bitmap
+walk, per-object registration, or allocation-path change.
+
+An object outside the selected mappings is not a collected moving source. An
+object inside must be movable and have the expected generation; contradiction
+is fatal, never an excuse to skip a source. Classification reads no native-layout
+or aux fields and remains valid after forwarding. Fresh destination spaces are
+not selected as sources, even if both source and destination are movable Old
+objects. This query assumes valid object pointers; mapping membership does not
+prove that an arbitrary address is a constructed object or allocation start.
+
+The index owns only its range metadata. Selected source mappings must outlive
+it, and source allocation stops before the snapshot is built. Destination spaces
+may continue growing independently. This slice does not wire copying methods
+into CloverHeapAdapter, activate evacuation, or settle stable-object liveness.
+In particular, returning false does not establish that an outside-source object
+is live or that a full collection can skip scanning it.
+
 `is_collected_source()` must identify the current collection's moving source
 space and
 remain true after forwarding. Use allocator-owned source membership together
@@ -433,6 +458,16 @@ work retain their existing stage reviews. Nothing here adds stub copying
 methods to make `Evacuation<CloverHeapAdapter>` compile.
 
 ## Verification of This Investigation
+
+The classification working tree based on `4467eced` passed 71 focused Debug
+GC/storage/copy tests and 70 applicable Release tests. Full Debug `all check`
+passed 2,368 tests and full Release passed 2,352, each with three existing
+runtime-JIT-disabled skips and one disabled test. Tests cover young/full moving
+source selection, empty selections, same-generation destinations, destination
+growth, multiple/oversized mappings, and generation-preserving forwarding to
+ordinary and NonMoving destinations. Fatal overlap and header/storage mismatch
+checks run in both configurations. C++ formatting and diff checks pass.
+No production allocation, collection, forwarding, or retirement path changes.
 
 The original investigation was source/design inspection. Subsequent isolated
 tests exercise moving-source selection, strong and weak repair, and copied
