@@ -372,9 +372,11 @@ collector clears its remembered state back to `Old`; future old-to-young stores
 rebuild remembered-set entries through the write barrier.
 
 The standalone `gc::StrongRememberedSet` component uses a singly linked owning
-chain of fixed 4 KiB blocks, each containing one owning link and 511 owner
-pointers. A borrowed current-block cursor and its used count delimit the active
-prefix. Blocks before the cursor are full; blocks after it are spare capacity.
+chain of fixed 4 KiB blocks, each containing one owning link, a sealed count,
+and 510 owner pointers. A borrowed current-block cursor and its hot used count
+delimit the active prefix. Blocks before the cursor use their sealed counts and
+may be partial; blocks after it are spare capacity. The current block always
+uses the container's count, not its own possibly stale/uninitialized count.
 Append reuses the next block or allocates one without relocating prior entries.
 Pointer cells are initialized only when appended and are never globally cleared.
 Iteration stops at the active cursor, ignoring stale cells in cached blocks.
@@ -387,14 +389,40 @@ non-forwarded owner in exactly Old state, appends it, and sets OldRemembered.
 It does not check tags or child generation and permits conservative recording.
 Store callers can hoist known facts and choose their rejection order before
 calling the primitive; no combinatorial mode-template API is introduced.
+Rollover seals the old current block with its used count before advancing. No
+sealed-count access is added to ordinary append.
 
 After minor strong closure and weak repair, `clear_after_collection()` resets
 recorded owners from OldRemembered to Old, then resets the cursor/count while
 retaining the block chain for reuse. Destruction requires no outstanding records
 and frees blocks iteratively without touching inactive owner pointers. Peak block
-capacity is retained; trimming and thread-exit transfer are separate work.
+capacity is retained; trimming is separate work.
 The container is non-copyable/non-movable and single-writer; all participating
 sets must be consumed under one collection/reset protocol.
+
+`adopt_from(std::move(source))` supports serialized, consuming handoff between
+distinct sets. It detaches the receiver's spare chain (its entire cached chain
+when empty). A nonempty receiver seals its current block and links in the
+source's entire chain, including source spares; an empty receiver installs that
+chain as its head. It adopts the source cursor/count. The source receives the
+receiver's displaced spare chain with an empty cursor. Existing receiver active
+entries remain in place. An empty source is a no-op. General move
+construction/assignment remain deleted.
+
+Handoff performs constant pointer/count work without allocation, deallocation,
+entry copying, owner traversal, or header access. Partially sealed blocks in the
+middle of the chain make this possible. Entry addresses and OldRemembered flags
+remain unchanged. The source may be reused or destroyed; destruction can free
+the displaced receiver cache, never either set's transferred active blocks. This
+cache exchange avoids retaining one extra receiver block on every fresh-source
+handoff/collection cycle with only one active entry. The receiver
+eventually clears owner flags after collection. Reset need not clear sealed
+counts: they are ignored until overwritten when a block is sealed again.
+
+Tests preserve entry-cell addresses through handoff and verify spare-chain exchange,
+append after a partial splice, reset/refill/resealing, and collection after source
+destruction. ThreadState wiring, concurrent access, RC owner invalidation, and
+full-collection retirement remain separate work.
 
 This component is currently exercised only with test-owned objects, including
 real-layout evacuation tests. It does not wire runtime stores or ThreadState

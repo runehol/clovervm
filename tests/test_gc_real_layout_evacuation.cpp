@@ -319,7 +319,7 @@ namespace
         EXPECT_EQ(Value::from_smi(73), first->get(2));
     }
 
-    TEST(GCRealLayoutEvacuation, SuccessiveMinorsRebuildRememberedOwners)
+    TEST(GCRealLayoutEvacuation, SuccessiveMinorsConsumeHandedOffOwners)
     {
         HeapSpace old;
         HeapSpace non_moving;
@@ -336,18 +336,25 @@ namespace
                 auto *dead = make_slots(nursery, 0, HeapGenerationState::Young);
                 auto *live = make_slots(nursery, 1, HeapGenerationState::Young);
                 connect(live, 0, live);
-                connect(owner, 0, dead);
-                remembered.record_store(owner, dead);
-                owner->slot_value_base()[0] = Value::None();
-                remembered.record_store(owner, nullptr);
-                connect(owner, 1, live);
-                remembered.record_store(owner, live);
-                connect(fixed, 0, live);
-                remembered.record_store(fixed, live);
-                connect(overwritten, 0, dead);
-                remembered.record_store(overwritten, dead);
-                overwritten->slot_value_base()[0] = Value::None();
-                remembered.record_store(overwritten, nullptr);
+                {
+                    StrongRememberedSet retiring;
+                    connect(owner, 0, dead);
+                    retiring.record_store(owner, dead);
+                    owner->slot_value_base()[0] = Value::None();
+                    retiring.record_store(owner, nullptr);
+                    connect(owner, 1, live);
+                    retiring.record_store(owner, live);
+                    connect(fixed, 0, live);
+                    remembered.record_store(fixed, live);
+                    connect(overwritten, 0, dead);
+                    retiring.record_store(overwritten, dead);
+                    overwritten->slot_value_base()[0] = Value::None();
+                    retiring.record_store(overwritten, nullptr);
+                    remembered.adopt_from(std::move(retiring));
+                    EXPECT_TRUE(retiring.empty());
+                }
+                // The source buffer is destroyed before collection. Owner
+                // membership must persist in the receiving buffer.
 
                 // Independent exhaustive scan of the declared old fixtures:
                 // recording may conservatively retain overwritten owners, but

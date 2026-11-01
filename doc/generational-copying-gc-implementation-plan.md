@@ -549,6 +549,14 @@ evacuation, including conservative overwritten records and repeated collections.
 No runtime stores or ThreadState buffers are wired. Owner lifetime/invalidation,
 thread coordination/publication, weak remembered units, and full-collection
 retirement remain separate integration gates.
+The standalone `adopt_from(StrongRememberedSet &&)` handoff splices active
+blocks in constant time, preserving entry addresses and header membership.
+Sealed counts allow partial intermediate blocks. The receiver keeps its active
+prefix and takes the entire source chain; the source becomes empty and receives
+the receiver's displaced spare cache. Boundary/cache-exchange/destruction tests, resealing
+after refill, and repeated real-layout minor collections exercise the transfer.
+ThreadState adoption is not wired, and this does not provide RC invalidation or
+full-collection cleanup.
 
 Provide a non-moving test configuration with young and old classifications so
 the barrier is exercised before a nursery exists. Compare remembered coverage

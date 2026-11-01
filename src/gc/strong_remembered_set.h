@@ -65,7 +65,7 @@ namespace cl::gc
             for(const Block *block = blocks_.get(); block != nullptr;
                 block = block->next.get())
             {
-                size_t count = block == current_ ? used_ : entries_per_block;
+                size_t count = block == current_ ? used_ : block->sealed_count;
                 for(size_t index = 0; index < count; ++index)
                 {
                     std::invoke(visitor, block->entries[index]);
@@ -82,13 +82,25 @@ namespace cl::gc
         // Full moving/sweeping collections need a separate retirement protocol.
         void clear_after_collection() noexcept;
 
+        // Serialized handoff between distinct sets in the same collection.
+        // Splice active source blocks without changing owner flags or entry
+        // addresses. Receive the entire source chain, retaining our active
+        // prefix; source receives our former spare chain and becomes empty.
+        // An empty source is a no-op. Constant pointer/count
+        // work only: no allocation, deallocation, or owner/entry traversal.
+        // Both sets' owners must remain valid/non-forwarded.
+        void adopt_from(StrongRememberedSet &&source) noexcept;
+
     private:
-        static constexpr size_t entries_per_block = 511;
+        static constexpr size_t entries_per_block = 510;
         struct Block
         {
             std::unique_ptr<Block> next;
+            // Meaningful only before current_. Written when sealing a block
+            // at rollover or handoff; current_ always uses the hot used_.
+            size_t sealed_count;
             // Intentionally uninitialized until appended; only active cells
-            // are read. The link plus pointers occupy 4 KiB on our targets.
+            // are read. Link, count and pointers occupy 4 KiB on our targets.
             std::array<HeapObject *, entries_per_block> entries;
         };
         static_assert(sizeof(Block) == 4096);
@@ -105,7 +117,8 @@ namespace cl::gc
             current_->entries[used_++] = owner;
         }
 
-        // Blocks preceding current_ are full; blocks following it are spare.
+        // Blocks preceding current_ are sealed (possibly partial). Blocks
+        // following it are spare; their counts and entries are ignored.
         std::unique_ptr<Block> blocks_;
         Block *current_ = nullptr;
         size_t used_ = 0;

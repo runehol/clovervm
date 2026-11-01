@@ -43,8 +43,40 @@ namespace cl::gc
         {
             current_->next = allocate_block();
         }
+        current_->sealed_count = used_;
         current_ = current_->next.get();
         used_ = 0;
+    }
+
+    void StrongRememberedSet::adopt_from(StrongRememberedSet &&source) noexcept
+    {
+        assert(this != &source);
+        if(source.empty())
+        {
+            return;
+        }
+
+        std::unique_ptr<Block> destination_spares;
+        if(empty())
+        {
+            destination_spares = std::move(blocks_);
+            blocks_ = std::move(source.blocks_);
+        }
+        else
+        {
+            current_->sealed_count = used_;
+            destination_spares = std::move(current_->next);
+            current_->next = std::move(source.blocks_);
+        }
+        current_ = source.current_;
+        used_ = source.used_;
+
+        // Keep the incoming spare chain attached. Return our displaced cache
+        // to the empty source, rather than accumulating both caches here.
+        // No active receiver block or owner header is discarded/changed.
+        source.blocks_ = std::move(destination_spares);
+        source.current_ = source.blocks_.get();
+        source.used_ = 0;
     }
 
     void StrongRememberedSet::clear_after_collection() noexcept
