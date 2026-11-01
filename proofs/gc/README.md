@@ -1,16 +1,16 @@
-# GC Mark-Phase Model and Proofs
+# GC Models and Proofs
 
 | Field | Value |
 |---|---|
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Abstract strong closure, not verification of the C++ runtime or moving collection |
+| Scope | Abstract strong closure and copying discovery/forwarding, not verification of the C++ runtime or full evacuation |
 | Owning layers | This Lean project owns the executable model and proofs; `src/gc/` owns the C++ collector |
-| Validated against | Lean 4.35.0; C++ `StrongClosure` at `49861cc6` (2026-11-01) |
+| Validated against | Lean 4.35.0; C++ `StrongClosure` and `Evacuation` at `33cb9cf6` (2026-11-01) |
 | Supersedes | N/A |
 
-This is a separate Lean project for the first proof slice described in the
+This is a separate Lean project for the proof slices described in the
 [GC implementation plan](../../doc/generational-copying-gc-implementation-plan.md#lean-model-and-proof-obligations).
 It does not change the VM or participate in its CMake build.
 
@@ -36,6 +36,10 @@ Read these files in order:
    preservation/termination, and the final correctness theorems.
 4. [Audit.lean](CloverGC/Audit.lean): checked axiom dependencies of the public
    claims. It is imported by the default build, along with proofs and examples.
+
+These first four files cover the mark phase. The next slice is described in
+[Copying Discovery and Forwarding](copying-discovery.md), with separate model,
+proof, example and audit modules. Everything is checked by the same build.
 
 ## What Lean Is Checking
 
@@ -143,7 +147,9 @@ FIFO queue. It models successful operations only, not resource exhaustion.
 
 There is no copying, forwarding, weak repair, generation filtering, barrier,
 reclamation, raw-pointer arithmetic, RC ownership, or C++ memory-model proof in
-this slice. In particular it does not establish production root completeness,
+the mark-phase slice. In particular it does not establish production root completeness,
 layout safety, or a formal refinement from C++ to Lean. The C++ tests remain
-necessary. Executable differential comparison against the C++ test heap is a
-later slice, followed by movement and weak-repair proofs.
+necessary. The separate copying-discovery slice establishes local forwarding
+properties, not complete moving traversal. Executable differential comparison
+against the C++ test heap, full evacuation and weak-repair proofs remain later
+work.

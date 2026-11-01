@@ -637,6 +637,11 @@ runtime roots, faithful slot decoding/enumeration, resource success, and the
 C++ correspondence remain outside this proof; no production collection is
 enabled by it.
 
+The [second Lean slice](../proofs/gc/copying-discovery.md) adds executable copying
+discovery/forwarding and proofs of local canonicalization, record preservation
+and mark/queue discipline, including NonMoving originals and destinations. It
+does not yet prove the copying scan loop, weak handling or safe source disposal.
+
 The tracing/copying checkpoint `1c001cda` and the subsequent orthogonal-protocol
 working tree both passed 81 focused Debug GC/storage/copy tests and 80 applicable
 Release tests. Full Debug `all check` passed 2,378 tests and full Release passed

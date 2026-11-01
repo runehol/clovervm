@@ -732,7 +732,16 @@ independent reachability specification. Checked proofs establish exact marked
 reachability, exactly-once scanning of reachable objects, no scanning of
 unreachable objects, and an empty queue within at most `n` scans for `n` objects.
 The default build checks examples and guards the public theorems' axiom
-dependencies. No moving/weak/barrier theorem or C++ refinement is claimed.
+dependencies. This first slice has no moving/weak/barrier theorem or C++
+refinement claim.
+
+The second slice, [copying discovery and forwarding](../proofs/gc/copying-discovery.md),
+is implemented separately from marking. It proves local canonical-reference
+uniqueness, no source merging, faithful initial strong-field copying, preserved
+forwarding/records, NonMoving behavior, marked outputs and stable rediscovery.
+All source objects participate; copied-field scanning, complete evacuation,
+minor filtering, weak repair and source disposal remain unproved. There is no
+production integration or C++ refinement claim.
 
 The remaining direction is:
 
