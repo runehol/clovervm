@@ -346,8 +346,8 @@ The baseline write barrier is object-level:
 ```cpp
 if(owner->generation_state == HeapGenerationState::Old &&
    child_is_young(child)) {
-    owner->generation_state = HeapGenerationState::OldRemembered;
     thread->remembered_set.push_back(owner);
+    owner->generation_state = HeapGenerationState::OldRemembered;
 }
 ```
 
@@ -359,7 +359,7 @@ including stable-heap participants. They never store nursery objects.
 
 Each `ThreadState` should own a remembered set. That keeps ordinary barriers
 lock-free in the common case: a mutator records old-to-young stores in its own
-thread-local vector. In a future no-GIL implementation where multiple threads
+thread-local reusable block sequence. In a future no-GIL implementation where multiple threads
 can write the same old object, the `Old -> OldRemembered` transition must become
 atomic so only one thread records the object.
 
@@ -370,6 +370,39 @@ young target found by roots or remembered old objects is promoted during the
 minor collection. After the remembered object has been scanned and repaired, the
 collector clears its remembered state back to `Old`; future old-to-young stores
 rebuild remembered-set entries through the write barrier.
+
+The standalone `gc::StrongRememberedSet` component uses a singly linked owning
+chain of fixed 4 KiB blocks, each containing one owning link and 511 owner
+pointers. A borrowed current-block cursor and its used count delimit the active
+prefix. Blocks before the cursor are full; blocks after it are spare capacity.
+Append reuses the next block or allocates one without relocating prior entries.
+Pointer cells are initialized only when appended and are never globally cleared.
+Iteration stops at the active cursor, ignoring stale cells in cached blocks.
+
+Appending into the current block is inline. An `unlikely` empty/full-block check
+calls `advance_block_slow()` only for initial allocation or rollover, including
+rollover into a cached spare block. The generic post-store `record_store()` helper
+delegates to `record_unremembered_owner()`: that primitive requires a valid,
+non-forwarded owner in exactly Old state, appends it, and sets OldRemembered.
+It does not check tags or child generation and permits conservative recording.
+Store callers can hoist known facts and choose their rejection order before
+calling the primitive; no combinatorial mode-template API is introduced.
+
+After minor strong closure and weak repair, `clear_after_collection()` resets
+recorded owners from OldRemembered to Old, then resets the cursor/count while
+retaining the block chain for reuse. Destruction requires no outstanding records
+and frees blocks iteratively without touching inactive owner pointers. Peak block
+capacity is retained; trimming and thread-exit transfer are separate work.
+The container is non-copyable/non-movable and single-writer; all participating
+sets must be consumed under one collection/reset protocol.
+
+This component is currently exercised only with test-owned objects, including
+real-layout evacuation tests. It does not wire runtime stores or ThreadState
+buffers. Entries are borrowed: RC reclamation/address reuse needs an explicit
+invalidation/removal protocol before runtime activation. Shared-object header
+publication still requires synchronization at integration. A full collection
+that moves or sweeps old owners needs a separate remembered-entry retirement
+protocol; it must not call the minor reset on invalid or forwarded owners.
 
 This object-level remembered policy is intentionally coarse. Large backing
 stores, module globals, or other high-churn structures can later receive more

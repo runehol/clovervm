@@ -2,6 +2,7 @@
 #include "gc/evacuation.h"
 #include "gc/evacuation_destinations.h"
 #include "gc/evacuation_spaces.h"
+#include "gc/strong_remembered_set.h"
 #include "memory/heap_constants.h"
 #include "memory/heap_space.h"
 #include "object_model/overflow_slots.h"
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -250,6 +252,7 @@ namespace
         fixed_owner->make_non_moving();
         HeapObject *root = old_owner;
         HeapObject *fixed_root = fixed_owner;
+        StrongRememberedSet remembered;
         WeakRoot dead{nullptr};
         {
             HeapSpace nursery;
@@ -261,7 +264,9 @@ namespace
             first->slot_value_base()[2] = Value::from_smi(73);
             connect(second, 0, first);
             connect(old_owner, 0, first);
+            remembered.record_store(old_owner, first);
             connect(fixed_owner, 0, second);
+            remembered.record_store(fixed_owner, second);
             auto first_before = snapshot_payload(first);
             auto second_before = snapshot_payload(second);
             std::array spaces{
@@ -280,11 +285,13 @@ namespace
             collection.add_root(HeapReferenceSlot(&fixed_root));
             collection.drain();
             EXPECT_TRUE(adapter.copies().empty());
-            collection.add_root(
-                HeapReferenceSlot(old_owner->slot_value_base()));
-            collection.add_root(
-                HeapReferenceSlot(fixed_owner->slot_value_base()));
+            remembered.for_each_owner([&](HeapObject *owner) {
+                visit_strong_reference_slots(
+                    owner,
+                    [&](HeapReferenceSlot slot) { collection.add_root(slot); });
+            });
             collection.finish();
+            remembered.clear_after_collection();
             ASSERT_EQ(2u, adapter.copies().size());
             adapter.expect_canonical_copies();
             EXPECT_EQ(0u, adapter.scan_count(old_owner));
@@ -310,6 +317,102 @@ namespace
         EXPECT_EQ(second, edge(first, 1));
         EXPECT_EQ(first, edge(second, 0));
         EXPECT_EQ(Value::from_smi(73), first->get(2));
+    }
+
+    TEST(GCRealLayoutEvacuation, SuccessiveMinorsRebuildRememberedOwners)
+    {
+        HeapSpace old;
+        HeapSpace non_moving;
+        auto *owner = make_slots(old, 2, HeapGenerationState::Old);
+        auto *fixed = make_slots(non_moving, 1, HeapGenerationState::Old);
+        auto *overwritten = make_slots(old, 1, HeapGenerationState::Old);
+        fixed->make_non_moving();
+        std::array owners{owner, fixed, overwritten};
+        StrongRememberedSet remembered;
+        for(size_t iteration = 0; iteration < 2; ++iteration)
+        {
+            {
+                HeapSpace nursery;
+                auto *dead = make_slots(nursery, 0, HeapGenerationState::Young);
+                auto *live = make_slots(nursery, 1, HeapGenerationState::Young);
+                connect(live, 0, live);
+                connect(owner, 0, dead);
+                remembered.record_store(owner, dead);
+                owner->slot_value_base()[0] = Value::None();
+                remembered.record_store(owner, nullptr);
+                connect(owner, 1, live);
+                remembered.record_store(owner, live);
+                connect(fixed, 0, live);
+                remembered.record_store(fixed, live);
+                connect(overwritten, 0, dead);
+                remembered.record_store(overwritten, dead);
+                overwritten->slot_value_base()[0] = Value::None();
+                remembered.record_store(overwritten, nullptr);
+
+                // Independent exhaustive scan of the declared old fixtures:
+                // recording may conservatively retain overwritten owners, but
+                // must cover every owner that still has a young strong edge.
+                std::unordered_set<HeapObject *> expected;
+                for(OverflowSlots *object: owners)
+                {
+                    visit_strong_reference_slots(
+                        object, [&](HeapReferenceSlot slot) {
+                            if(HeapObject *target = slot.load_pointer();
+                               target != nullptr &&
+                               target->generation_state() ==
+                                   HeapGenerationState::Young)
+                            {
+                                expected.insert(object);
+                            }
+                        });
+                }
+                std::unordered_set<HeapObject *> recorded;
+                remembered.for_each_owner([&](HeapObject *object) {
+                    EXPECT_TRUE(recorded.insert(object).second);
+                });
+                EXPECT_EQ(2u, expected.size());
+                EXPECT_EQ(3u, recorded.size());
+                for(HeapObject *object: expected)
+                {
+                    EXPECT_TRUE(recorded.contains(object));
+                }
+
+                std::array spaces{
+                    EvacuationSpace{&nursery, HeapGenerationState::Young}};
+                EvacuationSpaces inputs(spaces);
+                EvacuationDestinations destinations(old, non_moving);
+                auto placement = [](HeapObject *) { return Destination::Old; };
+                RealLayoutTestAdapter<CollectionKind::Young,
+                                      decltype(placement)>
+                    adapter(inputs, destinations, placement);
+                Evacuation collection(adapter);
+                WeakRoot weak_dead{dead};
+                collection.add_weak_root(weak_dead.unit());
+                remembered.for_each_owner([&](HeapObject *object) {
+                    visit_strong_reference_slots(object,
+                                                 [&](HeapReferenceSlot slot) {
+                                                     collection.add_root(slot);
+                                                 });
+                });
+                collection.finish();
+                remembered.clear_after_collection();
+                EXPECT_EQ(1u, adapter.copies().size());
+                adapter.expect_canonical_copies();
+                EXPECT_FALSE(dead->is_forwarded());
+                EXPECT_EQ(nullptr, weak_dead.target);
+                EXPECT_EQ(edge(owner, 1), edge(fixed, 0));
+            }
+            EXPECT_TRUE(remembered.empty());
+            for(OverflowSlots *object: owners)
+            {
+                EXPECT_EQ(HeapGenerationState::Old, object->generation_state());
+                EXPECT_EQ(0, object->refcount());
+            }
+            EXPECT_TRUE(fixed->is_non_moving());
+            auto *survivor = static_cast<OverflowSlots *>(edge(owner, 1));
+            EXPECT_EQ(survivor, edge(survivor, 0));
+            EXPECT_EQ(Value::None(), overwritten->get(0));
+        }
     }
 
     TEST(GCRealLayoutEvacuation, FullRepairsMixedCyclesAndRealWeakRoots)

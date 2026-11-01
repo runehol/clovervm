@@ -542,6 +542,14 @@ backing arrays, bulk copies, runtime caches, and relevant generated stores.
 Distinguish construction into young storage from construction into old or
 stable storage. Retain current incref/decref behavior throughout.
 
+The standalone strong remembered-set primitive is implemented with reusable
+4 KiB linked blocks and header-based deduplication. Its post-store recording and
+minor-reset contract are exercised on test-owned headers and through real-layout
+evacuation, including conservative overwritten records and repeated collections.
+No runtime stores or ThreadState buffers are wired. Owner lifetime/invalidation,
+thread coordination/publication, weak remembered units, and full-collection
+retirement remain separate integration gates.
+
 Provide a non-moving test configuration with young and old classifications so
 the barrier is exercised before a nursery exists. Compare remembered coverage
 with an exhaustive scan. Remembered membership must never retain an unsafe
