@@ -287,15 +287,16 @@ Both expose the same single-object copy operation to the algorithm.
 ### One Work Queue Across Destination Heaps
 
 Evacuation is a worklist-based copying collector, not a Cheney scan. A single
-`std::deque<Object *>` holds all copied but unscanned destinations, whether they
-are placed in the ordinary old-generation heap or the stable heap. Pop the
-front before scanning, and push newly copied objects at the back. Processed
+`std::deque<Object *>` holds canonical marked but unscanned objects: copied
+ordinary/stable destinations and existing collected NonMoving objects. Pop the
+front before scanning, and push newly discovered objects at the back. Processed
 objects do not remain in the queue. A wide graph can still require a large
 frontier; this is not a constant-space guarantee.
 
-Source forwarding prevents duplicate copies and scheduling. The copying phase
-does not need the standalone mark phase's hash set. Strong closure means the
-single queue is empty after all roots/remembered edges have been supplied.
+Source forwarding prevents duplicate copies. Adapter marks deduplicate scanning
+of canonical destinations and existing NonMoving objects; the isolated adapter
+uses per-phase scratch marks, not a second traversal before copying. Strong
+closure means the single queue is empty after all roots/remembered edges have been supplied.
 Ordinary/stable destinations follow identical scanning rules, including edges
 that alternate repeatedly between those heaps.
 
@@ -312,27 +313,38 @@ neither a destination enum nor a placement aggregate is part of the generic
 collector interface.
 
 ```cpp
-void evacuate_slot(Slot slot)
+void enqueue_once(Object *object)
 {
-    Object *source = slot.load_pointer();
-    if(source == nullptr || !heap.is_collected_source(source))
+    if(heap.try_mark(object))
+        pending.push_back(object);
+}
+
+void discover_slot(Slot slot)
+{
+    Object *object = slot.load_pointer();
+    if(object == nullptr || !heap.is_collected(object))
         return;
 
-    if(Object *destination = heap.forwarded_to(source))
+    if(heap.is_collected_source(object))
     {
+        Object *destination = heap.forwarded_to(object);
+        if(destination == nullptr)
+        {
+            destination = heap.copy_object(object);
+            if(destination == nullptr)
+                heap.allocation_failure();
+            heap.install_forwarding(object, destination);
+        }
+        enqueue_once(destination);
         slot.rewrite_pointer(destination);
         return;
     }
-
-    Object *destination = heap.copy_object(source);
-    heap.install_forwarding(source, destination);
-    pending.push_back(destination);
-    slot.rewrite_pointer(destination);
+    enqueue_once(object);
 }
 
 void scan_object(Object *object)
 {
-    heap.visit_strong_slots(object, [&](Slot slot) { evacuate_slot(slot); });
+    heap.visit_strong_slots(object, [&](Slot slot) { discover_slot(slot); });
 }
 
 void drain()
@@ -347,7 +359,7 @@ void drain()
 ```
 
 The caller supplies roots and, for a minor collection, the relevant remembered
-slots, applying `evacuate_slot()` before draining. An uncollected object is not
+slots, applying `discover_slot()` before draining. An uncollected object is not
 thereby dead: old/stable owners' relevant edges still need remembered-set/root
 coverage. This sketch does not supply that runtime integration.
 
@@ -357,7 +369,8 @@ It is collection-membership classification, not an unforwarded/liveness test.
 
 Layout queries must remain valid when source metadata has been forwarded; do
 not dereference an overwritten source shape as though it were ordinary metadata.
-Every copied object contributes one queue entry, irrespective of heap.
+Every strongly discovered canonical object contributes one queue entry,
+irrespective of heap or whether it was copied.
 
 ### Growable Slab-Based To-Space
 
@@ -563,12 +576,20 @@ sources. Fresh ordinary/stable destinations are not selected inputs in either
 mode. Membership survives forwarding.
 
 `TestStorage::NonMoving` and `make_non_moving_object()` represent existing stable
-objects independently of fresh StableDestination copies. This preparatory slice
-adds the test-heap distinction and contract tests only. Evacuation still uses
-moving-source selection: the new participation query is not consumed yet.
-Canonical strong discovery and weak liveness must change together in the next
-slice. This is not a complete full collector, stable sweep, immortal-object
-policy, or VM adapter integration.
+objects independently of fresh StableDestination copies. Evacuation consumes
+both predicates: strong discovery canonicalizes moving references, then marks
+and queues canonical destinations or existing NonMoving objects once. Only
+canonical objects are scanned; movable source payloads remain untouched, while
+live NonMoving owners have their slots repaired in place. Use fresh per-phase
+adapter marks; do not run a separate mark pass over sources before copying.
+
+Weak resolution leaves uncollected targets alone, follows forwarding for moving
+sources, and tests marks for collected NonMoving targets. Unresolved collected
+targets are deferred early and cleared after strong closure. Weak references
+never mark or copy targets. Both strong and weak behavior change together.
+This is isolated tracing/copying, not stable sweep, immortal-object policy, VM
+adapter integration, or RC lifetime cutover. Young/full specialization belongs
+to a future production adapter; no extent search is imposed by this protocol.
 
 Owner/backing graphs use ordinary strong cells. Selection and forwarding apply
 independently to each object, regardless of root order or preferred destination.
@@ -600,9 +621,11 @@ before scanning its owner's strong slot. No runtime relocation is enabled.
 The isolated strong copying phase is `Evacuation<Heap>` in
 `src/gc/evacuation.h`. Its borrowed adapter must outlive the phase. Callers add
 roots/remembered slots with `add_root()` and reach strong closure with `drain()`;
-outside-source targets are left alone, not implicitly scanned. The phase is
+uncollected inputs are left alone, not implicitly scanned. Collected NonMoving
+objects are marked and scanned in place. The phase is
 noncopyable and nonmovable so pending scans cannot accidentally be duplicated.
-One deque schedules both ordinary and stable destinations. Forwarding is
+One deque schedules ordinary/stable destinations and existing NonMoving inputs.
+Forwarding is
 published for each object before it is scanned. Construction and public entry
 points are `noexcept`; native allocation exceptions terminate without requiring
 C++ exception support in the collector. A null copy result reaches the adapter's

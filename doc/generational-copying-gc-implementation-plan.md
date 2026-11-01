@@ -95,8 +95,10 @@ object enumeration or per-allocation bookkeeping. This does not wire evacuation
 into CloverHeapAdapter or implement full-collection stable-object liveness.
 The isolated test heap separately distinguishes collection participation from
 moving-source selection and existing NonMoving objects from fresh destinations.
-Evacuation still uses only the moving-source predicate; its strong and weak
-logic must change together before claiming full NonMoving tracing support.
+The isolated Evacuation phase consumes both predicates, marks canonical copies
+and existing NonMoving objects in a single work queue, and resolves weak targets
+through forwarding or marks. This does not supply runtime immortal policy,
+stable sweeping, or ownership transfer.
 Production activation still follows stages 4--9 below: precise roots/native
 references, barriers, tracing verification, tracing lifetime authority, then
 restricted movement. Byte-copy groundwork can proceed alongside integration;

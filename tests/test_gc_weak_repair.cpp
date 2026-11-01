@@ -114,6 +114,98 @@ namespace cl::gc::test
         EXPECT_EQ(1u, adapter.weak_scan_count(copy));
     }
 
+    TEST(GCWeakRepair, WeakOnlyNonMovingCyclesAreClearedOnlyInFullMode)
+    {
+        for(auto kind:
+            {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
+        {
+            TestHeap heap;
+            TestObject *first = heap.make_non_moving_object();
+            TestObject *second = heap.make_non_moving_object();
+            first->strong_cells = {TestCell::reference(second)};
+            second->strong_cells = {TestCell::reference(first)};
+            TestObject *weak = first;
+            TestHeapAdapter adapter(heap, kind);
+            Evacuation<TestHeapAdapter> collection(adapter);
+            collection.add_weak_root(Unit::bind<repair_test_weak_field>(weak));
+            EXPECT_EQ(first, weak);
+            EXPECT_FALSE(adapter.is_marked(first));
+            collection.finish();
+            EXPECT_EQ(kind == TestCollectionKind::Full ? nullptr : first, weak);
+            EXPECT_FALSE(adapter.is_marked(first));
+            EXPECT_FALSE(adapter.is_marked(second));
+            EXPECT_EQ(0u, adapter.scan_count(first));
+            EXPECT_EQ(0u, adapter.scan_count(second));
+            EXPECT_EQ(0u, heap.destination_object_count(
+                              EvacuationDestination::Ordinary));
+        }
+    }
+
+    TEST(GCWeakRepair, NonMovingTargetCanBecomeLiveAfterEarlyWeakRepair)
+    {
+        TestHeap heap;
+        TestObject *owner = heap.make_non_moving_object();
+        TestObject *child = heap.make_object();
+        owner->strong_cells = {TestCell::reference(child)};
+        TestWeakEntry late =
+            TestWeakEntry::active(owner, owner, TestCell::immediate(7));
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        collection.add_weak_root(Unit::bind<repair_test_weak_entry>(late));
+        EXPECT_EQ(1u, late.repair_count);
+        EXPECT_FALSE(adapter.is_marked(owner));
+        TestCell root = TestCell::reference(owner);
+        collection.add_root(TestSlot(root));
+        EXPECT_TRUE(adapter.is_marked(owner));
+        TestWeakEntry early =
+            TestWeakEntry::active(owner, owner, TestCell::immediate(9));
+        collection.add_weak_root(Unit::bind<repair_test_weak_entry>(early));
+        collection.finish();
+        EXPECT_EQ(2u, late.repair_count);
+        EXPECT_EQ(1u, early.repair_count);
+        EXPECT_EQ(0u, late.reset_count);
+        EXPECT_EQ(owner, late.guards[0]);
+        EXPECT_EQ(1u, adapter.scan_count(owner));
+        EXPECT_EQ(adapter.forwarded_to(child), pointer(owner->strong_cells[0]));
+    }
+
+    TEST(GCWeakRepair, NonMovingOwnersRepairCoordinatedUnitsInPlace)
+    {
+        TestHeap heap;
+        TestObject *owner = heap.make_non_moving_object();
+        TestObject *live = heap.make_non_moving_object();
+        TestObject *dead = heap.make_non_moving_object();
+        TestObject *child = heap.make_object();
+        owner->strong_cells = {TestCell::reference(live),
+                               TestCell::reference(child)};
+        owner->weak_entries = {
+            TestWeakEntry::active(live, dead, TestCell::reference(child)),
+            TestWeakEntry::active(live, live, TestCell::reference(child))};
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell root = TestCell::reference(owner);
+        collection.add_root(TestSlot(root));
+        collection.drain();
+        EXPECT_EQ(1u, owner->weak_entries[0].repair_count);
+        EXPECT_EQ(dead, owner->weak_entries[0].guards[1]);
+        collection.finish();
+        EXPECT_EQ(owner, pointer(root));
+        EXPECT_EQ(TestHeaderKind::Normal, owner->header.kind);
+        EXPECT_TRUE(adapter.is_marked(live));
+        EXPECT_FALSE(adapter.is_marked(dead));
+        EXPECT_EQ(1u, adapter.weak_scan_count(owner));
+        EXPECT_EQ(2u, owner->weak_entries[0].repair_count);
+        EXPECT_EQ(1u, owner->weak_entries[0].reset_count);
+        EXPECT_EQ(nullptr, owner->weak_entries[0].guards[0]);
+        EXPECT_EQ(nullptr, owner->weak_entries[0].guards[1]);
+        EXPECT_EQ(TestCell::immediate(0), owner->weak_entries[0].payload);
+        EXPECT_EQ(1u, owner->weak_entries[1].repair_count);
+        EXPECT_EQ(0u, owner->weak_entries[1].reset_count);
+        EXPECT_EQ(live, owner->weak_entries[1].guards[0]);
+        EXPECT_EQ(adapter.forwarded_to(child),
+                  pointer(owner->weak_entries[1].payload));
+    }
+
     TEST(GCWeakRepair, AdjacentEntriesDeferIndependentlyAndResetWholePayload)
     {
         TestHeap heap(1);

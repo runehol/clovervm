@@ -10,10 +10,13 @@
 
 namespace cl::gc
 {
-    // One copying phase. The caller supplies roots and remembered slots,
+    // One tracing/copying phase with fresh per-phase adapter marks. The caller
+    // supplies roots and remembered slots,
     // excludes mutator activity/safepoints, and keeps source storage alive.
     // Slot decoding, placement and copying belong to the adapter.
-    // Outside-source objects are not scanned implicitly. finish() closes strong
+    // Only collected inputs are discovered. Mark/enqueue canonical copies or
+    // existing non-moving objects, never forwarded source headers.
+    // finish() closes strong
     // tracing and repairs deferred weak units before source reclamation by the
     // caller. All supplied weak units must have unique, non-overlapping repair
     // storage that remains valid through finish(). Allocation failure is fatal:
@@ -35,7 +38,7 @@ namespace cl::gc
         void add_root(Slot slot) noexcept
         {
             assert(phase_ == Phase::Tracing);
-            evacuate_slot(slot);
+            discover_slot(slot);
         }
 
         void drain() noexcept
@@ -46,7 +49,7 @@ namespace cl::gc
                 Object *object = pending_.front();
                 pending_.pop_front();
                 heap_.visit_strong_slots(
-                    object, [&](Slot slot) { evacuate_slot(slot); });
+                    object, [&](Slot slot) { discover_slot(slot); });
                 heap_.visit_weak_units(
                     object, [&](WeakUnit unit) { repair_early(unit); });
             }
@@ -94,13 +97,20 @@ namespace cl::gc
         WeakResolution<Object> resolve_weak(Object *target, WeakPhase phase)
         {
             assert(target != nullptr);
-            if(!heap_.is_collected_source(target))
+            if(!heap_.is_collected(target))
             {
                 return WeakResolution<Object>::resolved(target);
             }
-            if(Object *destination = heap_.forwarded_to(target))
+            if(heap_.is_collected_source(target))
             {
-                return WeakResolution<Object>::resolved(destination);
+                if(Object *destination = heap_.forwarded_to(target))
+                {
+                    return WeakResolution<Object>::resolved(destination);
+                }
+            }
+            else if(heap_.is_marked(target))
+            {
+                return WeakResolution<Object>::resolved(target);
             }
             return phase == WeakPhase::Early ? WeakResolution<Object>::pending()
                                              : WeakResolution<Object>::dead();
@@ -116,27 +126,38 @@ namespace cl::gc
             }
         }
 
-        void evacuate_slot(Slot slot)
+        void enqueue_once(Object *object)
         {
-            Object *source = slot.load_pointer();
-            if(source == nullptr || !heap_.is_collected_source(source))
+            if(heap_.try_mark(object))
+            {
+                pending_.push_back(object);
+            }
+        }
+
+        void discover_slot(Slot slot)
+        {
+            Object *object = slot.load_pointer();
+            if(object == nullptr || !heap_.is_collected(object))
             {
                 return;
             }
-            if(Object *destination = heap_.forwarded_to(source))
+            if(heap_.is_collected_source(object))
             {
+                Object *destination = heap_.forwarded_to(object);
+                if(destination == nullptr)
+                {
+                    destination = heap_.copy_object(object);
+                    if(destination == nullptr)
+                    {
+                        heap_.allocation_failure();
+                    }
+                    heap_.install_forwarding(object, destination);
+                }
+                enqueue_once(destination);
                 slot.rewrite_pointer(destination);
                 return;
             }
-
-            Object *destination = heap_.copy_object(source);
-            if(destination == nullptr)
-            {
-                heap_.allocation_failure();
-            }
-            heap_.install_forwarding(source, destination);
-            pending_.push_back(destination);
-            slot.rewrite_pointer(destination);
+            enqueue_once(object);
         }
 
         Heap &heap_;

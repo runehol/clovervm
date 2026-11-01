@@ -358,22 +358,17 @@ units in uncollected owners, mutation/barrier lifetime rules, and the existing
 native/JIT no-safepoint contracts. Stable promotion joins the same copying scan
 queue as ordinary promotion; it is not a terminal leaf allocation.
 
-Full collections also need liveness and scanning for non-moving participants.
-The current isolated evacuation phase does not supply that: strong discovery
-skips outside-source objects and its weak resolver treats outside-source targets
-as surviving. That is appropriate for uncollected objects in a minor collection,
-not for dead stable objects participating in full GC. The full-collector review
-must integrate marking/scanning and stable-target weak liveness, distinguishing
-"not copied" from "not collected". Isolated tests cover full moving
-source selection, not complete full-heap tracing or reclamation.
-
-The isolated test adapter now prepares that distinction with `is_collected()`
-and an existing `TestStorage::NonMoving` category, separate from fresh stable
-destinations. Full participation includes those existing objects without making
-them moving sources; YoungOnly excludes them. The query is not consumed by
-Evacuation yet. Strong discovery and weak resolution must adopt participation
-together in the following slice; no VM adapter or lifetime-authority change is
-implied by the test contract.
+The isolated phase now distinguishes "not copied" from "not collected" with
+`is_collected()` and `TestStorage::NonMoving`. Full participation includes
+existing NonMoving objects; YoungOnly excludes them. Strong discovery marks and
+queues canonical copies or existing NonMoving objects once. Moving input
+payloads stay unchanged; live NonMoving owners have slots repaired in place.
+Weak repair follows moving-source forwarding or NonMoving marks, deferring
+unresolved collected targets early and clearing them after strong closure.
+Uncollected targets remain alive without being scanned implicitly. This closes
+the isolated stable-liveness gap, not runtime integration: VM adapter policy,
+immortal-object handling, non-moving sweeping, and lifetime authority remain
+separate gates.
 
 ## Follow-Up Slices Proposed for Review
 
