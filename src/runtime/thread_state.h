@@ -41,7 +41,6 @@ namespace cl
     void process_thread_reclamation_epoch(ThreadState &thread,
                                           const ReclamationRootSet &roots);
 #ifndef NDEBUG
-    void validate_zero_count_table_for_reclamation(const ThreadState &thread);
     void validate_zero_count_tables_for_reclamation(
         const std::vector<std::unique_ptr<ThreadState>> &threads);
 #endif
@@ -458,8 +457,6 @@ namespace cl
         process_thread_reclamation_epoch(ThreadState &thread,
                                          const ReclamationRootSet &roots);
 #ifndef NDEBUG
-        friend void
-        validate_zero_count_table_for_reclamation(const ThreadState &thread);
         friend void validate_zero_count_tables_for_reclamation(
             const std::vector<std::unique_ptr<ThreadState>> &threads);
 #endif
