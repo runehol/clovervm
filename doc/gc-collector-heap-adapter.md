@@ -308,9 +308,15 @@ of walking an arbitrary destination heap.
 The success-path sketch below is implemented by `src/gc/evacuation.h`.
 `copy_object(source)` chooses a destination internally, allocates one object,
 and initializes its copied state before returning its address. It does not
-scan children or install forwarding. Destination policy is adapter-owned;
-neither a destination enum nor a placement aggregate is part of the generic
-collector interface.
+scan children or install forwarding. The concrete adapter is plumbing: a
+separately testable CloverVM placement decision selects the destination, then
+`EvacuationDestinations` performs allocation, byte copying, and destination
+header preparation using borrowed persistent spaces. Neither a destination enum
+nor a placement aggregate is part of the generic collector interface. Real
+destination tests exercise this implementation independently of the synthetic
+heap; placement-policy and adapter integration tests remain necessary when
+those pieces are introduced. No production copying is wired up by the
+destination component alone.
 
 ```cpp
 void enqueue_once(Object *object)

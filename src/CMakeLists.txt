@@ -28,6 +28,8 @@ add_library(libclovervm_objects OBJECT
     gc/evacuation.h
     gc/weak_repair.h
     gc/clover_heap_adapter.h
+    gc/evacuation_destinations.cpp
+    gc/evacuation_destinations.h
     gc/evacuation_spaces.cpp
     gc/evacuation_spaces.h
     codecs/codec.cpp

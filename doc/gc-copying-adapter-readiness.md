@@ -277,10 +277,34 @@ transfer, or allocation-group mechanism is needed for minor promotion.
 | Young | Whole nursery | Append to existing old space | Append to existing NonMoving space |
 | Full moving | Nursery and selected movable old spaces | Fresh old space, outside every selected mapping | Append to existing NonMoving space |
 
-The memory manager owns destinations beyond the collection. The copying adapter
-borrows them; `copy_object()` chooses placement internally. A possible adapter
-configuration is two borrowed `HeapSpace` references named `old` and
-`non_moving`; this slice does not introduce that production API.
+The memory manager owns destinations beyond the collection. The destination
+component borrows two distinct `HeapSpace` references, `old` and `non_moving`.
+`gc::EvacuationDestinations::copy_to_old()` and `copy_to_non_moving()` call the
+existing byte-copy primitive and prepare the destination generation/mobility.
+They return unpublished copies, without marking, forwarding, or reference repair.
+They neither own nor retire storage. Sources must be admitted, non-forwarded,
+movable objects; their bytes and RC ownership remain unchanged.
+
+Keep the copying adapter as plumbing between three independently testable
+responsibilities:
+
+- The generic collector decides when to copy, publishes forwarding, marks and
+  queues canonical objects, and repairs references.
+- CloverVM placement policy chooses Old or NonMoving destination. It must not
+  infer destination placement solely from the source NonMoving bit: a movable
+  source can require a NonMoving destination.
+- `EvacuationDestinations` allocates/copies into the chosen borrowed space and
+  prepares its header. Old destinations are movable; NonMoving destinations
+  carry that bit. Both have Old generation, not OldRemembered.
+
+The future adapter's `copy_object(source)` switches on the placement decision
+and delegates to the appropriate destination method. No placement enum enters
+the generic collector protocol, and no virtual/callback framework is needed.
+Placement rules require their own policy tests and adapter integration tests;
+synthetic collector tests alone cannot verify those rules. The real destination
+component is tested with CloverVM objects, including exact payload bits, header
+preparation, reserved/copy extents, RC neutrality, and growth of populated spaces.
+It does not wire production copying into CloverHeapAdapter or settle admission.
 
 For a young collection, stop mutators and invalidate borrowed nursery allocation
 cursors before freezing the evacuation mappings. Supply precise roots and
