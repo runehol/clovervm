@@ -18,6 +18,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
+#include <utility>
 #include <vector>
 
 using namespace cl;
@@ -48,6 +50,45 @@ namespace
         EXPECT_EQ(reinterpret_cast<uintptr_t>(copy) + rounded, next);
         // Do not inspect the uncopied tail: it is still uninitialized storage.
         return copy;
+    }
+
+    void repair_copies(
+        ThreadState *thread,
+        std::initializer_list<std::pair<HeapObject *, HeapObject *>> copies)
+    {
+        std::vector<std::vector<std::byte>> originals;
+        for(auto [source, copy]: copies)
+        {
+            (void)copy;
+            originals.emplace_back(native_layout_info(source).copy_size);
+            std::memcpy(originals.back().data(), source,
+                        originals.back().size());
+        }
+        size_t zct_size = thread->zero_count_table_size();
+        for(auto [source, copy]: copies)
+        {
+            (void)source;
+            visit_strong_reference_slots(copy, [&](HeapReferenceSlot slot) {
+                HeapObject *current = slot.load_pointer();
+                for(auto [old_object, new_object]: copies)
+                {
+                    if(current == old_object)
+                    {
+                        slot.rewrite_pointer(new_object);
+                        return;
+                    }
+                }
+            });
+        }
+        size_t idx = 0;
+        for(auto [source, copy]: copies)
+        {
+            (void)copy;
+            EXPECT_EQ(0, std::memcmp(originals[idx].data(), source,
+                                     originals[idx].size()));
+            ++idx;
+        }
+        EXPECT_EQ(zct_size, thread->zero_count_table_size());
     }
 }  // namespace
 
@@ -323,4 +364,164 @@ TEST(HeapObjectCopy, CopiesCompleteRawBackingExtent)
             EXPECT_EQ(static_cast<uint8_t>(idx ^ 0xa5), copy->bytes[idx]);
         }
     }
+}
+
+TEST(HeapObjectCopy, RepairsSharedTaggedAndRawReferencesInCopies)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<TValue<Float>> child(thread->make_object_value<Float>(4.5));
+    Owned<TValue<Tuple>> tuple(thread->make_object_value<Tuple>(5u));
+    TValue<String> interned =
+        context.vm().get_or_create_interned_string_value(L"unmoved");
+    std::array<Value, 5> values = {child.raw_value(), child.raw_value(),
+                                   Value::from_smi(42), Value::None(),
+                                   interned.raw_value()};
+    for(size_t idx = 0; idx < values.size(); ++idx)
+    {
+        tuple.extract()->initialize_item_unchecked(idx, values[idx]);
+    }
+    OwnedHeapPtr<HeapPtrArrayBacking> pointers(
+        thread->make_internal_raw<HeapPtrArrayBacking>(3u));
+    pointers->elements[0] = child.extract();
+    pointers->elements[1] = child.extract();
+    pointers->elements[2] = nullptr;
+    incref_heap_ptr(child.extract());
+    incref_heap_ptr(child.extract());
+    int32_t child_refs = child.extract()->refcount();
+
+    HeapSpace destination;
+    Float *new_child =
+        static_cast<Float *>(copy_object_bytes(&destination, child.extract()));
+    Tuple *new_tuple =
+        static_cast<Tuple *>(copy_object_bytes(&destination, tuple.extract()));
+    HeapPtrArrayBacking *new_pointers = static_cast<HeapPtrArrayBacking *>(
+        copy_object_bytes(&destination, pointers.get()));
+    repair_copies(thread, {{child.extract(), new_child},
+                           {tuple.extract(), new_tuple},
+                           {pointers.get(), new_pointers}});
+
+    EXPECT_EQ(Value::from_oop(new_child), new_tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_oop(new_child), new_tuple->item_unchecked(1));
+    for(size_t idx = 2; idx < values.size(); ++idx)
+    {
+        EXPECT_EQ(values[idx], new_tuple->item_unchecked(idx));
+    }
+    EXPECT_EQ(new_child, new_pointers->elements[0]);
+    EXPECT_EQ(new_child, new_pointers->elements[1]);
+    EXPECT_EQ(nullptr, new_pointers->elements[2]);
+    EXPECT_EQ(tuple.extract()->get_shape(), new_tuple->get_shape());
+    EXPECT_EQ(child.extract()->get_shape(), new_child->get_shape());
+    EXPECT_EQ(4.5, new_child->value());
+    EXPECT_EQ(child_refs, child.extract()->refcount());
+}
+
+TEST(HeapObjectCopy, RepairsInlineSelfReferenceWithoutScanningLazyTail)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"SelfCopy");
+    TValue<String> attr =
+        context.vm().get_or_create_interned_string_value(L"self");
+    ClassObject *cls = thread->make_internal_raw<ClassObject>(
+        name, 7, context.vm().object_class(), NativeLayoutId::Instance);
+    OwnedHeapPtr<Instance> source(thread->make_internal_raw<Instance>(cls));
+    ASSERT_TRUE(
+        source->set_own_property(attr, Value::from_oop(source.get())).value());
+    ASSERT_EQ(1u, source->native_layout_aux_count_value());
+
+    HeapSpace destination;
+    Instance *copy =
+        static_cast<Instance *>(copy_object_bytes(&destination, source.get()));
+    repair_copies(thread, {{source.get(), copy}});
+    EXPECT_EQ(Value::from_oop(copy), copy->get_own_property(attr));
+    EXPECT_EQ(source->get_shape(), copy->get_shape());
+    EXPECT_EQ(1u, copy->native_layout_aux_count_value());
+
+    // The copied graph is raw storage. Break the original RC cycle using a
+    // normal store; never release members of the byte copy.
+    ASSERT_TRUE(source->set_own_property(attr, Value::None()).value());
+}
+
+TEST(HeapObjectCopy, RepairsCycleBetweenTwoCopiedInstances)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"CycleCopy");
+    TValue<String> attr =
+        context.vm().get_or_create_interned_string_value(L"next");
+    ClassObject *cls = thread->make_internal_raw<ClassObject>(
+        name, 1, context.vm().object_class(), NativeLayoutId::Instance);
+    OwnedHeapPtr<Instance> first(thread->make_internal_raw<Instance>(cls));
+    OwnedHeapPtr<Instance> second(thread->make_internal_raw<Instance>(cls));
+    ASSERT_TRUE(
+        first->set_own_property(attr, Value::from_oop(second.get())).value());
+    ASSERT_TRUE(
+        second->set_own_property(attr, Value::from_oop(first.get())).value());
+
+    HeapSpace destination;
+    Instance *new_first =
+        static_cast<Instance *>(copy_object_bytes(&destination, first.get()));
+    Instance *new_second =
+        static_cast<Instance *>(copy_object_bytes(&destination, second.get()));
+    repair_copies(thread,
+                  {{first.get(), new_first}, {second.get(), new_second}});
+    EXPECT_EQ(Value::from_oop(new_second), new_first->get_own_property(attr));
+    EXPECT_EQ(Value::from_oop(new_first), new_second->get_own_property(attr));
+    EXPECT_EQ(first->get_shape(), new_first->get_shape());
+    EXPECT_EQ(second->get_shape(), new_second->get_shape());
+
+    ASSERT_TRUE(first->set_own_property(attr, Value::None()).value());
+    ASSERT_TRUE(second->set_own_property(attr, Value::None()).value());
+}
+
+TEST(HeapObjectCopy, RepairsOwnerBackingAndSharedChildLinks)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"OverflowCopy");
+    TValue<String> self =
+        context.vm().get_or_create_interned_string_value(L"self");
+    TValue<String> a = context.vm().get_or_create_interned_string_value(L"a");
+    TValue<String> b = context.vm().get_or_create_interned_string_value(L"b");
+    ClassObject *cls = thread->make_internal_raw<ClassObject>(
+        name, 0, context.vm().object_class(), NativeLayoutId::Instance);
+    OwnedHeapPtr<Instance> owner(thread->make_internal_raw<Instance>(cls));
+    Owned<TValue<Float>> child(thread->make_object_value<Float>(6.5));
+    ASSERT_TRUE(owner->set_own_property(a, child.raw_value()).value());
+    ASSERT_TRUE(owner->set_own_property(b, child.raw_value()).value());
+    ASSERT_TRUE(
+        owner->set_own_property(self, Value::from_oop(owner.get())).value());
+    OverflowSlots *backing = owner->overflow_storage.get();
+    ASSERT_NE(nullptr, backing);
+    int32_t child_refs = child.extract()->refcount();
+
+    HeapSpace destination;
+    Instance *new_owner =
+        static_cast<Instance *>(copy_object_bytes(&destination, owner.get()));
+    OverflowSlots *new_backing =
+        static_cast<OverflowSlots *>(copy_object_bytes(&destination, backing));
+    Float *new_child =
+        static_cast<Float *>(copy_object_bytes(&destination, child.extract()));
+    // Visit the backing first: repair uses the complete mapping, not discovery
+    // order or mutation of source headers.
+    repair_copies(thread, {{backing, new_backing},
+                           {owner.get(), new_owner},
+                           {child.extract(), new_child}});
+    EXPECT_EQ(new_backing, new_owner->overflow_storage.get());
+    EXPECT_EQ(Value::from_oop(new_child), new_owner->get_own_property(a));
+    EXPECT_EQ(Value::from_oop(new_child), new_owner->get_own_property(b));
+    EXPECT_EQ(Value::from_oop(new_owner), new_owner->get_own_property(self));
+    EXPECT_EQ(owner->get_shape(), new_owner->get_shape());
+    EXPECT_EQ(6.5, new_child->value());
+    EXPECT_EQ(child_refs, child.extract()->refcount());
+
+    ASSERT_TRUE(owner->set_own_property(self, Value::None()).value());
 }

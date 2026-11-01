@@ -383,10 +383,15 @@ source selection, not complete full-heap tracing or reclamation.
      uncopied tails. Production copying code is unchanged. All 88 focused Debug
      and 84 applicable focused Release tests passed; full Debug `all check`
      passed 2,351 tests with three JIT-disabled skips and one disabled test.
-     **5b.2 copied-reference repair remains next:** use the existing strong-slot
-     visitor and slot rewrite operation with test-only source/destination pairs,
-     covering sharing, self-reference, and cycles without forwarding RC sources
-     or adding a new repair API.
+     **5b.2 copied-reference repair is implemented:** four tests use the existing
+     strong-slot visitor and slot rewrite operation with test-only
+     source/destination pairs. They cover shared tagged/raw references,
+     self-reference with a lazy tail, a two-object cycle, and owner/backing links.
+     Source bytes and ZCT state remain unchanged; source cycles are broken with
+     ordinary stores before RC teardown. No RC source is forwarded and no repair
+     API was added. All 95 focused Debug and 91 applicable focused Release tests
+     passed; full Debug `all check` passed 2,355 tests with three JIT-disabled
+     skips and one disabled test. Production copying remains disabled.
    - **5c: Admission and real-adapter readiness.** Audit slots, extents, fixups,
      identity/hash, exports, and destruction using the existing layout registry.
      Unknown layouts remain non-moving. Establish source classification for
