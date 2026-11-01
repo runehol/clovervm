@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Investigation |
 | Status | Proposed |
-| Implementation | Partial; isolated copying, live layout queries, and raw-space source classification implemented; production copying remains unimplemented |
+| Implementation | Partial; copying/storage/classification/destination components and real-layout tests implemented; production copying remains disabled |
 | Scope | Production adapter prerequisites and bounded preparatory slices, not permission to move runtime objects |
 | Owning layers | Memory owns header and allocation; layouts own extents and copy admission; runtime owns roots and lifetime mode; `src/gc/` owns traversal |
-| Validated against | Classification working tree based on `4467eced` (2026-11-01); earlier groundwork validation recorded below |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); historical validation recorded below |
 | Supersedes | N/A; proposals below require their own implementation reviews |
 
 The [main GC design](generational-copying-gc.md),
@@ -25,9 +25,12 @@ integrated destination ownership are not wired into CloverHeapAdapter. Adding th
 `CloverHeapAdapter` now would hide missing invariants behind an apparently
 complete interface.
 
-Several useful prerequisites can still be implemented while RC remains fully
-operational. Source selection is exercised in the isolated test heap;
-production copying is not enabled.
+Raw byte copying, source containment, borrowed destination storage, and
+real-layout evacuation tests are implemented while RC remains fully operational.
+The standalone strong remembered set also has reset and consuming handoff tests.
+These are isolated components, not production copying or runtime barriers. The
+[implementation plan](generational-copying-gc-implementation-plan.md#current-stopping-point-and-forward-route)
+records the stopping point and major integration gates.
 Retired backing contents are not a prerequisite: after the tracing cutover
 they are unreachable garbage, not objects the copying traversal must inspect.
 These preparatory changes do not require a nursery or physical relocation.
@@ -51,12 +54,12 @@ The refcounted/interned address tags are representation classes, not generation
 or movability. Stable refcounted objects must retain the refcounted address
 encoding. Stable is not synonymous with immortal or interned.
 
-## Proposed Transitional Header
+## Implemented Transitional Header
 
 The accepted representation is now specified in
 [GC Object Header](gc-object-header.md). The RC transition stays eight bytes:
 one byte of GC state, one byte of native-layout ID, two bytes of aux count, and
-four bytes of RC. The accepted next encoding keeps generation in bits 0--1,
+four bytes of RC. The implemented encoding keeps generation in bits 0--1,
 uses bit 2 for per-object NonMoving, reserves normal bits 3--4 as zero so pointer
 tags `0x08`/`0x10` identify forwarding, leaves bit 5 spare, and retains normal RC
 lifecycle in bits 6--7. The NonMoving/pointer-tag header protocol is implemented;
@@ -568,10 +571,12 @@ containment helper, not a collector adapter predicate.
      young/full collections, destination generation/ownership, and forwarding-
      safe metadata access. Plan real adapter wiring without enabling it ahead
      of the activation gates below.
-     Start with the accepted
-     [NonMoving header migration](gc-object-header.md#code-migration-slices):
-     pointer-tag forwarding/one-way accessors first, then centralized initial
-     construction policy. Keep reference mapping ahead of full pinning support.
+     The [NonMoving header migration](gc-object-header.md#code-migration-slices),
+     centralized initial construction policy, source-containment index,
+     borrowed destination component, and real-layout evacuation tests are
+     implemented. Production admission/wiring, forwarding-safe metadata and
+     lifetime ownership remain gates. Keep reference mapping ahead of full
+     pinning support.
 6. **Activation readiness.** Recheck root completeness, barriers, stable tracing
    lifetime authority, hash/identity, and source retirement. Only then implement
    real adapter copying and a restricted nursery under a separate approval.
@@ -583,6 +588,13 @@ work retain their existing stage reviews. Nothing here adds stub copying
 methods to make `Evacuation<CloverHeapAdapter>` compile.
 
 ## Verification of This Investigation
+
+The following counts are historical slice-specific evidence, not a claim that
+their older working trees are the current implementation. Through `19cc5f8e`,
+full Debug `all check` passed 2,404 tests and full Release passed 2,387, each with
+three JIT-disabled skips and one disabled test. The handoff/cache-exchange
+ASan/UBSan harness passed 400,000 randomized operations and 12,544 handoffs.
+These checks do not establish production root coverage or lifetime authority.
 
 The classification working tree based on `4467eced` passed 71 focused Debug
 GC/storage/copy tests and 70 applicable Release tests. Full Debug `all check`

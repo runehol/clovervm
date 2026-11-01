@@ -7,7 +7,7 @@
 | Implementation | Partial; isolated collector and CloverVM weak-unit enumeration implemented; production copying and weak remembered-set integration not implemented |
 | Scope | One collector algorithm instantiated against a test heap and CloverVM |
 | Owning layers | `src/gc/` owns traversal and the CloverVM adapter; memory layouts own slot enumeration; tests own the synthetic heap |
-| Validated against | Single-object simplification based on `a7c007bf` (2026-11-01); earlier verification recorded below |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); historical verification recorded below |
 | Supersedes | N/A |
 
 This expands the collector boundary in the
@@ -30,9 +30,10 @@ Neither adapter may hide graph traversal in a `trace_object()` or
 No virtual heap hierarchy, policy matrix, configurable collector strategies, or
 elaborate concept machinery is needed. The same template body must run in both
 instantiations. Sketches below omit includes and ordinary boilerplate; the
-source headers are authoritative for the implemented mark-phase API.
-The first mark-phase interface below is now implemented in the working tree;
-the later evacuation capabilities remain proposals requiring separate review.
+source headers are authoritative for the implemented APIs. The mark phase,
+isolated evacuation traversal, and CloverVM weak-unit enumeration are
+implemented. Production copying-adapter wiring and weak remembered integration
+remain separate review gates; the sketches do not imply runtime activation.
 
 ## First Slice: Non-Moving Strong Closure
 
@@ -497,8 +498,9 @@ remain separate integration work.
 
 ## Evacuation Implementation Stages
 
-These are bounded slices of isolated copying, not permission to enable CloverVM
-movement. The mark phase remains usable and unchanged throughout.
+These record the bounded implementation sequence, not permission to enable
+CloverVM movement. Slices 1–4 are implemented; slice 5 has preparatory groundwork
+but no production copying adapter. The mark phase remains usable.
 
 1. **Single-object copying and forwarding in the test heap.** Extend
    `tests/gc_test_heap.h` with explicit normal/forwarded source state, a

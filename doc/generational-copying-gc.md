@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Not started |
+| Implementation | Partial groundwork and isolated collector implemented; production tracing and movement disabled |
 | Scope | Generational moving collection, root and slot rewriting, stable placement and exports, and CloverVM native handles |
 | Owning layers | The memory manager owns collection; object layouts, root publication, and native APIs provide trace/update boundaries |
-| Validated against | `d99f5e99` (2026-08-12) |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); remaining policy choices are proposals |
 | Supersedes | Earlier non-moving generational mark-sweep direction |
 
 This document sketches an alternative garbage-collection direction for CloverVM:
@@ -22,7 +22,14 @@ The concrete template/heap-adapter design is kept separately in
 [Isolated Collector and Heap Adapter](gc-collector-heap-adapter.md).
 
 This design supersedes the earlier non-moving generational mark-sweep direction.
-It allows ordinary VM objects to move, so it is incompatible with a collector
+The implemented groundwork includes layout/slot queries, partial mutable roots,
+the transitional header, raw copying storage, an isolated strong/weak collector,
+and a standalone strong remembered set with consuming handoff. Deferred
+refcounting still controls runtime lifetime; no production nursery or evacuation
+is enabled. See the implementation plan for the current stopping point and
+remaining integration gates.
+
+The target design allows ordinary VM objects to move, so it is incompatible with a collector
 strategy that preserves raw addresses for all managed objects. Raw-address
 exposure beyond a relocation-exclusion scope instead requires permanent
 placement in the non-moving heap.
@@ -245,11 +252,13 @@ The accepted layout and encoding are specified in
 eight-byte header with byte-sized GC state, a reserved byte, a 16-bit native
 layout ID, and a 32-bit aux count. The final header is destructively replaced by
 an encoded forwarding pointer that preserves source generation in bits 0--1.
-In the accepted next encoding, bit 2 is NonMoving; pointer-tag bits `0x18`
-identify forwarding and must be zero in normal headers. Bit 5 is spare and
-normal-state RC lifecycle occupies bits 6--7. This header protocol is implemented;
-central initial NonMoving construction policy remains pending, and current
-constructors leave the bit clear.
+In the implemented transitional encoding, bit 2 is NonMoving; pointer-tag bits
+`0x18` identify forwarding and must be zero in normal headers. Bit 5 is spare and
+normal-state RC lifecycle occupies bits 6--7. Shared heap construction takes an
+explicit compile-time `InitialMobilityPolicy`: interned storage and layouts
+declaring `native_destroy` become NonMoving before publication; ordinary managed
+layouts remain movable. Bare header construction leaves NonMoving clear.
+Current production allocations still initialize as Old/Normal.
 Generation reads use a byte load and low-two-bit mask in either header form.
 Forwarding-target reads clear only bits 0--1, preserving every address bit above
 them. Forwarding overwrites RC and lifecycle, so this header slice does not
@@ -396,7 +405,8 @@ After minor strong closure and weak repair, `clear_after_collection()` resets
 recorded owners from OldRemembered to Old, then resets the cursor/count while
 retaining the block chain for reuse. Destruction requires no outstanding records
 and frees blocks iteratively without touching inactive owner pointers. Peak block
-capacity is retained; trimming is separate work.
+capacity is retained by reset; handoff may relinquish spare capacity as described
+below. Trimming is separate work.
 The container is non-copyable/non-movable and single-writer; all participating
 sets must be consumed under one collection/reset protocol.
 
