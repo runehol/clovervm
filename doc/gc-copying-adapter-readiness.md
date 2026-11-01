@@ -352,7 +352,10 @@ source selection, not complete full-heap tracing or reclamation.
    memcpy forwarding; production forwarding remains disabled.
 5. **Byte-copy groundwork, then admission.** Raw HeapSpace reservation is
    implemented. Continue in these bounded slices, without relocation constructors:
-   - **5a: Generic byte-copy primitive and exact-Float tests.** The memory layer
+   - **5a: Generic byte-copy primitive and exact-Float tests (implemented).**
+     `copy_object_bytes(HeapSpace *, const HeapObject *)` lives in
+     `src/memory/heap_object_copy.{h,cpp}`; both pointers are required.
+     The memory layer
      queries layout, reserves allocated extent, and memcpys the copy extent.
      Exercise an exact Float in test-owned destination storage, preserving
      payload bits (including signed zero and NaNs), shape/overflow references,
@@ -362,6 +365,11 @@ source selection, not complete full-heap tracing or reclamation.
      mutation, forwarding, production CloverHeapAdapter copying methods, or
      nursery admission. Document the temporary C++ lifetime exception beside
      the primitive. The byte-copy helper itself does not change generation.
+     Validation: 82 focused copy/storage/layout tests passed; full Debug
+     `all check` passed 2,345 tests with three JIT-disabled skips and one disabled
+     test. Correctness review found no issues; all 78 applicable focused Release
+     copy/storage/layout tests also passed. Formatting and diff checks passed.
+     No production movement is enabled.
    - **5b: Dynamic extents and copied-reference repair.** Reuse that primitive
      for zero/nonzero Tuple and OverflowSlots, lazy Instance prefixes, and live
      reference/raw backings. Verify allocation versus copy bounds, untouched

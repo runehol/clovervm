@@ -330,6 +330,8 @@ add_library(libclovervm_objects OBJECT
     memory/slab_allocator.h
     memory/heap_space.cpp
     memory/heap_space.h
+    memory/heap_object_copy.cpp
+    memory/heap_object_copy.h
     api/clover_entry.cpp
     api/clover_entry.h
     builtin_types/str.cpp
