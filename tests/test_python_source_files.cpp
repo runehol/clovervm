@@ -77,7 +77,8 @@ namespace
     {
     };
 
-    class TupleSubclassReclamationTest
+    // Full-fixture forced-reclamation replays belong to the heavy partition.
+    class HeavyTupleSubclassReclamationTest
         : public testing::TestWithParam<PythonSourceFile>
     {
     };
@@ -107,7 +108,8 @@ TEST_P(PythonSourceFileTest, RunsSelfCheckingSource)
         << "self-checking Python source raised an exception";
 }
 
-TEST(PythonSourceFiles, AugmentedArithmeticSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     AugmentedArithmeticSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/augmented_arithmetic.py",
                            "tests/python/augmented_arithmetic_protocol.py"})
@@ -121,7 +123,8 @@ TEST(PythonSourceFiles, AugmentedArithmeticSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, StatisticsQuantilesSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     StatisticsQuantilesSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/test_statistics_quantiles.py",
@@ -137,7 +140,7 @@ TEST(PythonSourceFiles, StatisticsQuantilesSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles,
+TEST(HeavyPythonSourceFiles,
      StatisticsGeometricMeanSurvivesEverySafepointReclamation)
 {
     for(const char *path:
@@ -153,7 +156,7 @@ TEST(PythonSourceFiles,
     }
 }
 
-TEST(PythonSourceFiles, FloatIntegerRatioSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, FloatIntegerRatioSurvivesEverySafepointReclamation)
 {
     std::wstring source =
         read_source_file("tests/python/float_as_integer_ratio.py");
@@ -163,7 +166,7 @@ TEST(PythonSourceFiles, FloatIntegerRatioSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, MathLogAndIsnanSurviveEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, MathLogAndIsnanSurviveEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_math_log_integers.py",
                            "tests/python/test_math_isnan_conversion.py",
@@ -178,7 +181,7 @@ TEST(PythonSourceFiles, MathLogAndIsnanSurviveEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, OperatorInplaceSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, OperatorInplaceSurvivesEverySafepointReclamation)
 {
     std::wstring source =
         read_source_file("tests/python/test_operator_inplace.py");
@@ -188,7 +191,8 @@ TEST(PythonSourceFiles, OperatorInplaceSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, UrlPercentConversionSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     UrlPercentConversionSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_urllib_percent.py",
                            "tests/python/test_urllib_percent_callbacks.py",
@@ -203,7 +207,8 @@ TEST(PythonSourceFiles, UrlPercentConversionSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, UnittestClassAttributeSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     UnittestClassAttributeSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/test_unittest_class_attribute_outcomes.py",
@@ -218,7 +223,7 @@ TEST(PythonSourceFiles, UnittestClassAttributeSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, BinasciiHexSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BinasciiHexSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_binascii_hex.py",
                            "tests/python/test_binascii_hex_limits.py"})
@@ -232,7 +237,7 @@ TEST(PythonSourceFiles, BinasciiHexSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, StringPaddingSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, StringPaddingSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/string_padding.py",
                            "tests/python/string_padding_limits.py"})
@@ -246,7 +251,7 @@ TEST(PythonSourceFiles, StringPaddingSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, BinaryPaddingSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BinaryPaddingSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/binary_padding.py",
                            "tests/python/binary_padding_limits.py"})
@@ -260,7 +265,7 @@ TEST(PythonSourceFiles, BinaryPaddingSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, BinaryCaseSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BinaryCaseSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/binary_case.py");
     cl::test::VmTestContext context;
@@ -269,7 +274,7 @@ TEST(PythonSourceFiles, BinaryCaseSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/bytes_split.py");
     cl::test::VmTestContext context;
@@ -278,7 +283,8 @@ TEST(PythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, StringSeparatorSearchSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     StringSeparatorSearchSurvivesEverySafepointReclamation)
 {
     std::wstring source =
         read_source_file("tests/python/string_separator_search.py");
@@ -288,7 +294,7 @@ TEST(PythonSourceFiles, StringSeparatorSearchSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, BytesJoinSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BytesJoinSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/bytes_join.py", "tests/python/bytes_join_limits.py"})
@@ -302,7 +308,7 @@ TEST(PythonSourceFiles, BytesJoinSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, StringJoinSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, StringJoinSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/str_join.py", "tests/python/str_join_limits.py"})
@@ -316,7 +322,8 @@ TEST(PythonSourceFiles, StringJoinSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, IntegerBaseFormattingSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     IntegerBaseFormattingSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/builtin_int_bases.py");
     cl::test::VmTestContext context;
@@ -325,7 +332,7 @@ TEST(PythonSourceFiles, IntegerBaseFormattingSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, HeapqMergeSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, HeapqMergeSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/heapq_merge.py");
     cl::test::VmTestContext context;
@@ -334,7 +341,7 @@ TEST(PythonSourceFiles, HeapqMergeSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, BinasciiCRCSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BinasciiCRCSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_binascii_crc.py",
                            "tests/python/test_binascii_crc_limits.py"})
@@ -348,7 +355,7 @@ TEST(PythonSourceFiles, BinasciiCRCSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, Base64BytearraySurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, Base64BytearraySurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_base64_bytearray.py",
                            "tests/python/test_base64_bytearray_mutation.py"})
@@ -362,7 +369,7 @@ TEST(PythonSourceFiles, Base64BytearraySurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, Ascii85SurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, Ascii85SurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_ascii85_module.py",
                            "tests/python/test_ascii85_errors.py",
@@ -378,7 +385,7 @@ TEST(PythonSourceFiles, Ascii85SurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, Base85SurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, Base85SurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_base85_module.py",
                            "tests/python/test_base85_errors.py",
@@ -394,7 +401,8 @@ TEST(PythonSourceFiles, Base85SurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles,
+     ItertoolsExpansionSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/itertools_selection.py",
@@ -418,7 +426,7 @@ TEST(PythonSourceFiles, ItertoolsExpansionSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/int_true_division.py");
     cl::test::VmTestContext context;
@@ -427,7 +435,7 @@ TEST(PythonSourceFiles, IntTrueDivisionSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
-TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/file_io.py", "tests/python/file_io_subclasses.py",
@@ -441,7 +449,7 @@ TEST(PythonSourceFiles, FileIOSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/io_base.py", "tests/python/io_context_exit.py",
@@ -455,7 +463,7 @@ TEST(PythonSourceFiles, IOBaseSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, RawIOReadsSurviveEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, RawIOReadsSurviveEverySafepointReclamation)
 {
     for(const char *path:
         {"tests/python/rawio_read.py", "tests/python/rawio_read_validation.py",
@@ -474,7 +482,7 @@ TEST(PythonSourceFiles, RawIOReadsSurviveEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, BufferedIOBaseSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BufferedIOBaseSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/buffered_io_base.py",
                            "tests/python/buffered_io_readinto.py",
@@ -490,7 +498,7 @@ TEST(PythonSourceFiles, BufferedIOBaseSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, BufferedReaderSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BufferedReaderSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/buffered_reader.py",
                            "tests/python/buffered_reader_nonblocking.py",
@@ -511,7 +519,7 @@ TEST(PythonSourceFiles, BufferedReaderSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(PythonSourceFiles, BufferedWriterSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, BufferedWriterSurvivesEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/buffered_writer.py",
                            "tests/python/buffered_writer_nonblocking.py",
@@ -533,7 +541,7 @@ TEST(PythonSourceFiles, BufferedWriterSurvivesEverySafepointReclamation)
     }
 }
 
-TEST(TextCodecReclamation, OneShotConversionAndErrors)
+TEST(HeavyTextCodecReclamation, OneShotConversionAndErrors)
 {
     for(const char *path:
         {"tests/python/text_codec.py", "tests/python/text_codec_errors.py",
@@ -550,7 +558,7 @@ TEST(TextCodecReclamation, OneShotConversionAndErrors)
     }
 }
 
-TEST(UnicodeErrorReclamation, ConstructorAndOverflowAttributes)
+TEST(HeavyUnicodeErrorReclamation, ConstructorAndOverflowAttributes)
 {
     for(const char *path: {"tests/python/unicode_error.py",
                            "tests/python/unicode_error_attributes.py",
@@ -565,7 +573,7 @@ TEST(UnicodeErrorReclamation, ConstructorAndOverflowAttributes)
     }
 }
 
-TEST(OSErrorReclamation, ConstructorAndLatentAttributes)
+TEST(HeavyOSErrorReclamation, ConstructorAndLatentAttributes)
 {
     for(const char *path:
         {"tests/python/os_error.py", "tests/python/os_error_latent.py",
@@ -583,7 +591,7 @@ TEST(OSErrorReclamation, ConstructorAndLatentAttributes)
     }
 }
 
-TEST_P(TupleSubclassReclamationTest, RunsSelfCheckingSource)
+TEST_P(HeavyTupleSubclassReclamationTest, RunsSelfCheckingSource)
 {
     std::wstring source = read_source_file(GetParam().path);
     cl::test::VmTestContext context;
@@ -594,7 +602,7 @@ TEST_P(TupleSubclassReclamationTest, RunsSelfCheckingSource)
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    TupleIntegrationFiles, TupleSubclassReclamationTest,
+    TupleIntegrationFiles, HeavyTupleSubclassReclamationTest,
     testing::Values(
         PythonSourceFile{"tests/python/test_json_tuple_rows.py"},
         PythonSourceFile{"tests/python/tuple_subclass_integration.py"},
@@ -607,7 +615,7 @@ INSTANTIATE_TEST_SUITE_P(SelfCheckingPythonFiles, PythonSourceFileTest,
                          testing::ValuesIn(python_source_files()),
                          source_file_test_name);
 
-TEST(PythonSourceFiles, LineTabSurvivesEverySafepointReclamation)
+TEST(HeavyPythonSourceFiles, LineTabSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/line_tab_methods.py");
     cl::test::VmTestContext context;

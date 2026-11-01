@@ -35,7 +35,7 @@ TEST(ByteArray, LayoutTracesOwnerBackingAndIterator)
                   .release.kind);
 }
 
-TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
+TEST(HeavyByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/builtin_bytearray.py",
                            "tests/python/builtin_bytearray_callbacks.py",
@@ -65,7 +65,7 @@ TEST(ByteArray, SemanticsAndCallbacksSurviveEverySafepointReclamation)
     }
 }
 
-TEST(BinaryStrip, SemanticsSurviveEverySafepointReclamation)
+TEST(HeavyBinaryStrip, SemanticsSurviveEverySafepointReclamation)
 {
     std::ifstream input("tests/python/binary_strip.py");
     ASSERT_TRUE(input);

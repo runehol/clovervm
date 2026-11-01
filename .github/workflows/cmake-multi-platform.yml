@@ -59,11 +59,11 @@ jobs:
     - name: Build
       run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel 2
 
-    - name: Test
+    - name: Test full suite
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
+      run: ctest --build-config ${{ matrix.build_type }} -L '^full$' --no-tests=error --output-on-failure
 
   gcc:
     runs-on: ubuntu-latest
@@ -102,6 +102,6 @@ jobs:
     - name: Build
       run: cmake --build build
 
-    - name: Test
+    - name: Test full suite
       working-directory: build
-      run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
+      run: ctest --build-config ${{ matrix.build_type }} -L '^full$' --no-tests=error --output-on-failure
