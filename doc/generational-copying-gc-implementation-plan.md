@@ -725,6 +725,17 @@ separate evacuation optimization.
 
 ## Lean Model and Proof Obligations
 
+The first slice is implemented in [proofs/gc](../proofs/gc/README.md), a separate
+Lean 4.35.0 project using only bundled libraries. It models finite-graph strong
+closure after reference-slot decoding, with an executable FIFO collector and an
+independent reachability specification. Checked proofs establish exact marked
+reachability, exactly-once scanning of reachable objects, no scanning of
+unreachable objects, and an empty queue within at most `n` scans for `n` objects.
+The default build checks examples and guards the public theorems' axiom
+dependencies. No moving/weak/barrier theorem or C++ refinement is claimed.
+
+The remaining direction is:
+
 Model a finite heap graph with roots, strong and weak slots, generation/space
 classification, forwarding, and pending scan work. Represent logical object
 identity separately from physical addresses. State adapter assumptions
@@ -733,7 +744,7 @@ exclusive collection access, and successful resource acquisition for the
 successful-collection theorem. Allocation failure is a separate terminal outcome,
 not a resumable partially evacuated state or a whole-heap preallocation promise.
 
-The initial proof targets are:
+The copying and integration proof targets are:
 
 - reachable collected objects obtain unique destinations;
 - sharing and cycles preserve their logical graph structure;

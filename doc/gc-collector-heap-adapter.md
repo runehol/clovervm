@@ -630,6 +630,13 @@ sweeping, even when Full participation includes those NonMoving records.
 
 ## Tests and Proof Boundary
 
+The [first Lean slice](../proofs/gc/README.md) proves finite-graph strong closure,
+exactly-once scanning and the scan bound for an executable model corresponding
+to `StrongClosure`. It does not yet model evacuation or weak units. Complete
+runtime roots, faithful slot decoding/enumeration, resource success, and the
+C++ correspondence remain outside this proof; no production collection is
+enabled by it.
+
 The tracing/copying checkpoint `1c001cda` and the subsequent orthogonal-protocol
 working tree both passed 81 focused Debug GC/storage/copy tests and 80 applicable
 Release tests. Full Debug `all check` passed 2,378 tests and full Release passed
