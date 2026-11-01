@@ -377,6 +377,16 @@ source selection, not complete full-heap tracing or reclamation.
      aliases, self-reference, and address-dependent fixups where applicable.
      Sources retain their existing lifetime authority; copies remain test-owned
      and unpublished. Optional capacity shrinking stays deferred.
+     **5b.1 extent tests are implemented:** six tests cover real allocations for
+     Tuple, OverflowSlots, lazy Instance prefixes, and all three backing layouts.
+     They verify copied bytes and full reservation spacing without inspecting
+     uncopied tails. Production copying code is unchanged. All 88 focused Debug
+     and 84 applicable focused Release tests passed; full Debug `all check`
+     passed 2,351 tests with three JIT-disabled skips and one disabled test.
+     **5b.2 copied-reference repair remains next:** use the existing strong-slot
+     visitor and slot rewrite operation with test-only source/destination pairs,
+     covering sharing, self-reference, and cycles without forwarding RC sources
+     or adding a new repair API.
    - **5c: Admission and real-adapter readiness.** Audit slots, extents, fixups,
      identity/hash, exports, and destruction using the existing layout registry.
      Unknown layouts remain non-moving. Establish source classification for
