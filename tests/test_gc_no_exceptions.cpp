@@ -22,7 +22,7 @@ namespace cl::gc::test
         };
 
         bool is_collected(Object *) const { return false; }
-        bool is_collected_source(Object *) const { return false; }
+        bool is_movable(Object *) const { return false; }
         bool try_mark(Object *) { return false; }
         bool is_marked(Object *) const { return false; }
         Object *forwarded_to(Object *) const { return nullptr; }

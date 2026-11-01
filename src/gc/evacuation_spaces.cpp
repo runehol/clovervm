@@ -1,4 +1,4 @@
-#include "gc/collection_sources.h"
+#include "gc/evacuation_spaces.h"
 
 #include "memory/heap_space.h"
 #include "runtime/fatal.h"
@@ -9,19 +9,19 @@
 
 namespace cl::gc
 {
-    CollectionSources::CollectionSources(
-        std::span<const CollectionSourceSpace> sources) noexcept
+    EvacuationSpaces::EvacuationSpaces(
+        std::span<const EvacuationSpace> sources) noexcept
     {
-        for(const CollectionSourceSpace &source: sources)
+        for(const EvacuationSpace &source: sources)
         {
             if(source.space == nullptr)
             {
-                fatal("collected source space must not be null");
+                fatal("evacuation space must not be null");
             }
             if(source.generation != HeapGenerationState::Young &&
                source.generation != HeapGenerationState::Old)
             {
-                fatal("collected source generation must be Young or Old");
+                fatal("evacuation space generation must be Young or Old");
             }
             source.space->visit_memory_ranges(
                 [&](uintptr_t begin, uintptr_t end) {
@@ -29,26 +29,25 @@ namespace cl::gc
                 });
         }
         std::sort(ranges_.begin(), ranges_.end(),
-                  [](const SourceRange &left, const SourceRange &right) {
+                  [](const SpaceRange &left, const SpaceRange &right) {
                       return left.begin < right.begin;
                   });
         for(size_t index = 1; index < ranges_.size(); ++index)
         {
             if(ranges_[index - 1].end > ranges_[index].begin)
             {
-                fatal("collected source mappings overlap");
+                fatal("evacuation space mappings overlap");
             }
         }
     }
 
-    bool CollectionSources::is_collected_source(
-        const HeapObject *object) const noexcept
+    bool EvacuationSpaces::contains(const HeapObject *object) const noexcept
     {
         assert(object != nullptr);
         uintptr_t address = reinterpret_cast<uintptr_t>(object);
         auto range =
             std::upper_bound(ranges_.begin(), ranges_.end(), address,
-                             [](uintptr_t value, const SourceRange &candidate) {
+                             [](uintptr_t value, const SpaceRange &candidate) {
                                  return value < candidate.begin;
                              });
         if(range == ranges_.begin())
@@ -62,7 +61,7 @@ namespace cl::gc
         }
         if(object->is_non_moving())
         {
-            fatal("non-moving object in collected source storage");
+            fatal("non-moving object in evacuation space storage");
         }
         HeapGenerationState generation = object->generation_state();
         bool matches =
@@ -72,7 +71,7 @@ namespace cl::gc
                       generation == HeapGenerationState::OldRemembered;
         if(!matches)
         {
-            fatal("object generation does not match collected source storage");
+            fatal("object generation does not match evacuation space storage");
         }
         return true;
     }

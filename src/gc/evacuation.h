@@ -101,7 +101,7 @@ namespace cl::gc
             {
                 return WeakResolution<Object>::resolved(target);
             }
-            if(heap_.is_collected_source(target))
+            if(heap_.is_movable(target))
             {
                 if(Object *destination = heap_.forwarded_to(target))
                 {
@@ -141,7 +141,7 @@ namespace cl::gc
             {
                 return;
             }
-            if(heap_.is_collected_source(object))
+            if(heap_.is_movable(object))
             {
                 Object *destination = heap_.forwarded_to(object);
                 if(destination == nullptr)

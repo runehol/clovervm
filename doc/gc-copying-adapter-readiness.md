@@ -37,7 +37,7 @@ These preparatory changes do not require a nursery or physical relocation.
 | Current code | Established | Still missing for copying |
 |---|---|---|
 | [HeapObject](../src/object_model/heap_object.h) | Contains standalone eight-byte HeapHeader with generation/lifecycle/native-ID/aux/RC and tested forwarding encoding | Runtime source-space selection, remembered coverage, and admitted production forwarding |
-| [CollectionSources](../src/gc/collection_sources.h) | Sorted selected-space mapping index; validates source generation/NonMoving state even after forwarding | Runtime space-role selection and lifetime, layout admission, and adapter integration |
+| [EvacuationSpaces](../src/gc/evacuation_spaces.h) | Sorted selected-space mapping index; validates source generation/NonMoving state even after forwarding | Runtime space-role selection and lifetime, layout admission, and adapter integration |
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
@@ -264,8 +264,8 @@ Debug/Release checks. These checks do not enable production evacuation.
 ## Source Classification and Initial Admission
 
 The classification-only slice implements `HeapSpace::visit_memory_ranges()` and
-a collection-scoped `gc::CollectionSources` index. Callers supply a span of
-`CollectionSourceSpace` records containing a borrowed space pointer and expected
+a collection-scoped `gc::EvacuationSpaces` index. Callers supply a span of
+`EvacuationSpace` records containing a borrowed space pointer and expected
 Young or Old generation (Old also accepts OldRemembered headers). Construction
 enumerates the selected spaces' slab mappings once, sorts half-open integer
 address ranges, and rejects overlaps. Lookup uses binary search, with no bitmap
@@ -286,12 +286,12 @@ into CloverHeapAdapter, activate evacuation, or settle stable-object liveness.
 In particular, returning false does not establish that an outside-source object
 is live or that a full collection can skip scanning it.
 
-`is_collected_source()` must identify the current collection's moving source
-space and
-remain true after forwarding. Use allocator-owned source membership together
-with header generation and NonMoving state; generation is not inferred solely
-from addresses, and placement must not be inferred solely from native layout.
-Validate that these facts agree. Interned, stable, large, and uncollected old
+`EvacuationSpaces::contains()` tests containment in the selected mappings and
+remains true after forwarding. Header generation and NonMoving checks validate
+the invariants of those spaces; they do not decide whether an object needs
+copying. The collector's adapter separately answers membership and movability.
+Generation is not inferred solely from addresses, and placement must not be
+inferred solely from native layout. Interned, stable, large, and uncollected old
 objects are not nursery sources. A full collection can additionally select
 movable old source spaces; it still does not copy stable objects. Space
 classification is an allocator concern; the algorithm does not enumerate
@@ -358,8 +358,11 @@ units in uncollected owners, mutation/barrier lifetime rules, and the existing
 native/JIT no-safepoint contracts. Stable promotion joins the same copying scan
 queue as ordinary promotion; it is not a terminal leaf allocation.
 
-The isolated phase now distinguishes "not copied" from "not collected" with
-`is_collected()` and `TestStorage::NonMoving`. Full participation includes
+The isolated phase now separates collection membership (`is_collected()`) from
+allocation capability (`is_movable()`). Movability does not depend on the
+collection mode or whether an object was forwarded: ordinary destinations are
+movable but uncollected, stable destinations are non-moving and uncollected.
+Full participation includes
 existing NonMoving objects; YoungOnly excludes them. Strong discovery marks and
 queues canonical copies or existing NonMoving objects once. Moving input
 payloads stay unchanged; live NonMoving owners have slots repaired in place.
@@ -368,7 +371,8 @@ unresolved collected targets early and clearing them after strong closure.
 Uncollected targets remain alive without being scanned implicitly. This closes
 the isolated stable-liveness gap, not runtime integration: VM adapter policy,
 immortal-object handling, non-moving sweeping, and lifetime authority remain
-separate gates.
+separate gates. The allocator's `EvacuationSpaces::contains()` remains a storage
+containment helper, not a collector adapter predicate.
 
 ## Follow-Up Slices Proposed for Review
 

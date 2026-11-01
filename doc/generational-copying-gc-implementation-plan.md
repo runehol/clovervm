@@ -88,13 +88,14 @@ and real-adapter readiness**, detailed in the
 [copying-adapter sequence](gc-copying-adapter-readiness.md#follow-up-slices-proposed-for-review).
 These labels are local to that investigation, not implementation-plan stage
 numbers. Copies stay test-owned and unpublished; sources remain unchanged.
-The classification-only part of 5c now has `gc::CollectionSources`: a snapshot
+The classification-only part of 5c now has `gc::EvacuationSpaces`: a snapshot
 of selected HeapSpace mapping ranges with forwarding-safe generation/NonMoving
 checks. It distinguishes fresh destinations from selected sources without
 object enumeration or per-allocation bookkeeping. This does not wire evacuation
 into CloverHeapAdapter or implement full-collection stable-object liveness.
-The isolated test heap separately distinguishes collection participation from
-moving-source selection and existing NonMoving objects from fresh destinations.
+The isolated test heap separately distinguishes collection participation
+(`is_collected`) from mode-independent movability (`is_movable`), and existing
+NonMoving objects from fresh destinations.
 The isolated Evacuation phase consumes both predicates, marks canonical copies
 and existing NonMoving objects in a single work queue, and resolves weak targets
 through forwarding or marks. This does not supply runtime immortal policy,

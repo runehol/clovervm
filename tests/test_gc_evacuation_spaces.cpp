@@ -1,4 +1,4 @@
-#include "gc/collection_sources.h"
+#include "gc/evacuation_spaces.h"
 
 #include "memory/heap_constants.h"
 #include "memory/heap_space.h"
@@ -33,20 +33,19 @@ namespace
     using HeaderBytes = std::array<std::byte, sizeof(HeapObject)>;
 }  // namespace
 
-TEST(GCCollectionSources, EmptySelectionAndEmptySpaceHaveNoSources)
+TEST(GCEvacuationSpaces, EmptySelectionAndEmptySpaceContainNoObjects)
 {
     HeapSpace empty;
     HeapSpace outside;
     HeapObject *object = make_header(outside, HeapGenerationState::Old);
-    CollectionSources no_sources(std::span<const CollectionSourceSpace>{});
-    EXPECT_FALSE(no_sources.is_collected_source(object));
-    std::array selected{
-        CollectionSourceSpace{&empty, HeapGenerationState::Young}};
-    CollectionSources empty_source(selected);
-    EXPECT_FALSE(empty_source.is_collected_source(object));
+    EvacuationSpaces no_sources(std::span<const EvacuationSpace>{});
+    EXPECT_FALSE(no_sources.contains(object));
+    std::array selected{EvacuationSpace{&empty, HeapGenerationState::Young}};
+    EvacuationSpaces empty_source(selected);
+    EXPECT_FALSE(empty_source.contains(object));
 }
 
-TEST(GCCollectionSources, SelectionDistinguishesSourcesFromSameGenerationCopies)
+TEST(GCEvacuationSpaces, ContainsSelectedInputsButNotSameGenerationCopies)
 {
     HeapSpace nursery;
     HeapSpace old;
@@ -60,21 +59,21 @@ TEST(GCCollectionSources, SelectionDistinguishesSourcesFromSameGenerationCopies)
     auto *fixed = make_header(stable, HeapGenerationState::Old);
     fixed->make_non_moving();
     std::array young_spaces{
-        CollectionSourceSpace{&nursery, HeapGenerationState::Young}};
+        EvacuationSpace{&nursery, HeapGenerationState::Young}};
     std::array full_spaces{
-        CollectionSourceSpace{&old, HeapGenerationState::Old},
-        CollectionSourceSpace{&nursery, HeapGenerationState::Young}};
-    CollectionSources minor(young_spaces);
-    CollectionSources full(full_spaces);
+        EvacuationSpace{&old, HeapGenerationState::Old},
+        EvacuationSpace{&nursery, HeapGenerationState::Young}};
+    EvacuationSpaces minor(young_spaces);
+    EvacuationSpaces full(full_spaces);
 
-    EXPECT_TRUE(minor.is_collected_source(young));
-    EXPECT_FALSE(minor.is_collected_source(old_object));
-    EXPECT_FALSE(minor.is_collected_source(remembered));
-    EXPECT_TRUE(full.is_collected_source(young));
-    EXPECT_TRUE(full.is_collected_source(old_object));
-    EXPECT_TRUE(full.is_collected_source(remembered));
-    EXPECT_FALSE(full.is_collected_source(uncollected));
-    EXPECT_FALSE(full.is_collected_source(fixed));
+    EXPECT_TRUE(minor.contains(young));
+    EXPECT_FALSE(minor.contains(old_object));
+    EXPECT_FALSE(minor.contains(remembered));
+    EXPECT_TRUE(full.contains(young));
+    EXPECT_TRUE(full.contains(old_object));
+    EXPECT_TRUE(full.contains(remembered));
+    EXPECT_FALSE(full.contains(uncollected));
+    EXPECT_FALSE(full.contains(fixed));
 
     // Destinations may grow after the source snapshot. Old, movable headers
     // alone cannot distinguish them from the selected old source objects.
@@ -82,12 +81,12 @@ TEST(GCCollectionSources, SelectionDistinguishesSourcesFromSameGenerationCopies)
     {
         auto *copy = make_header(destination, HeapGenerationState::Old,
                                  DefaultSlabSize + 1);
-        EXPECT_FALSE(minor.is_collected_source(copy));
-        EXPECT_FALSE(full.is_collected_source(copy));
+        EXPECT_FALSE(minor.contains(copy));
+        EXPECT_FALSE(full.contains(copy));
     }
 }
 
-TEST(GCCollectionSources, ForwardingPreservesClassificationWithoutReadingLayout)
+TEST(GCEvacuationSpaces, ForwardingPreservesContainmentWithoutReadingLayout)
 {
     for(HeapGenerationState generation:
         {HeapGenerationState::Young, HeapGenerationState::Old,
@@ -100,22 +99,22 @@ TEST(GCCollectionSources, ForwardingPreservesClassificationWithoutReadingLayout)
         auto *fixed_copy = make_header(destination, HeapGenerationState::Old);
         fixed_copy->make_non_moving();
         auto *second = make_header(source, generation);
-        std::array spaces{CollectionSourceSpace{
-            &source, generation == HeapGenerationState::Young
-                         ? HeapGenerationState::Young
-                         : HeapGenerationState::Old}};
-        CollectionSources selected(spaces);
+        std::array spaces{
+            EvacuationSpace{&source, generation == HeapGenerationState::Young
+                                         ? HeapGenerationState::Young
+                                         : HeapGenerationState::Old}};
+        EvacuationSpaces selected(spaces);
         HeaderBytes before = std::bit_cast<HeaderBytes>(*original);
-        EXPECT_TRUE(selected.is_collected_source(original));
+        EXPECT_TRUE(selected.contains(original));
         EXPECT_EQ(before, std::bit_cast<HeaderBytes>(*original));
 
         original->install_forwarding_target(copy);
         second->install_forwarding_target(fixed_copy);
         HeaderBytes forwarded = std::bit_cast<HeaderBytes>(*original);
-        EXPECT_TRUE(selected.is_collected_source(original));
-        EXPECT_TRUE(selected.is_collected_source(second));
-        EXPECT_FALSE(selected.is_collected_source(copy));
-        EXPECT_FALSE(selected.is_collected_source(fixed_copy));
+        EXPECT_TRUE(selected.contains(original));
+        EXPECT_TRUE(selected.contains(second));
+        EXPECT_FALSE(selected.contains(copy));
+        EXPECT_FALSE(selected.contains(fixed_copy));
         EXPECT_EQ(copy, original->forwarding_target());
         EXPECT_EQ(fixed_copy, second->forwarding_target());
         EXPECT_EQ(generation, original->generation_state());
@@ -123,7 +122,7 @@ TEST(GCCollectionSources, ForwardingPreservesClassificationWithoutReadingLayout)
     }
 }
 
-TEST(GCCollectionSources, FindsEveryMappingAcrossSlabGrowthAndLargeReservations)
+TEST(GCEvacuationSpaces, FindsEveryMappingAcrossSlabGrowthAndLargeReservations)
 {
     HeapSpace source;
     std::vector<HeapObject *> objects;
@@ -132,50 +131,45 @@ TEST(GCCollectionSources, FindsEveryMappingAcrossSlabGrowthAndLargeReservations)
         objects.push_back(make_header(source, HeapGenerationState::Young,
                                       DefaultSlabSize + idx * 32));
     }
-    std::array spaces{
-        CollectionSourceSpace{&source, HeapGenerationState::Young}};
-    CollectionSources selected(spaces);
+    std::array spaces{EvacuationSpace{&source, HeapGenerationState::Young}};
+    EvacuationSpaces selected(spaces);
     for(HeapObject *object: objects)
     {
-        EXPECT_TRUE(selected.is_collected_source(object));
+        EXPECT_TRUE(selected.contains(object));
     }
 }
 
-TEST(GCCollectionSourcesDeathTest, RejectsNullSpaceAndInvalidSpaceGeneration)
+TEST(GCEvacuationSpacesDeathTest, RejectsNullSpaceAndInvalidSpaceGeneration)
 {
     HeapSpace space;
-    std::array null_space{
-        CollectionSourceSpace{nullptr, HeapGenerationState::Young}};
-    EXPECT_DEATH((void)CollectionSources(null_space), "must not be null");
+    std::array null_space{EvacuationSpace{nullptr, HeapGenerationState::Young}};
+    EXPECT_DEATH((void)EvacuationSpaces(null_space), "must not be null");
     std::array invalid{
-        CollectionSourceSpace{&space, HeapGenerationState::OldRemembered}};
-    EXPECT_DEATH((void)CollectionSources(invalid), "must be Young or Old");
+        EvacuationSpace{&space, HeapGenerationState::OldRemembered}};
+    EXPECT_DEATH((void)EvacuationSpaces(invalid), "must be Young or Old");
 }
 
-TEST(GCCollectionSourcesDeathTest, RejectsOverlappingSelections)
+TEST(GCEvacuationSpacesDeathTest, RejectsOverlappingSelections)
 {
     HeapSpace space;
     make_header(space, HeapGenerationState::Young);
-    std::array duplicate{
-        CollectionSourceSpace{&space, HeapGenerationState::Young},
-        CollectionSourceSpace{&space, HeapGenerationState::Young}};
-    EXPECT_DEATH((void)CollectionSources(duplicate), "mappings overlap");
+    std::array duplicate{EvacuationSpace{&space, HeapGenerationState::Young},
+                         EvacuationSpace{&space, HeapGenerationState::Young}};
+    EXPECT_DEATH((void)EvacuationSpaces(duplicate), "mappings overlap");
 }
 
-TEST(GCCollectionSourcesDeathTest,
+TEST(GCEvacuationSpacesDeathTest,
      NeverSkipsNonMovingObjectInsideSelectedStorage)
 {
     HeapSpace space;
     auto *object = make_header(space, HeapGenerationState::Young);
     object->make_non_moving();
-    std::array spaces{
-        CollectionSourceSpace{&space, HeapGenerationState::Young}};
-    CollectionSources selected(spaces);
-    EXPECT_DEATH((void)selected.is_collected_source(object),
-                 "non-moving object");
+    std::array spaces{EvacuationSpace{&space, HeapGenerationState::Young}};
+    EvacuationSpaces selected(spaces);
+    EXPECT_DEATH((void)selected.contains(object), "non-moving object");
 }
 
-TEST(GCCollectionSourcesDeathTest,
+TEST(GCEvacuationSpacesDeathTest,
      RejectsGenerationMismatchInsideSelectedStorage)
 {
     HeapSpace space;
@@ -183,15 +177,14 @@ TEST(GCCollectionSourcesDeathTest,
     auto *old = make_header(space, HeapGenerationState::Old);
     auto *remembered = make_header(space, HeapGenerationState::OldRemembered);
     std::array young_spaces{
-        CollectionSourceSpace{&space, HeapGenerationState::Young}};
-    std::array old_spaces{
-        CollectionSourceSpace{&space, HeapGenerationState::Old}};
-    CollectionSources young_selection(young_spaces);
-    CollectionSources old_selection(old_spaces);
-    EXPECT_DEATH((void)old_selection.is_collected_source(young),
+        EvacuationSpace{&space, HeapGenerationState::Young}};
+    std::array old_spaces{EvacuationSpace{&space, HeapGenerationState::Old}};
+    EvacuationSpaces young_selection(young_spaces);
+    EvacuationSpaces old_selection(old_spaces);
+    EXPECT_DEATH((void)old_selection.contains(young),
                  "generation does not match");
-    EXPECT_DEATH((void)young_selection.is_collected_source(old),
+    EXPECT_DEATH((void)young_selection.contains(old),
                  "generation does not match");
-    EXPECT_DEATH((void)young_selection.is_collected_source(remembered),
+    EXPECT_DEATH((void)young_selection.contains(remembered),
                  "generation does not match");
 }

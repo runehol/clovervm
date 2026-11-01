@@ -15,7 +15,7 @@ enable_sanitizers(test_clovervm)
 target_sources(test_clovervm PRIVATE
 	gc_test_heap.h
 	test_gc_mark_phase.cpp
-	test_gc_collection_sources.cpp
+	test_gc_evacuation_spaces.cpp
 	test_gc_evacuation_primitives.cpp
 	test_gc_evacuation.cpp
 	test_gc_no_exceptions.cpp

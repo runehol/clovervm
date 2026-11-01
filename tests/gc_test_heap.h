@@ -419,22 +419,29 @@ namespace cl::gc::test
             std::abort();
         }
 
-        bool is_collected_source(Object *object) const
+        bool is_movable(Object *object) const
         {
-            return object->storage == TestStorage::Source &&
-                   (collection_kind_ == TestCollectionKind::Full ||
-                    object->generation == TestGeneration::Young);
+            switch(object->storage)
+            {
+                case TestStorage::Source:
+                case TestStorage::OrdinaryDestination:
+                    return true;
+                case TestStorage::NonMoving:
+                case TestStorage::StableDestination:
+                    return false;
+            }
+            std::abort();
         }
 
         Object *copy_object(Object *source)
         {
-            assert(is_collected_source(source));
+            assert(is_collected(source) && is_movable(source));
             return heap_.copy_object(source);
         }
 
         Object *forwarded_to(Object *source) const
         {
-            assert(is_collected_source(source));
+            assert(is_collected(source) && is_movable(source));
             return source->header.kind == TestHeaderKind::Forwarded
                        ? source->header.target
                        : nullptr;
@@ -442,9 +449,9 @@ namespace cl::gc::test
 
         void install_forwarding(Object *source, Object *destination)
         {
-            assert(is_collected_source(source));
+            assert(is_collected(source) && is_movable(source));
             assert(source->header.kind == TestHeaderKind::Normal);
-            assert(destination != nullptr && !is_collected_source(destination));
+            assert(destination != nullptr && !is_collected(destination));
             assert(source->logical_identity == destination->logical_identity);
             source->header = TestHeader::forwarded(destination);
         }

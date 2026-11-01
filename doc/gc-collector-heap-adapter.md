@@ -325,7 +325,7 @@ void discover_slot(Slot slot)
     if(object == nullptr || !heap.is_collected(object))
         return;
 
-    if(heap.is_collected_source(object))
+    if(heap.is_movable(object))
     {
         Object *destination = heap.forwarded_to(object);
         if(destination == nullptr)
@@ -363,9 +363,14 @@ slots, applying `discover_slot()` before draining. An uncollected object is not
 thereby dead: old/stable owners' relevant edges still need remembered-set/root
 coverage. This sketch does not supply that runtime integration.
 
-`is_collected_source()` must remain true for an already forwarded source;
-otherwise later references would skip forwarding lookup and retain old addresses.
-It is collection-membership classification, not an unforwarded/liveness test.
+The adapter answers two independent questions: `is_collected()` selects this
+collection's inputs, while `is_movable()` describes allocation capability and
+does not inspect collection mode or forwarding state. Both remain true for a
+selected forwarded source, so references still follow forwarding. A fresh
+ordinary destination is movable but uncollected; a stable destination is both
+uncollected and non-moving. Test membership before choosing copy versus trace
+in place. Source-space indexing is a lower-level allocator concern, not the
+meaning of the movability query.
 
 Layout queries must remain valid when source metadata has been forwarded; do
 not dereference an overwritten source shape as though it were ordinary metadata.
@@ -569,11 +574,14 @@ do not claim an independent oracle for the entire VM metadata graph.
 ## Collection Selection
 
 The isolated test adapter distinguishes collection participation
-(`is_collected`) from moving-source selection (`is_collected_source`). YoungOnly
+(`is_collected`) from allocation movability (`is_movable`). YoungOnly
 selects young movable sources. Full participation includes young/old movable
-sources and existing NonMoving objects, but NonMoving objects are never moving
-sources. Fresh ordinary/stable destinations are not selected inputs in either
-mode. Membership survives forwarding.
+sources and existing NonMoving objects. Movability is independent of selection:
+an uncollected old moving object is still movable, as is a fresh ordinary
+destination. Existing NonMoving objects and fresh stable destinations are not
+movable. Fresh destinations are not selected inputs in either mode. Forwarding
+does not change source membership or source movability, even when its target
+is non-moving.
 
 `TestStorage::NonMoving` and `make_non_moving_object()` represent existing stable
 objects independently of fresh StableDestination copies. Evacuation consumes
@@ -599,6 +607,18 @@ preserves NonMoving records and unselected old sources; it is not stable-object
 sweeping, even when Full participation includes those NonMoving records.
 
 ## Tests and Proof Boundary
+
+The tracing/copying checkpoint `1c001cda` and the subsequent orthogonal-protocol
+working tree both passed 81 focused Debug GC/storage/copy tests and 80 applicable
+Release tests. Full Debug `all check` passed 2,378 tests and full Release passed
+2,362, with three existing JIT-disabled skips and one disabled test each. The
+revision removes the combined adapter predicate in favor of `is_collected()`
+and `is_movable()`, and renames the mapping index to `EvacuationSpaces::contains()`.
+Tests include uncollected-but-movable old objects and ordinary destinations,
+non-moving stable destinations, and sources forwarded into non-moving storage.
+The independent oracle covers mixed moving/NonMoving graphs and in-place weak
+repair; source payloads remain unchanged. The no-exceptions instantiation,
+formatting, and diff checks pass. No VM collection is activated.
 
 Collection-participation preparation on 2026-11-01, based on `4b212180`, passed
 74 focused Debug GC/storage/copy tests and 73 applicable Release tests. Full

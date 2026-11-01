@@ -26,7 +26,7 @@ namespace cl::gc::test
                   heap.destination_object_count(EvacuationDestination::Stable));
     }
 
-    TEST(GCCollectionParticipation, SeparatesParticipationFromMovingSources)
+    TEST(GCCollectionParticipation, SeparatesParticipationFromMovability)
     {
         for(auto kind:
             {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
@@ -43,14 +43,13 @@ namespace cl::gc::test
             TestObject *ordinary_copy = adapter.copy_object(young);
             TestObject *stable_copy = adapter.copy_object(promoted_source);
             EXPECT_TRUE(adapter.is_collected(young));
-            EXPECT_TRUE(adapter.is_collected_source(young));
+            EXPECT_TRUE(adapter.is_movable(young));
             EXPECT_EQ(kind == TestCollectionKind::Full,
                       adapter.is_collected(old));
-            EXPECT_EQ(kind == TestCollectionKind::Full,
-                      adapter.is_collected_source(old));
+            EXPECT_TRUE(adapter.is_movable(old));
             EXPECT_EQ(kind == TestCollectionKind::Full,
                       adapter.is_collected(fixed));
-            EXPECT_FALSE(adapter.is_collected_source(fixed));
+            EXPECT_FALSE(adapter.is_movable(fixed));
             // Existing Old NonMoving inputs and fresh Old stable copies have
             // different participation, even though neither may be copied.
             EXPECT_EQ(TestGeneration::Old, ordinary_copy->generation);
@@ -58,10 +57,11 @@ namespace cl::gc::test
             for(TestObject *copy: {ordinary_copy, stable_copy})
             {
                 EXPECT_FALSE(adapter.is_collected(copy));
-                EXPECT_FALSE(adapter.is_collected_source(copy));
                 EXPECT_FALSE(adapter.is_marked(copy));
                 EXPECT_EQ(0u, adapter.scan_count(copy));
             }
+            EXPECT_TRUE(adapter.is_movable(ordinary_copy));
+            EXPECT_FALSE(adapter.is_movable(stable_copy));
             EXPECT_FALSE(adapter.is_marked(fixed));
             EXPECT_EQ(0u, adapter.scan_count(fixed));
         }
@@ -75,15 +75,17 @@ namespace cl::gc::test
         TestObject *young = heap.make_object();
         TestObject *old = heap.make_object();
         old->generation = TestGeneration::Old;
+        old->preferred_destination = EvacuationDestination::Stable;
         for(TestObject *source: {young, old})
         {
             EXPECT_TRUE(full.is_collected(source));
             TestObject *copy = full.copy_object(source);
             full.install_forwarding(source, copy);
             EXPECT_TRUE(full.is_collected(source));
-            EXPECT_TRUE(full.is_collected_source(source));
+            EXPECT_TRUE(full.is_movable(source));
             EXPECT_EQ(source == young, minor.is_collected(source));
-            EXPECT_EQ(source == young, minor.is_collected_source(source));
+            EXPECT_TRUE(minor.is_movable(source));
+            EXPECT_EQ(source == young, full.is_movable(copy));
             EXPECT_FALSE(full.is_collected(copy));
             EXPECT_FALSE(minor.is_collected(copy));
         }
@@ -108,12 +110,14 @@ namespace cl::gc::test
         EXPECT_EQ(source->weak_targets, copy->weak_targets);
         EXPECT_EQ(TestHeaderKind::Normal, copy->header.kind);
         EXPECT_EQ(TestStorage::OrdinaryDestination, copy->storage);
-        EXPECT_FALSE(adapter.is_collected_source(copy));
+        EXPECT_FALSE(adapter.is_collected(copy));
+        EXPECT_TRUE(adapter.is_movable(copy));
         EXPECT_EQ(nullptr, adapter.forwarded_to(source));
         copy->strong_cells[0] = TestCell::immediate(99);
         EXPECT_EQ(TestCell::immediate(42), source->strong_cells[0]);
         adapter.install_forwarding(source, copy);
-        EXPECT_TRUE(adapter.is_collected_source(source));
+        EXPECT_TRUE(adapter.is_collected(source));
+        EXPECT_TRUE(adapter.is_movable(source));
         EXPECT_EQ(copy, adapter.forwarded_to(source));
         TestCell root = TestCell::reference(source);
         TestSlot(root).rewrite_pointer(copy);
@@ -149,14 +153,16 @@ namespace cl::gc::test
         source->strong_cells = {TestCell::reference(child)};
         TestObject *stable = adapter.copy_object(source);
         EXPECT_EQ(TestStorage::StableDestination, stable->storage);
-        EXPECT_FALSE(adapter.is_collected_source(stable));
+        EXPECT_FALSE(adapter.is_collected(stable));
+        EXPECT_FALSE(adapter.is_movable(stable));
         EXPECT_EQ(child, TestSlot(stable->strong_cells[0]).load_pointer());
         EXPECT_EQ(
             0u, heap.destination_object_count(EvacuationDestination::Ordinary));
 
         TestObject *ordinary = adapter.copy_object(child);
         EXPECT_EQ(TestStorage::OrdinaryDestination, ordinary->storage);
-        EXPECT_FALSE(adapter.is_collected_source(ordinary));
+        EXPECT_FALSE(adapter.is_collected(ordinary));
+        EXPECT_TRUE(adapter.is_movable(ordinary));
         EXPECT_EQ(1u,
                   heap.destination_chunk_count(EvacuationDestination::Stable));
         EXPECT_EQ(

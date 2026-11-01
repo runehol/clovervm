@@ -123,7 +123,7 @@ namespace cl::gc::test
                     if(moving(object.get()))
                     {
                         EXPECT_TRUE(destinations.insert(copy).second);
-                        EXPECT_FALSE(adapter.is_collected_source(copy));
+                        EXPECT_FALSE(adapter.is_collected(copy));
                         EXPECT_EQ(object->logical_identity,
                                   copy->logical_identity);
                         EXPECT_EQ(TestHeaderKind::Normal, copy->header.kind);
@@ -377,15 +377,15 @@ namespace cl::gc::test
                                     if(selected)
                                     {
                                         EXPECT_NE(source, result);
-                                        EXPECT_TRUE(adapter.is_collected_source(
-                                            source));
+                                        EXPECT_TRUE(
+                                            adapter.is_collected(source));
+                                        EXPECT_TRUE(adapter.is_movable(source));
                                         EXPECT_EQ(result,
                                                   adapter.forwarded_to(source));
                                         EXPECT_EQ(TestGeneration::Old,
                                                   result->generation);
                                         EXPECT_FALSE(
-                                            adapter.is_collected_source(
-                                                result));
+                                            adapter.is_collected(result));
                                         EXPECT_EQ(
                                             source->preferred_destination ==
                                                     EvacuationDestination::
@@ -403,8 +403,7 @@ namespace cl::gc::test
                                     {
                                         EXPECT_EQ(source, result);
                                         EXPECT_FALSE(
-                                            adapter.is_collected_source(
-                                                source));
+                                            adapter.is_collected(source));
                                         EXPECT_EQ(TestHeaderKind::Normal,
                                                   source->header.kind);
                                         EXPECT_EQ(0u,
@@ -491,7 +490,7 @@ namespace cl::gc::test
             }
             collection.finish();
             EXPECT_EQ(owner, pointer(root));
-            EXPECT_FALSE(adapter.is_collected_source(owner));
+            EXPECT_FALSE(adapter.is_movable(owner));
             EXPECT_EQ(kind == TestCollectionKind::Full ? 1u : 0u,
                       adapter.scan_count(owner));
             EXPECT_EQ(adapter.forwarded_to(backing),
