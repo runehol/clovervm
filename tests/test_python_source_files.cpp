@@ -178,6 +178,21 @@ TEST(PythonSourceFiles, OperatorInplaceSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
+TEST(PythonSourceFiles, UrlPercentConversionSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/test_urllib_percent.py",
+                           "tests/python/test_urllib_percent_callbacks.py",
+                           "tests/python/test_urllib_percent_limits.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(PythonSourceFiles, UnittestClassAttributeSurvivesEverySafepointReclamation)
 {
     for(const char *path:
