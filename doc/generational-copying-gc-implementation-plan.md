@@ -725,6 +725,42 @@ separate evacuation optimization.
 
 ## Lean Model and Proof Obligations
 
+The first slice is implemented in [proofs/gc](../proofs/gc/README.md), a separate
+Lean 4.35.0 project using only bundled libraries. It models finite-graph strong
+closure after reference-slot decoding, with an executable FIFO collector and an
+independent reachability specification. Checked proofs establish exact marked
+reachability, exactly-once scanning of reachable objects, no scanning of
+unreachable objects, and an empty queue within at most `n` scans for `n` objects.
+The default build checks examples and guards the public theorems' axiom
+dependencies. This first slice has no moving/weak/barrier theorem or C++
+refinement claim.
+
+The second slice, [copying discovery and forwarding](../proofs/gc/copying-discovery.md),
+is implemented separately from marking. It proves local canonical-reference
+uniqueness, no source merging, faithful initial strong-field copying, preserved
+forwarding/records, NonMoving behavior, marked outputs and stable rediscovery.
+All source objects participate. In isolation, this discovery slice does not
+prove copied-field scanning, complete evacuation, minor filtering, weak repair
+or source disposal. There is no production integration or C++ refinement claim.
+
+The final [strong-evacuation slice](../proofs/gc/strong-evacuation.md) implements
+live-field scanning and repair, including NonMoving originals and destinations.
+Its checked simulation of the mark algorithm proves graph/root preservation,
+exactly-once reachable scanning, closure within `n` scans and abstract disposal
+safety for movable sources. It refines copy-field invariants to permit canonical
+rewrites without changing origin/placement. Minor filtering/barriers, weak repair
+and C++ refinement remain separate obligations; runtime collection is not enabled.
+
+The [weak-repair slice](../proofs/gc/weak-repair.md) extends the full-selection
+collector with stable unit IDs, external and per-owner enumeration, early repair
+and exact deferred late visits. It proves non-retention, stable early resolution,
+unique visits, late completion, all-live payload preservation, coordinated reset
+when any target dies, and retained weak-reference disposal safety. The concrete
+callback has optional fields and an opaque payload; cache-specific guard/union
+policy, RC/native cleanup and storage-lifetime enforcement are not proved.
+
+The remaining direction is:
+
 Model a finite heap graph with roots, strong and weak slots, generation/space
 classification, forwarding, and pending scan work. Represent logical object
 identity separately from physical addresses. State adapter assumptions
@@ -733,17 +769,16 @@ exclusive collection access, and successful resource acquisition for the
 successful-collection theorem. Allocation failure is a separate terminal outcome,
 not a resumable partially evacuated state or a whole-heap preallocation promise.
 
-The initial proof targets are:
+The implemented strong model covers unique destinations, graph preservation,
+strong source-disposal safety, termination and closure across ordinary and
+NonMoving destinations. Remaining extensions are:
 
-- reachable collected objects obtain unique destinations;
-- sharing and cycles preserve their logical graph structure;
-- strong closure leaves no surviving root or strong slot pointing into space
-  that will be discarded;
-- the write barrier preserves coverage of old-to-young references;
-- evacuation terminates for a finite heap with sufficient destination capacity;
-- weak slots are repaired or cleared only after strong closure;
-- all ordinary and stable destinations reach closure through the unified work
-  queue before nursery reuse.
+- extend those results to young-only selection with explicit remembered coverage;
+- prove the write barrier preserves coverage of old-to-young references;
+- extend the implemented representative weak-unit protocol to any additional
+  callback/ownership contracts required by runtime integration;
+- connect executable model comparison to the C++ test heap without claiming
+  that differential testing constitutes a formal C++ refinement proof.
 
 Build the model alongside the isolated collector rather than reconstructing it
 after runtime integration. Compare executable model results with the C++ test

@@ -630,6 +630,30 @@ sweeping, even when Full participation includes those NonMoving records.
 
 ## Tests and Proof Boundary
 
+The [first Lean slice](../proofs/gc/README.md) proves finite-graph strong closure,
+exactly-once scanning and the scan bound for an executable model corresponding
+to `StrongClosure`. It does not yet model evacuation or weak units. Complete
+runtime roots, faithful slot decoding/enumeration, resource success, and the
+C++ correspondence remain outside this proof; no production collection is
+enabled by it.
+
+The [second Lean slice](../proofs/gc/copying-discovery.md) adds executable copying
+discovery/forwarding and proofs of local canonicalization, record preservation
+and mark/queue discipline, including NonMoving originals and destinations. It
+does not yet prove the copying scan loop, weak handling or safe source disposal.
+
+The [strong-evacuation proof](../proofs/gc/strong-evacuation.md) now supplies that
+scan-loop and abstract source-disposal result for all-sources-selected strong
+collection. Live fields are repaired in copies and NonMoving originals, and
+the physical queue simulates the logical mark traversal. Weak handling, minor
+selection, barriers and C++ refinement remain unproved.
+
+The [weak-unit Lean proof](../proofs/gc/weak-repair.md) now covers early/late
+resolution and representative coordinated invalidation in the full-selection
+model. It proves exact-unit deferral, non-retention, late completion and retained
+weak-reference safety. Cache-specific callbacks, native ownership, storage
+lifetime, minor filtering and C++ refinement remain outside that proof.
+
 The tracing/copying checkpoint `1c001cda` and the subsequent orthogonal-protocol
 working tree both passed 81 focused Debug GC/storage/copy tests and 80 applicable
 Release tests. Full Debug `all check` passed 2,378 tests and full Release passed

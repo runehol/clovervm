@@ -1,0 +1,9 @@
+name = "clover_gc"
+version = "0.1.0"
+defaultTargets = ["CloverGC"]
+
+[[lean_lib]]
+name = "CloverGC"
+
+[leanOptions]
+warningAsError = true

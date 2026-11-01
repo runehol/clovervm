@@ -14,6 +14,12 @@ This is the weak-repair part of the
 [isolated collector/heap-adapter design](gc-collector-heap-adapter.md).
 It does not implement production weak-root or remembered-unit coverage.
 
+The separate [Lean weak-unit model](../proofs/gc/weak-repair.md) proves the
+full-selection resolver/scheduling protocol and a representative multi-field
+callback with coordinated payload clearing. It does not verify every concrete
+cache callback, native ownership cleanup, address stability or real enumeration
+coverage. The runtime contracts below are not discharged merely by that model.
+
 A weak repair unit is an addressable object, embedded struct, or standalone
 field containing one or more weak references with coordinated invalidation
 semantics. Layout code enumerates units directly; they need not be reached by
