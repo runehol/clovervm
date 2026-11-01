@@ -751,6 +751,14 @@ safety for movable sources. It refines copy-field invariants to permit canonical
 rewrites without changing origin/placement. Minor filtering/barriers, weak repair
 and C++ refinement remain separate obligations; runtime collection is not enabled.
 
+The [weak-repair slice](../proofs/gc/weak-repair.md) extends the full-selection
+collector with stable unit IDs, external and per-owner enumeration, early repair
+and exact deferred late visits. It proves non-retention, stable early resolution,
+unique visits, late completion, all-live payload preservation, coordinated reset
+when any target dies, and retained weak-reference disposal safety. The concrete
+callback has optional fields and an opaque payload; cache-specific guard/union
+policy, RC/native cleanup and storage-lifetime enforcement are not proved.
+
 The remaining direction is:
 
 Model a finite heap graph with roots, strong and weak slots, generation/space
@@ -767,7 +775,8 @@ NonMoving destinations. Remaining extensions are:
 
 - extend those results to young-only selection with explicit remembered coverage;
 - prove the write barrier preserves coverage of old-to-young references;
-- model weak units, early resolution and deferred repair/clearing after closure;
+- extend the implemented representative weak-unit protocol to any additional
+  callback/ownership contracts required by runtime integration;
 - connect executable model comparison to the C++ test heap without claiming
   that differential testing constitutes a formal C++ refinement proof.
 

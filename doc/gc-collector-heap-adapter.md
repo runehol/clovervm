@@ -648,6 +648,12 @@ collection. Live fields are repaired in copies and NonMoving originals, and
 the physical queue simulates the logical mark traversal. Weak handling, minor
 selection, barriers and C++ refinement remain unproved.
 
+The [weak-unit Lean proof](../proofs/gc/weak-repair.md) now covers early/late
+resolution and representative coordinated invalidation in the full-selection
+model. It proves exact-unit deferral, non-retention, late completion and retained
+weak-reference safety. Cache-specific callbacks, native ownership, storage
+lifetime, minor filtering and C++ refinement remain outside that proof.
+
 The tracing/copying checkpoint `1c001cda` and the subsequent orthogonal-protocol
 working tree both passed 81 focused Debug GC/storage/copy tests and 80 applicable
 Release tests. Full Debug `all check` passed 2,378 tests and full Release passed

@@ -132,7 +132,8 @@ state invariants from the empty-state theorem.
 The [strong-evacuation slice](strong-evacuation.md) now proves scanning/repair,
 graph preservation, termination and abstract source-disposal safety. Those
 claims use this slice's discovery mechanism but are not results of discovery
-alone. Minor filtering, weak repair and C++ refinement remain unproved. The
+alone. [Weak repair](weak-repair.md) now has a separate protocol proof; minor
+filtering and C++ refinement remain unproved. The
 immutable input graph, valid roots/slots, successful resource acquisition and
 exclusive collection remain model boundaries, not verified CloverVM runtime
 properties.

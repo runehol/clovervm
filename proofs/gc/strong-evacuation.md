@@ -11,8 +11,9 @@
 | Supersedes | N/A; extends the mark and copying-discovery proof slices |
 
 This completes the abstract strong-copying argument. It does not complete the
-GC proof program: weak repair, minor selection/barriers and C++ refinement are
-separate work. Build all proof slices with `lake build` in this directory.
+GC proof program: [weak repair](weak-repair.md) is a separate implemented slice;
+minor selection/barriers and C++ refinement remain work. Build all proof slices
+with `lake build` in this directory.
 
 Read [Evacuation.lean](CloverGC/Evacuation.lean), then
 [EvacuationProofs.lean](CloverGC/EvacuationProofs.lean). Concrete cases are in

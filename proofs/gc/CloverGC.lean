@@ -7,3 +7,6 @@ import CloverGC.CopyAudit
 import CloverGC.EvacuationProofs
 import CloverGC.EvacuationExamples
 import CloverGC.EvacuationAudit
+import CloverGC.WeakRepairProofs
+import CloverGC.WeakExamples
+import CloverGC.WeakAudit

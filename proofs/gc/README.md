@@ -5,7 +5,7 @@
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Abstract strong closure, discovery/forwarding and complete all-sources-selected strong evacuation; not C++ runtime verification |
+| Scope | Abstract strong closure and full-selection evacuation with early/late weak units; not C++ runtime verification |
 | Owning layers | This Lean project owns the executable model and proofs; `src/gc/` owns the C++ collector |
 | Validated against | Lean 4.35.0; C++ `StrongClosure` and `Evacuation` at `33cb9cf6` (2026-11-01) |
 | Supersedes | N/A |
@@ -43,8 +43,9 @@ proof, example and audit modules. Everything is checked by the same build.
 
 The final strong-copying slice is [Complete Strong Evacuation](strong-evacuation.md).
 It adds live field rewriting, graph preservation, completion and abstract source-
-disposal safety. Minor filtering, weak repair and runtime integration remain
-outside this model.
+disposal safety. [Weak Repair Units](weak-repair.md) then extends it with early
+resolution, exact deferral and coordinated late repair. Minor filtering and
+runtime integration remain outside this model.
 
 ## What Lean Is Checking
 
@@ -157,4 +158,4 @@ layout safety, or a formal refinement from C++ to Lean. The C++ tests remain
 necessary. The separate copying-discovery slice establishes local forwarding
 properties; the strong-evacuation slice proves the complete abstract strong
 traversal. Executable differential comparison against the C++ test heap,
-minor-collection filtering and weak-repair proofs remain later work.
+minor-collection filtering and runtime ownership proofs remain later work.
