@@ -739,9 +739,17 @@ The second slice, [copying discovery and forwarding](../proofs/gc/copying-discov
 is implemented separately from marking. It proves local canonical-reference
 uniqueness, no source merging, faithful initial strong-field copying, preserved
 forwarding/records, NonMoving behavior, marked outputs and stable rediscovery.
-All source objects participate; copied-field scanning, complete evacuation,
-minor filtering, weak repair and source disposal remain unproved. There is no
-production integration or C++ refinement claim.
+All source objects participate. In isolation, this discovery slice does not
+prove copied-field scanning, complete evacuation, minor filtering, weak repair
+or source disposal. There is no production integration or C++ refinement claim.
+
+The final [strong-evacuation slice](../proofs/gc/strong-evacuation.md) implements
+live-field scanning and repair, including NonMoving originals and destinations.
+Its checked simulation of the mark algorithm proves graph/root preservation,
+exactly-once reachable scanning, closure within `n` scans and abstract disposal
+safety for movable sources. It refines copy-field invariants to permit canonical
+rewrites without changing origin/placement. Minor filtering/barriers, weak repair
+and C++ refinement remain separate obligations; runtime collection is not enabled.
 
 The remaining direction is:
 
@@ -753,17 +761,15 @@ exclusive collection access, and successful resource acquisition for the
 successful-collection theorem. Allocation failure is a separate terminal outcome,
 not a resumable partially evacuated state or a whole-heap preallocation promise.
 
-The copying and integration proof targets are:
+The implemented strong model covers unique destinations, graph preservation,
+strong source-disposal safety, termination and closure across ordinary and
+NonMoving destinations. Remaining extensions are:
 
-- reachable collected objects obtain unique destinations;
-- sharing and cycles preserve their logical graph structure;
-- strong closure leaves no surviving root or strong slot pointing into space
-  that will be discarded;
-- the write barrier preserves coverage of old-to-young references;
-- evacuation terminates for a finite heap with sufficient destination capacity;
-- weak slots are repaired or cleared only after strong closure;
-- all ordinary and stable destinations reach closure through the unified work
-  queue before nursery reuse.
+- extend those results to young-only selection with explicit remembered coverage;
+- prove the write barrier preserves coverage of old-to-young references;
+- model weak units, early resolution and deferred repair/clearing after closure;
+- connect executable model comparison to the C++ test heap without claiming
+  that differential testing constitutes a formal C++ refinement proof.
 
 Build the model alongside the isolated collector rather than reconstructing it
 after runtime integration. Compare executable model results with the C++ test

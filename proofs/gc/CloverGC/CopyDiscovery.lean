@@ -90,15 +90,16 @@ def Represents (input : CopyInput n) (state : CopyState n) (object : Fin n) :
   | .source other => other = object ∧ input.movable object = false
   | .copied index => state.forwarding object = some index
 
-/-- The copy ledger is a partial one-to-one correspondence. Records retain
-    the initial source edges: scanning/rewriting copied children comes later. -/
+/-- The copy ledger is a partial one-to-one correspondence. Metadata stays
+    fixed while traversal may rewrite strong fields. Fresh-field fidelity is
+    proved by discovery_fresh_copy; traversal supplies its field invariant. -/
 structure Ledger (input : CopyInput n) (state : CopyState n) : Prop where
   forwarding_valid : ∀ object index, state.forwarding object = some index →
     ∃ record, state.copies[index]? = some record ∧ record.origin = object
   copies_forwarded : ∀ index record, state.copies[index]? = some record →
     state.forwarding record.origin = some index
-  copies_faithful : ∀ (index : Nat) (record : CopyRecord n), state.copies[index]? = some record →
-    input.movable record.origin = true ∧ record = input.makeCopy record.origin
+  copies_metadata : ∀ (index : Nat) (record : CopyRecord n), state.copies[index]? = some record →
+    input.movable record.origin = true ∧ record.destination = input.destination record.origin
 
 structure CopyInvariant (input : CopyInput n) (state : CopyState n) : Prop where
   ledger : Ledger input state

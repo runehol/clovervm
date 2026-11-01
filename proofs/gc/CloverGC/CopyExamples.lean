@@ -73,7 +73,7 @@ theorem drained_valid : CopyInvariant input drained := {
   ledger := {
     forwarding_valid := fixed_valid.ledger.forwarding_valid
     copies_forwarded := fixed_valid.ledger.copies_forwarded
-    copies_faithful := fixed_valid.ledger.copies_faithful
+    copies_metadata := fixed_valid.ledger.copies_metadata
   }
   pending_nodup := by simp [drained]
   pending_marked := by simp [drained]

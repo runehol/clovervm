@@ -63,7 +63,7 @@ theorem enqueue_preserves (input : CopyInput n) (state : CopyState n)
   · constructor
     · simpa using h.ledger.forwarding_valid
     · simpa using h.ledger.copies_forwarded
-    · simpa using h.ledger.copies_faithful
+    · simpa using h.ledger.copies_metadata
   · intro x hx
     have old : Canonical input state x := by
       rcases (enqueue_marked reference x state).mp hx with rfl | hx
@@ -117,7 +117,7 @@ theorem install_ledger (input : CopyInput n) (state : CopyState n)
     · simp [installCopy, CopyInput.makeCopy]
   · intro index record get
     rcases (append_record _ _ _ _).mp get with old | ⟨rfl, rfl⟩
-    · exact h.copies_faithful index record old
+    · exact h.copies_metadata index record old
     · exact ⟨movable, rfl⟩
 
 theorem install_canonical (input : CopyInput n) (state : CopyState n)
@@ -154,7 +154,7 @@ theorem fresh_copy_preserves (input : CopyInput n) (state : CopyState n)
   · constructor
     · simpa using ledger.forwarding_valid
     · simpa using ledger.copies_forwarded
-    · simpa using ledger.copies_faithful
+    · simpa using ledger.copies_metadata
   · intro x hx
     have canonical_x : Canonical input installed x := by
       rcases (enqueue_marked reference x installed).mp hx with rfl | hx
@@ -201,7 +201,7 @@ theorem nonmoving_unforwarded (input : CopyInput n) (state : CopyState n)
   | none => rfl
   | some index =>
       obtain ⟨record, get, origin⟩ := h.ledger.forwarding_valid object index forward
-      have movable := (h.ledger.copies_faithful index record get).1
+      have movable := (h.ledger.copies_metadata index record get).1
       rw [origin, nonmoving] at movable
       contradiction
 
@@ -352,7 +352,7 @@ theorem represented_source_rediscovery (input : CopyInput n) (state : CopyState 
   | copied index =>
       change state.forwarding object = some index at represents
       obtain ⟨record, get, origin⟩ := h.ledger.forwarding_valid object index represents
-      have movable := (h.ledger.copies_faithful index record get).1
+      have movable := (h.ledger.copies_metadata index record get).1
       rw [origin] at movable
       simp [discoverReference, movable, represents, enqueueOnce, marked]
 

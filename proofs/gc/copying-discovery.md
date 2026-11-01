@@ -72,8 +72,9 @@ The `Ledger` proof bundle says:
 
 - Every forwarding entry names an allocated record with the correct origin.
 - Every allocated record is the forwarding destination of its origin.
-- Every record came from a movable source and retains that source's initial
-  strong fields and selected destination kind.
+- Every record came from a movable source and retains its selected destination
+  kind. Child fields are deliberately not frozen by the ledger: the fresh-copy
+  theorem proves their initial contents; traversal has a separate field invariant.
 
 `CopyInvariant` adds canonical marks, marked allocated copies, duplicate-free
 mark/queue lists, and the requirement that pending references are marked.
@@ -83,7 +84,11 @@ every mark to remain pending, so rediscovery also applies to already-scanned
 objects whose marks remain but which are no longer queued.
 
 `empty_invariant` proves the empty state satisfies these properties.
-`discovery_preserves` proves a discovery preserves them. This is an executable
+`discovery_preserves` proves a discovery preserves them. The traversal slice
+refined the original `copies_faithful` ledger field into `copies_metadata`, so
+repairing children can change reference representations without changing
+origin or placement. Discovery itself still preserves existing records exactly.
+This is an executable
 state transition with proved preservation, not an axiom asserting that a copy
 or forwarding operation is correct.
 
@@ -124,10 +129,10 @@ state invariants from the empty-state theorem.
 
 ## Next Boundary
 
-Still unproved: scanning and rewriting children, closure of the copied graph,
-termination of complete evacuation, minor-collection filtering, weak repair,
-safe source disposal and C++ refinement. There is no claim of preserved whole-
-graph sharing until traversal is added; this slice establishes the canonical
-reference mechanism needed for that proof. The immutable input graph, valid
-roots/slots, successful resource acquisition and exclusive collection remain
-model boundaries, not verified CloverVM runtime properties.
+The [strong-evacuation slice](strong-evacuation.md) now proves scanning/repair,
+graph preservation, termination and abstract source-disposal safety. Those
+claims use this slice's discovery mechanism but are not results of discovery
+alone. Minor filtering, weak repair and C++ refinement remain unproved. The
+immutable input graph, valid roots/slots, successful resource acquisition and
+exclusive collection remain model boundaries, not verified CloverVM runtime
+properties.

@@ -4,3 +4,6 @@ import CloverGC.Audit
 import CloverGC.CopyDiscoveryProofs
 import CloverGC.CopyExamples
 import CloverGC.CopyAudit
+import CloverGC.EvacuationProofs
+import CloverGC.EvacuationExamples
+import CloverGC.EvacuationAudit
