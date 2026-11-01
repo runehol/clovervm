@@ -478,9 +478,11 @@ movement or remove conservative root discovery.
 
 Add generation and remembered state without removing refcount, lifecycle, or
 native-layout state. Keep the total header eight bytes: state byte, 8-bit native
-ID, 16-bit aux count, and 32-bit RC. Generation uses state bits 0--1, forwarding
-bit 2, and lifecycle bits 6--7 in normal state. Preserve normal fields through
-accessor-based updates. The accepted eight-byte transition and final eight-byte
+ID, 16-bit aux count, and 32-bit RC. The accepted next state encoding uses bits
+0--1 for generation, bit 2 for per-object NonMoving, bits 3--4 as the pointer-tag
+forwarding discriminator (zero normally), bit 5 spare, and bits 6--7 for normal
+RC lifecycle. Preserve normal fields through accessor-based updates. The accepted
+eight-byte transition and final eight-byte
 target are specified in [GC Object Header](gc-object-header.md). Implement the
 transition's byte-state/encoded-pointer representation without enabling production
 forwarding, since a forwarding store destroys RC too. Migrate to the wider
@@ -488,11 +490,22 @@ final native-ID/aux fields only in an explicit later layout cutover. Generation
 is retained in the source forwarding word. Audit moved RC/native-ID/aux offsets and
 measure performance even though total header size is unchanged.
 
-The representation slice is implemented with standalone `HeapHeader` storage
-contained by `HeapObject`. Header accessors and object delegates are fully
-inline; forwarding reads/writes use memcpy only within HeapHeader. RC and
-lifecycle users are migrated to accessors. This supplies normal-state metadata
-and an independently tested encoding, not production forwarding or barriers.
+The representation is implemented with standalone `HeapHeader` storage contained
+by `HeapObject`. Pointer-tag detection, target decoding (`~0x03`), one-way
+NonMoving accessors/delegates, and encoding tests are implemented. Initial
+construction policy remains pending: initialize the bit centrally before
+publication for layouts/storage
+that must never move. Keep every accessor fully inline and header forwarding
+reads/writes within HeapHeader. Do not add per-layout relocation constructors.
+
+NonMoving is independent of generation and can change from clear to set only
+through a one-way stable-placement transition. A movable string/backing may be
+copied into stable storage before a raw address is exposed; the source remains
+a movable forwarding source. Do not pin a nursery source in place by merely
+setting its bit. Full pinning bits/counts are deferred until reference mapping
+is in place. These header slices do not enable promotion, production forwarding,
+nursery routing, or barriers. The detailed slices and verification are in
+[the header contract](gc-object-header.md#code-migration-slices).
 
 Introduce object-level remembered sets and barrier entry points following the
 GC design's hot-path lessons. Cover ordinary members, raw pointer stores,

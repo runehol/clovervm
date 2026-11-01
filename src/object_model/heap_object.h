@@ -62,6 +62,10 @@ namespace cl
 
         bool is_forwarded() const { return header_.is_forwarded(); }
 
+        bool is_non_moving() const { return header_.is_non_moving(); }
+
+        void make_non_moving() { header_.make_non_moving(); }
+
         HeapObject *forwarding_target() const
         {
             return header_.forwarding_target();

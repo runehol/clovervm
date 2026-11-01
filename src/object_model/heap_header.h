@@ -45,7 +45,17 @@ namespace cl
             static_assert(offsetof(HeapHeader, rc_) == 4);
         }
 
-        bool is_forwarded() const { return (state_ & forwarded_bit) != 0; }
+        bool is_forwarded() const { return (state_ & value_ptr_mask) != 0; }
+
+        // On a forwarded header this describes the old source allocation,
+        // which was movable even if its destination is non-moving.
+        bool is_non_moving() const { return (state_ & non_moving_bit) != 0; }
+
+        void make_non_moving()
+        {
+            assert(!is_forwarded());
+            state_ |= non_moving_bit;
+        }
 
         HeapGenerationState generation() const
         {
@@ -116,8 +126,11 @@ namespace cl
             assert(is_forwarded());
             uintptr_t encoded;
             std::memcpy(&encoded, this, sizeof(encoded));
-            auto *target = reinterpret_cast<HeapObject *>(
-                encoded & ~forwarding_metadata_mask);
+            uintptr_t address = encoded & ~uintptr_t{generation_mask};
+            [[maybe_unused]] uintptr_t tag = address & value_tag_mask;
+            assert(tag == value_refcounted_ptr_tag ||
+                   tag == value_interned_ptr_tag);
+            auto *target = reinterpret_cast<HeapObject *>(address);
             assert(target != nullptr);
             return target;
         }
@@ -127,19 +140,19 @@ namespace cl
         void install_forwarding_target(HeapObject *target)
         {
             assert(!is_forwarded());
+            assert(!is_non_moving());
             assert(target != nullptr);
             uintptr_t address = reinterpret_cast<uintptr_t>(target);
-            assert((address & forwarding_metadata_mask) == 0);
-            uintptr_t encoded =
-                address | forwarded_bit | static_cast<uintptr_t>(generation());
+            [[maybe_unused]] uintptr_t tag = address & value_tag_mask;
+            assert(tag == value_refcounted_ptr_tag ||
+                   tag == value_interned_ptr_tag);
+            uintptr_t encoded = address | static_cast<uintptr_t>(generation());
             std::memcpy(this, &encoded, sizeof(encoded));
         }
 
     private:
         static constexpr uint8_t generation_mask = 0x03;
-        static constexpr uint8_t forwarded_bit = 0x04;
-        static constexpr uintptr_t forwarding_metadata_mask =
-            generation_mask | forwarded_bit;
+        static constexpr uint8_t non_moving_bit = 0x04;
         static constexpr uint8_t lifecycle_mask = 0xc0;
         static constexpr unsigned lifecycle_shift = 6;
 

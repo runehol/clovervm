@@ -54,13 +54,18 @@ encoding. Stable is not synonymous with immortal or interned.
 The accepted representation is now specified in
 [GC Object Header](gc-object-header.md). The RC transition stays eight bytes:
 one byte of GC state, one byte of native-layout ID, two bytes of aux count, and
-four bytes of RC. Generation occupies bits 0--1, bit 2 marks forwarding,
-bits 3--5 are spare in normal headers, and bits 6--7 hold normal RC lifecycle.
-All current allocations initialize as Old/Normal; nursery/copying remain disabled.
+four bytes of RC. The accepted next encoding keeps generation in bits 0--1,
+uses bit 2 for per-object NonMoving, reserves normal bits 3--4 as zero so pointer
+tags `0x08`/`0x10` identify forwarding, leaves bit 5 spare, and retains normal RC
+lifecycle in bits 6--7. The NonMoving/pointer-tag header protocol is implemented;
+central initial NonMoving policy remains pending. Current allocations initialize
+as Old/Normal with NonMoving clear; nursery/copying remain disabled. The new bit
+must not drive production admission until construction initialization lands.
 
 A forwarding store replaces the header with the encoded target address plus
-the source generation and forwarded flag. Target alignment leaves bits 0--2
-available. Reading the target masks only those bits; generation remains a byte
+the source generation, with no explicit forwarded flag. A valid tagged target
+has low bits 0--2 clear and exactly one pointer tag in `0x18`. Reading the target
+masks only bits 0--1; generation remains a byte
 load and low-two-bit mask in both forms. The source may be Young while its
 destination is Old; callers must not substitute the destination generation.
 
@@ -83,19 +88,24 @@ metadata offsets. Float remains 32 bytes with a 32-byte stride. Measure
 construction and representative record/slab occupancy before and after rather
 than assuming all derived layouts are unaffected by the alignment change.
 Marking can continue using its existing temporary side set.
-No movement-pin or lock protocol is introduced; stable placement and slab
-reclamation pins retain their separate contracts.
+NonMoving is a one-way per-allocation placement property, independent of
+generation and layout. Initial policy covers stable proxies/extensions,
+CodeObjects, Shapes, and existing custom-destruction/immortal categories; a
+normally movable string/backing can later be promoted to NonMoving storage.
+Mark the stable destination and repair references before exposing its address,
+not the nursery source in place. Full pinning bits/counts remain deferred until
+reference mapping is in place. No lock protocol is introduced; slab reclamation
+pins retain their separate contract.
 
 ### Why This Helps Shape-Derived Queries
 
 `Instance::object_size_in_bytes()` reads `get_shape()->get_inline_slot_capacity()`.
 The transitional and final forwarding representations overwrite normal header metadata. Layout
-queries must resolve forwarded shapes before requiring their normal header;
-they must not depend on native-ID/aux fields remaining available in the source.
-Source generation is the explicit exception and remains readable. No recursive tracing of the shape's outgoing references is needed
-just to obtain scalar capacity. Initially Shape is stable anyway, because its
-custom destruction excludes it from ordinary moving storage. The final
-forwarding-aware query contract must be established before that changes.
+queries must not depend on native-ID/aux fields remaining available in a
+forwarded source. Source generation and its former movable state remain readable.
+Initially Shape is non-moving, so reading scalar capacity does not require
+following Shape forwarding or recursively tracing its outgoing references.
+Revisit this only if Shape movement is later admitted.
 
 ## Extents: Do Not Copy the Allocation Blindly
 
@@ -250,7 +260,8 @@ Debug/Release checks. These checks do not enable production evacuation.
 `is_collected_source()` must identify the current collection's moving source
 space and
 remain true after forwarding. Use allocator-owned source membership together
-with object generation; generation is not inferred solely from address tags.
+with header generation and NonMoving state; generation is not inferred solely
+from addresses, and placement must not be inferred solely from native layout.
 Validate that these facts agree. Interned, stable, large, and uncollected old
 objects are not nursery sources. A full collection can additionally select
 movable old source spaces; it still does not copy stable objects. Space
@@ -261,6 +272,11 @@ every edge. If allocation guarantees that every Young object belongs to the
 active collection's nursery, a header generation test can be the fast path and
 source-range checks can validate that invariant. Selecting only some nurseries
 would require distinguishing their membership explicitly.
+NonMoving does not distinguish old sources from fresh movable old destinations;
+collection-specific source membership remains necessary for full movement.
+Admission is enforced before allocating into a moving source space. Finding an
+inadmissible object there is an invariant violation, not permission to skip it
+and leave references pointing into storage that will be discarded.
 
 Initial admission should be an explicit conservative routing policy using the
 native layout descriptors/audit, not a new registry that equates "scanable"
@@ -398,6 +414,10 @@ source selection, not complete full-heap tracing or reclamation.
      young/full collections, destination generation/ownership, and forwarding-
      safe metadata access. Plan real adapter wiring without enabling it ahead
      of the activation gates below.
+     Start with the accepted
+     [NonMoving header migration](gc-object-header.md#code-migration-slices):
+     pointer-tag forwarding/one-way accessors first, then centralized initial
+     construction policy. Keep reference mapping ahead of full pinning support.
 6. **Activation readiness.** Recheck root completeness, barriers, stable tracing
    lifetime authority, hash/identity, and source retirement. Only then implement
    real adapter copying and a restricted nursery under a separate approval.

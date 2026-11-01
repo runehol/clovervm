@@ -78,7 +78,13 @@ The first policy should be a stop-the-world generational collector:
 
 The stable heap is separate from the ordinary old generation. Objects may be
 allocated there directly or promoted there before raw-address exposure. Stable
-placement is permanent for the allocation, including after its last export is
+placement is represented by a per-object NonMoving header bit, independent of
+generation and native layout. Layout/storage policy determines its initial
+value; a normally movable object may later become permanently non-moving.
+Promotion to NonMoving is one-way. Full pinning support, including any pin
+bits/counts, is deferred until reference mapping is in place.
+
+Stable placement is permanent for the allocation, including after its last export is
 released; stable objects remain collectible and participate in tracing and
 remembered-set policy.
 
@@ -224,12 +230,13 @@ are future work, detailed under
 The GC-specific object state needed for ordinary copied objects is much smaller:
 
 - normal versus forwarded state;
+- per-object NonMoving state, orthogonal to generation;
 - forwarding target when the object has been evacuated.
 
 The current eight-byte header is occupied by deferred-refcount and native-layout
 state. Collector migration must not remove that state before its replacement is
 working. The transition keeps eight bytes by retaining narrow native-layout/aux
-fields and packing generation plus RC lifecycle into one byte, alongside the
+fields and packing generation, NonMoving, and RC lifecycle into one byte, alongside the
 four-byte refcount. Once tracing is lifetime authority and the ZCT is retired,
 RC and lifecycle can be removed and the final header repacked with wider fields.
 
@@ -238,9 +245,13 @@ The accepted layout and encoding are specified in
 eight-byte header with byte-sized GC state, a reserved byte, a 16-bit native
 layout ID, and a 32-bit aux count. The final header is destructively replaced by
 an encoded forwarding pointer that preserves source generation in bits 0--1.
-Bit 2 marks forwarding; normal-state RC lifecycle occupies bits 6--7.
+In the accepted next encoding, bit 2 is NonMoving; pointer-tag bits `0x18`
+identify forwarding and must be zero in normal headers. Bit 5 is spare and
+normal-state RC lifecycle occupies bits 6--7. This header protocol is implemented;
+central initial NonMoving construction policy remains pending, and current
+constructors leave the bit clear.
 Generation reads use a byte load and low-two-bit mask in either header form.
-Forwarding-target reads clear only bits 0--2, preserving every address bit above
+Forwarding-target reads clear only bits 0--1, preserving every address bit above
 them. Forwarding overwrites RC and lifecycle, so this header slice does not
 enable production forwarding. Any future overlap
 with RC requires a separate forwarding-aware reclamation/metadata protocol;
@@ -248,11 +259,15 @@ the accepted staging still transfers lifetime authority before evacuation.
 
 The GC state must represent generation/remembered state and any state required
 by the eventual old-generation and stable-heap collection policies. Allocation
-space determines whether an object may move: objects in the stable heap never
-move, and no object is pinned in place in a moving space. The collector therefore
-does not need movement-pin flags or counts. Export accounting still protects
-lifetime and prevents address-invalidating operations; its representation is a
-separate storage/API concern.
+space and the per-object NonMoving bit must agree: objects in stable storage
+never move. A layout's initial policy is not the lifetime policy of every
+instance; a movable string/backing can later be promoted to stable storage and
+marked NonMoving before its address is exposed. Do not mark a nursery source in
+place and then discard its storage. Reference repair completes before exposure;
+the old source remains movable/forwarded and the destination is NonMoving.
+Future pin bits/counts are separate, deferred work, not implemented by this bit.
+Export accounting still protects lifetime and prevents address-invalidating
+operations; its representation remains a separate storage/API concern.
 
 The forwarding target can be written into the from-space object itself after
 the object has been copied. A reference repair path can then recognize a
@@ -751,13 +766,15 @@ expose compatible buffer data. If used, its acquisition path is:
 2. If that allocation is in the nursery, reach a safepoint and run a full minor
    collection. Establish its stable destination before root scanning so any
    first encounter selects that destination. Promote it directly into the stable
-   heap and enqueue it in the unified copying work queue; other nursery survivors
+   heap, mark the destination NonMoving, and enqueue it in the unified copying
+   work queue; other nursery survivors
    follow the ordinary promotion policy and enter the same queue. Drain it to
    closure, repairing outgoing references. The nursery is fully
    evacuated and can be reused wholesale only after that work completes.
 3. If the allocation is already in the ordinary old generation, relocate it into
    the stable heap at a safepoint before exposure. This path must repair all
-   references to it, including incoming heap references; a minor collection's
+   references to it, including incoming heap references, and initialize the
+   stable destination as NonMoving; a minor collection's
    roots and remembered sets alone do not suffice for an old target. The exact
    mechanism for this old-to-stable relocation remains open.
 4. Complete reference repair before mutators resume. Re-read the updated rooted

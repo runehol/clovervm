@@ -111,6 +111,15 @@ Objects whose body layout is controlled by a native extension cannot move,
 because the extension may store fields at fixed offsets inside its allocation.
 These objects live in stable storage.
 
+Stable placement is permanent. The GC header design represents NonMoving as
+per-object state, separate from generation and initialized according to
+layout/storage policy. Proxy and extension-owned allocations require non-moving
+placement from construction. A managed string or backing can instead be promoted
+once to NonMoving storage before exposing a direct buffer address. Full pinning
+bits/counts are deferred until reference mapping is in place. This decision does
+not change PyObject_HEAD or prepend a VM HeapHeader to extension-owned bodies;
+the concrete native/VM allocation bridge remains a separate representation task.
+
 The collector cannot trace arbitrary fields inside an extension-owned body, and
 the Limited API does not require that capability. References stored by the
 extension are stable `PyObject *` values, not direct pointers to movable Clover

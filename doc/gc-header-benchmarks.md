@@ -7,7 +7,7 @@
 | Implementation | Header representation implemented in the working tree; production forwarding disabled |
 | Scope | Release performance, layout, and code-generation checks for the eight-byte contained HeapHeader |
 | Owning layers | Object model and memory |
-| Validated against | Initial contained-header comparison based on `8d3bb678`, 2026-10-31; generation-preserving revision based on `21303dce`, 2026-11-01 |
+| Validated against | Initial comparison based on `8d3bb678`, 2026-10-31; generation-preserving revision based on `21303dce` and NonMoving revision based on `6ebce070`, 2026-11-01 |
 | Supersedes | N/A |
 
 ## Method
@@ -341,3 +341,70 @@ Raw local artifacts for this revision are in
 `confirm-{before,after}-ROUND-SLOT.json`, assembly `header-{before,after}.s`,
 validation logs, saved binaries, and separate `sample-{before,after}.txt`
 native profiles. These are local evidence, not repository dependencies.
+
+## NonMoving Pointer-Tag Revision
+
+On 2026-11-01, compare source baseline `6ebce070` with the NonMoving header
+protocol working tree. Header/HeapObject remain eight bytes with unchanged field
+offsets; Float remains 32 bytes with its payload at offset 24. Construction
+policy is not wired yet: constructors leave NonMoving clear, and no production
+caller forwards objects or marks them non-moving.
+
+Before rebuilding, preserve the Release benchmark executable as `before`.
+`otool -L` shows no VM-library dependency. After rebuilding, preserve `after`.
+The two complete executables are byte-for-byte identical, with SHA-256:
+
+```text
+eed05c96a3b8bc2ab54f7b00d4c7590af836d0e0b4e90e8941c48eeaa64df347
+```
+
+Thus this benchmark image has no changed executable code or data. The following
+short A/B/B/A run is a timing-noise control, not evidence of a source-change
+speedup or regression. Full Debug and focused Release checks finished before
+timing; no owned build/test job overlapped these runs. The focus thread bypassed the
+shared build lock as authorized; the lock and other jobs were untouched.
+
+```sh
+BENCH_BINARY --benchmark_filter='^BM_(ClassInstantiationNoInit|ClassInstantiationWithInit|GlobalRefcountedWrite|InstanceAttributeRefcountedWrite|MemoryReclamation)/100000$' \
+  --benchmark_min_time=0.5s --benchmark_counters_tabular=true \
+  --benchmark_out=RESULT.json --benchmark_out_format=json
+```
+
+One A/B/B/A round supplies two independent samples per binary and case. Values
+are median CPU milliseconds per benchmark iteration; the apparent improvement
+is `(before / after - 1) * 100`. Positive means faster, but these are identical
+binaries and the differences below are not attributable to the header change.
+
+| Case, each with argument 100000 | Before ms | After ms | Apparent improvement |
+|---|---:|---:|---:|
+| ClassInstantiationNoInit | 1.647115 | 1.703898 | -3.33% |
+| ClassInstantiationWithInit | 2.779127 | 2.739200 | +1.46% |
+| GlobalRefcountedWrite | 0.569045 | 0.555538 | +2.43% |
+| InstanceAttributeRefcountedWrite | 0.760077 | 0.758458 | +0.21% |
+| MemoryReclamation | 6.553820 | 6.443824 | +1.71% |
+
+Standalone header probes compiled with Apple Clang 21, C++20, `-O2 -DNDEBUG`,
+show the following differences (return instructions omitted):
+
+| Operation | Before | After |
+|---|---|---|
+| Generation read | `ldrb; and #3` | identical |
+| Refcount read | `ldr w0, [x0, #4]` | identical |
+| Lifecycle write | byte load/update/store | identical |
+| Forwarded Boolean | `ldrb; ubfx #2, #1` | `ldrb; tst #0x18; cset ne` |
+| Forwarding target | `ldr; and ~7` | `ldr; and ~3` |
+| Forwarding publication | `ldrb; and #3; orr target; orr #4; str` | `ldrb; and #3; orr target; str` |
+| New NonMoving read | absent | `ldrb; ubfx #2, #1` |
+| New NonMoving mark | absent | `ldrb; orr #4; strb` |
+
+Materializing a forwarded Boolean adds one instruction; publication removes one.
+These cold helper probes are not measurements of production copying throughput.
+Normal generation/refcount/lifecycle probes are unchanged. The hot-opcode frame
+checker emits no diagnostics. Construction initialization and eventual movement
+need their own measurements when those paths become active.
+
+Raw local artifacts are in `/private/tmp/clover-nonmoving-ab.bjK0eS/`: saved
+`before`/`after` binaries, `A1.json`, `B1.json`, `B2.json`, `A2.json`, common
+`header_probe.cpp` with `before.s`/`after.s`, and the separate
+`nonmoving_probe.cpp`/`nonmoving.s`. These are local evidence, not repository
+dependencies.

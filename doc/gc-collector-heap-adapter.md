@@ -260,7 +260,7 @@ now. The likely additional primitives are:
 
 | Primitive | Adapter responsibility | Algorithm responsibility |
 |---|---|---|
-| Classify an object | Read generation, placement/pinning, and movement eligibility | Decide whether the current collection must evacuate or scan it |
+| Classify an object | Read generation, per-object NonMoving state, and collection-space membership | Decide whether the current collection must evacuate or scan it |
 | Inspect copy layout | Preserve forwarding-safe allocated/copy extents and ordinary strong-span information | Obtain it before destructive forwarding changes |
 | Query/install forwarding | Read/write a single source-to-destination association | Ensure one destination and enqueue it exactly once |
 | Copy one object | Choose its destination and copy its initialized state, without tracing children or installing forwarding | Publish forwarding and enqueue the destination exactly once |
@@ -268,7 +268,9 @@ now. The likely additional primitives are:
 | Enumerate/repair weak units | Expose embedded units and their coordinated repair/reset actions | Resolve settled targets early; defer only unresolved units until strong closure |
 
 These are capability sketches, not existing allocator/header methods. Generation
-and pinning must not be reduced to address-only inference. Production relocation
+and NonMoving are independent header facts, not address-only inference or merely
+layout traits. Full pinning is deferred until reference mapping is in place.
+Production relocation
 also needs layout admission, external-storage ownership, identity, header-state,
 and allocation-failure contracts; the test heap cannot settle those implicitly.
 

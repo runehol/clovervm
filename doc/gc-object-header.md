@@ -4,11 +4,11 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Eight-byte transitional representation implemented; production forwarding and final RC-free layout are not enabled |
+| Implementation | Eight-byte NonMoving/pointer-tag header protocol implemented; initial construction policy, production forwarding, and final RC-free layout remain pending |
 | Scope | Eight-byte transitional and final headers, byte-sized GC state, and destructive forwarding |
 | Owning layers | Object model owns header access; memory owns construction/placement; GC owns forwarding publication |
-| Validated against | Generation-preserving encoding based on `21303dce` (2026-11-01); earlier validation recorded below |
-| Supersedes | Earlier sixteen-byte transition and unmodified-pointer forwarding encoding |
+| Validated against | NonMoving working tree based on `6ebce070` (2026-11-01); earlier encoding validation recorded below |
+| Supersedes | Earlier sixteen-byte transition, unmodified-pointer forwarding, and explicit bit-2 forwarding discriminator |
 
 ## Final Eight-Byte Layout
 
@@ -49,8 +49,9 @@ state. GC state is explicit metadata, not inferred generation from addresses.
 
 The current target platforms are little-endian, so the byte at offset zero also
 contains the low eight bits of a pointer stored over the header word. This
-representation requires 64-bit pointers and at least eight-byte pointer
-alignment, including any preserved address tags. These requirements must be
+representation requires 64-bit pointers and valid VM object-pointer encodings:
+32-byte allocation strides with address tag `0x08` or `0x10`. In particular,
+the low three address bits are clear. These requirements must be
 checked explicitly when implemented; this is not an endian-neutral wire format.
 
 Normal state initially uses these byte values:
@@ -68,39 +69,73 @@ The state byte uses the following normal representation:
 
 ```text
 bits 0--1: generation (Young = 1, Old = 2, OldRemembered = 3)
-bit 2:     forwarded flag (zero in normal headers)
-bits 3--5: spare, initially zero
+bit 2:     NonMoving (0 = movable, 1 = permanently non-moving)
+bits 3--4: zero in normal headers; pointer-tag discriminator in forwarded words
+bit 5:     spare, initially zero
 bits 6--7: RC lifecycle during the transition; otherwise reserved
 ```
 
 Forwarding is recognized independently of generation:
 
 ```cpp
-bool forwarded = (state_byte & 0x04) != 0;
+bool forwarded = (state_byte & value_ptr_mask) != 0; // value_ptr_mask = 0x18
+bool non_moving = (state_byte & 0x04) != 0;
 auto generation = state_byte & 0x03;
 ```
 
-Generation zero is invalid in either form. The discriminator still tests only
-bit 2, not generation validity or the entire byte. Zero-filled storage is not a
-valid normal header; constructors initialize Old/Normal explicitly.
+All bit numbers here are zero-based. The pointer-tag bits are bits four and
+five when counting from one; reusing their discriminator frees `0x04` for
+NonMoving. Normal headers must keep `0x18` clear. A forwarded target has exactly
+one valid pointer tag (`0x08` or `0x10`), not both. The broad discriminator tests
+for a pointer tag independently of generation validity; generation zero remains
+invalid in either form. Zero-filled storage is not a valid normal header.
 
 A forwarded header contains an encoded, non-null target plus the source's
-generation. Eight-byte target alignment leaves three low bits available.
-Publishing forwarding preserves only the source generation, never its spare
-bits or RC lifecycle:
+generation. Only a movable source may be forwarded. Publishing forwarding
+preserves only source generation, never spare bits or RC lifecycle:
 
 ```cpp
 uintptr_t encoded = reinterpret_cast<uintptr_t>(target)
-                  | uintptr_t{0x04}
                   | static_cast<uintptr_t>(generation());
 std::memcpy(this, &encoded, sizeof(encoded));
 ```
 
-Reading uses `memcpy` into `uintptr_t`, clears bits 0--2, and converts back to
+Reading uses `memcpy` into `uintptr_t`, clears only bits 0--1, and converts back to
 `HeapObject *`. All other pointer bits survive exactly, including address tags
 `0x10` and `0x08` and address bits 6--7. On a forwarded header those upper byte
 bits belong to the address, not RC lifecycle. The accessor must not clear them.
 There is no inactive-union access or pointer-typed alias of normal fields.
+
+Because a valid target has `0x04` clear, the forwarded source naturally reports
+NonMoving=false: that describes its old, movable allocation. The destination
+may independently have NonMoving=true, as in promotion into stable storage.
+Resolve forwarding before asking about the current logical object's placement.
+
+## Per-Object NonMoving State
+
+NonMoving is independent of generation, remembered state, native layout,
+immutability, and the pointer value's address tag. An ordinary managed pointer
+does not change to the interned tag merely because its allocation becomes stable.
+Non-moving objects still participate in tracing, weak liveness, and barriers.
+
+Layout/storage policy supplies the initial value. Initial non-moving categories
+include stable PyObject proxies, extension-owned C objects, CodeObjects, Shapes
+whose addresses are used by JIT comparisons, and existing custom-destruction or
+immortal/stable categories such as JitCodeObject. C API representation details
+remain owned by the wrapper design; this does not prepend HeapHeader to
+extension-controlled bodies or alter PyObject_HEAD.
+
+The state is per allocation, not just per layout: a movable string or backing
+may later need stable placement for a raw buffer export. Promotion is one-way.
+Copy to stable storage, initialize the destination as NonMoving, repair incoming
+references, and only then obtain and expose the new address. The old source
+remains a movable forwarding source until retirement. Merely setting a nursery
+source's bit in place does not stabilize it or make nursery disposal safe.
+
+Full pinning support, including pin bits/counts, is deferred until the
+reference-mapping work is in place. No pin representation or incoming-reference
+index is selected by this change. Slab reclamation pins remain a separate
+existing mechanism.
 
 ## Destructive Forwarding Contract
 
@@ -115,15 +150,18 @@ The publication order is:
    normal-header state before replacing it.
 2. Construct the complete destination state, preserving native-layout ID, aux
    count, and any transferable header state. Set the destination's normal
-   generation according to collection policy. Evacuation handles one object
-   at a time; overflow storage is discovered through an ordinary strong slot.
+   generation and NonMoving state according to collection/destination policy.
+   Evacuation handles one object at a time; overflow storage is discovered
+   through an ordinary strong slot.
 3. Store the encoded destination pointer plus the source generation over the
    source header.
 4. Keep source storage alive until strong and weak repair are complete.
 
 After publication, normal-only metadata queries must first resolve forwarding;
-generation is the exception. Shape-dependent layout queries must work when the
-referenced shape has already been forwarded. A direct query on a forwarded source cannot blindly
+generation and the old source's movable state are the exceptions. Initially
+Shapes are non-moving, so shape-derived extent queries do not need to follow a
+forwarded Shape. Revisit that contract only if Shape movement is later admitted.
+A direct query on a forwarded source cannot blindly
 interpret pointer bytes as a native-layout ID or aux count.
 
 Source selection and weak resolution can read the source generation directly
@@ -132,8 +170,9 @@ destination still reports Young. No source-space lookup is needed merely to
 recover erased generation. This does not replace collection selection or space
 membership where those are independently required.
 
-Header access remains named: generation is readable in both forms; all normal
-metadata accessors and setters assert that the header is not forwarded.
+Header access remains named: generation and the old allocation's NonMoving state
+are readable in both forms; all other normal metadata accessors and setters
+assert that the header is not forwarded.
 Forwarding-target access asserts that the header is forwarded. A separate
 nullable target coexisting with normal metadata is not the representation.
 Returning to normal requires initializing a normal header.
@@ -146,8 +185,10 @@ The representation lives in a standalone
 and delegates its object-facing API to it. Every accessor/delegate is defined
 inline. RC callers use `refcount()` rather than a public data member; generation,
 lifecycle, native layout, and aux count are likewise accessed through methods.
-Normal-only accessors assert that the header is not forwarded; generation reads
-are the explicit exception.
+Normal-only accessors assert that the header is not forwarded; generation and
+the old allocation's NonMoving reads are the exceptions. A normal-only
+`make_non_moving()` operation is idempotent and only sets the flag; there is no
+operation to clear it on a live allocation.
 
 Both directions of forwarding use `memcpy` within HeapHeader. The write is
 exactly `sizeof(HeapHeader)`, never `sizeof(HeapObject)` or a derived object.
@@ -161,7 +202,7 @@ eight-byte total size rather than adding a second word:
 
 | Offset | Bytes | Transitional field |
 |---:|---:|---|
-| 0 | 1 | `uint8_t gc_state`: generation plus RC lifecycle |
+| 0 | 1 | `uint8_t gc_state`: generation, NonMoving, and RC lifecycle |
 | 1 | 1 | Current 8-bit native-layout ID |
 | 2 | 2 | Current 16-bit auxiliary count |
 | 4 | 4 | `int32_t refcount` |
@@ -175,15 +216,17 @@ The existing lifecycle state remains necessary. Pack it into the state byte:
 
 ```text
 bits 0--1: generation (Young = 1, Old = 2, OldRemembered = 3)
-bit 2:     forwarded flag, zero in normal headers
-bits 3--5: spare, initially zero
+bit 2:     NonMoving
+bits 3--4: zero (normal); pointer tag (forwarded)
+bit 5:     spare, initially zero
 bits 6--7: RC lifecycle (Normal = 0, InZct = 1, Reclaiming = 2, Dead = 3)
 ```
 
 Generation access loads the actual byte and masks its low two bits. Lifecycle
 access loads the same byte and extracts bits 6--7. Updating either normal-state
-component preserves the other, the spare bits, and the zero forwarded bit.
-Constructors initialize Old/Normal, native metadata, and zero RC. Lifecycle
+component preserves the other, NonMoving, and the spare bit; normal pointer-tag
+bits stay zero. Constructors initialize Old/Normal, native metadata, and zero RC;
+construction policy sets NonMoving before publication where required. Lifecycle
 users migrate to accessors; no RC transition or reclamation state is discarded.
 
 A forwarding pointer would overwrite all eight bytes, including RC and native
@@ -221,17 +264,43 @@ be relocation-aware. No locking or concurrent-collector protocol is introduced
 by reserving the byte. Current header operations are designed for the existing
 stop-the-world collection contract.
 
+## Code Migration Slices
+
+1. **Header protocol (implemented).** Replace the explicit forwarding flag with pointer-tag
+   detection, reserve normal `0x18`, decode targets with `~0x03`, and add inline
+   `is_non_moving()` / `make_non_moving()` accessors and HeapObject delegates.
+   Forwarding rejects non-moving sources and invalid target tags. Preserve all
+   field offsets and the eight-byte total size. Existing constructor defaults
+   may leave NonMoving clear during this preparatory slice; no collector may
+   use it for production admission before construction initialization lands.
+2. **Construction initialization.** Set initial NonMoving state centrally before
+   object publication for custom-destruction layouts and known immortal/stable
+   allocations. Ordinary objects retain the ability to become non-moving on a
+   later stable promotion. Audit actual construction paths instead of adding
+   per-layout relocation constructors. Native proxy/extension allocation remains
+   subject to its separate C API representation review.
+
+Neither slice implements promotion, pinning, nursery routing, or production
+forwarding of RC-owned records. Reference-mapping and tracing-lifetime gates
+remain in force. Compare Release accessor code and focused before/after
+construction/refcount/reclamation measurements for the implementation.
+
 ## Implementation Checks
 
 - Assert total size, alignment, and every normal field offset.
 - Verify byte loads/comparisons for normal generation access in Release output.
-- Exercise all 256 possible state-byte values against the bit-2 discriminator;
-  128 have that flag set, but generation zero is invalid in either form.
-- Round-trip aligned targets with both address tags and all low-byte address
-  patterns. Verify exact pointer recovery after masking only bits 0--2 and
-  source-generation preservation regardless of source lifecycle/spare bits.
+- Exercise all 256 state bytes against `state & 0x18`; 192 classify as potential
+  forwarding words, but this does not make invalid tags/generation values valid.
+- Round-trip valid tagged targets across all higher low-byte address patterns.
+  Bare aligned stack addresses are not necessarily valid VM target encodings.
+  Verify exact pointer recovery after masking only bits 0--1 and preservation of
+  source generation regardless of source lifecycle/spare bits.
 - Verify constructors produce Old/Normal, and generation zero is rejected.
 - Verify a Young source forwarding to an Old destination still reports Young.
+- Verify movable-to-NonMoving destination forwarding: source remains movable,
+  destination reports NonMoving, and the target pointer is recovered exactly.
+- Reject forwarding a NonMoving source. Verify idempotent one-way marking,
+  generation/lifecycle preservation, and reserved normal pointer-tag bits.
 - Verify normal-only accessors and setters reject forwarded headers.
 - For the final cutover, prove that layout inspection, source selection, and
   weak repair do not read overwritten normal metadata.
@@ -240,7 +309,32 @@ stop-the-world collection contract.
 - Keep header representation changes separate from movement activation,
   relocation admission, and RC retirement.
 
-## Transitional Implementation Validation
+## NonMoving Protocol Validation
+
+The protocol working tree based on `6ebce070` passed 156 focused Debug
+header/layout/reclamation/GC tests and 145 applicable focused Release tests.
+Full Debug `all check` passed 2,357 tests; full Release passed 2,342. Each full
+suite reports three existing runtime-JIT-disabled skips and one disabled test.
+Encoding tests cover all discriminator bytes, valid tagged target patterns,
+one-way/idempotent NonMoving marking, preservation across generation/lifecycle
+and real RC updates, forwarding to a NonMoving destination, invalid target tags,
+and rejection of NonMoving sources or mutation after forwarding.
+
+Normal field offsets and sizes are unchanged. Release generation/refcount/
+lifecycle probes are identical; materializing a forwarded Boolean adds one
+instruction and publication removes one. The frame checker emits no diagnostics.
+The before/after Release benchmark executables are byte-identical. The focused
+[balanced timing control](gc-header-benchmarks.md#nonmoving-pointer-tag-revision)
+records ordinary variation between those identical binaries, not a speedup or
+regression claim. Initial construction policy and production movement remain
+pending; these checks do not activate either.
+
+## Earlier Transitional Implementation Validation
+
+The results below apply to superseded encodings, not to the NonMoving revision.
+The pointer-tag header protocol is implemented; initial construction policy is
+still pending. New measurements and validation must be distinguished from these
+historical results.
 
 The generation-preserving revision based on `21303dce` passed 153 focused
 header/layout/reclamation/GC tests, full Debug `all check` (2,342 passed), and
