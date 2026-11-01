@@ -1,4 +1,5 @@
 import CloverGC.Mark
+import CloverGC.MarkedQueue
 
 namespace CloverGC
 
@@ -6,14 +7,14 @@ namespace CloverGC
    They apply even while scanning an object's children one by one. -/
 theorem discover_marked (object x : Fin n) (state : MarkState n) :
     x ∈ (discover object state).marked ↔ x = object ∨ x ∈ state.marked := by
-  simp only [discover]
-  split <;> simp_all
+  simpa only [discover, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.marked_mem object x state.marked state.pending
 
 theorem discover_pending (object x : Fin n) (state : MarkState n) :
     x ∈ (discover object state).pending ↔
       x ∈ state.pending ∨ (x = object ∧ object ∉ state.marked) := by
-  simp only [discover]
-  split <;> simp_all
+  simpa only [discover, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.pending_mem object x state.marked state.pending
 
 theorem discoverMany_marked (objects : List (Fin n)) (state : MarkState n)
     (x : Fin n) :
@@ -40,14 +41,8 @@ theorem discover_nodup (object : Fin n) (state : MarkState n)
     (included : ∀ x ∈ state.pending, x ∈ state.marked) :
     (discover object state).marked.Nodup ∧
       (discover object state).pending.Nodup := by
-  simp only [discover]
-  split
-  · exact ⟨marked, pending⟩
-  · constructor
-    · simp_all
-    · simp only [List.nodup_append, List.nodup_cons, List.nodup_nil,
-        List.not_mem_nil, not_false_eq_true, and_self]
-      exact ⟨pending, by grind⟩
+  simpa only [discover, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.nodup object state.marked state.pending marked pending included
 
 theorem discoverMany_nodup (objects : List (Fin n)) (state : MarkState n)
     (marked : state.marked.Nodup) (pending : state.pending.Nodup)
@@ -59,12 +54,8 @@ theorem discoverMany_nodup (objects : List (Fin n)) (state : MarkState n)
   | cons object rest ih =>
       obtain ⟨hm, hp⟩ := discover_nodup object state marked pending included
       apply ih (discover object state) hm hp
-      intro x hx
-      rw [discover_pending] at hx
-      rw [discover_marked]
-      rcases hx with hx | ⟨rfl, _⟩
-      · exact Or.inr (included x hx)
-      · exact Or.inl rfl
+      simpa only [discover, MarkedQueue.enqueue, apply_ite] using
+        MarkedQueue.included object state.marked state.pending included
 
 /- `scanned` is proof-side execution history, never consulted by discovery. -/
 structure Invariant (heap : Heap n) (roots scanned : List (Fin n))

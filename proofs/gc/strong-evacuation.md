@@ -19,6 +19,11 @@ Read [Evacuation.lean](CloverGC/Evacuation.lean), then
 [EvacuationProofs.lean](CloverGC/EvacuationProofs.lean). Concrete cases are in
 [EvacuationExamples.lean](CloverGC/EvacuationExamples.lean); public theorem
 dependencies are guarded by [EvacuationAudit.lean](CloverGC/EvacuationAudit.lean).
+The main proof file contains invariant assembly, scan/drain preservation and
+final results. Queue simulation is factored into
+[EvacuationSchedule.lean](CloverGC/EvacuationSchedule.lean), field facts into
+[EvacuationFields.lean](CloverGC/EvacuationFields.lean), and strong monotonicity
+into [CopyProgress.lean](CloverGC/CopyProgress.lean).
 
 ## The Executable Algorithm
 

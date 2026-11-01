@@ -47,6 +47,25 @@ disposal safety. [Weak Repair Units](weak-repair.md) then extends it with early
 resolution, exact deferral and coordinated late repair. Minor filtering and
 runtime integration remain outside this model.
 
+### Proof Module Layout
+
+The final correctness results remain in `MarkProofs`, `CopyDiscoveryProofs`,
+`EvacuationProofs` and `WeakRepairProofs`. Their supporting facts are grouped by
+responsibility, rather than by the implementation slice that first needed them:
+
+| Module | Responsibility |
+|---|---|
+| [MarkedQueue](CloverGC/MarkedQueue.lean) | Shared marked/pending membership, duplicate-freedom and inclusion facts |
+| [CopyProgress](CloverGC/CopyProgress.lean) | Monotonic strong marks and preserved forwarding across discovery/scan/drain |
+| [EvacuationSchedule](CloverGC/EvacuationSchedule.lean) | Correspondence between physical and logical discovery/queues |
+| [EvacuationFields](CloverGC/EvacuationFields.lean) | Field plans, metadata-preserving writes and repair invariants |
+| [WeakResolutionProofs](CloverGC/WeakResolutionProofs.lean) | Resolver, field and unit repair facts, including final liveness |
+| [WeakScheduling](CloverGC/WeakScheduling.lean) | Strong-state erasure, unit enumeration, registration and visit histories |
+
+`MarkedQueue` is a generic proof view of two lists, not a replacement executable
+collector or an additional runtime state. The mark/copy models retain their
+existing definitions; their lemmas reuse the same list-level argument.
+
 ## What Lean Is Checking
 
 A `def` defines a function we can execute. A `theorem` states a proposition and

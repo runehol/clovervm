@@ -1,26 +1,32 @@
 import CloverGC.CopyDiscovery
+import CloverGC.MarkedQueue
 
 namespace CloverGC.Copying
 
 theorem empty_invariant (input : CopyInput n) : CopyInvariant input .empty := by
-  constructor
-  · constructor <;> simp [CopyState.empty]
-  · simp [CopyState.empty]
-  · simp [CopyState.empty]
-  · simp [CopyState.empty]
-  · simp [CopyState.empty]
-  · simp [CopyState.empty]
+  exact {
+    ledger := {
+      forwarding_valid := by simp [CopyState.empty]
+      copies_forwarded := by simp [CopyState.empty]
+      copies_metadata := by simp [CopyState.empty]
+    }
+    marked_canonical := by simp [CopyState.empty]
+    copies_marked := by simp [CopyState.empty]
+    marked_nodup := by simp [CopyState.empty]
+    pending_nodup := by simp [CopyState.empty]
+    pending_marked := by simp [CopyState.empty]
+  }
 
 theorem enqueue_marked (reference x : Reference n) (state : CopyState n) :
     x ∈ (enqueueOnce reference state).marked ↔ x = reference ∨ x ∈ state.marked := by
-  simp only [enqueueOnce]
-  split <;> simp_all
+  simpa only [enqueueOnce, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.marked_mem reference x state.marked state.pending
 
 theorem enqueue_pending (reference x : Reference n) (state : CopyState n) :
     x ∈ (enqueueOnce reference state).pending ↔
       x ∈ state.pending ∨ (x = reference ∧ reference ∉ state.marked) := by
-  simp only [enqueueOnce]
-  split <;> simp_all
+  simpa only [enqueueOnce, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.pending_mem reference x state.marked state.pending
 
 @[simp] theorem enqueue_copies (reference : Reference n) (state : CopyState n) :
     (enqueueOnce reference state).copies = state.copies := by
@@ -37,14 +43,14 @@ theorem enqueue_nodup (reference : Reference n) (state : CopyState n)
     (included : ∀ x ∈ state.pending, x ∈ state.marked) :
     (enqueueOnce reference state).marked.Nodup ∧
       (enqueueOnce reference state).pending.Nodup := by
-  simp only [enqueueOnce]
-  split
-  · exact ⟨marked, pending⟩
-  · constructor
-    · simp_all
-    · simp only [List.nodup_append, List.nodup_cons, List.nodup_nil,
-        List.not_mem_nil, not_false_eq_true, and_self]
-      exact ⟨pending, by grind⟩
+  simpa only [enqueueOnce, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.nodup reference state.marked state.pending marked pending included
+
+theorem enqueue_included (reference : Reference n) (state : CopyState n)
+    (included : ∀ x ∈ state.pending, x ∈ state.marked) :
+    ∀ x ∈ (enqueueOnce reference state).pending, x ∈ (enqueueOnce reference state).marked := by
+  simpa only [enqueueOnce, MarkedQueue.enqueue, apply_ite] using
+    MarkedQueue.included reference state.marked state.pending included
 
 theorem enqueue_preserves (input : CopyInput n) (state : CopyState n)
     (reference : Reference n) (h : CopyInvariant input state)
@@ -60,7 +66,7 @@ theorem enqueue_preserves (input : CopyInput n) (state : CopyState n)
     pending_nodup := hp
     pending_marked := ?_
   }
-  · constructor
+  · refine { forwarding_valid := ?_, copies_forwarded := ?_, copies_metadata := ?_ }
     · simpa using h.ledger.forwarding_valid
     · simpa using h.ledger.copies_forwarded
     · simpa using h.ledger.copies_metadata
@@ -74,10 +80,7 @@ theorem enqueue_preserves (input : CopyInput n) (state : CopyState n)
     rw [enqueue_copies] at hr
     exact (enqueue_marked reference (.copied index) state).mpr
       (Or.inr (h.copies_marked index record hr))
-  · intro x hx
-    rcases (enqueue_pending reference x state).mp hx with hx | ⟨rfl, _⟩
-    · exact (enqueue_marked reference x state).mpr (Or.inr (h.pending_marked x hx))
-    · exact (enqueue_marked _ _ state).mpr (Or.inl rfl)
+  · exact enqueue_included reference state h.pending_marked
 
 /-- Appending allocates exactly one fresh index and preserves every old slot. -/
 theorem append_record (records : List (CopyRecord n)) (fresh record : CopyRecord n)
@@ -94,7 +97,7 @@ theorem install_ledger (input : CopyInput n) (state : CopyState n)
     (object : Fin n) (h : Ledger input state)
     (movable : input.movable object = true) (unforwarded : state.forwarding object = none) :
     Ledger input (installCopy input state object) := by
-  constructor
+  refine { forwarding_valid := ?_, copies_forwarded := ?_, copies_metadata := ?_ }
   · intro other index forward
     by_cases same : other = object
     · subst other
@@ -151,7 +154,7 @@ theorem fresh_copy_preserves (input : CopyInput n) (state : CopyState n)
     pending_nodup := hp
     pending_marked := ?_
   }
-  · constructor
+  · refine { forwarding_valid := ?_, copies_forwarded := ?_, copies_metadata := ?_ }
     · simpa using ledger.forwarding_valid
     · simpa using ledger.copies_forwarded
     · simpa using ledger.copies_metadata
@@ -167,10 +170,7 @@ theorem fresh_copy_preserves (input : CopyInput n) (state : CopyState n)
     rcases (append_record _ _ _ _).mp get with old | ⟨rfl, _⟩
     · exact Or.inr (h.copies_marked index record old)
     · exact Or.inl rfl
-  · intro x hx
-    rcases (enqueue_pending reference x installed).mp hx with hx | ⟨rfl, _⟩
-    · exact (enqueue_marked reference x installed).mpr (Or.inr (h.pending_marked x hx))
-    · exact (enqueue_marked _ _ installed).mpr (Or.inl rfl)
+  · exact enqueue_included reference installed h.pending_marked
 
 theorem discovery_preserves (input : CopyInput n) (state : CopyState n)
     (reference : Reference n) (h : CopyInvariant input state)

@@ -15,6 +15,10 @@ Build with `lake build`. The implementation is in
 [WeakRepairProofs.lean](CloverGC/WeakRepairProofs.lean), examples in
 [WeakExamples.lean](CloverGC/WeakExamples.lean), and axiom guards in
 [WeakAudit.lean](CloverGC/WeakAudit.lean).
+Resolver/field/callback lemmas live in
+[WeakResolutionProofs.lean](CloverGC/WeakResolutionProofs.lean); enumeration and
+visit-history lemmas live in [WeakScheduling.lean](CloverGC/WeakScheduling.lean).
+`WeakRepairProofs` keeps the unit invariant, its preservation and final results.
 
 ## Objects, Units and Storage
 
@@ -81,6 +85,7 @@ new C++ metadata. Unit fields/payload updates do not consult the histories.
 ## The Proof Structure
 
 `Progress` records monotonic marks and immutable installed forwarding entries.
+It belongs to the strong layer, in [CopyProgress.lean](CloverGC/CopyProgress.lean).
 We prove every strong discovery, repair and scan, and the complete drain,
 preserves that relation. It establishes that a target resolved early remains
 the same canonical target in the eventual strong result.
