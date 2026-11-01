@@ -493,9 +493,13 @@ measure performance even though total header size is unchanged.
 The representation is implemented with standalone `HeapHeader` storage contained
 by `HeapObject`. Pointer-tag detection, target decoding (`~0x03`), one-way
 NonMoving accessors/delegates, and encoding tests are implemented. Initial
-construction policy remains pending: initialize the bit centrally before
-publication for layouts/storage
-that must never move. Keep every accessor fully inline and header forwarding
+construction policy is implemented: callers supply an explicit
+`InitialMobilityPolicy` template argument through the heap APIs to shared
+construction. Debug checks storage agreement; Release has no runtime policy
+lookup or branch. Construction sets the bit before valid-object publication for
+interned storage and layouts declaring `native_destroy`. Ordinary managed layouts remain
+movable; stack construction and raw collector copies are outside that path.
+Keep every accessor fully inline and header forwarding
 reads/writes within HeapHeader. Do not add per-layout relocation constructors.
 
 NonMoving is independent of generation and can change from clear to set only

@@ -408,3 +408,179 @@ Raw local artifacts are in `/private/tmp/clover-nonmoving-ab.bjK0eS/`: saved
 `header_probe.cpp` with `before.s`/`after.s`, and the separate
 `nonmoving_probe.cpp`/`nonmoving.s`. These are local evidence, not repository
 dependencies.
+
+## Initial NonMoving Construction Policy
+
+This section records the superseded runtime-enum experiment. The accepted
+template-argument revision is recorded separately below; these timings must not
+be presented as its results.
+
+On 2026-11-01, compare baseline `8bdeffcc` with the initial construction-policy
+working tree. `construct_object<T>()` receives the allocator's explicit
+`InitialMovement` enum and marks interned storage or layouts declaring
+`native_destroy` before valid-object publication. Header size/offsets, allocation
+routing, and RC ownership are unchanged. Production movement remains disabled.
+
+Release benchmark executables were saved before and after rebuilding. Neither
+depends on a VM dylib. Unlike the preceding encoding-only timing control, these
+binaries differ:
+
+```text
+before eed05c96a3b8bc2ab54f7b00d4c7590af836d0e0b4e90e8941c48eeaa64df347
+after  72a11bc4ebcfdba3f6eff4ad8faa82fbc3960afa5b3ee3b290f5b2906a6cb374
+```
+
+### Optimized Construction Code
+
+Apple Clang 21 probes use C++20 and `-O3 -DNDEBUG`, with baseline versions of
+the three construction/heap headers taken from `8bdeffcc`.
+
+- A constant Movable enum produces identical construction instructions.
+- A constant NonMoving enum folds the flag into the existing header store:
+  the ValidityCell probe changes its packed header from `0x2a02` to `0x2a06`,
+  with the same instruction count (some stores are reordered).
+- The compile-time custom-destruction case likewise folds the bit into the
+  header store. In the actual thread-local wrapper, the unused storage-policy
+  lookup disappears completely; the synthetic record changes `0x3002` to
+  `0x3006` without adding instructions.
+- Runtime-configured GlobalHeap and ThreadLocalHeap wrappers retain a policy
+  load, comparison, and conditional state-byte store. The thread-local probe
+  adds two dependent loads for its backing heap and offset. Both small-object
+  wrappers preserve the policy across the allocation slow-path call, using a
+  32-byte frame rather than the baseline's 16-byte frame. This is not a claim
+  that every VM construction grows its frame: larger constructors already
+  have their own live values and register pressure.
+
+Thus the enum argument avoids address-based inference in construction but is
+not zero-cost for runtime-selected ordinary heaps. No heap-type templating or
+new cached policy field is introduced to hide that cost in this slice.
+
+### Focused Timing Results
+
+Full Debug `all check` passed 2,358 tests and full Release passed 2,343 before
+timing. The focused suites passed 184 Debug and 173 applicable Release tests;
+the opcode-frame checker reported no diagnostics. No owned build or test job
+overlapped timing. The focus thread bypassed the shared build lock as authorized.
+
+```sh
+BENCH_BINARY --benchmark_filter='^BM_(ClassInstantiationNoInit|ClassInstantiationWithInit|GlobalRefcountedWrite|InstanceAttributeRefcountedWrite|MemoryReclamation)/100000$' \
+  --benchmark_min_time=1s --benchmark_counters_tabular=true \
+  --benchmark_out=RESULT.json --benchmark_out_format=json
+```
+
+Three A/B/B/A rounds provide six CPU-time samples per binary and case. Medians
+are milliseconds; improvement is `(before / after - 1) * 100`, positive faster.
+
+| Case, argument 100000 | Before ms | After ms | Improvement |
+|---|---:|---:|---:|
+| ClassInstantiationNoInit | 1.793389 | 1.778529 | +0.84% |
+| ClassInstantiationWithInit | 2.789367 | 2.855455 | -2.31% |
+| GlobalRefcountedWrite | 0.555012 | 0.554354 | +0.12% |
+| InstanceAttributeRefcountedWrite | 0.760331 | 0.810400 | -6.18% |
+| MemoryReclamation | 6.562052 | 6.691873 | -1.94% |
+
+A second A/B/B/A round used the same command with a filter selecting only
+ClassInstantiationWithInit and InstanceAttributeRefcountedWrite, and a 5s
+minimum time. Two samples per binary gave 2.783691 -> 2.871080 ms (-3.04%)
+for initialized construction and 0.766372 -> 0.824409 ms (-7.04%) for attribute
+writes. The attribute-write regression repeats; this slice is not performance
+neutral. Other small differences remain subject to timing/layout variation.
+
+Separate five-second native samples were taken during 15s attribute-write runs;
+those instrumented runs are excluded from the tables. Both samples remain in
+interpreter attribute stores, RC/ZCT handling, and ordinary loop dispatch, with
+no dominant allocation or construction-policy path. The benchmark allocates
+its three instances before the loop. After normalizing relocated branch/call
+addresses, op_store_attr (72 instructions), op_add_smi (14), and
+op_for_iter_range1 (25) have identical instruction sequences in both binaries.
+The samples do not establish a cause for the regression. A code-layout/front-end
+effect is plausible, not proven; it would be wrong to attribute the loop's
+slowdown directly to the extra construction branch.
+
+Raw local artifacts are in `/private/tmp/clover-initial-movement.CIYXMB/`:
+saved `before`/`after` executables, baseline heap headers, the common
+`construction_probe.cpp`, `before.s`/`after.s`, benchmark JSON, and
+`summarize.py`. These are local evidence, not repository dependencies.
+
+## InitialMobilityPolicy Template Routing
+
+The accepted revision replaces the runtime enum parameter with an explicit
+`InitialMobilityPolicy` non-type template argument, with no default. ThreadState
+selects Movable; immortal and interning factories select NonMoving. The heap
+construction APIs forward it to `construct_object<T, policy>()`. Heap classes
+and fields are unchanged. Debug assertions reject mismatched backing storage;
+Release has no runtime policy lookup or branch.
+
+Apple Clang 21 C++20 `-O3 -DNDEBUG` probes compare baseline `8bdeffcc` heap
+headers with this working tree using common source. Ordinary managed global
+and thread-local construction are instruction-for-instruction identical to the
+baseline. Both retain the original 16-byte frame; the runtime experiment's
+extra saved-register pair and policy loads/comparisons disappear. Interned
+thread-local construction and custom-destruction construction likewise retain
+their baseline instruction counts, folding the NonMoving bit into their header
+constants. The interned probe reorders two stores but adds no instructions.
+
+The probes establish removal of the known policy machinery, not elimination of
+the runtime experiment's measured attribute-loop regression. That loop's hot
+instruction sequences were already unchanged, so repeated timings remain
+necessary.
+
+Baseline is the saved pre-policy Release binary from `8bdeffcc`; after is the
+template-policy working tree. Neither depends on a VM dylib. SHA-256 values:
+
+```text
+before eed05c96a3b8bc2ab54f7b00d4c7590af836d0e0b4e90e8941c48eeaa64df347
+after  c30a0579011e289c8a8fddc13600c471ed5c8a726a5e154ab2410e4aa97c4e27
+```
+
+Full Debug `all check` passed 2,359 tests and full Release passed 2,343 before
+timing. Focused coverage passed 185 Debug and 173 applicable Release tests;
+the opcode-frame checker emitted no diagnostics. No owned build/test job
+overlapped timing. The focus thread bypassed the shared lock as authorized.
+
+The same five-case filter and 1s minimum command shown for the runtime experiment
+are used again: three A/B/B/A rounds, six CPU-time samples per binary and case.
+This is a fresh baseline/template comparison, not a comparison of timings
+collected at different times for the runtime/template variants.
+
+Median CPU milliseconds; improvement is `(before / after - 1) * 100`, positive
+faster:
+
+| Case, argument 100000 | Before ms | After ms | Improvement |
+|---|---:|---:|---:|
+| ClassInstantiationNoInit | 1.719822 | 1.763224 | -2.46% |
+| ClassInstantiationWithInit | 2.777515 | 2.774314 | +0.12% |
+| GlobalRefcountedWrite | 0.557629 | 0.554035 | +0.65% |
+| InstanceAttributeRefcountedWrite | 0.769893 | 0.834256 | -7.71% |
+| MemoryReclamation | 6.663968 | 6.568129 | +1.46% |
+
+A separate A/B/B/A confirmation selects only ClassInstantiationNoInit and
+InstanceAttributeRefcountedWrite with a 5s minimum. Two samples per binary give
+1.743316 -> 1.743516 ms (-0.01%) for construction: its initial small regression
+does not repeat. Attribute writes give 0.765384 -> 0.836712 ms (-8.52% in the
+improvement convention, or 9.32% more elapsed CPU time). This regression remains
+despite removing the runtime policy machinery; do not call the final slice
+performance-neutral. The other small initial differences do not establish
+broad VM speedups or regressions.
+
+The cached-store, SMI-add, and range-loop handlers again have identical
+instruction sequences after normalizing relocated branch/call targets (72, 14,
+and 25 instructions respectively). No construction policy branch runs in the
+attribute benchmark's loop. A binary-layout/front-end effect remains plausible,
+not an established cause; the template argument alone does not fix the measured
+loop behavior.
+
+Separate five-second native samples were collected during 15s attribute-write
+runs, excluded from timing comparisons. Both profiles remain dominated by cached
+attribute stores, RC/ZCT work, and interpreter loop dispatch; neither introduces
+a dominant allocation/construction-policy path. Load-accumulator handlers have a
+larger sampled share after the change, but these short samples do not establish
+why. They do not justify attributing the regression to a policy branch that is
+absent from the generated code.
+
+Raw local evidence is in `/private/tmp/clover-template-mobility.U54ap2/`: saved
+executables, common construction probes and before/after assembly, normalized
+handler-comparison source disassemblies, twelve `R*.json` results, four
+`confirmation-*.json` results, and `summarize.py`. These are local evidence,
+not repository dependencies. `before.sample.txt`, `after.sample.txt`, and
+`profile-*.json` retain the separate instrumented-run evidence.

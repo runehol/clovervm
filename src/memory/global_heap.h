@@ -46,22 +46,30 @@ namespace cl
             return allocate_global(n_bytes);
         }
         HeapAllocation allocate_global(size_t n_bytes);
+        InitialMobilityPolicy initial_mobility_policy() const
+        {
+            return offset == value_interned_ptr_tag
+                       ? InitialMobilityPolicy::NonMoving
+                       : InitialMobilityPolicy::Movable;
+        }
         void mark_valid_object(HeapObject *obj);
         bool release_slab_if_empty(SlabAllocator *slab);
 
-        template <typename T, typename... Args>
+        template <typename T, InitialMobilityPolicy policy, typename... Args>
         T *make_global_internal_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasNativeObjectSize<T>::value);
-            return construct_object<T>(this, std::forward<Args>(args)...);
+            assert(policy == initial_mobility_policy());
+            return construct_object<T, policy>(this,
+                                               std::forward<Args>(args)...);
         }
 
-        template <typename T, typename... Args>
+        template <typename T, InitialMobilityPolicy policy, typename... Args>
         TValue<T> make_global_internal_value(Args &&...args)
         {
-            return TValue<T>::from_oop(
-                make_global_internal_raw<T>(std::forward<Args>(args)...));
+            return TValue<T>::from_oop(make_global_internal_raw<T, policy>(
+                std::forward<Args>(args)...));
         }
 
         SlabAllocator *make_new_slab();

@@ -66,6 +66,7 @@ namespace cl::jit
             published.encoded_code_size(), 4);
 
         EXPECT_EQ(2, string->refcount());
+        EXPECT_TRUE(jit_code->is_non_moving());
         EXPECT_EQ(4u, jit_code->managed_frame_spill_extent());
         ASSERT_EQ(1u, jit_code->tagged_values().size());
         EXPECT_EQ(retained.value(), jit_code->tagged_values()[0]);

@@ -20,7 +20,8 @@ namespace cl
         {
             return get_or_create_raw_with_factory(
                 src, [this](const Source &value) {
-                    return intern_heap->make_global_internal_raw<CLType>(value);
+                    return intern_heap->make_global_internal_raw<
+                        CLType, InitialMobilityPolicy::NonMoving>(value);
                 });
         }
 

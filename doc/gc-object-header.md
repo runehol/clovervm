@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Architecture contract |
 | Status | Accepted |
-| Implementation | Eight-byte NonMoving/pointer-tag header protocol implemented; initial construction policy, production forwarding, and final RC-free layout remain pending |
+| Implementation | Eight-byte NonMoving/pointer-tag header protocol and initial construction policy implemented; production forwarding and final RC-free layout remain pending |
 | Scope | Eight-byte transitional and final headers, byte-sized GC state, and destructive forwarding |
 | Owning layers | Object model owns header access; memory owns construction/placement; GC owns forwarding publication |
-| Validated against | NonMoving working tree based on `6ebce070` (2026-11-01); earlier encoding validation recorded below |
+| Validated against | Construction-policy working tree based on `8bdeffcc` (2026-11-01); earlier encoding validation recorded below |
 | Supersedes | Earlier sixteen-byte transition, unmodified-pointer forwarding, and explicit bit-2 forwarding discriminator |
 
 ## Final Eight-Byte Layout
@@ -273,12 +273,22 @@ stop-the-world collection contract.
    field offsets and the eight-byte total size. Existing constructor defaults
    may leave NonMoving clear during this preparatory slice; no collector may
    use it for production admission before construction initialization lands.
-2. **Construction initialization.** Set initial NonMoving state centrally before
-   object publication for custom-destruction layouts and known immortal/stable
-   allocations. Ordinary objects retain the ability to become non-moving on a
-   later stable promotion. Audit actual construction paths instead of adding
-   per-layout relocation constructors. Native proxy/extension allocation remains
-   subject to its separate C API representation review.
+2. **Construction initialization (implemented).** `construct_object<T, policy>()`
+   takes an explicit `InitialMobilityPolicy` enum as a non-type template argument,
+   with no default. ThreadState supplies Movable; VM immortal helpers and string
+   interning factories supply NonMoving. Both heap construction APIs forward
+   this template argument without templating the heap classes or adding fields.
+   Debug assertions check agreement with the backing heap's storage policy;
+   Release construction performs no runtime policy lookup or branch.
+   Construction does not infer policy from the allocated object's address.
+   A compile-time `native_destroy` declaration overrides Movable: CodeObject,
+   Shape, and JitCodeObject are always marked NonMoving. Initialization happens
+   after successful construction and before valid-object bitmap publication.
+   Ordinary objects retain the ability to become non-moving on a later stable
+   promotion. No per-layout relocation constructors are added. Raw allocation,
+   stack construction, and collector byte copies do not use this publication
+   path. Native proxy/extension allocation remains subject to its separate
+   C API representation review.
 
 Neither slice implements promotion, pinning, nursery routing, or production
 forwarding of RC-owned records. Reference-mapping and tracing-lifetime gates
@@ -311,6 +321,29 @@ construction/refcount/reclamation measurements for the implementation.
 
 ## NonMoving Protocol Validation
 
+The InitialMobilityPolicy template-argument revision based on `8bdeffcc` passed
+185 focused Debug tests and 173 applicable Release tests. Full Debug `all check`
+passed 2,359 tests; full Release passed 2,343. Each full suite reports three
+existing runtime-JIT-disabled skips and one disabled test. New Debug death
+coverage rejects both policy/storage mismatches through both heap construction
+APIs. The value-returning wrapper, slab rollover, large allocations, real custom
+destruction, and RC reclamation remain covered. C++ formatting, diff checks, and
+the opcode-frame checker pass. See the
+[template-routing investigation](gc-header-benchmarks.md#initialmobilitypolicy-template-routing)
+for assembly and performance evidence. Production movement remains disabled.
+
+The earlier runtime-enum construction-policy experiment based on `8bdeffcc`
+passed 184 focused Debug tests and 173 applicable Release tests. Full Debug `all check`
+passed 2,358 tests and full Release passed 2,343; each reports three existing
+runtime-JIT-disabled skips and one disabled test. Coverage includes both heap
+policies, global/thread-local construction, slab rollover, large objects, failed
+construction, and the three real custom-destruction layouts. Existing RC
+reclamation tests remain active. The opcode-frame checker emits no diagnostics.
+See the [construction-policy investigation](gc-header-benchmarks.md#initial-nonmoving-construction-policy)
+for optimized code and focused before/after measurements. These counts precede
+the InitialMobilityPolicy template-argument revision. Production movement remains
+disabled.
+
 The protocol working tree based on `6ebce070` passed 156 focused Debug
 header/layout/reclamation/GC tests and 145 applicable focused Release tests.
 Full Debug `all check` passed 2,357 tests; full Release passed 2,342. Each full
@@ -326,15 +359,15 @@ instruction and publication removes one. The frame checker emits no diagnostics.
 The before/after Release benchmark executables are byte-identical. The focused
 [balanced timing control](gc-header-benchmarks.md#nonmoving-pointer-tag-revision)
 records ordinary variation between those identical binaries, not a speedup or
-regression claim. Initial construction policy and production movement remain
-pending; these checks do not activate either.
+regression claim. These historical measurements precede construction policy;
+production movement remains disabled.
 
 ## Earlier Transitional Implementation Validation
 
 The results below apply to superseded encodings, not to the NonMoving revision.
-The pointer-tag header protocol is implemented; initial construction policy is
-still pending. New measurements and validation must be distinguished from these
-historical results.
+The pointer-tag header protocol and initial construction policy are implemented.
+New measurements and validation must be distinguished from these historical
+results.
 
 The generation-preserving revision based on `21303dce` passed 153 focused
 header/layout/reclamation/GC tests, full Debug `all check` (2,342 passed), and

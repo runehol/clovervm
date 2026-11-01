@@ -58,9 +58,13 @@ four bytes of RC. The accepted next encoding keeps generation in bits 0--1,
 uses bit 2 for per-object NonMoving, reserves normal bits 3--4 as zero so pointer
 tags `0x08`/`0x10` identify forwarding, leaves bit 5 spare, and retains normal RC
 lifecycle in bits 6--7. The NonMoving/pointer-tag header protocol is implemented;
-central initial NonMoving policy remains pending. Current allocations initialize
-as Old/Normal with NonMoving clear; nursery/copying remain disabled. The new bit
-must not drive production admission until construction initialization lands.
+central initial construction policy is implemented. Callers pass an explicit
+`InitialMobilityPolicy` non-type template argument through the heap APIs to
+construction, with Debug backing-heap checks and no runtime Release policy
+lookup: interned storage and layouts declaring
+`native_destroy` are NonMoving; ordinary managed layouts remain movable.
+Initialization remains Old/Normal. Nursery/copying remain disabled; the bit
+alone does not establish production movement admission.
 
 A forwarding store replaces the header with the encoded target address plus
 the source generation, with no explicit forwarded flag. A valid tagged target

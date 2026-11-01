@@ -119,13 +119,14 @@ namespace cl
                     if(str_class_ != nullptr)
                     {
                         assert(str_instance_root_shape_ != nullptr);
-                        String *string = interned_global_heap
-                                             .make_global_internal_raw<String>(
-                                                 str_class_, value);
+                        String *string =
+                            interned_global_heap.make_global_internal_raw<
+                                String, InitialMobilityPolicy::NonMoving>(
+                                str_class_, value);
                         return string;
                     }
-                    return interned_global_heap
-                        .make_global_internal_raw<String>(value);
+                    return interned_global_heap.make_global_internal_raw<
+                        String, InitialMobilityPolicy::NonMoving>(value);
                 });
         }
 
@@ -396,7 +397,8 @@ namespace cl
         template <typename T, typename... Args>
         T *make_immortal_internal_raw(Args &&...args)
         {
-            T *object = interned_global_heap.make_global_internal_raw<T>(
+            T *object = interned_global_heap.make_global_internal_raw<
+                T, InitialMobilityPolicy::NonMoving>(
                 std::forward<Args>(args)...);
             object->refcount() = -1;
             return object;
@@ -416,7 +418,8 @@ namespace cl
             static_assert(HasNativeLayoutId<T>::value);
             ClassObject *cls = class_for_native_layout(T::native_layout);
             assert(cls != nullptr);
-            T *object = interned_global_heap.make_global_internal_raw<T>(
+            T *object = interned_global_heap.make_global_internal_raw<
+                T, InitialMobilityPolicy::NonMoving>(
                 cls, std::forward<Args>(args)...);
             object->refcount() = -1;
             return object;

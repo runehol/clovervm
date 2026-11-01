@@ -429,6 +429,7 @@ namespace cl
         CodeObject *code_object = thread->make_object_raw<CodeObject>(
             nullptr, TValue<ModuleObject>::from_oop(module), nullptr,
             code_name);
+        EXPECT_TRUE(code_object->is_non_moving());
         String *overflow_child =
             thread->make_object_raw<String>(L"code-overflow");
         OverflowSlots *storage = thread->make_internal_raw<OverflowSlots>(1, 4);
@@ -529,6 +530,8 @@ namespace cl
             0, 0, 0, shape_flag(ShapeFlag::None), 0);
         Shape *child_shape =
             root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
+        EXPECT_TRUE(root_shape->is_non_moving());
+        EXPECT_TRUE(child_shape->is_non_moving());
         ASSERT_EQ(1, child_shape->refcount());
 
         thread->add_to_zero_count_table_if_needed(root_shape);

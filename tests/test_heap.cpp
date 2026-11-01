@@ -4,6 +4,7 @@
 #include "object_model/validity_cell.h"
 #include "test_helpers.h"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <new>
 #include <stdexcept>
@@ -354,7 +355,9 @@ TEST(GlobalHeap, FailedOrdinaryConstructionLeavesActiveSlabUnmarked)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
+    EXPECT_THROW(
+        (local_heap.make<ThrowingHeapObject, InitialMobilityPolicy::Movable>()),
+        std::runtime_error);
 
     char *memory = local_heap.allocate(sizeof(HeapObject)).memory;
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
@@ -367,8 +370,9 @@ TEST(GlobalHeap, SuccessfulConstructionMarksValidObject)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    ValidityCell *object = local_heap.make<ValidityCell>(
-        ValidityCellDependencyMutability::Mutable);
+    ValidityCell *object =
+        local_heap.make<ValidityCell, InitialMobilityPolicy::Movable>(
+            ValidityCellDependencyMutability::Mutable);
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
@@ -382,21 +386,105 @@ TEST(GlobalHeap, FailedConstructionDoesNotMarkValidObject)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
+    EXPECT_THROW(
+        (local_heap.make<ThrowingHeapObject, InitialMobilityPolicy::Movable>()),
+        std::runtime_error);
 
     char *memory = local_heap.allocate(sizeof(HeapObject)).memory;
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
     EXPECT_EQ(0u, slab->count_valid_objects_slow());
 }
 
+TEST(GlobalHeap, ConstructionUsesStorageMovementPolicyBeforePublication)
+{
+    auto check_policy = []<InitialMobilityPolicy policy>() {
+        GlobalHeap heap =
+            policy == InitialMobilityPolicy::NonMoving
+                ? GlobalHeap::interned_heap(SlabLookupGranuleSize)
+                : GlobalHeap::refcounted_heap(SlabLookupGranuleSize);
+        ThreadLocalHeap local_heap(&heap);
+        EXPECT_EQ(policy, heap.initial_mobility_policy());
+        auto check = [&](HeapObject *object) {
+            EXPECT_EQ(policy == InitialMobilityPolicy::NonMoving,
+                      object->is_non_moving());
+            EXPECT_EQ(HeapGenerationState::Old, object->generation_state());
+            EXPECT_EQ(HeapLifecycleState::Normal, object->lifecycle_state());
+            EXPECT_EQ(0, object->refcount());
+            EXPECT_FALSE(object->is_forwarded());
+            auto objects =
+                valid_objects_in(heap.slab_for_object_unlocked(object));
+            EXPECT_NE(objects.end(),
+                      std::find(objects.begin(), objects.end(), object));
+        };
+        check(heap.make_global_internal_raw<ValidityCell, policy>(
+            ValidityCellDependencyMutability::Mutable));
+        auto value = heap.make_global_internal_value<Tuple, policy>(
+            BootstrapObjectTag{}, 0);
+        check(value.extract());
+        SlabAllocator *first_slab = nullptr;
+        SlabAllocator *last_slab = nullptr;
+        // Enough small objects to cross a slab boundary on each storage policy.
+        for(size_t idx = 0;
+            idx < SlabLookupGranuleSize / value_ptr_granularity + 1; ++idx)
+        {
+            auto *object = local_heap.make<ValidityCell, policy>(
+                ValidityCellDependencyMutability::Mutable);
+            check(object);
+            last_slab = heap.slab_for_object_unlocked(object);
+            if(first_slab == nullptr)
+            {
+                first_slab = last_slab;
+            }
+        }
+        EXPECT_NE(first_slab, last_slab);
+        check(local_heap.make<Tuple, policy>(
+            BootstrapObjectTag{}, LargeAllocationSize / sizeof(Value)));
+        check(heap.make_global_internal_raw<Tuple, policy>(
+            BootstrapObjectTag{}, LargeAllocationSize / sizeof(Value)));
+    };
+    check_policy.operator()<InitialMobilityPolicy::Movable>();
+    check_policy.operator()<InitialMobilityPolicy::NonMoving>();
+}
+
+#ifndef NDEBUG
+TEST(GlobalHeapDeathTest, RejectsConstructionPolicyThatDisagreesWithStorage)
+{
+    GlobalHeap managed = GlobalHeap::refcounted_heap();
+    GlobalHeap interned = GlobalHeap::interned_heap();
+    ThreadLocalHeap managed_local(&managed);
+    ThreadLocalHeap interned_local(&interned);
+    EXPECT_DEATH(
+        (managed.make_global_internal_raw<ValidityCell,
+                                          InitialMobilityPolicy::NonMoving>(
+            ValidityCellDependencyMutability::Mutable)),
+        "initial_mobility_policy");
+    EXPECT_DEATH(
+        (interned.make_global_internal_raw<ValidityCell,
+                                           InitialMobilityPolicy::Movable>(
+            ValidityCellDependencyMutability::Mutable)),
+        "initial_mobility_policy");
+    EXPECT_DEATH(
+        (managed_local.make<ValidityCell, InitialMobilityPolicy::NonMoving>(
+            ValidityCellDependencyMutability::Mutable)),
+        "initial_mobility_policy");
+    EXPECT_DEATH(
+        (interned_local.make<ValidityCell, InitialMobilityPolicy::Movable>(
+            ValidityCellDependencyMutability::Mutable)),
+        "initial_mobility_policy");
+}
+#endif
+
 TEST(GlobalHeap, ValidObjectIterationSkipsAbandonedBumpGaps)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
-    ValidityCell *object = local_heap.make<ValidityCell>(
-        ValidityCellDependencyMutability::Mutable);
+    EXPECT_THROW(
+        (local_heap.make<ThrowingHeapObject, InitialMobilityPolicy::Movable>()),
+        std::runtime_error);
+    ValidityCell *object =
+        local_heap.make<ValidityCell, InitialMobilityPolicy::Movable>(
+            ValidityCellDependencyMutability::Mutable);
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
@@ -409,8 +497,8 @@ TEST(GlobalHeap, DedicatedLargeObjectMarksOnlyBitZero)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    Tuple *object = local_heap.make<Tuple>(BootstrapObjectTag{},
-                                           LargeAllocationSize / sizeof(Value));
+    Tuple *object = local_heap.make<Tuple, InitialMobilityPolicy::Movable>(
+        BootstrapObjectTag{}, LargeAllocationSize / sizeof(Value));
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
