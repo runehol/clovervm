@@ -274,10 +274,13 @@ and allocation-failure contracts; the test heap cannot settle those implicitly.
 
 The test adapter could copy one `TestObject` into separately owned destination
 storage, preserving its logical identity and allocating distinct cell storage.
-The CloverVM adapter would use reviewed destination allocation and per-layout
-copy rules; blindly `memcpy`ing every object or invoking constructors again is
-not such a rule. Both expose the same single-object copy operation to the
-algorithm.
+The CloverVM adapter uses reviewed destination allocation and one generic
+memcpy path driven by allocated/copy extents, not per-layout relocation
+constructors. Layout admission and trace/repair coverage remain explicit. The
+accepted temporary C++ lifetime exception for RC-backed member wrappers and
+test-first sequence are recorded in the
+[byte-copy protocol](gc-copying-adapter-readiness.md#accepted-byte-copy-protocol).
+Both expose the same single-object copy operation to the algorithm.
 
 ### One Work Queue Across Destination Heaps
 

@@ -7,7 +7,7 @@
 | Implementation | Partial; isolated copying and live layout queries implemented; production copying remains unimplemented |
 | Scope | Production adapter prerequisites and bounded preparatory slices, not permission to move runtime objects |
 | Owning layers | Memory owns header and allocation; layouts own extents and copy admission; runtime owns roots and lifetime mode; `src/gc/` owns traversal |
-| Validated against | Single-object simplification based on `a7c007bf` (2026-11-01); runtime findings remain source inspection |
+| Validated against | Header revision `96cc60d0` and memcpy staging review (2026-11-01); runtime findings remain source inspection |
 | Supersedes | N/A; proposals below require their own implementation reviews |
 
 The [main GC design](generational-copying-gc.md),
@@ -40,7 +40,7 @@ These preparatory changes do not require a nursery or physical relocation.
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
 | [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol |
-| [HeapSpace](../src/memory/heap_space.h) | Owns a singly linked slab list and supplies checked single-object raw allocation | Runtime ownership transfer, typed relocation, and publication |
+| [HeapSpace](../src/memory/heap_space.h) | Owns a singly linked slab list and supplies checked single-object raw allocation | Generic byte copying, runtime ownership transfer, and publication |
 | [ThreadLocalHeap](../src/memory/thread_local_heap.cpp) | Mutator allocation and RC epoch bookkeeping | Destination allocation independent of RC reclamation scheduling |
 | [ReclamationRootSet](../src/memory/heap_reclamation.h) | Conservative object identities used to protect RC reclamation | Complete precise mutable root locations |
 | [Reclamation](../src/memory/heap_reclamation.cpp) | Reference release, native destruction, ZCT and bitmap retirement | Tracing lifetime authority and safe source abandonment |
@@ -135,9 +135,41 @@ does not fit the common formulas; do not silently extend the formula language.
 
 The new copy extent is a byte-copy bound, not permission to copy-construct
 ownership wrappers. `Member`/`MemberHeapPtr` copy constructors retain references.
-No generic C++ copy constructor may be used as a relocation primitive. The
-layout admission slice must settle typed object lifetime/relocation mechanics;
-scan completeness and a trivial destructor alone do not establish copy safety.
+No generic C++ copy constructor may be used as a relocation primitive. Use the
+generic memcpy protocol below; layout admission and reference repair remain
+separate from byte copying.
+
+### Accepted Byte-Copy Protocol
+
+Copying invokes no constructors, assignment operators, or destructors. There
+is no native-layout switch selecting relocation constructors and no per-layout
+relocation-constructor API. The memory layer obtains `NativeLayoutInfo` before
+source metadata is overwritten, reserves `allocated_size` bytes from HeapSpace,
+and uses `std::memcpy` to preserve exactly `copy_size` bytes. Allocator rounding
+is not the copy bound. Lazy spare slots remain uninitialized; zero-length
+trailing placeholders are not read.
+
+The adapter prepares destination generation/header state before publication.
+The collector then installs source forwarding, enqueues the destination once,
+and repairs references through existing strong-slot and weak-unit interfaces.
+Those interfaces and the per-layout checklist also cover self/interior pointers
+and other address-dependent state where applicable. Copying is not a second RC
+owner: neither copying nor source abandonment retains or releases children.
+
+**Accepted temporary C++ exception:** retaining `Member` and `MemberHeapPtr`
+special members make Object/Float and other containing records non-implicit-
+lifetime types. Creating their destination records by memcpy into raw storage
+temporarily lacks the C++20 lifetime guarantee. This is an explicitly accepted
+implementation tradeoff, not something an assertion or sanitizer makes defined.
+Do not introduce relocation constructors to work around it. Remove the exception
+when RC-backed member representations are replaced, and add compile-time
+trivially-copyable checks for admitted movable records at that cutover.
+Variable-tail storage retains its separate extent/lifetime audit. The C++ trait
+does not replace the reference-repair and address-dependence checklist.
+
+This language-level exception does not authorize forwarding live RC-owned
+sources, skipping RC releases, or movement before tracing owns lifetime.
+Test-only copies remain outside runtime ownership/publication.
 
 ## Single-Object Evacuation and Collection Selection
 
@@ -201,7 +233,7 @@ These are raw, unpublished bytes, not HeapObjects. There are no managed
 constructors, bitmap marks/walks, RC epoch registrations, source writes,
 forwarding, or GlobalHeap adoption. Oversized byte reservations do not grant
 large-object movement admission. Publication, ownership transfer into a runtime
-heap, typed relocation, and RC/source retirement remain separate reviews.
+heap, byte-copy publication, and RC/source retirement remain separate reviews.
 
 The intended runtime owner is the memory manager, with nursery, old, and stable
 spaces surviving individual collections. Thread-local allocation cursors will
@@ -236,8 +268,7 @@ with "movable". Unknown/unapproved layouts bypass the nursery.
 
 | Candidate | Evidence and remaining gate |
 |---|---|
-| Exact builtin Float, excluding NaN | Fixed native payload and ordinary strong fields; still needs relocation/root/admission tests; subclasses are not implicitly admitted |
-| Float NaN | Address-derived hash is a blocker; choose stable placement from construction or a stable hash policy before admission |
+| Exact builtin Float, including NaN | Fixed native payload, ordinary strong fields, and location-independent canonical NaN hash; still needs byte-copy/root/admission tests; subclasses are not implicitly admitted |
 | Exact builtin Tuple | Dynamic ordinary values; query excludes unused zero-length placeholder; needs relocation contract; subclasses need separate admission |
 | OverflowSlots | Capacity/aux metadata are local; needs ordinary strong-edge coverage and exact zero-capacity extent |
 | Instance | Shape-derived capacity plus lazy prefix; defer until extent and forwarding-safe metadata tests exist |
@@ -246,11 +277,10 @@ with "movable". Unknown/unapproved layouts bypass the nursery.
 | CodeObject, Shape, JitCodeObject | Custom destruction: stable allocation, never ordinary source copying |
 | Remaining layouts, resource owners, exports, large objects | No implicit admission; retain their reviewed stable/bypass policy |
 
-The NaN issue is concrete: [float hashing](../src/builtin_types/float.cpp)
-uses the Float address for NaNs, while dicts store hashes with their entries.
-Rewriting a dict key pointer would not repair a changed hash. Keeping all Float
-objects stable until that policy is settled is also a valid smaller first step;
-this investigation does not select new Python-visible hash/identity semantics.
+Current [float hashing](../src/builtin_types/float.cpp) uses a canonical,
+location-independent NaN hash. The earlier address-derived NaN blocker is
+resolved; generic identity/`id()` and raw-address exposure still require their
+own activation audit.
 The exclusions must be enforced before allocating into the nursery, not found
 only after an ineligible object needs evacuation.
 
@@ -320,12 +350,31 @@ source selection, not complete full-heap tracing or reclamation.
    allocations as Old. Independent state tests and before/after benchmarks are
    complete. HeapObject contains HeapHeader, with fully inline accessors and
    memcpy forwarding; production forwarding remains disabled.
-5. **Collector-only reservation and admission tests.** The raw-reservation
-   sub-slice implements dedicated space ownership and tag-compatible object
-   allocation with no mutator reentry. C++ relocation lifetime, per-layout
-   admission, publication, and runtime slab ownership transfer remain pending
-   before real adapter methods are exposed. Isolated byte-reservation tests do
-   not enable VM relocation or transfer ownership of real RC objects.
+5. **Byte-copy groundwork, then admission.** Raw HeapSpace reservation is
+   implemented. Continue in these bounded slices, without relocation constructors:
+   - **5a: Generic byte-copy primitive and exact-Float tests.** The memory layer
+     queries layout, reserves allocated extent, and memcpys the copy extent.
+     Exercise an exact Float in test-owned destination storage, preserving
+     payload bits (including signed zero and NaNs), shape/overflow references,
+     and header bytes. Verify source bytes and child refcounts are unchanged.
+     Copies are not registered as second RC owners; discard their raw storage
+     without releasing references or running native destruction. No source
+     mutation, forwarding, production CloverHeapAdapter copying methods, or
+     nursery admission. Document the temporary C++ lifetime exception beside
+     the primitive. The byte-copy helper itself does not change generation.
+   - **5b: Dynamic extents and copied-reference repair.** Reuse that primitive
+     for zero/nonzero Tuple and OverflowSlots, lazy Instance prefixes, and live
+     reference/raw backings. Verify allocation versus copy bounds, untouched
+     spare storage, and copied strong-slot repair without RC traffic. Cover
+     aliases, self-reference, and address-dependent fixups where applicable.
+     Sources retain their existing lifetime authority; copies remain test-owned
+     and unpublished. Optional capacity shrinking stays deferred.
+   - **5c: Admission and real-adapter readiness.** Audit slots, extents, fixups,
+     identity/hash, exports, and destruction using the existing layout registry.
+     Unknown layouts remain non-moving. Establish source classification for
+     young/full collections, destination generation/ownership, and forwarding-
+     safe metadata access. Plan real adapter wiring without enabling it ahead
+     of the activation gates below.
 6. **Activation readiness.** Recheck root completeness, barriers, stable tracing
    lifetime authority, hash/identity, and source retirement. Only then implement
    real adapter copying and a restricted nursery under a separate approval.

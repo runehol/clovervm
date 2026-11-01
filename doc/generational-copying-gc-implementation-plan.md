@@ -67,6 +67,32 @@ The collector model and the production algorithm should expose corresponding
 state transitions. Lean proofs establish properties under explicit adapter
 assumptions; they do not by themselves verify the C++ adapter.
 
+### Byte-Copy Direction and Immediate Sequence
+
+Real-object evacuation uses generic `std::memcpy`, not C++ copy construction or
+per-native-layout relocation constructors. Query source layout, reserve its
+allocated extent, and copy its copy extent; then prepare destination state,
+publish forwarding, and repair traced references. The existing per-layout
+checklist covers self/interior pointers and other address-dependent state.
+
+Current RC-backed member wrappers temporarily prevent the C++20 implicit-lifetime
+guarantee for some copied records. This limitation is explicitly accepted for
+the memcpy implementation, not permission to break RC ownership. Replace those
+representations and enforce compile-time trivial-copyability checks for admitted
+movable records at the RC-wrapper cutover, rather than building a temporary
+relocation-constructor system.
+
+The next preparatory slices are **5a: generic byte copying tested on exact
+Float**, **5b: dynamic extents and copied-reference repair**, and **5c: admission
+and real-adapter readiness**, detailed in the
+[copying-adapter sequence](gc-copying-adapter-readiness.md#follow-up-slices-proposed-for-review).
+These labels are local to that investigation, not implementation-plan stage
+numbers. Copies stay test-owned and unpublished; sources remain unchanged.
+Production activation still follows stages 4--9 below: precise roots/native
+references, barriers, tracing verification, tracing lifetime authority, then
+restricted movement. Byte-copy groundwork can proceed alongside integration;
+the paused frame-state design stays paused.
+
 ## Working Runtime Stages
 
 | Stage | Deliverable | Lifetime authority |
@@ -452,13 +478,14 @@ movement or remove conservative root discovery.
 
 Add generation and remembered state without removing refcount, lifecycle, or
 native-layout state. Keep the total header eight bytes: state byte, 8-bit native
-ID, 16-bit aux count, and 32-bit RC. Generation uses state bits 0--2 and lifecycle
-bits 3--4; preserve both through accessor-based updates. The accepted eight-byte transition and final eight-byte
+ID, 16-bit aux count, and 32-bit RC. Generation uses state bits 0--1, forwarding
+bit 2, and lifecycle bits 6--7 in normal state. Preserve normal fields through
+accessor-based updates. The accepted eight-byte transition and final eight-byte
 target are specified in [GC Object Header](gc-object-header.md). Implement the
-transition's byte-state/raw-pointer encoding without enabling production
-forwarding, since a raw pointer store would destroy RC too. Migrate to the wider
+transition's byte-state/encoded-pointer representation without enabling production
+forwarding, since a forwarding store destroys RC too. Migrate to the wider
 final native-ID/aux fields only in an explicit later layout cutover. Generation
-is not retained after forwarding. Audit moved RC/native-ID/aux offsets and
+is retained in the source forwarding word. Audit moved RC/native-ID/aux offsets and
 measure performance even though total header size is unchanged.
 
 The representation slice is implemented with standalone `HeapHeader` storage
