@@ -7,17 +7,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <new>
 
 namespace cl::gc
 {
-    // One copying phase. The caller supplies roots and remembered slots,
+    // One tracing/copying phase with fresh per-phase adapter marks. The caller
+    // supplies roots and remembered slots,
     // excludes mutator activity/safepoints, and keeps source storage alive.
     // Slot decoding, placement and copying belong to the adapter.
-    // Outside-source objects are not scanned implicitly. finish() closes strong
+    // Only collected inputs are discovered. Mark/enqueue canonical copies or
+    // existing non-moving objects, never forwarded source headers.
+    // finish() closes strong
     // tracing and repairs deferred weak units before source reclamation by the
     // caller. All supplied weak units must have unique, non-overlapping repair
-    // storage that remains valid through finish(). Allocation failure is fatal.
+    // storage that remains valid through finish(). Allocation failure is fatal:
+    // null copies use the adapter's failure handler; escaping native exceptions
+    // terminate at noexcept entry points. No C++ exception handling is
+    // required.
     template <typename Heap> class Evacuation
     {
         using Object = typename Heap::Object;
@@ -25,87 +30,52 @@ namespace cl::gc
         using WeakUnit = typename Heap::WeakUnit;
 
     public:
-        explicit Evacuation(Heap &heap)
-        try : heap_(heap) {}
-        catch(const std::bad_alloc &)
-        {
-            // deque construction itself may allocate. Use the parameter, not a
-            // member of the object whose construction has already unwound.
-            heap.allocation_failure();
-        }
+        explicit Evacuation(Heap &heap) noexcept : heap_(heap) {}
 
         Evacuation(const Evacuation &) = delete;
         Evacuation &operator=(const Evacuation &) = delete;
 
-        void add_root(Slot slot)
+        void add_root(Slot slot) noexcept
         {
             assert(phase_ == Phase::Tracing);
-            try
-            {
-                evacuate_slot(slot);
-            }
-            catch(const std::bad_alloc &)
-            {
-                heap_.allocation_failure();
-            }
+            discover_slot(slot);
         }
 
-        void drain()
+        void drain() noexcept
         {
             assert(phase_ == Phase::Tracing);
-            try
+            while(!pending_.empty())
             {
-                while(!pending_.empty())
-                {
-                    Object *object = pending_.front();
-                    pending_.pop_front();
-                    heap_.visit_strong_slots(
-                        object, [&](Slot slot) { evacuate_slot(slot); });
-                    heap_.visit_weak_units(
-                        object, [&](WeakUnit unit) { repair_early(unit); });
-                }
-            }
-            catch(const std::bad_alloc &)
-            {
-                heap_.allocation_failure();
+                Object *object = pending_.front();
+                pending_.pop_front();
+                heap_.visit_strong_slots(
+                    object, [&](Slot slot) { discover_slot(slot); });
+                heap_.visit_weak_units(
+                    object, [&](WeakUnit unit) { repair_early(unit); });
             }
         }
 
         // Explicit weak roots and weak-remembered units use the same protocol
         // as units discovered in copied objects; neither retains its targets.
-        void add_weak_root(WeakUnit unit)
+        void add_weak_root(WeakUnit unit) noexcept
         {
             assert(phase_ == Phase::Tracing);
-            try
-            {
-                repair_early(unit);
-            }
-            catch(const std::bad_alloc &)
-            {
-                heap_.allocation_failure();
-            }
+            repair_early(unit);
         }
 
-        void finish()
+        void finish() noexcept
         {
             drain();
             phase_ = Phase::RepairingWeak;
-            try
+            while(!weak_pending_.empty())
             {
-                while(!weak_pending_.empty())
-                {
-                    WeakUnit unit = weak_pending_.front();
-                    weak_pending_.pop_front();
-                    [[maybe_unused]] WeakRepairResult result =
-                        unit.try_repair([&](Object *target) {
-                            return resolve_weak(target, WeakPhase::Late);
-                        });
-                    assert(result == WeakRepairResult::Complete);
-                }
-            }
-            catch(const std::bad_alloc &)
-            {
-                heap_.allocation_failure();
+                WeakUnit unit = weak_pending_.front();
+                weak_pending_.pop_front();
+                [[maybe_unused]] WeakRepairResult result =
+                    unit.try_repair([&](Object *target) {
+                        return resolve_weak(target, WeakPhase::Late);
+                    });
+                assert(result == WeakRepairResult::Complete);
             }
             phase_ = Phase::Finished;
         }
@@ -127,13 +97,20 @@ namespace cl::gc
         WeakResolution<Object> resolve_weak(Object *target, WeakPhase phase)
         {
             assert(target != nullptr);
-            if(!heap_.is_collected_source(target))
+            if(!heap_.is_collected(target))
             {
                 return WeakResolution<Object>::resolved(target);
             }
-            if(Object *destination = heap_.forwarded_to(target))
+            if(heap_.is_movable(target))
             {
-                return WeakResolution<Object>::resolved(destination);
+                if(Object *destination = heap_.forwarded_to(target))
+                {
+                    return WeakResolution<Object>::resolved(destination);
+                }
+            }
+            else if(heap_.is_marked(target))
+            {
+                return WeakResolution<Object>::resolved(target);
             }
             return phase == WeakPhase::Early ? WeakResolution<Object>::pending()
                                              : WeakResolution<Object>::dead();
@@ -149,32 +126,38 @@ namespace cl::gc
             }
         }
 
-        void evacuate_slot(Slot slot)
+        void enqueue_once(Object *object)
         {
-            Object *source = slot.load_pointer();
-            if(source == nullptr || !heap_.is_collected_source(source))
+            if(heap_.try_mark(object))
+            {
+                pending_.push_back(object);
+            }
+        }
+
+        void discover_slot(Slot slot)
+        {
+            Object *object = slot.load_pointer();
+            if(object == nullptr || !heap_.is_collected(object))
             {
                 return;
             }
-            if(Object *destination = heap_.forwarded_to(source))
+            if(heap_.is_movable(object))
             {
+                Object *destination = heap_.forwarded_to(object);
+                if(destination == nullptr)
+                {
+                    destination = heap_.copy_object(object);
+                    if(destination == nullptr)
+                    {
+                        heap_.allocation_failure();
+                    }
+                    heap_.install_forwarding(object, destination);
+                }
+                enqueue_once(destination);
                 slot.rewrite_pointer(destination);
                 return;
             }
-
-            auto group = heap_.allocation_group(source);
-            auto destinations =
-                heap_.copy_group(group, heap_.destination_for(group));
-            // Forward every member before scanning any, including companions.
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                heap_.install_forwarding(group.members[idx], destinations[idx]);
-            }
-            for(size_t idx = 0; idx < group.count; ++idx)
-            {
-                pending_.push_back(destinations[idx]);
-            }
-            slot.rewrite_pointer(destinations[0]);
+            enqueue_once(object);
         }
 
         Heap &heap_;

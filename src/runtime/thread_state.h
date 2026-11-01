@@ -310,7 +310,8 @@ namespace cl
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasNativeObjectSize<T>::value);
-            return refcounted_heap.make<T>(std::forward<Args>(args)...);
+            return refcounted_heap.make<T, InitialMobilityPolicy::Movable>(
+                std::forward<Args>(args)...);
         }
 
         template <typename T, typename... Args>

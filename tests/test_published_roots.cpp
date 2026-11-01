@@ -52,12 +52,12 @@ namespace
             return;
         }
         Float *original = accumulator.get_ptr<Float>();
-        int32_t original_refs = original->refcount;
-        int32_t replacement_refs = state.replacement->refcount;
+        int32_t original_refs = original->refcount();
+        int32_t replacement_refs = state.replacement->refcount();
         size_t zct_size = thread->zero_count_table_size();
         rewrite_published(*thread, original, state.replacement);
-        EXPECT_EQ(original_refs, original->refcount);
-        EXPECT_EQ(replacement_refs, state.replacement->refcount);
+        EXPECT_EQ(original_refs, original->refcount());
+        EXPECT_EQ(replacement_refs, state.replacement->refcount());
         EXPECT_EQ(zct_size, thread->zero_count_table_size());
         state.rewrote = true;
     }
@@ -140,9 +140,9 @@ TEST(PublishedRoots, NestedNativeReentryRestoresRewrittenSavedCells)
         HeapObject *object = slot.load_pointer();
         EXPECT_TRUE(object == outer.extract() || object == published_code);
     });
-    int32_t outer_refs = outer.extract()->refcount;
-    int32_t inner_refs = inner.extract()->refcount;
-    int32_t replacement_refs = replacement.extract()->refcount;
+    int32_t outer_refs = outer.extract()->refcount();
+    int32_t inner_refs = inner.extract()->refcount();
+    int32_t replacement_refs = replacement.extract()->refcount();
     size_t zct_size = thread.zero_count_table_size();
     {
         NativeHandleRootRegion outer_region(&thread);
@@ -194,9 +194,9 @@ TEST(PublishedRoots, NestedNativeReentryRestoresRewrittenSavedCells)
     EXPECT_EQ(frontier, thread.safepoint_scan_record().lowest_live_stack_slot);
     EXPECT_EQ(frontier, thread.safepoint_scan_record().frame_pointer);
     EXPECT_EQ(outer_pc, thread.safepoint_scan_record().resume_pc);
-    EXPECT_EQ(outer_refs, outer.extract()->refcount);
-    EXPECT_EQ(inner_refs, inner.extract()->refcount);
-    EXPECT_EQ(replacement_refs, replacement.extract()->refcount);
+    EXPECT_EQ(outer_refs, outer.extract()->refcount());
+    EXPECT_EQ(inner_refs, inner.extract()->refcount());
+    EXPECT_EQ(replacement_refs, replacement.extract()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
     thread.visit_native_root_slots([&](HeapReferenceSlot slot) {
         EXPECT_NE(replacement.extract(), slot.load_pointer());

@@ -136,7 +136,7 @@ def fail(source):
         EXPECT_NE(context.vm().tuple_class(), tuple->get_shape()->get_class());
         EXPECT_EQ(Tuple::allocation_size_for(1), object_size_in_bytes(tuple));
         EXPECT_EQ(child.raw_value(), tuple->item_unchecked(0));
-        EXPECT_EQ(3, child.extract()->refcount);
+        EXPECT_EQ(3, child.extract()->refcount());
 
         EXPECT_TRUE(thread->call_clovervm_function(fail, source.raw_value())
                         .is_exception_marker());
@@ -151,14 +151,14 @@ def fail(source):
         // zero-count-table phase; the following pass releases that storage.
         context.vm().run_heap_reclamation();
         context.vm().run_heap_reclamation();
-        EXPECT_EQ(3, child.extract()->refcount);
+        EXPECT_EQ(3, child.extract()->refcount());
     }
     // Dropping an Owned handle enqueues its tuple; reclamation releases items.
     context.vm().run_heap_reclamation();
-    EXPECT_EQ(2, child.extract()->refcount);
+    EXPECT_EQ(2, child.extract()->refcount());
     result = Value::None();
     context.vm().run_heap_reclamation();
-    EXPECT_EQ(1, child.extract()->refcount);
+    EXPECT_EQ(1, child.extract()->refcount());
 }
 
 TEST(Tuple, EmptyTupleHasNoItems)

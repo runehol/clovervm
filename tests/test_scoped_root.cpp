@@ -125,8 +125,8 @@ TEST(ScopedRoot, RewritesEveryAliasedCellWithoutOwnershipChanges)
     ScopedRoot value_root(thread, HeapReferenceSlot(&value));
     ScopedRoot pointer_root(thread, HeapReferenceSlot(&pointer));
     ScopedRoot owner_root(thread, HeapReferenceSlot(&owner));
-    int32_t original_refcount = original.extract()->refcount;
-    int32_t replacement_refcount = replacement.extract()->refcount;
+    int32_t original_refcount = original.extract()->refcount();
+    int32_t replacement_refcount = replacement.extract()->refcount();
     size_t zct_size = thread.zero_count_table_size();
 
     size_t visits = 0;
@@ -139,8 +139,8 @@ TEST(ScopedRoot, RewritesEveryAliasedCellWithoutOwnershipChanges)
     EXPECT_EQ(replacement.raw_value(), value);
     EXPECT_EQ(replacement.extract(), pointer);
     EXPECT_EQ(replacement.extract(), owner.extract());
-    EXPECT_EQ(original_refcount, original.extract()->refcount);
-    EXPECT_EQ(replacement_refcount, replacement.extract()->refcount);
+    EXPECT_EQ(original_refcount, original.extract()->refcount());
+    EXPECT_EQ(replacement_refcount, replacement.extract()->refcount());
     EXPECT_EQ(zct_size, thread.zero_count_table_size());
 
     ReclamationRootSet roots;
@@ -171,7 +171,7 @@ TEST(ScopedRoot, ReclamationProtectsOnlyCurrentlyRegisteredReferents)
     Value cell;
     cell.as.ptr = object;
     thread.add_to_zero_count_table_if_needed(object);
-    ASSERT_EQ(0, object->refcount);
+    ASSERT_EQ(0, object->refcount());
     ASSERT_EQ(baseline + 1, heap.count_valid_objects_slow());
     {
         ScopedRoot root(thread, HeapReferenceSlot(&cell));
@@ -180,7 +180,7 @@ TEST(ScopedRoot, ReclamationProtectsOnlyCurrentlyRegisteredReferents)
         EXPECT_TRUE(roots.contains(object));
         context.vm().run_heap_reclamation();
         EXPECT_EQ(baseline + 1, heap.count_valid_objects_slow());
-        EXPECT_EQ(0, object->refcount);
+        EXPECT_EQ(0, object->refcount());
         EXPECT_TRUE(thread.zero_count_table_contains_for_testing(object));
     }
 

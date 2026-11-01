@@ -7,7 +7,7 @@
 | Implementation | Partial; isolated collector and CloverVM weak-unit enumeration implemented; production copying and weak remembered-set integration not implemented |
 | Scope | One collector algorithm instantiated against a test heap and CloverVM |
 | Owning layers | `src/gc/` owns traversal and the CloverVM adapter; memory layouts own slot enumeration; tests own the synthetic heap |
-| Validated against | Conditional-group working tree based on `977b2581` (2026-10-31); earlier verification recorded below |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); historical verification recorded below |
 | Supersedes | N/A |
 
 This expands the collector boundary in the
@@ -30,9 +30,10 @@ Neither adapter may hide graph traversal in a `trace_object()` or
 No virtual heap hierarchy, policy matrix, configurable collector strategies, or
 elaborate concept machinery is needed. The same template body must run in both
 instantiations. Sketches below omit includes and ordinary boilerplate; the
-source headers are authoritative for the implemented mark-phase API.
-The first mark-phase interface below is now implemented in the working tree;
-the later evacuation capabilities remain proposals requiring separate review.
+source headers are authoritative for the implemented APIs. The mark phase,
+isolated evacuation traversal, and CloverVM weak-unit enumeration are
+implemented. Production copying-adapter wiring and weak remembered integration
+remain separate review gates; the sketches do not imply runtime activation.
 
 ## First Slice: Non-Moving Strong Closure
 
@@ -260,37 +261,43 @@ now. The likely additional primitives are:
 
 | Primitive | Adapter responsibility | Algorithm responsibility |
 |---|---|---|
-| Classify an object | Read generation, placement/pinning, and movement eligibility | Decide whether the current collection must evacuate or scan it |
+| Classify an object | Read generation, per-object NonMoving state, and collection-space membership | Decide whether the current collection must evacuate or scan it |
 | Inspect copy layout | Preserve forwarding-safe allocated/copy extents and ordinary strong-span information | Obtain it before destructive forwarding changes |
 | Query/install forwarding | Read/write a single source-to-destination association | Ensure one destination and enqueue it exactly once |
-| Reserve/copy an allocation group | Place and copy one or two admitted objects, without tracing children or installing forwarding | Publish forwarding and ensure all destinations are scanned |
+| Copy one object | Choose its destination and copy its initialized state, without tracing children or installing forwarding | Publish forwarding and enqueue the destination exactly once |
 | Visit strong slots | Enumerate initialized cells, including header references and custom storage | Discover children and repair references |
 | Enumerate/repair weak units | Expose embedded units and their coordinated repair/reset actions | Resolve settled targets early; defer only unresolved units until strong closure |
 
 These are capability sketches, not existing allocator/header methods. Generation
-and pinning must not be reduced to address-only inference. Production relocation
+and NonMoving are independent header facts, not address-only inference or merely
+layout traits. Full pinning is deferred until reference mapping is in place.
+Production relocation
 also needs layout admission, external-storage ownership, identity, header-state,
 and allocation-failure contracts; the test heap cannot settle those implicitly.
 
 The test adapter could copy one `TestObject` into separately owned destination
 storage, preserving its logical identity and allocating distinct cell storage.
-The CloverVM adapter would use reviewed destination allocation and per-layout
-copy rules; blindly `memcpy`ing every object or invoking constructors again is
-not such a rule. Both expose the same bounded group-copy operation to the
-algorithm.
+The CloverVM adapter uses reviewed destination allocation and one generic
+memcpy path driven by allocated/copy extents, not per-layout relocation
+constructors. Layout admission and trace/repair coverage remain explicit. The
+accepted temporary C++ lifetime exception for RC-backed member wrappers and
+test-first sequence are recorded in the
+[byte-copy protocol](gc-copying-adapter-readiness.md#accepted-byte-copy-protocol).
+Both expose the same single-object copy operation to the algorithm.
 
 ### One Work Queue Across Destination Heaps
 
 Evacuation is a worklist-based copying collector, not a Cheney scan. A single
-`std::deque<Object *>` holds all copied but unscanned destinations, whether they
-are placed in the ordinary old-generation heap or the stable heap. Pop the
-front before scanning, and push newly copied objects at the back. Processed
+`std::deque<Object *>` holds canonical marked but unscanned objects: copied
+ordinary/stable destinations and existing collected NonMoving objects. Pop the
+front before scanning, and push newly discovered objects at the back. Processed
 objects do not remain in the queue. A wide graph can still require a large
 frontier; this is not a constant-space guarantee.
 
-Source forwarding prevents duplicate copies and scheduling. The copying phase
-does not need the standalone mark phase's hash set. Strong closure means the
-single queue is empty after all roots/remembered edges have been supplied.
+Source forwarding prevents duplicate copies. Adapter marks deduplicate scanning
+of canonical destinations and existing NonMoving objects; the isolated adapter
+uses per-phase scratch marks, not a second traversal before copying. Strong
+closure means the single queue is empty after all roots/remembered edges have been supplied.
 Ordinary/stable destinations follow identical scanning rules, including edges
 that alternate repeatedly between those heaps.
 
@@ -299,61 +306,52 @@ walk, or `for_each_valid_object()` dependency in the copying algorithm. Layout
 queries are still required to copy an individual object; they are not a means
 of walking an arbitrary destination heap.
 
-Allocation groups have a shared fixed bound of two, with inline storage and a
-`size_t` count. Member zero is the primary; member one, when present, is its
-exclusively owned companion. Named `single()` and `pair()` factories establish
-those forms; no dynamic group vector or configurable capacity is needed.
-
-```cpp
-template<typename Object>
-struct AllocationGroup
-{
-    std::array<Object *, 2> members;
-    size_t count;
-
-    static AllocationGroup single(Object *object);
-    static AllocationGroup pair(Object *primary, Object *companion);
-};
-
-enum class EvacuationDestination { Ordinary, Stable };
-```
-
 The success-path sketch below is implemented by `src/gc/evacuation.h`.
-`copy_group()` returns `std::array<Object *, 2>` corresponding to the source
-members; only the group's counted prefix is used. It fully copies
-the members without child traversal or forwarding publication. The destination
-choice must respect the admitted group's placement constraints.
+`copy_object(source)` chooses a destination internally, allocates one object,
+and initializes its copied state before returning its address. It does not
+scan children or install forwarding. The concrete adapter is plumbing: a
+separately testable CloverVM placement decision selects the destination, then
+`EvacuationDestinations` performs allocation, byte copying, and destination
+header preparation using borrowed persistent spaces. Neither a destination enum
+nor a placement aggregate is part of the generic collector interface. Real
+destination tests exercise this implementation independently of the synthetic
+heap; placement-policy and adapter integration tests remain necessary when
+those pieces are introduced. No production copying is wired up by the
+destination component alone.
 
 ```cpp
-void evacuate_slot(Slot slot)
+void enqueue_once(Object *object)
 {
-    Object *source = slot.load_pointer();
-    if(source == nullptr || !heap.is_collected_source(source))
+    if(heap.try_mark(object))
+        pending.push_back(object);
+}
+
+void discover_slot(Slot slot)
+{
+    Object *object = slot.load_pointer();
+    if(object == nullptr || !heap.is_collected(object))
         return;
 
-    if(Object *destination = heap.forwarded_to(source))
+    if(heap.is_movable(object))
     {
+        Object *destination = heap.forwarded_to(object);
+        if(destination == nullptr)
+        {
+            destination = heap.copy_object(object);
+            if(destination == nullptr)
+                heap.allocation_failure();
+            heap.install_forwarding(object, destination);
+        }
+        enqueue_once(destination);
         slot.rewrite_pointer(destination);
         return;
     }
-
-    auto group = heap.allocation_group(source);
-    auto space = heap.destination_for(group);
-    auto destinations = heap.copy_group(group, space);
-
-    // Publish both associations before either destination is scanned.
-    for(size_t i = 0; i < group.count; ++i)
-        heap.install_forwarding(group.members[i], destinations[i]);
-
-    for(size_t i = 0; i < group.count; ++i)
-        pending.push_back(destinations[i]);
-
-    slot.rewrite_pointer(destinations[0]);
+    enqueue_once(object);
 }
 
 void scan_object(Object *object)
 {
-    heap.visit_strong_slots(object, [&](Slot slot) { evacuate_slot(slot); });
+    heap.visit_strong_slots(object, [&](Slot slot) { discover_slot(slot); });
 }
 
 void drain()
@@ -368,17 +366,34 @@ void drain()
 ```
 
 The caller supplies roots and, for a minor collection, the relevant remembered
-slots, applying `evacuate_slot()` before draining. An uncollected object is not
+slots, applying `discover_slot()` before draining. An uncollected object is not
 thereby dead: old/stable owners' relevant edges still need remembered-set/root
 coverage. This sketch does not supply that runtime integration.
 
-`is_collected_source()` must remain true for an already forwarded source;
-otherwise later references would skip forwarding lookup and retain old addresses.
-It is collection-membership classification, not an unforwarded/liveness test.
+The adapter answers two independent questions: `is_collected()` selects this
+collection's inputs, while `is_movable()` describes allocation capability and
+does not inspect collection mode or forwarding state. Both remain true for a
+selected forwarded source, so references still follow forwarding. A fresh
+ordinary destination is movable but uncollected. Full collections include all
+NonMoving objects, including fresh stable copies; young collections exclude
+these old allocations. No per-collection allocation boundary or epoch field is
+needed to distinguish existing and fresh NonMoving records. Test membership
+before choosing copy versus trace in place. Source-space indexing is a
+lower-level allocator concern, not the meaning of the movability query.
+
+After copying, the collector publishes source forwarding, marks/enqueues the
+canonical copy, and only then rewrites the referencing strong slot. Copying and
+forwarding publication cannot invoke callbacks that reenter tracing. Thus a
+fresh NonMoving copy is already marked when encountered through a repaired
+reference: repeated strong discovery does not rescan it, and weak references
+directly to the copy resolve through its mark. A raw destination reservation or
+copy alone grants no weak liveness. Unmarked NonMoving targets remain pending
+early and become dead after strong closure, regardless of allocation age.
 
 Layout queries must remain valid when source metadata has been forwarded; do
 not dereference an overwritten source shape as though it were ordinary metadata.
-Every copied group member contributes one queue entry, irrespective of heap.
+Every strongly discovered canonical object contributes one queue entry,
+irrespective of heap or whether it was copied.
 
 ### Growable Slab-Based To-Space
 
@@ -387,11 +402,11 @@ reallocating existing destination storage. The adapter owns allocation and slab
 lifetime; the explicit object queue owns scan scheduling. It does not matter
 whether consecutive queued objects occupy consecutive slabs or different heaps.
 
-Reserve an entire allocation group in one slab. If the current slab lacks room,
-leave its unused tail and acquire a slab that can hold the complete aligned
-group. No scan cursor needs to interpret that tail. Oversized
-groups require an explicit large-destination policy and metadata capable of
-describing every object start in the group.
+Each object allocation fits in one slab. If the current slab lacks room, leave
+its unused tail and acquire a sufficiently large slab. No scan cursor needs to
+interpret that tail. Oversized reservations do not by themselves authorize
+large-object movement; layout admission and destination bookkeeping still need
+their own review.
 
 `SlabAllocator` already supplies stable-addressed mappings, bump allocation,
 and valid-object-start metadata. `GlobalHeap` owns slabs, registers address
@@ -413,47 +428,23 @@ another mapping or required native bookkeeping is genuine exhaustion. Current
 destination and work-queue allocation failure as fatal, as specified below.
 No live-size prepass or whole-heap reservation is implied.
 
-### Exclusively Owned Overflow Storage
+### Overflow Storage Is an Ordinary Strong Edge
 
-CloverVM overflow storage has one owning object. Group formation still depends
-on the current collection's moving source set: pair an owner with its companion
-only when both are selected and the companion is not already forwarded. An old
-owner's remembered slot can lead directly to a selected young companion, which
-must then be copied alone. An already-forwarded or unselected companion is not
-recopied merely to obtain adjacency. The ownership backlink in the test fixture
-is non-traced metadata; a companion root must not keep its owner alive.
+An object's overflow pointer is an ordinary strong slot. Copy the owner,
+enqueue it, and discover its backing storage while scanning that slot. Copy
+each selected object independently; an existing forwarding association prevents
+duplicate copying regardless of root order. Old/stable owners' relevant slots
+must still be supplied through remembered-set/root coverage.
 
-When relocating the owner and its overflow storage together, reserve their
-destination extents together and put the overflow object immediately after
-the main object's extent, with the required alignment padding. The purpose is
-locality when attribute access follows the owner's overflow pointer.
+There is no owner backlink, paired placement, or adjacency guarantee in the
+collector contract. Owner/backing co-placement is a deferred locality
+optimization, not a reason to add a multi-object evacuation primitive.
 
-Keep two distinct heap objects: separate headers, logical identities,
-forwarding associations, reference slots, and scan work. After copying and
-installing forwarding for both, repair the owner's overflow reference and
-schedule both destinations for strong scanning. A later encounter with that
-reference uses the installed forwarding association, not another copy.
-
-The generic collector must not know CloverVM's `overflow_storage` field.
-The adapter describes an evacuation allocation group; ordinary objects have
-a one-object group, while an admitted owner/overflow pair has a two-object
-group. The collector must see every source/destination pair so that forwarding
-publication and scan scheduling remain algorithm-owned. Do not hide recursive
-tracing in a group-copy helper.
-
-This records co-placement when both members are relocated together; it does not
-move an object outside the current collection or override stable placement.
-The adapter's source selection is independent of generation: a full collection
-can select old movable sources as well as young ones. Fresh destinations remain
-outside that selection even though promotion makes their generation Old.
-Non-moving full-collection marking/sweeping and weak liveness are separate
-integration work, not supplied by conditional copying groups.
-
-Test independent alignment/extent accounting, adjacency, distinct forwarding
-records, exactly-once scanning of both objects, shared/cyclic outgoing values,
-and failure before either member's forwarding state is published. The synthetic
-heap should model an exclusively owned companion without depending on CloverVM
-layout details. This remains evacuation design, not implemented mark-phase code.
+The adapter's source selection is independent of destination placement: a full
+collection can select old movable sources as well as young ones. Fresh
+destinations remain outside that selection even though promotion makes their
+generation Old. Non-moving full-collection marking/sweeping and weak liveness
+remain separate integration work.
 
 **Enumeration/allocation boundary:** collector-only destination reservation and
 copying are permitted during slot enumeration. They must not trigger another
@@ -476,17 +467,21 @@ recoverable allocation result, raise Python `MemoryError`, roll back, or resume
 the mutator with a partially rewritten heap. This is the agreed initial policy,
 not an unresolved requirement for whole-collection reservation.
 
-The generic collector must route `std::bad_alloc` from its queue/collection
-entry paths to a non-returning allocation-failure primitive supplied by the
-adapter. Destination allocation must follow the same fatal contract. The test
-adapter terminates too; test injected exhaustion with subprocess/death tests,
-not a recoverable partially evacuated test heap. A non-returning adapter hook
-keeps the generic algorithm independent of VM logging/initialization without
-making recoverability a configurable collector strategy.
+The generic collector has no C++ exception handlers. Construction and public
+collection operations are `noexcept`, so an escaping native exception terminates
+rather than unwinding to a caller. Standard-container allocation failure need
+not pass through the adapter's diagnostic. Explicit adapter allocation failures
+use its non-returning allocation-failure primitive; a null `copy_object()` result
+is rejected through that primitive before publishing forwarding. Destination
+allocation follows the same fatal contract. The test adapter terminates too;
+test injected exhaustion with subprocess/death tests, not a recoverable
+partially evacuated heap. This keeps failure handling independent of VM logging
+and permits runtime instantiation with `-fno-exceptions`. Do not assume that
+this compiler flag makes ordinary `new` or standard allocators return null.
 
-All members must be copied and initialized before publishing their forwarding
-associations, then all must be scheduled. Fatal failure can occur during that
-sequence: correctness is required for successful completion, not for resuming
+Each object must be copied and initialized before publishing its forwarding
+association, then scheduled. Fatal failure can occur during that sequence:
+correctness is required for successful completion, not for resuming
 after failure. Settled weak targets can be repaired early; unresolved units
 finish only after the unified strong queue reaches closure. Source-space reuse
 and lifetime cutover remain separate review gates.
@@ -500,32 +495,32 @@ contracts. The isolated collector implements this protocol; CloverVM layout
 hooks enumerate individual IC entries and Shape backlinks through the same
 compact unit representation. Runtime copying and weak remembered-set coverage
 remain separate integration work.
+
 ## Evacuation Implementation Stages
 
-These are bounded slices of isolated copying, not permission to enable CloverVM
-movement. The mark phase remains usable and unchanged throughout.
+These record the bounded implementation sequence, not permission to enable
+CloverVM movement. Slices 1–4 are implemented; slice 5 has preparatory groundwork
+but no production copying adapter. The mark phase remains usable.
 
-1. **Grouped copying and forwarding in the test heap.** Add
-   `src/gc/allocation_group.h` with the fixed two-member group, `size_t` count,
-   and named `single()`/`pair()` factories. Extend `tests/gc_test_heap.h` with
-   explicit normal/forwarded source state, a collector-only slot rewrite,
-   exclusive companion ownership, and growable destination chunks for ordinary
-   and stable placement. Destination storage keeps actual object/slot addresses
-   stable as it grows. Group copying returns two inline destination pointers,
-   preserves logical identities and strong/weak cell contents, and neither
-   publishes forwarding nor traces children. Test the primitives directly;
-   do not claim a complete collection yet.
+1. **Single-object copying and forwarding in the test heap.** Extend
+   `tests/gc_test_heap.h` with explicit normal/forwarded source state, a
+   collector-only slot rewrite, and growable destination chunks for ordinary
+   and stable placement. Destination storage keeps object/slot addresses stable
+   as it grows. `copy_object(source)` chooses placement internally, preserves
+   logical identity and strong/weak cell contents, and neither publishes
+   forwarding nor traces children. Test the primitives directly; do not claim
+   a complete collection yet.
 2. **Shared copying traversal.** Add `src/gc/evacuation.h` containing the
    templated root/slot evacuation and single pending deque described above.
-   Copy groups, publish every member's forwarding, enqueue every destination,
+   Copy one object, publish its forwarding, enqueue its destination,
    and repair incoming slots. Exercise ordinary/stable chains, cycles, sharing,
-   duplicate roots, self-references, companions, repeated source encounters,
-   chunk growth during scanning, and large frontiers. Compare logical graph
-   structure with an independent oracle and check that successful closure
+   duplicate roots, self-references, backing references, repeated source
+   encounters, chunk growth during scanning, and large frontiers. Compare
+   logical graph structure with an independent oracle and check that successful closure
    leaves no strong roots/slots pointing into collected source storage.
-   Add fatal handling for native allocation exceptions at collection entry
-   boundaries; test that failures terminate rather than escaping as recoverable
-   exceptions. No forwarding-state reset may allow a source to be copied twice.
+   Make collection entry boundaries `noexcept`; reject null copy results before
+   forwarding and test terminal failure. No forwarding-state reset may allow a
+   source to be copied twice. Instantiate the template with exceptions disabled.
 3. **Weak units in the isolated collector.** Add the tri-state resolver,
    borrowed unit/callback view, and test-adapter unit enumeration. Resolve old
    and already-forwarded targets early; defer only exact unresolved units.
@@ -553,35 +548,26 @@ movement. The mark phase remains usable and unchanged throughout.
    merely to make the isolated template compile.
 
    The [copying-adapter investigation](gc-copying-adapter-readiness.md) records
-   current code evidence and preparatory slices. Conditional grouping is
-   implemented in the isolated heap; the live-layout query and transitional
-   header candidates remain preparatory work, not implemented runtime movement.
+   current code evidence and preparatory slices. Source selection and
+   single-object copying are exercised in the isolated heap; live-layout queries,
+   the transitional header, and raw HeapSpace allocation do not enable runtime
+   movement.
 
 The first slice's test-only source header models normal versus forwarded state;
 it does not impose a production header layout. Existing mark tests still use
 the same representation/adapter and must continue to pass. The synthetic heap
-must enumerate its companion reference as a strong slot, not hide it only in
-allocation metadata. The oracle must independently model that edge as well.
+represents backing references using the same ordinary strong cells as other
+edges.
 
 For the first slice, fixed-size C++ test records can be constructed in stable
 raw destination chunks and explicitly destroyed with their native vectors at
-heap teardown. This demonstrates real adjacency and stable addresses without
+heap teardown. This demonstrates stable destination addresses without
 requiring a bitmap/object-size-based scan. It does not prove variable-sized
 CloverVM copy rules or authorize rerunning CloverVM constructors during copying.
 
-First-slice tests cover one/two-member groups, primary-first order, adjacency
-and alignment of test records, source payload preservation, independent
-forwarding records, forwarding queries after publication, growth that leaves
-earlier destinations intact, both destination classes, and fatal injected
-destination exhaustion. Forwarding is installed explicitly by the test caller
-until the shared traversal is added in slice 2. Queue allocation failure belongs
-to slice 2; the fatal behavior is fixed, not a new recoverability decision.
-
-Each implementation slice receives a readiness review and focused tests followed
-by required Debug/Release checks under the exclusive build/test lock, with
-default Ninja parallelism. No VM runtime hot path changes in the first three
-slices. Benchmark the copying kernel itself when assessing queue/placement cost,
-not unrelated whole-VM workloads that never invoke it.
+Primitive tests cover copied-state preservation, independent forwarding,
+alignment, per-object destination choice, stable addresses across chunk growth,
+and fatal destination exhaustion. These tests do not enable production copying.
 
 ## Implemented Mark Phase and Verification
 
@@ -604,51 +590,98 @@ check known ordinary/custom strong edges, weak-only target exclusion, and
 unchanged references, refcounts, lifecycle fields, and ZCT size. These assertions
 do not claim an independent oracle for the entire VM metadata graph.
 
-## Conditional Groups and Collection Selection
+## Collection Selection
 
-The test heap now separates generation (`TestGeneration::Young`/`Old`) from
-storage membership, and requires an explicit `TestCollectionKind::YoungOnly`
-or `Full` when constructing its adapter. Full includes old movable source
-records; neither mode includes fresh destinations or stable storage. Copying
-promotes the destination to Old without changing the source's generation, so
-source membership remains valid after forwarding. The generic collector and
-production runtime are unchanged by this slice.
+The isolated test adapter distinguishes collection participation
+(`is_collected`) from allocation movability (`is_movable`). YoungOnly
+selects young movable sources. Full participation includes young/old movable
+sources and existing NonMoving objects. Movability is independent of selection:
+an uncollected old moving object is still movable, as is a fresh ordinary
+destination. Existing NonMoving objects and fresh stable destinations are not
+movable. Fresh ordinary destinations are excluded in either mode; fresh stable
+destinations participate in Full just like existing NonMoving objects. Forwarding
+does not change source membership or source movability, even when its target
+is non-moving.
 
-Only selected, unforwarded companions join a pair. Standalone companions do
-not retain their owners through the fixture's non-traced ownership metadata.
-Adjacency is asserted only when both members are actually copied as a group,
-not inferred merely from both being live. The graph oracle uses its own source
-selection and verifies mixed-generation graphs in both modes. Test source
-retirement takes the completed phase's selection and preserves excluded records.
+`TestStorage::NonMoving` and `make_non_moving_object()` represent existing stable
+objects; StableDestination records preserve allocation provenance for test
+instrumentation, not a different full-collection participation policy.
+Evacuation consumes both predicates: strong discovery canonicalizes moving
+references, then marks and queues canonical destinations or existing NonMoving
+objects once. Only
+canonical objects are scanned; movable source payloads remain untouched, while
+live NonMoving owners have their slots repaired in place. Use fresh per-phase
+adapter marks; do not run a separate mark pass over sources before copying.
 
-Working-tree verification on 2026-10-31, based on `977b2581`: all 39 focused GC
-tests passed. The group matrix covers 32 combinations of collection kind,
-owner/companion generation, root order, and destination kind. Additional cases
-cover stable owners, standalone companions, old weak-only targets, source
-retirement, and the independent graph oracle. Full Debug `all check` passed
-2,297 tests and full Release `all check` passed 2,287 tests; each configuration
-had three existing JIT-disabled skips and one disabled test. These are selected
-copying-source tests, not full non-moving marking/sweeping or production GC.
+Weak resolution leaves uncollected targets alone, follows forwarding for moving
+sources, and tests marks for collected NonMoving targets. Unresolved collected
+targets are deferred early and cleared after strong closure. Weak references
+never mark or copy targets. Both strong and weak behavior change together.
+This is isolated tracing/copying, not stable sweep, immortal-object policy, VM
+adapter integration, or RC lifetime cutover. Young/full specialization belongs
+to a future production adapter; no extent search is imposed by this protocol.
+
+Owner/backing graphs use ordinary strong cells. Selection and forwarding apply
+independently to each object, regardless of root order or preferred destination.
+An old owner's actual remembered slot must be supplied to repair a young target;
+rooting the target alone cannot repair that slot. Source-storage retirement
+preserves NonMoving records and unselected old sources; it is not stable-object
+sweeping, even when Full participation includes those NonMoving records.
 
 ## Tests and Proof Boundary
+
+The tracing/copying checkpoint `1c001cda` and the subsequent orthogonal-protocol
+working tree both passed 81 focused Debug GC/storage/copy tests and 80 applicable
+Release tests. Full Debug `all check` passed 2,378 tests and full Release passed
+2,362, with three existing JIT-disabled skips and one disabled test each. The
+revision removes the combined adapter predicate in favor of `is_collected()`
+and `is_movable()`, and renames the mapping index to `EvacuationSpaces::contains()`.
+Tests include uncollected-but-movable old objects and ordinary destinations,
+non-moving stable destinations, and sources forwarded into non-moving storage.
+The independent oracle covers mixed moving/NonMoving graphs and in-place weak
+repair; source payloads remain unchanged. The no-exceptions instantiation,
+formatting, and diff checks pass. No VM collection is activated.
+
+Collection-participation preparation on 2026-11-01, based on `4b212180`, passed
+74 focused Debug GC/storage/copy tests and 73 applicable Release tests. Full
+Debug `all check` passed 2,371 tests and full Release passed 2,355; each reports
+three existing runtime-JIT-disabled skips and one disabled test. Contract tests
+cover both selection modes, existing NonMoving versus fresh stable destinations,
+factory ownership/identity, and classification after forwarding. Existing stable
+weak-repair fixtures now use heap-owned NonMoving objects with explicit strong
+roots. Formatting and diff checks pass. No production collector code changed;
+the new query still does not implement full NonMoving tracing or weak liveness.
+
+Single-object simplification verification on 2026-11-01, based on `a7c007bf`:
+50 focused GC/storage tests passed; full Debug `all check` passed 2,339 tests
+and full Release passed 2,328 tests, with three JIT-disabled skips and one
+disabled test in each configuration. The owner/backing matrix covers 64
+combinations of source selection, generations, root order, and independent
+destination choices. A dedicated test checks that backing storage is not copied
+before scanning its owner's strong slot. No runtime relocation is enabled.
 
 The isolated strong copying phase is `Evacuation<Heap>` in
 `src/gc/evacuation.h`. Its borrowed adapter must outlive the phase. Callers add
 roots/remembered slots with `add_root()` and reach strong closure with `drain()`;
-outside-source targets are left alone, not implicitly scanned. The phase is
+uncollected inputs are left alone, not implicitly scanned. Collected NonMoving
+objects are marked and scanned in place. The phase is
 noncopyable and nonmovable so pending scans cannot accidentally be duplicated.
-One deque schedules both ordinary and stable destinations. Forwarding is
-published for every group member before any is scanned. Native allocation
-exceptions during construction, root evacuation, and draining reach the
-adapter's non-returning allocation-failure handler.
+One deque schedules ordinary/stable destinations and existing NonMoving inputs.
+Forwarding is
+published for each object before it is scanned. Construction and public entry
+points are `noexcept`; native allocation exceptions terminate without requiring
+C++ exception support in the collector. A null copy result reaches the adapter's
+non-returning allocation-failure handler before forwarding is published.
 
 `tests/test_gc_evacuation.cpp` compares copied graphs with a source-graph oracle
 that does not use adapter enumeration or forwarding to discover reachability.
 It checks graph identity/connections, source-payload preservation, exactly-once
-destination scanning, repaired weak targets, group adjacency, duplicate roots,
+destination scanning, repaired weak targets, duplicate roots,
 cycles, ordinary/stable closure, chunk growth during scanning, and wide
-frontiers. Injected native allocation exceptions exercise the fatal public entry
-paths; destination-exhaustion death tests also cover the primitive layer.
+frontiers. A null-copy death test exercises the adapter failure path;
+destination-exhaustion death tests also cover the primitive layer. A separate
+translation unit explicitly instantiates the complete collector template with
+`-fno-exceptions`, and static assertions check the public noexcept contracts.
 This does not inject a failure into the standard library's deque allocator.
 Source storage remains alive through `finish()`, which follows strong closure
 with exact-unit weak repair. Source reclamation remains a caller responsibility;

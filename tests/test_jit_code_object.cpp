@@ -56,7 +56,7 @@ namespace cl::jit
 
         String *string = thread->make_internal_raw<String>(L"pooled");
         Owned<Value> retained(Value::from_oop(string));
-        ASSERT_EQ(1, string->refcount);
+        ASSERT_EQ(1, string->refcount());
 
         PublishedCode published =
             publish_test_code(thread->code_cache(), retained.value());
@@ -65,7 +65,8 @@ namespace cl::jit
             published.constant_pool(), published.tagged_value_count(),
             published.encoded_code_size(), 4);
 
-        EXPECT_EQ(2, string->refcount);
+        EXPECT_EQ(2, string->refcount());
+        EXPECT_TRUE(jit_code->is_non_moving());
         EXPECT_EQ(4u, jit_code->managed_frame_spill_extent());
         ASSERT_EQ(1u, jit_code->tagged_values().size());
         EXPECT_EQ(retained.value(), jit_code->tagged_values()[0]);
@@ -74,7 +75,7 @@ namespace cl::jit
         decref_heap_ptr(jit_code);
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         EXPECT_TRUE(published.tagged_values()[0].is_not_present());
     }
 
@@ -91,7 +92,7 @@ namespace cl::jit
             published.code(), no_interpreter_tail_entry_thunk(),
             published.constant_pool(), published.tagged_value_count(),
             published.encoded_code_size(), 0);
-        ASSERT_EQ(2, child.extract()->refcount);
+        ASSERT_EQ(2, child.extract()->refcount());
 
         const ReleaseDescriptor &descriptor =
             native_layout_descriptor_for(JitCodeObject::native_layout).release;
@@ -99,12 +100,12 @@ namespace cl::jit
                   descriptor.custom_release);
         EXPECT_EQ(JitCodeObject::destroy, descriptor.destroy);
         descriptor.custom_release(jit_code);
-        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(1, child.extract()->refcount());
         EXPECT_TRUE(published.tagged_values()[0].is_not_present());
         size_t zct_size = thread->zero_count_table_size();
 
         descriptor.destroy(jit_code);
-        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(1, child.extract()->refcount());
         EXPECT_TRUE(published.tagged_values()[0].is_not_present());
         EXPECT_EQ(zct_size, thread->zero_count_table_size());
     }
@@ -124,13 +125,13 @@ namespace cl::jit
             published.encoded_code_size(), 0);
 
         EXPECT_FALSE(code_object->has_jit_code());
-        EXPECT_EQ(0, jit_code->refcount);
+        EXPECT_EQ(0, jit_code->refcount());
 
         code_object->publish_jit_code(jit_code);
 
         EXPECT_TRUE(code_object->has_jit_code());
         EXPECT_EQ(jit_code, code_object->get_jit_code());
-        EXPECT_EQ(1, jit_code->refcount);
+        EXPECT_EQ(1, jit_code->refcount());
         size_t jit_references = 0;
         visit_strong_reference_slots(code_object, [&](HeapReferenceSlot slot) {
             if(slot.load_pointer() == jit_code)
@@ -170,11 +171,11 @@ namespace cl::jit
         visit_strong_reference_slots(jit_code,
                                      [&](HeapReferenceSlot) { ++cells; });
         EXPECT_EQ(0u, cells);
-        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(1, child.extract()->refcount());
         incref_heap_ptr(jit_code);
         decref_heap_ptr(jit_code);
         context.vm().run_heap_reclamation();
-        EXPECT_EQ(1, child.extract()->refcount);
+        EXPECT_EQ(1, child.extract()->refcount());
         EXPECT_EQ(child.raw_value(), published.tagged_values()[0]);
     }
 
@@ -186,7 +187,7 @@ namespace cl::jit
 
         String *string = thread->make_internal_raw<String>(L"tagged");
         Owned<Value> retained(Value::from_oop(string));
-        ASSERT_EQ(1, string->refcount);
+        ASSERT_EQ(1, string->refcount());
 
         Result<CodeAllocationProposal, JitCodeError> proposal_result =
             thread->code_cache().propose(sizeof(uint32_t), 2 * sizeof(Value),
@@ -207,7 +208,7 @@ namespace cl::jit
             allocation.code, no_interpreter_tail_entry_thunk(),
             allocation.constant_pool(), 1, allocation.encoded_code_size(), 0);
 
-        EXPECT_EQ(2, string->refcount);
+        EXPECT_EQ(2, string->refcount());
         Owned<TValue<String>> replacement(
             thread->make_object_value<String>(L"replacement"));
         size_t zct_size = thread->zero_count_table_size();
@@ -221,8 +222,8 @@ namespace cl::jit
         EXPECT_EQ(replacement.raw_value(), pool[0]);
         // The untagged suffix deliberately contains pointer-looking bits.
         EXPECT_EQ(retained.value(), pool[1]);
-        EXPECT_EQ(2, string->refcount);
-        EXPECT_EQ(1, replacement.extract()->refcount);
+        EXPECT_EQ(2, string->refcount());
+        EXPECT_EQ(1, replacement.extract()->refcount());
         EXPECT_EQ(zct_size, thread->zero_count_table_size());
         visit_strong_reference_slots(jit_code, [&](HeapReferenceSlot slot) {
             slot.rewrite_pointer(string);
@@ -231,7 +232,7 @@ namespace cl::jit
         decref_heap_ptr(jit_code);
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(1, string->refcount());
         EXPECT_TRUE(pool[0].is_not_present());
         EXPECT_EQ(retained.value(), pool[1]);
     }

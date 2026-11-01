@@ -1,66 +1,90 @@
 #ifndef CL_HEAP_OBJECT_H
 #define CL_HEAP_OBJECT_H
 
-#include "memory/native_layout_id.h"
+#include "object_model/heap_header.h"
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
 namespace cl
 {
-    enum class HeapLifecycleState : uint8_t
-    {
-        Normal,
-        InZct,
-        Reclaiming,
-        Dead,
-    };
-
-    /*
-      Base class for all VM heap records. HeapObjects have the common header
-      needed for refcounting and value scanning, but are not necessarily
-      Python-visible objects.
-    */
+    // Representation-level operations belong to the contained HeapHeader,
+    // never to the complete HeapObject or any of its subclasses.
     class HeapObject
     {
     public:
-        explicit HeapObject(NativeLayoutId _native_layout_id,
-                            uint16_t _native_layout_aux_count = 0)
-            : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
-              native_layout_id_(_native_layout_id),
-              native_layout_aux_count(_native_layout_aux_count)
+        HeapObject() : header_(NativeLayoutId::Invalid) {}
+
+        explicit HeapObject(NativeLayoutId layout, uint16_t aux = 0)
+            : header_(layout, aux)
         {
-            assert(native_layout_id_ != NativeLayoutId::Invalid);
+            assert(layout != NativeLayoutId::Invalid);
         }
 
-        HeapObject()
-            : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
-              native_layout_id_(NativeLayoutId::Invalid),
-              native_layout_aux_count(0)
+        NativeLayoutId native_layout_id() const
         {
+            return header_.native_layout();
         }
 
-        NativeLayoutId native_layout_id() const { return native_layout_id_; }
         uint16_t native_layout_aux_count_value() const
         {
-            return native_layout_aux_count;
-        }
-        void set_native_layout_aux_count(uint16_t count)
-        {
-            native_layout_aux_count = count;
+            return header_.aux_count();
         }
 
-        int32_t refcount;
-        HeapLifecycleState lifecycle_state;
-        NativeLayoutId native_layout_id_;
-        uint16_t native_layout_aux_count;
+        void set_native_layout_aux_count(uint16_t count)
+        {
+            header_.set_aux_count(count);
+        }
+
+        HeapGenerationState generation_state() const
+        {
+            return header_.generation();
+        }
+
+        void set_generation_state(HeapGenerationState state)
+        {
+            header_.set_generation(state);
+        }
+
+        HeapLifecycleState lifecycle_state() const
+        {
+            return header_.lifecycle();
+        }
+
+        void set_lifecycle_state(HeapLifecycleState state)
+        {
+            header_.set_lifecycle(state);
+        }
+
+        int32_t &refcount() { return header_.refcount(); }
+        int32_t refcount() const { return header_.refcount(); }
+
+        bool is_forwarded() const { return header_.is_forwarded(); }
+
+        bool is_non_moving() const { return header_.is_non_moving(); }
+
+        void make_non_moving() { header_.make_non_moving(); }
+
+        HeapObject *forwarding_target() const
+        {
+            return header_.forwarding_target();
+        }
+
+        void install_forwarding_target(HeapObject *target)
+        {
+            header_.install_forwarding_target(target);
+        }
+
+    private:
+        HeapHeader header_;
     };
 
     static_assert(sizeof(HeapObject) == 8);
+    static_assert(alignof(HeapObject) == alignof(HeapHeader));
+    static_assert(std::is_standard_layout_v<HeapObject>);
+    static_assert(std::is_trivially_copyable_v<HeapObject>);
     static_assert(std::is_trivially_destructible_v<HeapObject>);
-
 }  // namespace cl
 
 #endif  // CL_HEAP_OBJECT_H

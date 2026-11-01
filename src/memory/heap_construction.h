@@ -4,12 +4,19 @@
 #include "memory/native_layout_declarations.h"
 #include "memory/slab_allocator.h"
 #include "object_model/value.h"
+#include <cstdint>
 #include <memory>
 #include <type_traits>
 #include <utility>
 
 namespace cl
 {
+    enum class InitialMobilityPolicy : uint8_t
+    {
+        Movable,
+        NonMoving,
+    };
+
     struct HeapAllocation
     {
         char *memory;
@@ -52,7 +59,8 @@ namespace cl
         }
     }
 
-    template <typename T, typename Heap, typename... Args>
+    template <typename T, InitialMobilityPolicy policy, typename Heap,
+              typename... Args>
     T *construct_object(Heap *heap, Args &&...args)
     {
         size_t allocation_size_in_bytes =
@@ -61,6 +69,11 @@ namespace cl
         T *obj = std::construct_at(reinterpret_cast<T *>(allocation.memory),
                                    std::forward<Args>(args)...);
         assert(obj->HeapObject::native_layout_id() == T::native_layout);
+        if constexpr(requires { T::native_destroy; } ||
+                     policy == InitialMobilityPolicy::NonMoving)
+        {
+            obj->make_non_moving();
+        }
         allocation.slab->mark_valid_object(obj);
         return obj;
     }

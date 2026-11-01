@@ -1995,7 +1995,7 @@ namespace cl::jit
             context.thread()->make_internal_raw<String>(L"folded constant");
         TValue<String> value = TValue<String>::from_oop(string);
 
-        EXPECT_EQ(0, string->refcount);
+        EXPECT_EQ(0, string->refcount());
         {
             CompilationSession session{test::compiler_thread()};
             GraphBuilder builder(session, IRLevel::Core);
@@ -2029,9 +2029,9 @@ namespace cl::jit
             ASSERT_TRUE(folded_constant.has_value());
             EXPECT_EQ(value.raw_value(), folded_constant->constant());
             EXPECT_EQ(*folded_constant, entry->instruction_at(0));
-            EXPECT_EQ(1, string->refcount);
+            EXPECT_EQ(1, string->refcount());
         }
-        EXPECT_EQ(0, string->refcount);
+        EXPECT_EQ(0, string->refcount());
     }
 
     TEST(JitGraphRewriter,

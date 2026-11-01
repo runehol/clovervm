@@ -72,7 +72,7 @@ TEST(ModuleObject, SysModuleIsBootstrappedAsImmortalModule)
 
     ModuleObject *sys = context.vm().sys_module().extract();
     EXPECT_EQ(NativeLayoutId::ModuleObject, sys->native_layout_id());
-    EXPECT_EQ(-1, sys->refcount);
+    EXPECT_EQ(-1, sys->refcount());
     EXPECT_EQ(L"sys", value_as_wstring(sys->get_name_binding()));
 
     TValue<String> dunder_builtins =
@@ -88,7 +88,7 @@ TEST(ModuleObject, SysModulesIsCanonicalImportedModulesDict)
 
     ModuleObject *sys = context.vm().sys_module().extract();
     Dict *modules = context.vm().imported_modules().extract();
-    EXPECT_EQ(-1, modules->refcount);
+    EXPECT_EQ(-1, modules->refcount());
 
     TValue<String> modules_name =
         context.vm().get_or_create_interned_string_value(L"modules");
@@ -116,7 +116,7 @@ TEST(ModuleObject, SysPathStartsWithEmptyStringBuildStdlibAndStdlib)
     Value path_value = sys->get_own_property(path_name);
     ASSERT_TRUE(has_native_layout<List>(path_value));
     List *path = path_value.get_ptr<List>();
-    EXPECT_EQ(-1, path->refcount);
+    EXPECT_EQ(-1, path->refcount());
     ASSERT_EQ(3u, path->size());
     EXPECT_EQ(L"", value_as_wstring(path->item_unchecked(0)));
     EXPECT_EQ(CL_BUILD_STDLIB_DIR, value_as_wstring(path->item_unchecked(1)));

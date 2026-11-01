@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Investigation |
 | Status | Proposed |
-| Implementation | Partial; isolated conditional groups and live layout queries implemented; production copying remains unimplemented |
+| Implementation | Partial; copying/storage/classification/destination components and real-layout tests implemented; production copying remains disabled |
 | Scope | Production adapter prerequisites and bounded preparatory slices, not permission to move runtime objects |
 | Owning layers | Memory owns header and allocation; layouts own extents and copy admission; runtime owns roots and lifetime mode; `src/gc/` owns traversal |
-| Validated against | Conditional-group working tree based on `977b2581` (2026-10-31); runtime findings remain source inspection |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); historical validation recorded below |
 | Supersedes | N/A; proposals below require their own implementation reviews |
 
 The [main GC design](generational-copying-gc.md),
@@ -19,15 +19,18 @@ placement, RC lifetime authority, or the paused frame-state work.
 ## Bottom Line
 
 The generic collector is ahead of the runtime adapter. Strong/weak slot repair
-is implemented. Real source classification, forwarding, admitted copying, and
-collector-owned destination allocation are not. Adding those methods to
+is implemented. A classification-only index now works with real headers in raw
+HeapSpace storage. Runtime source selection, forwarding, admitted copying, and
+integrated destination ownership are not wired into CloverHeapAdapter. Adding those methods to
 `CloverHeapAdapter` now would hide missing invariants behind an apparently
 complete interface.
 
-Several useful prerequisites can still be implemented while RC remains fully
-operational. Conditional group formation is now implemented in the test
-adapter. The unified registry now supports the live-layout query, reporting
-allocation size, copy size, and the optional ordinary strong span.
+Raw byte copying, source containment, borrowed destination storage, and
+real-layout evacuation tests are implemented while RC remains fully operational.
+The standalone strong remembered set also has reset and consuming handoff tests.
+These are isolated components, not production copying or runtime barriers. The
+[implementation plan](generational-copying-gc-implementation-plan.md#current-stopping-point-and-forward-route)
+records the stopping point and major integration gates.
 Retired backing contents are not a prerequisite: after the tracing cutover
 they are unreachable garbage, not objects the copying traversal must inspect.
 These preparatory changes do not require a nursery or physical relocation.
@@ -36,11 +39,13 @@ These preparatory changes do not require a nursery or physical relocation.
 
 | Current code | Established | Still missing for copying |
 |---|---|---|
-| [HeapObject](../src/object_model/heap_object.h) | Eight-byte RC/lifecycle/native-ID/aux header | Generation, remembered membership, forwarding |
+| [HeapObject](../src/object_model/heap_object.h) | Contains standalone eight-byte HeapHeader with generation/lifecycle/native-ID/aux/RC and tested forwarding encoding | Runtime source-space selection, remembered coverage, and admitted production forwarding |
+| [EvacuationSpaces](../src/gc/evacuation_spaces.h) | Sorted selected-space mapping index; validates source generation/NonMoving state even after forwarding | Runtime space-role selection and lifetime, layout admission, and adapter integration |
 | [Layout descriptors](../src/memory/native_layout_descriptor.h) | Unified allocation/copy query, ordinary strong spans, custom strong and weak hooks | Explicit relocation admission and forwarding-safe metadata contract |
 | [Instance](../src/object_model/instance.cpp) | Shape-derived capacity, aux-counted lazy initialized prefix | Forwarding-safe metadata contract during real copying |
 | [Array backings](../src/object_model/vm_array_backing.h) | Live reference backings have local capacity counts; raw backings copy full byte storage; old-count zeroing is RC bookkeeping | Relocation admission; no retired-backing copy requirement |
-| [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol and group placement |
+| [SlabAllocator](../src/memory/slab_allocator.h) | Stable mappings, bump reservation, valid-object bitmap | Collector-only ownership/publication protocol |
+| [HeapSpace](../src/memory/heap_space.h) | Owns a singly linked slab list, supplies checked raw allocation, and visits mapping ranges | Runtime ownership transfer, source-role lifecycle, and publication |
 | [ThreadLocalHeap](../src/memory/thread_local_heap.cpp) | Mutator allocation and RC epoch bookkeeping | Destination allocation independent of RC reclamation scheduling |
 | [ReclamationRootSet](../src/memory/heap_reclamation.h) | Conservative object identities used to protect RC reclamation | Complete precise mutable root locations |
 | [Reclamation](../src/memory/heap_reclamation.cpp) | Reference release, native destruction, ZCT and bitmap retirement | Tracing lifetime authority and safe source abandonment |
@@ -49,69 +54,67 @@ The refcounted/interned address tags are representation classes, not generation
 or movability. Stable refcounted objects must retain the refcounted address
 encoding. Stable is not synonymous with immortal or interned.
 
-## Proposed Transitional Header
+## Implemented Transitional Header
 
-Keep the current eight-byte prefix intact. A deliberately unpacked reference
-version adds generation and a nullable forwarding pointer:
+The accepted representation is now specified in
+[GC Object Header](gc-object-header.md). The RC transition stays eight bytes:
+one byte of GC state, one byte of native-layout ID, two bytes of aux count, and
+four bytes of RC. The implemented encoding keeps generation in bits 0--1,
+uses bit 2 for per-object NonMoving, reserves normal bits 3--4 as zero so pointer
+tags `0x08`/`0x10` identify forwarding, leaves bit 5 spare, and retains normal RC
+lifecycle in bits 6--7. The NonMoving/pointer-tag header protocol is implemented;
+central initial construction policy is implemented. Callers pass an explicit
+`InitialMobilityPolicy` non-type template argument through the heap APIs to
+construction, with Debug backing-heap checks and no runtime Release policy
+lookup: interned storage and layouts declaring
+`native_destroy` are NonMoving; ordinary managed layouts remain movable.
+Initialization remains Old/Normal. Nursery/copying remain disabled; the bit
+alone does not establish production movement admission.
 
-```cpp
-// Proposed fields, not implemented code.
-int32_t refcount;
-HeapLifecycleState lifecycle_state;
-NativeLayoutId native_layout_id_;
-uint16_t native_layout_aux_count;
+A forwarding store replaces the header with the encoded target address plus
+the source generation, with no explicit forwarded flag. A valid tagged target
+has low bits 0--2 clear and exactly one pointer tag in `0x18`. Reading the target
+masks only bits 0--1; generation remains a byte
+load and low-two-bit mask in both forms. The source may be Young while its
+destination is Old; callers must not substitute the destination generation.
 
-HeapGenerationState generation_state_; // Young / Old / OldRemembered
-HeapObject *forwarding_target_;         // nullptr means not forwarded
-```
+RC, lifecycle, native ID, aux count, and normal spare state are still overwritten.
+Reclamation and forwarding cannot operate on the same RC-managed source without
+a separately approved transition protocol. The accepted tracing-cutover staging
+is unchanged.
 
-On the current 64-bit ABI this version would have an expected 24-byte header,
-including alignment padding. Verify that explicitly in the header slice. Do
-not claim its cost is just sixteen extra bytes: the allocator rounds record
-reservations to 32-byte strides, so some records cross an allocation boundary.
-Measure allocation throughput and representative record/slab occupancy before
-and after. Header growth also changes Object field offsets used by the JIT;
-audit offset-derived code and structural tests, not only `sizeof` assertions.
+After RC retirement, the final eight-byte normal header has a one-byte GC state,
+one reserved byte, a 16-bit native-layout ID, and a 32-bit aux count. Forwarding
+overwrites that entire header. The final wider fields require an explicit later
+migration; the first RC transition preserves the native-ID/aux widths but moves
+their offsets and RC's offset to fit the new state byte.
+Source selection, layout inspection, and weak resolution must be compatible
+with loss of the normal source metadata after forwarding. This does not approve
+production forwarding or settle the remaining relocation/lifetime gates.
 
-All existing allocations should initially be Old and not forwarded. There is
-no nursery today. Generation classification tests can exercise synthetic Young
-objects without enabling copying or changing RC behavior. Marking can continue
-using the existing temporary side set; this proposal does not add copied-object
-tri-colour fields or settle the future stable-heap mark representation.
-
-The forwarded source keeps its generation, native layout ID, aux count, shape
-pointer, and ordinary payload. Only its dedicated forwarding field changes.
-The destination gets its own normal GC state and Old generation. Source storage
-is retained through strong and weak repair. Do not overlay forwarding on the
-RC word, native metadata, or Object's shape field in this first version.
-
-A sixteen-byte total header is also a concrete candidate: retain the RC/native
-prefix and use a second `uintptr_t` GC word. The three generation states fit
-in two low bits; all current managed pointer encodings leave those bits clear.
-The remaining bits can hold a nullable forwarding target. Generation remains
-available after forwarding, and extracting a target masks out the generation
-bits without stripping the refcounted/interned address tag. This uses explicit
-generation metadata, not address-derived generation. Alignment/encoding
-assertions and all state/target combinations need tests before choosing it.
-
-The proposed invariant is separate GC storage, not an insistence on 24 bytes.
-Compare these two representations in the header readiness review; neither is
-approved by this investigation. The algorithm should depend on named generation
-and forwarding accessors, not either word layout. No movement-pin field is
-proposed: the current main design requires stable placement rather than pinning
-inside moving space. Slab pins are reclamation blockers, not object pins.
+Verify the eight-byte size and alignment, RC offset four, and descriptor/JIT
+metadata offsets. Float remains 32 bytes with a 32-byte stride. Measure
+construction and representative record/slab occupancy before and after rather
+than assuming all derived layouts are unaffected by the alignment change.
+Marking can continue using its existing temporary side set.
+NonMoving is a one-way per-allocation placement property, independent of
+generation and layout. Initial policy covers stable proxies/extensions,
+CodeObjects, Shapes, and existing custom-destruction/immortal categories; a
+normally movable string/backing can later be promoted to NonMoving storage.
+Mark the stable destination and repair references before exposing its address,
+not the nursery source in place. Full pinning bits/counts remain deferred until
+reference mapping is in place. No lock protocol is introduced; slab reclamation
+pins retain their separate contract.
 
 ### Why This Helps Shape-Derived Queries
 
 `Instance::object_size_in_bytes()` reads `get_shape()->get_inline_slot_capacity()`.
-With a dedicated forwarding field, the old Shape's capacity remains readable
-even when the Shape has a forwarding target. No recursive tracing or repaired
-class pointer is needed to read that scalar. Initially Shape is stable anyway,
-because its custom destruction excludes it from ordinary moving storage.
-
-Later source-header compaction must preserve this guarantee or introduce an
-explicit forwarding-aware metadata query. That cannot be an incidental change
-to how a forwarding pointer is stored.
+The transitional and final forwarding representations overwrite normal header metadata. Layout
+queries must not depend on native-ID/aux fields remaining available in a
+forwarded source. Source generation and its former movable state remain readable.
+Initially Shape is non-moving, so reading scalar capacity does not require
+following Shape forwarding or recursively tracing its outgoing references.
+Revisit this only if Shape movement is later admitted.
 
 ## Extents: Do Not Copy the Allocation Blindly
 
@@ -151,57 +154,60 @@ does not fit the common formulas; do not silently extend the formula language.
 
 The new copy extent is a byte-copy bound, not permission to copy-construct
 ownership wrappers. `Member`/`MemberHeapPtr` copy constructors retain references.
-No generic C++ copy constructor may be used as a relocation primitive. The
-layout admission slice must settle typed object lifetime/relocation mechanics;
-scan completeness and a trivial destructor alone do not establish copy safety.
+No generic C++ copy constructor may be used as a relocation primitive. Use the
+generic memcpy protocol below; layout admission and reference repair remain
+separate from byte copying.
 
-## Allocation Groups Are Conditional
+### Accepted Byte-Copy Protocol
 
-Exclusive overflow ownership does not imply that owner and overflow are always
-evacuated together. [Object::ensure_overflow_slot](../src/object_model/object.cpp)
-can allocate a fresh overflow for an existing owner. Under generational
-allocation, that owner can already be old/stable.
+Copying invokes no constructors, assignment operators, or destructors. There
+is no native-layout switch selecting relocation constructors and no per-layout
+relocation-constructor API. The memory layer obtains `NativeLayoutInfo` before
+source metadata is overwritten, reserves `allocated_size` bytes from HeapSpace,
+and uses `std::memcpy` to preserve exactly `copy_size` bytes. Allocator rounding
+is not the copy bound. Lazy spare slots remain uninitialized; zero-length
+trailing placeholders are not read.
 
-Accepted conditional group rules, implemented in the test adapter:
+The adapter prepares destination generation/header state before publication.
+The collector then installs source forwarding, enqueues the destination once,
+and repairs references through existing strong-slot and weak-unit interfaces.
+Those interfaces and the per-layout checklist also cover self/interior pointers
+and other address-dependent state where applicable. Copying is not a second RC
+owner: neither copying nor source abandonment retains or releases children.
 
-"Collected" in this table means selected for evacuation in the current
-collection's moving source set, not simply young. A young-only collection and
-a full collection can choose different source sets. Stable objects remain
-outside copying even when a full collection marks and sweeps them.
+**Accepted temporary C++ exception:** retaining `Member` and `MemberHeapPtr`
+special members make Object/Float and other containing records non-implicit-
+lifetime types. Creating their destination records by memcpy into raw storage
+temporarily lacks the C++20 lifetime guarantee. This is an explicitly accepted
+implementation tradeoff, not something an assertion or sanitizer makes defined.
+Do not introduce relocation constructors to work around it. Remove the exception
+when RC-backed member representations are replaced, and add compile-time
+trivially-copyable checks for admitted movable records at that cutover.
+Variable-tail storage retains its separate extent/lifetime audit. The C++ trait
+does not replace the reference-repair and address-dependence checklist.
 
-| Encounter | Group |
-|---|---|
-| Collected owner, collected unforwarded overflow | Owner and overflow |
-| Collected owner, overflow outside collected space | Owner only |
-| Collected owner, overflow already forwarded | Owner only; scanning repairs its field |
-| Selected overflow reached without copying its owner | Overflow only |
+This language-level exception does not authorize forwarding live RC-owned
+sources, skipping RC releases, or movement before tracing owns lifetime.
+Test-only copies remain outside runtime ownership/publication.
 
-The former unconditional `exclusive_owner == nullptr` assertion is removed.
-Selected companions can be copied independently. This repairs a test-model
-limitation, not a running-VM regression: no production moving collector invokes
-it. The generic traversal is unchanged; group formation belongs to the adapter.
+## Single-Object Evacuation and Collection Selection
 
-The conditional-group slice adds test-only Young/Old generation labels
-and an explicit YoungOnly/Full collection selection. Full selects both young
-and old movable source records; neither mode selects fresh destination records
-or stable storage. That exercises the group contract without choosing whether
-production full GC moves or sweeps its ordinary old generation. No generation
-checks or collection-mode branches belong in the generic group/traversal API.
-The test source-disposal helper takes the same explicit selection, preserving
-uncollected old and stable records rather than clearing its entire source pool.
+Overflow storage is reached through an ordinary strong slot. Source selection,
+copying, forwarding, and queueing apply independently to the owner and backing,
+regardless of root order. An old/stable owner can refer to young overflow; its
+actual remembered slot must be supplied to repair that reference. An already
+forwarded or unselected backing is not recopied.
 
-Adjacency is an optimization conditional on both members being copied now.
-Do not recopy an old/already-forwarded companion just to obtain adjacency.
-Do not add a production owner backlink solely to discover standalone overflow;
-its native layout already tells the adapter it is a standalone member.
+The test adapter supports YoungOnly and Full moving-source selection. Full
+selects young and old movable source records for copying; neither mode copies
+fresh destinations or stable storage. Full additionally traces NonMoving
+objects in place, including fresh stable copies. Source membership remains true
+after forwarding.
+The source-disposal helper uses the same selection and preserves excluded old
+and stable records. Generation and collection-mode checks remain adapter-owned.
 
-Real placement also needs padding. Refcounted records start at addresses with
-the refcounted tag bits and subsequent records are 32-byte stride aligned.
-For a same-storage-class pair, place the companion after the primary's
-rounded reservation, not at `primary + copy_size` or necessarily
-`primary + allocated_size`. Verify alignment, overflow arithmetic, and storage
-tags for each member. Reserve the whole group before publishing forwarding;
-padding and unused tails are not copied or scanned.
+Owner/backing adjacency is deferred. It is not represented by a group type,
+special ownership backlink, or generic multi-object copying operation.
 
 ## Collector-Only Destination Allocation
 
@@ -213,9 +219,9 @@ reclamation. Neither is the destination-copy protocol as written.
 A dedicated collection-local destination allocator should:
 
 - grow stable-addressed chunks on demand, without a bitmap walk or Cheney scan;
-- reserve each group in one chunk, with checked size/tag/alignment accounting;
+- allocate one object at a time, with checked size/tag/alignment accounting;
 - distinguish unpublished reservation from a fully initialized record;
-- initialize/copy every member before exposing its forwarding association;
+- initialize/copy each object before exposing its forwarding association;
 - record ordinary and stable destination ownership for later reclamation;
 - never enter a safepoint, recursively collect, or run mutator callbacks;
 - treat allocation failure as fatal, including native bookkeeping failure.
@@ -226,13 +232,153 @@ separately. The new nursery/copy worklist must not depend on those bitmaps.
 Do not disguise global mutator allocation as collector allocation merely
 because both eventually call a bump allocator.
 
+### Raw HeapSpace Allocation
+
+`HeapSpace` in `src/memory/heap_space.h` reuses SlabAllocator mappings and bump
+allocation, not ThreadLocalHeap. `allocate(size_t allocated_bytes)` accepts a
+positive allocated extent and returns one byte address. The extent is rounded
+to the current 32-byte stride. The address retains the refcounted encoding,
+including for any future stable destination. This does not derive generation
+from addresses.
+
+The space owns its slabs until destruction through a singly linked list of
+`SlabListNode` entries. The head is the current allocation slab; there is no
+duplicate current-slab pointer. A reservation that does not fit causes a new
+slab; an oversized object receives a sufficiently large mapping. Earlier
+mappings and returned addresses never move. Rounding, mapping overhead, and
+pointer-difference bounds are checked before allocation. Sizing/mapping/native
+bookkeeping failure is fatal. Nodes use nothrow allocation because the runtime
+disables C++ exceptions, and list destruction is iterative.
+
+These are raw, unpublished bytes, not HeapObjects. There are no managed
+constructors, bitmap marks/walks, RC epoch registrations, source writes,
+forwarding, or GlobalHeap adoption. Oversized byte reservations do not grant
+large-object movement admission. Publication, ownership transfer into a runtime
+heap, byte-copy publication, and RC/source retirement remain separate reviews.
+
+The intended runtime owner is the memory manager, with nursery, old, and stable
+spaces surviving individual collections. Thread-local allocation cursors will
+borrow nursery slabs; a minor collection covers the whole VM nursery, not just
+one thread's slabs. That ownership and cursor integration is future work: the
+current space is an unsynchronized raw allocator, used exclusively by its caller.
+Tracing, forwarding, construction, and safepoint policy remain outside this class.
+
+The single-object simplification passed 50 focused GC/storage tests and full
+Debug/Release checks. These checks do not enable production evacuation.
+
 ## Source Classification and Initial Admission
 
-`is_collected_source()` must identify the current collection's moving source
-space and
-remain true after forwarding. Use allocator-owned source membership together
-with object generation; generation is not inferred solely from address tags.
-Validate that these facts agree. Interned, stable, large, and uncollected old
+### Collection Routing and Space Lifetime
+
+Space ownership is persistent; collection roles are temporary. Distinct spaces
+own disjoint slab mappings. Copies and originals may represent the same logical
+object, but never share storage or mapping ownership. No HeapSpace swap, slab
+transfer, or allocation-group mechanism is needed for minor promotion.
+
+| Collection | Frozen evacuation inputs | Ordinary destination | NonMoving destination |
+|---|---|---|---|
+| Young | Whole nursery | Append to existing old space | Append to existing NonMoving space |
+| Full moving | Nursery and selected movable old spaces | Fresh old space, outside every selected mapping | Append to existing NonMoving space |
+
+The memory manager owns destinations beyond the collection. The destination
+component borrows two distinct `HeapSpace` references, `old` and `non_moving`.
+`gc::EvacuationDestinations::copy_to_old()` and `copy_to_non_moving()` call the
+existing byte-copy primitive and prepare the destination generation/mobility.
+They return unpublished copies, without marking, forwarding, or reference repair.
+They neither own nor retire storage. Sources must be admitted, non-forwarded,
+movable objects; their bytes and RC ownership remain unchanged.
+
+Keep the copying adapter as plumbing between three independently testable
+responsibilities:
+
+- The generic collector decides when to copy, publishes forwarding, marks and
+  queues canonical objects, and repairs references.
+- CloverVM placement policy chooses Old or NonMoving destination. It must not
+  infer destination placement solely from the source NonMoving bit: a movable
+  source can require a NonMoving destination.
+- `EvacuationDestinations` allocates/copies into the chosen borrowed space and
+  prepares its header. Old destinations are movable; NonMoving destinations
+  carry that bit. Both have Old generation, not OldRemembered.
+
+The future adapter's `copy_object(source)` switches on the placement decision
+and delegates to the appropriate destination method. No placement enum enters
+the generic collector protocol, and no virtual/callback framework is needed.
+Placement rules require their own policy tests and adapter integration tests;
+synthetic collector tests alone cannot verify those rules. The real destination
+component is tested with CloverVM objects, including exact payload bits, header
+preparation, reserved/copy extents, RC neutrality, and growth of populated spaces.
+It does not wire production copying into CloverHeapAdapter or settle admission.
+
+For a young collection, stop mutators and invalidate borrowed nursery allocation
+cursors before freezing the evacuation mappings. Supply precise roots and
+remembered references, drain canonical strong work (including direct NonMoving
+promotions), and finish weak repair. Only then may nursery storage be discarded
+and fresh mutator allocation cursors installed. No source destructor or RC
+release accompanies that discard. This requires tracing lifetime authority;
+it is not allowed for production RC-owned objects today.
+
+For a full moving collection, the memory manager retains the old inputs and a
+fresh ordinary destination concurrently. It retires selected input storage only
+after strong and weak repair, retaining the destination as the old space used
+by subsequent minor collections. Existing NonMoving storage stays in place;
+its collection participants must be traced, and sweeping remains separate.
+Not every future full collection must move old objects: a tracing-only full
+collection can retain their addresses instead.
+
+The collection-scoped `EvacuationSpaces` index borrows frozen input mappings.
+Stop using it before those mappings are retired. Neither destination may be an
+evacuation input; destination growth must not change containment of inputs or
+earlier destination addresses. This is a caller contract, not a new runtime
+destination-validation API.
+
+Containment is not collection participation. During a full collection, all
+NonMoving objects participate, including fresh copies appended beside existing
+objects. Their age need not be distinguished: canonical copies are marked and
+queued before repaired references expose them. Repeated strong discovery is
+deduplicated by marking; weak references directly to fresh copies resolve from
+their marks. Unmarked NonMoving targets are deferred early and cleared late.
+Young collections exclude these old NonMoving objects and rely on remembered
+slots for young children. Ordinary movable destinations must still be outside
+selected evacuation mappings to prevent recopying. No production adapter or
+epoch bookkeeping is added here.
+
+Raw-header routing tests in `test_gc_evacuation_spaces.cpp` cover minor appends
+into populated destinations, full movement into separate ordinary storage,
+mapping disjointness through destination growth, and destination lifetime after
+disposable input storage is released. They do not model strong closure or
+authorize runtime retirement. The isolated collector's
+`OrdinaryAndStablePathsJoinSameClosure` test independently covers strong closure
+across ordinary and NonMoving promotion paths.
+
+The classification-only slice implements `HeapSpace::visit_memory_ranges()` and
+a collection-scoped `gc::EvacuationSpaces` index. Callers supply a span of
+`EvacuationSpace` records containing a borrowed space pointer and expected
+Young or Old generation (Old also accepts OldRemembered headers). Construction
+enumerates the selected spaces' slab mappings once, sorts half-open integer
+address ranges, and rejects overlaps. Lookup uses binary search, with no bitmap
+walk, per-object registration, or allocation-path change.
+
+An object outside the selected mappings is not a collected moving source. An
+object inside must be movable and have the expected generation; contradiction
+is fatal, never an excuse to skip a source. Classification reads no native-layout
+or aux fields and remains valid after forwarding. Fresh destination spaces are
+not selected as sources, even if both source and destination are movable Old
+objects. This query assumes valid object pointers; mapping membership does not
+prove that an arbitrary address is a constructed object or allocation start.
+
+The index owns only its range metadata. Selected source mappings must outlive
+it, and source allocation stops before the snapshot is built. Destination spaces
+may continue growing independently. This slice does not wire copying methods
+into CloverHeapAdapter, activate evacuation, or settle stable-object liveness.
+In particular, returning false does not establish that an outside-source object
+is live or that a full collection can skip scanning it.
+
+`EvacuationSpaces::contains()` tests containment in the selected mappings and
+remains true after forwarding. Header generation and NonMoving checks validate
+the invariants of those spaces; they do not decide whether an object needs
+copying. The collector's adapter separately answers membership and movability.
+Generation is not inferred solely from addresses, and placement must not be
+inferred solely from native layout. Interned, stable, large, and uncollected old
 objects are not nursery sources. A full collection can additionally select
 movable old source spaces; it still does not copy stable objects. Space
 classification is an allocator concern; the algorithm does not enumerate
@@ -242,6 +388,11 @@ every edge. If allocation guarantees that every Young object belongs to the
 active collection's nursery, a header generation test can be the fast path and
 source-range checks can validate that invariant. Selecting only some nurseries
 would require distinguishing their membership explicitly.
+NonMoving does not distinguish old sources from fresh movable old destinations;
+collection-specific source membership remains necessary for full movement.
+Admission is enforced before allocating into a moving source space. Finding an
+inadmissible object there is an invariant violation, not permission to skip it
+and leave references pointing into storage that will be discarded.
 
 Initial admission should be an explicit conservative routing policy using the
 native layout descriptors/audit, not a new registry that equates "scanable"
@@ -249,23 +400,53 @@ with "movable". Unknown/unapproved layouts bypass the nursery.
 
 | Candidate | Evidence and remaining gate |
 |---|---|
-| Exact builtin Float, excluding NaN | Fixed native payload and ordinary strong fields; still needs relocation/root/admission tests; subclasses are not implicitly admitted |
-| Float NaN | Address-derived hash is a blocker; choose stable placement from construction or a stable hash policy before admission |
+| Exact builtin Float, including NaN | Fixed native payload, ordinary strong fields, and location-independent canonical NaN hash; still needs byte-copy/root/admission tests; subclasses are not implicitly admitted |
 | Exact builtin Tuple | Dynamic ordinary values; query excludes unused zero-length placeholder; needs relocation contract; subclasses need separate admission |
-| OverflowSlots | Capacity/aux metadata are local; needs standalone/group cases and exact zero-capacity extent |
+| OverflowSlots | Capacity/aux metadata are local; needs ordinary strong-edge coverage and exact zero-capacity extent |
 | Instance | Shape-derived capacity plus lazy prefix; defer until extent and forwarding-safe metadata tests exist |
 | ValueArrayBacking / HeapPtrArrayBacking | Query live capacity/initialized cells from existing counts; no retired-backing work; copying still needs layout admission |
 | RawArrayBacking | Query copies its full byte extent with no ordinary pointers; still needs relocation admission |
 | CodeObject, Shape, JitCodeObject | Custom destruction: stable allocation, never ordinary source copying |
 | Remaining layouts, resource owners, exports, large objects | No implicit admission; retain their reviewed stable/bypass policy |
 
-The NaN issue is concrete: [float hashing](../src/builtin_types/float.cpp)
-uses the Float address for NaNs, while dicts store hashes with their entries.
-Rewriting a dict key pointer would not repair a changed hash. Keeping all Float
-objects stable until that policy is settled is also a valid smaller first step;
-this investigation does not select new Python-visible hash/identity semantics.
+Current [float hashing](../src/builtin_types/float.cpp) uses a canonical,
+location-independent NaN hash. The earlier address-derived NaN blocker is
+resolved; generic identity/`id()` and raw-address exposure still require their
+own activation audit.
 The exclusions must be enforced before allocating into the nursery, not found
 only after an ineligible object needs evacuation.
+
+## Real-Layout Evacuation Integration Tests
+
+`tests/test_gc_real_layout_evacuation.cpp` composes the generic `Evacuation`
+algorithm with actual HeapObject forwarding, EvacuationSpaces containment,
+EvacuationDestinations copying, and CloverHeapAdapter marks/slot enumeration.
+The adapter and its explicit placement policy are test-only plumbing, with
+separate Young/Full template instantiations. No production adapter copying
+methods or runtime placement/pinning policy are introduced.
+
+Fixtures construct actual OverflowSlots objects in raw HeapSpace storage,
+outside RC registration and the ZCT. Reference cells are initialized without
+retaining setters; source and copied storage are discarded without destruction
+or reference release. Full-copy tests snapshot source payloads before forwarding
+and never consult overwritten source layout/aux/RC fields afterward. Native
+side tables, not extra object fields, hold test scan/copy instrumentation.
+
+Coverage includes minor collections with explicit remembered slots into
+populated destinations, full collections with separate ordinary destinations,
+mixed moving/NonMoving cycles and sharing, duplicate roots, and external weak
+roots resolved through real forwarding or marks. Fresh NonMoving weak roots
+resolve immediately; dead moving and NonMoving weak targets are cleared after
+closure. The fixtures verify canonical copies and their strong edges are outside
+selected input mappings, then verify retained graph relationships after input
+storage is released. A multi-slab case covers zero-capacity objects and edges
+at the capacity tail even when logical size is zero.
+
+These are real-layout copying tests, not evidence of complete runtime roots,
+remembered-set discovery, weak units embedded in custom layouts, coordination,
+or tracing lifetime cutover. Oversized fixture allocations do not grant large-
+object movement admission. No production RC-owned object is forwarded, and the
+precise-frame-root design remains parked.
 
 ## Lifetime and Roots Still Block Production Activation
 
@@ -296,25 +477,32 @@ units in uncollected owners, mutation/barrier lifetime rules, and the existing
 native/JIT no-safepoint contracts. Stable promotion joins the same copying scan
 queue as ordinary promotion; it is not a terminal leaf allocation.
 
-Full collections also need liveness and scanning for non-moving participants.
-The current isolated evacuation phase does not supply that: strong discovery
-skips outside-source objects and its weak resolver treats outside-source targets
-as surviving. That is appropriate for uncollected objects in a minor collection,
-not for dead stable objects participating in full GC. The full-collector review
-must integrate marking/scanning and stable-target weak liveness, distinguishing
-"not copied" from "not collected". Conditional group tests cover full moving
-source selection, not complete full-heap tracing or reclamation.
+The isolated phase now separates collection membership (`is_collected()`) from
+allocation capability (`is_movable()`). Movability does not depend on the
+collection mode or whether an object was forwarded: ordinary destinations are
+movable but uncollected. Stable destinations are non-moving and participate in
+Full alongside existing NonMoving objects; YoungOnly excludes both. Strong
+discovery marks and queues canonical copies or existing NonMoving objects once.
+Moving input payloads stay unchanged; live NonMoving owners have slots repaired
+in place.
+Weak repair follows moving-source forwarding or NonMoving marks, deferring
+unresolved collected targets early and clearing them after strong closure.
+Uncollected targets remain alive without being scanned implicitly. This closes
+the isolated stable-liveness gap, not runtime integration: VM adapter policy,
+immortal-object handling, non-moving sweeping, and lifetime authority remain
+separate gates. The allocator's `EvacuationSpaces::contains()` remains a storage
+containment helper, not a collector adapter predicate.
 
 ## Follow-Up Slices Proposed for Review
 
-1. **Conditional allocation groups in the isolated heap (implemented).** Exercise old owner
-   with young overflow, young owner with old overflow, and an already-forwarded
-   companion. Preserve one copy/scan per source and do not require adjacency
-   when the companion is not copied with its owner. Exercise YoungOnly and Full
-   moving-source selections, both root orders, and destination exclusion in both
-   modes. An unreachable old movable weak target survives YoungOnly selection
-   but is cleared under Full selection. No runtime header changes or stable-heap
-   mark/sweep implementation.
+1. **Collection selection in the isolated heap (implemented).** Exercise old
+   owners with young backing, young owners with old backing, repeated references,
+   both root orders, and independent destination choices. Preserve one copy/scan
+   per selected source in YoungOnly and Full modes; fresh ordinary destinations
+   are excluded in both. Fresh NonMoving copies participate in Full and are
+   already marked before repaired references expose them. Old weak-only targets
+   survive YoungOnly but are cleared under Full selection. No runtime stable-heap
+   sweeping or movement is enabled.
 2. **Unified descriptor lookup (implemented).** The separate release/object-size
    LUTs are replaced with one NativeLayoutId-indexed table
    whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor,
@@ -330,35 +518,106 @@ source selection, not complete full-heap tracing or reclamation.
    empty span. Raw backings report their full extent for both sizes and no
    ordinary pointers. Neither size is optional. No retired-backing audit or new
    historical-reservation field is part of this work.
-4. **Transitional header.** Review the sixteen-/twenty-four-byte candidates, preserve RC,
-   default current allocations Old, test independent GC state, and measure
-   header/stride/construction costs. Do not publish real forwarding in RC mode.
-5. **Collector-only reservation and admission tests.** Use dedicated storage
-   with no mutator reentry. Settle C++ relocation lifetime, per-layout admission,
-   tag-compatible group placement, publication, and slab ownership before real
-   adapter methods are exposed. Isolated byte-reservation tests do not enable
-   VM relocation or transfer ownership of real RC objects.
+4. **Transitional header (implemented).** The accepted eight-byte
+   [header encoding](gc-object-header.md) preserves RC and initializes current
+   allocations as Old. Independent state tests and before/after benchmarks are
+   complete. HeapObject contains HeapHeader, with fully inline accessors and
+   memcpy forwarding; production forwarding remains disabled.
+5. **Byte-copy groundwork, then admission.** Raw HeapSpace reservation is
+   implemented. Continue in these bounded slices, without relocation constructors:
+   - **5a: Generic byte-copy primitive and exact-Float tests (implemented).**
+     `copy_object_bytes(HeapSpace *, const HeapObject *)` lives in
+     `src/memory/heap_object_copy.{h,cpp}`; both pointers are required.
+     The memory layer
+     queries layout, reserves allocated extent, and memcpys the copy extent.
+     Exercise an exact Float in test-owned destination storage, preserving
+     payload bits (including signed zero and NaNs), shape/overflow references,
+     and header bytes. Verify source bytes and child refcounts are unchanged.
+     Copies are not registered as second RC owners; discard their raw storage
+     without releasing references or running native destruction. No source
+     mutation, forwarding, production CloverHeapAdapter copying methods, or
+     nursery admission. Document the temporary C++ lifetime exception beside
+     the primitive. The byte-copy helper itself does not change generation.
+     Validation: 82 focused copy/storage/layout tests passed; full Debug
+     `all check` passed 2,345 tests with three JIT-disabled skips and one disabled
+     test. Correctness review found no issues; all 78 applicable focused Release
+     copy/storage/layout tests also passed. Formatting and diff checks passed.
+     No production movement is enabled.
+   - **5b: Dynamic extents and copied-reference repair.** Reuse that primitive
+     for zero/nonzero Tuple and OverflowSlots, lazy Instance prefixes, and live
+     reference/raw backings. Verify allocation versus copy bounds, untouched
+     spare storage, and copied strong-slot repair without RC traffic. Cover
+     aliases, self-reference, and address-dependent fixups where applicable.
+     Sources retain their existing lifetime authority; copies remain test-owned
+     and unpublished. Optional capacity shrinking stays deferred.
+     **5b.1 extent tests are implemented:** six tests cover real allocations for
+     Tuple, OverflowSlots, lazy Instance prefixes, and all three backing layouts.
+     They verify copied bytes and full reservation spacing without inspecting
+     uncopied tails. Production copying code is unchanged. All 88 focused Debug
+     and 84 applicable focused Release tests passed; full Debug `all check`
+     passed 2,351 tests with three JIT-disabled skips and one disabled test.
+     **5b.2 copied-reference repair is implemented:** four tests use the existing
+     strong-slot visitor and slot rewrite operation with test-only
+     source/destination pairs. They cover shared tagged/raw references,
+     self-reference with a lazy tail, a two-object cycle, and owner/backing links.
+     Source bytes and ZCT state remain unchanged; source cycles are broken with
+     ordinary stores before RC teardown. No RC source is forwarded and no repair
+     API was added. All 95 focused Debug and 91 applicable focused Release tests
+     passed; full Debug `all check` passed 2,355 tests with three JIT-disabled
+     skips and one disabled test. Production copying remains disabled.
+   - **5c: Admission and real-adapter readiness.** Audit slots, extents, fixups,
+     identity/hash, exports, and destruction using the existing layout registry.
+     Unknown layouts remain non-moving. Establish source classification for
+     young/full collections, destination generation/ownership, and forwarding-
+     safe metadata access. Plan real adapter wiring without enabling it ahead
+     of the activation gates below.
+     The [NonMoving header migration](gc-object-header.md#code-migration-slices),
+     centralized initial construction policy, source-containment index,
+     borrowed destination component, and real-layout evacuation tests are
+     implemented. Production admission/wiring, forwarding-safe metadata and
+     lifetime ownership remain gates. Keep reference mapping ahead of full
+     pinning support.
 6. **Activation readiness.** Recheck root completeness, barriers, stable tracing
    lifetime authority, hash/identity, and source retirement. Only then implement
    real adapter copying and a restricted nursery under a separate approval.
 
-Slices 1--4 are useful independently and do not authorize slices 5--6. Root
+Slices 1--4 and raw reservations are useful independently; raw reservations
+do not authorize the remaining admission or activation work. Root
 publication, write barriers, non-moving tracing reclamation, and any Lean-model
 work retain their existing stage reviews. Nothing here adds stub copying
 methods to make `Evacuation<CloverHeapAdapter>` compile.
 
 ## Verification of This Investigation
 
-The original investigation was source/design inspection at the commit in the
-metadata table. The subsequent conditional-group slice changes only the test
-heap and its tests, not the runtime header, allocator, or generic traversal.
-Its checks validate selected-source group formation, not production copying
-readiness. Header-size alternatives and runtime proposals have not been
-implemented or benchmarked. Relative links and diff formatting are checked
-separately.
+The following counts are historical slice-specific evidence, not a claim that
+their older working trees are the current implementation. Through `19cc5f8e`,
+full Debug `all check` passed 2,404 tests and full Release passed 2,387, each with
+three JIT-disabled skips and one disabled test. The handoff/cache-exchange
+ASan/UBSan harness passed 400,000 randomized operations and 12,544 handoffs.
+These checks do not establish production root coverage or lifetime authority.
 
-Conditional-group verification: 39 focused GC tests passed; full Debug
-`all check` passed 2,297 tests and full Release passed 2,287, each with three
-existing JIT-disabled skips and one disabled test. The
-[adapter verification record](gc-collector-heap-adapter.md#conditional-groups-and-collection-selection)
-states the cases and the full-collector coverage boundary.
+The classification working tree based on `4467eced` passed 71 focused Debug
+GC/storage/copy tests and 70 applicable Release tests. Full Debug `all check`
+passed 2,368 tests and full Release passed 2,352, each with three existing
+runtime-JIT-disabled skips and one disabled test. Tests cover young/full moving
+source selection, empty selections, same-generation destinations, destination
+growth, multiple/oversized mappings, and generation-preserving forwarding to
+ordinary and NonMoving destinations. Fatal overlap and header/storage mismatch
+checks run in both configurations. C++ formatting and diff checks pass.
+No production allocation, collection, forwarding, or retirement path changes.
+
+The original investigation was source/design inspection. Subsequent isolated
+tests exercise moving-source selection, strong and weak repair, and copied
+graph preservation; they do not validate production evacuation, full non-moving
+collection, or RC/tracing cutover. The standalone header and raw HeapSpace
+allocator are implemented groundwork, not movement activation.
+
+The single-object simplification removes grouped placement and its adjacency
+tests while retaining root-order, collection-selection, graph-oracle,
+weak-repair, and allocation-failure coverage. Working-tree validation on
+2026-11-01, based on `a7c007bf`: 50 focused GC/storage tests passed; full Debug
+`all check` passed 2,339 tests and full Release passed 2,328 tests. Each full
+configuration had three JIT-disabled skips and one disabled test. The focus
+thread bypassed the shared build lock as authorized; other jobs and the lock
+file were untouched. Formatting, local documentation links, and diff checks
+passed. These are isolated-copying and storage tests, not production movement.

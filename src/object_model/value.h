@@ -286,10 +286,10 @@ namespace cl
         Value old_value = slots[location.physical_idx];
         if(value.is_refcounted_ptr())
         {
-            ++value.as.ptr->refcount;
+            ++value.as.ptr->refcount();
         }
         slots[location.physical_idx] = value;
-        if(old_value.is_refcounted_ptr() && --old_value.as.ptr->refcount == 0)
+        if(old_value.is_refcounted_ptr() && --old_value.as.ptr->refcount() == 0)
         {
             return old_value.as.ptr;
         }

@@ -74,11 +74,14 @@ namespace cl
                    current_active_slab_count();
         }
 
-        template <typename T, typename... Args> T *make(Args &&...args)
+        template <typename T, InitialMobilityPolicy policy, typename... Args>
+        T *make(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasNativeObjectSize<T>::value);
-            return construct_object<T>(this, std::forward<Args>(args)...);
+            assert(policy == global_heap->initial_mobility_policy());
+            return construct_object<T, policy>(this,
+                                               std::forward<Args>(args)...);
         }
 
     private:

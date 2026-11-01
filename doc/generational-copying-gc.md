@@ -4,10 +4,10 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Not started |
+| Implementation | Partial groundwork and isolated collector implemented; production tracing and movement disabled |
 | Scope | Generational moving collection, root and slot rewriting, stable placement and exports, and CloverVM native handles |
 | Owning layers | The memory manager owns collection; object layouts, root publication, and native APIs provide trace/update boundaries |
-| Validated against | `d99f5e99` (2026-08-12) |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); remaining policy choices are proposals |
 | Supersedes | Earlier non-moving generational mark-sweep direction |
 
 This document sketches an alternative garbage-collection direction for CloverVM:
@@ -22,7 +22,14 @@ The concrete template/heap-adapter design is kept separately in
 [Isolated Collector and Heap Adapter](gc-collector-heap-adapter.md).
 
 This design supersedes the earlier non-moving generational mark-sweep direction.
-It allows ordinary VM objects to move, so it is incompatible with a collector
+The implemented groundwork includes layout/slot queries, partial mutable roots,
+the transitional header, raw copying storage, an isolated strong/weak collector,
+and a standalone strong remembered set with consuming handoff. Deferred
+refcounting still controls runtime lifetime; no production nursery or evacuation
+is enabled. See the implementation plan for the current stopping point and
+remaining integration gates.
+
+The target design allows ordinary VM objects to move, so it is incompatible with a collector
 strategy that preserves raw addresses for all managed objects. Raw-address
 exposure beyond a relocation-exclusion scope instead requires permanent
 placement in the non-moving heap.
@@ -78,7 +85,13 @@ The first policy should be a stop-the-world generational collector:
 
 The stable heap is separate from the ordinary old generation. Objects may be
 allocated there directly or promoted there before raw-address exposure. Stable
-placement is permanent for the allocation, including after its last export is
+placement is represented by a per-object NonMoving header bit, independent of
+generation and native layout. Layout/storage policy determines its initial
+value; a normally movable object may later become permanently non-moving.
+Promotion to NonMoving is one-way. Full pinning support, including any pin
+bits/counts, is deferred until reference mapping is in place.
+
+Stable placement is permanent for the allocation, including after its last export is
 released; stable objects remain collectible and participate in tracing and
 remembered-set policy.
 
@@ -158,14 +171,11 @@ current RC reclamation or stable storage. The queue holds pending objects, not
 processed objects; a wide live graph can still create a large pending frontier.
 
 Destination storage grows by acquiring slabs without relocating earlier copies.
-Fixed allocation groups of one or two objects allow an exclusively owned
-overflow object to be placed immediately after its relocated owner, with
-required alignment. Members retain separate headers and forwarding records,
-and every member is enqueued. The adapter owns that layout/placement knowledge.
-Pair formation requires both members to be in the current moving source set
-and the companion to be unforwarded. Otherwise copy the selected member alone;
-this includes young overflow reached through an old owner's remembered slot.
-The same rule applies when a full collection selects old movable sources.
+Each object is copied and forwarded independently. Overflow storage is reached
+through the owner's ordinary strong reference, with no adjacency guarantee.
+Co-placement of owner and backing storage is deferred until production
+collection works and its locality benefit can be measured. Young-only and full
+moving-source selections use the same single-object evacuation contract.
 See the [adapter design](gc-collector-heap-adapter.md) for the concrete contract.
 
 Collector-only allocation during slot enumeration is allowed provided it cannot
@@ -227,22 +237,46 @@ are future work, detailed under
 The GC-specific object state needed for ordinary copied objects is much smaller:
 
 - normal versus forwarded state;
+- per-object NonMoving state, orthogonal to generation;
 - forwarding target when the object has been evacuated.
 
 The current eight-byte header is occupied by deferred-refcount and native-layout
 state. Collector migration must not remove that state before its replacement is
-working. The transition therefore accepts an oversized header carrying both the
-existing refcount/lifecycle fields and the new GC fields. Once tracing is the
-lifetime authority and the ZCT is retired, the refcount fields can be removed
-and the final header repacked.
+working. The transition keeps eight bytes by retaining narrow native-layout/aux
+fields and packing generation, NonMoving, and RC lifecycle into one byte, alongside the
+four-byte refcount. Once tracing is lifetime authority and the ZCT is retired,
+RC and lifecycle can be removed and the final header repacked with wider fields.
+
+The accepted layout and encoding are specified in
+[GC Object Header](gc-object-header.md): an eight-byte RC transition and a final
+eight-byte header with byte-sized GC state, a reserved byte, a 16-bit native
+layout ID, and a 32-bit aux count. The final header is destructively replaced by
+an encoded forwarding pointer that preserves source generation in bits 0--1.
+In the implemented transitional encoding, bit 2 is NonMoving; pointer-tag bits
+`0x18` identify forwarding and must be zero in normal headers. Bit 5 is spare and
+normal-state RC lifecycle occupies bits 6--7. Shared heap construction takes an
+explicit compile-time `InitialMobilityPolicy`: interned storage and layouts
+declaring `native_destroy` become NonMoving before publication; ordinary managed
+layouts remain movable. Bare header construction leaves NonMoving clear.
+Current production allocations still initialize as Old/Normal.
+Generation reads use a byte load and low-two-bit mask in either header form.
+Forwarding-target reads clear only bits 0--1, preserving every address bit above
+them. Forwarding overwrites RC and lifecycle, so this header slice does not
+enable production forwarding. Any future overlap
+with RC requires a separate forwarding-aware reclamation/metadata protocol;
+the accepted staging still transfers lifetime authority before evacuation.
 
 The GC state must represent generation/remembered state and any state required
 by the eventual old-generation and stable-heap collection policies. Allocation
-space determines whether an object may move: objects in the stable heap never
-move, and no object is pinned in place in a moving space. The collector therefore
-does not need movement-pin flags or counts. Export accounting still protects
-lifetime and prevents address-invalidating operations; its representation is a
-separate storage/API concern.
+space and the per-object NonMoving bit must agree: objects in stable storage
+never move. A layout's initial policy is not the lifetime policy of every
+instance; a movable string/backing can later be promoted to stable storage and
+marked NonMoving before its address is exposed. Do not mark a nursery source in
+place and then discard its storage. Reference repair completes before exposure;
+the old source remains movable/forwarded and the destination is NonMoving.
+Future pin bits/counts are separate, deferred work, not implemented by this bit.
+Export accounting still protects lifetime and prevents address-invalidating
+operations; its representation remains a separate storage/API concern.
 
 The forwarding target can be written into the from-space object itself after
 the object has been copied. A reference repair path can then recognize a
@@ -267,9 +301,9 @@ The first implementation should use object-level generation state in the header:
 
 ```cpp
 enum class HeapGenerationState : uint8_t {
-    Young,
-    Old,
-    OldRemembered,
+    Young         = 0x01,
+    Old           = 0x02,
+    OldRemembered = 0x03,
 };
 ```
 
@@ -278,9 +312,12 @@ minor GC must scan it. The state is conservative: an object may remain
 `OldRemembered` after a young reference is overwritten until a minor collection
 rescans it and clears the state.
 
-Forwarding state is separate from generation state. `Forwarded` is a temporary
-evacuation state that changes how from-space memory is interpreted.
-`OldRemembered` is a persistent generational barrier state.
+Forwarding is a temporary evacuation representation, not a fourth generation.
+It replaces normal metadata but preserves source generation, even when the
+destination belongs to a different generation. `OldRemembered` remains an
+object-level barrier fact; a forwarded source retains its pre-copy generation.
+Layout inspection, source selection, and weak repair must follow the
+[destructive-forwarding contract](gc-object-header.md#destructive-forwarding-contract).
 
 ## Generational Barriers and Minor Collection
 
@@ -297,6 +334,16 @@ barriers. Export shadows can instead provide stable data without relocating the
 original. Dead young objects are not copied. After the minor collection, the
 nursery can be reused wholesale.
 
+Minor promotion appends to existing ordinary old and stable storage; their
+ownership does not change at the collection boundary. If a full collection
+moves old objects, it instead needs separate ordinary destination storage outside
+the selected evacuation mappings. Existing stable storage remains in place.
+Input mappings stay alive until strong closure and weak repair complete, and
+until collection-scoped containment indexes are no longer used. The detailed
+[routing and lifetime contract](gc-copying-adapter-readiness.md#collection-routing-and-space-lifetime)
+does not select an old-generation movement policy or permit source discard
+while RC still owns lifetime.
+
 Minor collection should evacuate the full young generation reachable from roots
 and remembered old objects. Promoted objects should normally end the collection
 with old-to-old references to other promoted young survivors. New old-to-young
@@ -308,8 +355,8 @@ The baseline write barrier is object-level:
 ```cpp
 if(owner->generation_state == HeapGenerationState::Old &&
    child_is_young(child)) {
-    owner->generation_state = HeapGenerationState::OldRemembered;
     thread->remembered_set.push_back(owner);
+    owner->generation_state = HeapGenerationState::OldRemembered;
 }
 ```
 
@@ -321,7 +368,7 @@ including stable-heap participants. They never store nursery objects.
 
 Each `ThreadState` should own a remembered set. That keeps ordinary barriers
 lock-free in the common case: a mutator records old-to-young stores in its own
-thread-local vector. In a future no-GIL implementation where multiple threads
+thread-local reusable block sequence. In a future no-GIL implementation where multiple threads
 can write the same old object, the `Old -> OldRemembered` transition must become
 atomic so only one thread records the object.
 
@@ -332,6 +379,68 @@ young target found by roots or remembered old objects is promoted during the
 minor collection. After the remembered object has been scanned and repaired, the
 collector clears its remembered state back to `Old`; future old-to-young stores
 rebuild remembered-set entries through the write barrier.
+
+The standalone `gc::StrongRememberedSet` component uses a singly linked owning
+chain of fixed 4 KiB blocks, each containing one owning link, a sealed count,
+and 510 owner pointers. A borrowed current-block cursor and its hot used count
+delimit the active prefix. Blocks before the cursor use their sealed counts and
+may be partial; blocks after it are spare capacity. The current block always
+uses the container's count, not its own possibly stale/uninitialized count.
+Append reuses the next block or allocates one without relocating prior entries.
+Pointer cells are initialized only when appended and are never globally cleared.
+Iteration stops at the active cursor, ignoring stale cells in cached blocks.
+
+Appending into the current block is inline. An `unlikely` empty/full-block check
+calls `advance_block_slow()` only for initial allocation or rollover, including
+rollover into a cached spare block. The generic post-store `record_store()` helper
+delegates to `record_unremembered_owner()`: that primitive requires a valid,
+non-forwarded owner in exactly Old state, appends it, and sets OldRemembered.
+It does not check tags or child generation and permits conservative recording.
+Store callers can hoist known facts and choose their rejection order before
+calling the primitive; no combinatorial mode-template API is introduced.
+Rollover seals the old current block with its used count before advancing. No
+sealed-count access is added to ordinary append.
+
+After minor strong closure and weak repair, `clear_after_collection()` resets
+recorded owners from OldRemembered to Old, then resets the cursor/count while
+retaining the block chain for reuse. Destruction requires no outstanding records
+and frees blocks iteratively without touching inactive owner pointers. Peak block
+capacity is retained by reset; handoff may relinquish spare capacity as described
+below. Trimming is separate work.
+The container is non-copyable/non-movable and single-writer; all participating
+sets must be consumed under one collection/reset protocol.
+
+`adopt_from(std::move(source))` supports serialized, consuming handoff between
+distinct sets. It detaches the receiver's spare chain (its entire cached chain
+when empty). A nonempty receiver seals its current block and links in the
+source's entire chain, including source spares; an empty receiver installs that
+chain as its head. It adopts the source cursor/count. The source receives the
+receiver's displaced spare chain with an empty cursor. Existing receiver active
+entries remain in place. An empty source is a no-op. General move
+construction/assignment remain deleted.
+
+Handoff performs constant pointer/count work without allocation, deallocation,
+entry copying, owner traversal, or header access. Partially sealed blocks in the
+middle of the chain make this possible. Entry addresses and OldRemembered flags
+remain unchanged. The source may be reused or destroyed; destruction can free
+the displaced receiver cache, never either set's transferred active blocks. This
+cache exchange avoids retaining one extra receiver block on every fresh-source
+handoff/collection cycle with only one active entry. The receiver
+eventually clears owner flags after collection. Reset need not clear sealed
+counts: they are ignored until overwritten when a block is sealed again.
+
+Tests preserve entry-cell addresses through handoff and verify spare-chain exchange,
+append after a partial splice, reset/refill/resealing, and collection after source
+destruction. ThreadState wiring, concurrent access, RC owner invalidation, and
+full-collection retirement remain separate work.
+
+This component is currently exercised only with test-owned objects, including
+real-layout evacuation tests. It does not wire runtime stores or ThreadState
+buffers. Entries are borrowed: RC reclamation/address reuse needs an explicit
+invalidation/removal protocol before runtime activation. Shared-object header
+publication still requires synchronization at integration. A full collection
+that moves or sweeps old owners needs a separate remembered-entry retirement
+protocol; it must not call the minor reset on invalid or forwarded owners.
 
 This object-level remembered policy is intentionally coarse. Large backing
 stores, module globals, or other high-churn structures can later receive more
@@ -738,13 +847,15 @@ expose compatible buffer data. If used, its acquisition path is:
 2. If that allocation is in the nursery, reach a safepoint and run a full minor
    collection. Establish its stable destination before root scanning so any
    first encounter selects that destination. Promote it directly into the stable
-   heap and enqueue it in the unified copying work queue; other nursery survivors
+   heap, mark the destination NonMoving, and enqueue it in the unified copying
+   work queue; other nursery survivors
    follow the ordinary promotion policy and enter the same queue. Drain it to
    closure, repairing outgoing references. The nursery is fully
    evacuated and can be reused wholesale only after that work completes.
 3. If the allocation is already in the ordinary old generation, relocate it into
    the stable heap at a safepoint before exposure. This path must repair all
-   references to it, including incoming heap references; a minor collection's
+   references to it, including incoming heap references, and initialize the
+   stable destination as NonMoving; a minor collection's
    roots and remembered sets alone do not suffice for an old target. The exact
    mechanism for this old-to-stable relocation remains open.
 4. Complete reference repair before mutators resume. Re-read the updated rooted
@@ -827,7 +938,6 @@ scanning is a material minor-GC cost.
 - Should NaNs use relocation-stable per-object identity hashes or bit-pattern
   hashes, and should float identity semantics change independently? Account for
   same-payload NaN collisions without implicitly changing `is` or `id()`.
-- What is the transitional and final packed GC header layout?
 - How are export shadows indexed, rooted, repaired after original movement, and
   reclaimed, and can their storage/lookup be shared with `id()` shadows?
 - What alias and synchronization contracts permit mutable backing-store

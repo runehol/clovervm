@@ -25,10 +25,15 @@ configure_file(
 
 add_library(libclovervm_objects OBJECT
     gc/strong_closure.h
-    gc/allocation_group.h
+    gc/strong_remembered_set.cpp
+    gc/strong_remembered_set.h
     gc/evacuation.h
     gc/weak_repair.h
     gc/clover_heap_adapter.h
+    gc/evacuation_destinations.cpp
+    gc/evacuation_destinations.h
+    gc/evacuation_spaces.cpp
+    gc/evacuation_spaces.h
     codecs/codec.cpp
     codecs/codec.h
     codecs/incremental_codec.cpp
@@ -329,6 +334,10 @@ add_library(libclovervm_objects OBJECT
     object_model/shape_descriptor.h
     memory/slab_allocator.cpp
     memory/slab_allocator.h
+    memory/heap_space.cpp
+    memory/heap_space.h
+    memory/heap_object_copy.cpp
+    memory/heap_object_copy.h
     api/clover_entry.cpp
     api/clover_entry.h
     builtin_types/str.cpp

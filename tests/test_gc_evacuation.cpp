@@ -6,11 +6,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <new>
 #include <random>
 #include <span>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -22,6 +22,15 @@ namespace cl::gc::test
             !std::is_copy_constructible_v<Evacuation<TestHeapAdapter>>);
         static_assert(
             !std::is_move_constructible_v<Evacuation<TestHeapAdapter>>);
+        using Collection = Evacuation<TestHeapAdapter>;
+        static_assert(
+            std::is_nothrow_constructible_v<Collection, TestHeapAdapter &>);
+        static_assert(noexcept(
+            std::declval<Collection &>().add_root(std::declval<TestSlot>())));
+        static_assert(noexcept(std::declval<Collection &>().drain()));
+        static_assert(noexcept(std::declval<Collection &>().add_weak_root(
+            std::declval<TestHeapAdapter::WeakUnit>())));
+        static_assert(noexcept(std::declval<Collection &>().finish()));
 
         TestObject *pointer(const TestCell &cell)
         {
@@ -32,18 +41,31 @@ namespace cl::gc::test
         void expect_evacuation(TestHeap &heap, std::span<TestCell> roots,
                                TestCollectionKind kind)
         {
-            auto selected = [&](TestObject *object) {
+            auto collected = [&](TestObject *object) {
+                switch(object->storage)
+                {
+                    case TestStorage::Source:
+                        return kind == TestCollectionKind::Full ||
+                               object->generation == TestGeneration::Young;
+                    case TestStorage::NonMoving:
+                    case TestStorage::StableDestination:
+                        return kind == TestCollectionKind::Full;
+                    case TestStorage::OrdinaryDestination:
+                        return false;
+                }
+                std::abort();
+            };
+            auto moving = [&](TestObject *object) {
                 return object->storage == TestStorage::Source &&
-                       (kind == TestCollectionKind::Full ||
-                        object->generation == TestGeneration::Young);
+                       collected(object);
             };
             std::vector<TestCell> original_roots(roots.begin(), roots.end());
-            // Independent fixed-point oracle: inspect only the fixture's source
-            // graph, never adapter enumeration, forwarding, or collector state.
+            // Independent fixed-point oracle over the original fixture graph:
+            // no adapter enumeration, forwarding, marks, or worklist state.
             std::unordered_set<TestObject *> live;
             auto include = [&](const TestCell &cell) {
                 TestObject *object = pointer(cell);
-                return object != nullptr && selected(object) &&
+                return object != nullptr && collected(object) &&
                        live.insert(object).second;
             };
             for(const TestCell &root: roots)
@@ -60,7 +82,6 @@ namespace cl::gc::test
                     {
                         continue;
                     }
-                    changed = include(object->companion) || changed;
                     for(const TestCell &cell: object->strong_cells)
                     {
                         changed = include(cell) || changed;
@@ -69,8 +90,6 @@ namespace cl::gc::test
             }
             while(changed);
 
-            // Snapshot all source payloads so accidental source-side repair is
-            // detected, not hidden by comparing against a mutated source graph.
             std::vector<TestObject> originals;
             for(const auto &object: heap.objects())
             {
@@ -85,36 +104,62 @@ namespace cl::gc::test
             collection.drain();
 
             std::unordered_set<TestObject *> destinations;
+            std::unordered_set<TestObject *> canonical_live;
+            auto canonical = [&](TestObject *object) {
+                return moving(object) ? adapter.forwarded_to(object) : object;
+            };
             for(const auto &object: heap.objects())
             {
-                TestObject *copy = selected(object.get())
+                TestObject *copy = moving(object.get())
                                        ? adapter.forwarded_to(object.get())
                                        : nullptr;
                 if(live.contains(object.get()))
                 {
-                    ASSERT_NE(nullptr, copy);
-                    EXPECT_TRUE(destinations.insert(copy).second);
-                    EXPECT_FALSE(adapter.is_collected_source(copy));
-                    EXPECT_EQ(object->logical_identity, copy->logical_identity);
-                    EXPECT_EQ(TestHeaderKind::Normal, copy->header.kind);
-                    EXPECT_EQ(TestGeneration::Old, copy->generation);
-                    EXPECT_EQ(1u, adapter.scan_count(copy));
+                    TestObject *current = canonical(object.get());
+                    ASSERT_NE(nullptr, current);
+                    EXPECT_TRUE(canonical_live.insert(current).second);
+                    EXPECT_TRUE(adapter.is_marked(current));
+                    EXPECT_EQ(1u, adapter.scan_count(current));
+                    if(moving(object.get()))
+                    {
+                        EXPECT_TRUE(destinations.insert(copy).second);
+                        EXPECT_EQ(kind == TestCollectionKind::Full &&
+                                      object->preferred_destination ==
+                                          EvacuationDestination::Stable,
+                                  adapter.is_collected(copy));
+                        EXPECT_EQ(object->logical_identity,
+                                  copy->logical_identity);
+                        EXPECT_EQ(TestHeaderKind::Normal, copy->header.kind);
+                        EXPECT_EQ(object->preferred_destination ==
+                                          EvacuationDestination::Stable
+                                      ? TestStorage::StableDestination
+                                      : TestStorage::OrdinaryDestination,
+                                  copy->storage);
+                        EXPECT_EQ(TestGeneration::Old, copy->generation);
+                    }
                 }
                 else
                 {
                     EXPECT_EQ(nullptr, copy);
                 }
-                EXPECT_EQ(0u, adapter.scan_count(object.get()));
+                bool live_in_place =
+                    !moving(object.get()) && live.contains(object.get());
+                EXPECT_EQ(live_in_place, adapter.is_marked(object.get()));
+                EXPECT_EQ(live_in_place ? 1u : 0u,
+                          adapter.scan_count(object.get()));
             }
-            EXPECT_EQ(live.size(), heap.destination_object_count(
-                                       EvacuationDestination::Ordinary) +
-                                       heap.destination_object_count(
-                                           EvacuationDestination::Stable));
+            auto copied_count = [&] {
+                return heap.destination_object_count(
+                           EvacuationDestination::Ordinary) +
+                       heap.destination_object_count(
+                           EvacuationDestination::Stable);
+            };
+            EXPECT_EQ(destinations.size(), copied_count());
 
             auto expect_cell = [&](const TestCell &before,
                                    const TestCell &after) {
                 TestObject *source = pointer(before);
-                if(source == nullptr || !selected(source))
+                if(source == nullptr || !moving(source))
                 {
                     EXPECT_EQ(before, after);
                     return;
@@ -132,44 +177,47 @@ namespace cl::gc::test
             for(const auto &object: heap.objects())
             {
                 const TestObject &original = originals[idx++];
-                EXPECT_EQ(original.strong_cells, object->strong_cells);
-                EXPECT_EQ(original.companion, object->companion);
-                EXPECT_EQ(original.weak_targets, object->weak_targets);
+                // Only live NonMoving owners may have input payloads repaired
+                // in place. Moving sources and all untraced inputs stay intact.
+                if(moving(object.get()) || !live.contains(object.get()))
+                {
+                    EXPECT_EQ(original.strong_cells, object->strong_cells);
+                    EXPECT_EQ(original.weak_targets, object->weak_targets);
+                    EXPECT_EQ(original.weak_entries, object->weak_entries);
+                }
                 EXPECT_EQ(original.generation, object->generation);
+                EXPECT_EQ(original.storage, object->storage);
                 if(!live.contains(object.get()))
                 {
                     continue;
                 }
-                TestObject *copy = adapter.forwarded_to(object.get());
-                expect_cell(original.companion, copy->companion);
+                TestObject *current = canonical(object.get());
                 ASSERT_EQ(original.strong_cells.size(),
-                          copy->strong_cells.size());
+                          current->strong_cells.size());
                 for(size_t cell = 0; cell < original.strong_cells.size();
                     ++cell)
                 {
                     expect_cell(original.strong_cells[cell],
-                                copy->strong_cells[cell]);
+                                current->strong_cells[cell]);
                 }
-                // drain() may repair already-resolved weak targets early, but
-                // leaves unresolved targets for finish(), even if strong work
-                // subsequently discovers them during this drain.
+                // Early weak repair can follow existing forwarding, but cannot
+                // clear an unresolved collected target before strong closure.
                 ASSERT_EQ(original.weak_targets.size(),
-                          copy->weak_targets.size());
+                          current->weak_targets.size());
                 for(size_t weak = 0; weak < original.weak_targets.size();
                     ++weak)
                 {
                     TestObject *before = original.weak_targets[weak];
-                    TestObject *after = copy->weak_targets[weak];
-                    TestObject *forwarded =
-                        before != nullptr && selected(before)
-                            ? adapter.forwarded_to(before)
-                            : nullptr;
+                    TestObject *after = current->weak_targets[weak];
+                    TestObject *forwarded = before != nullptr && moving(before)
+                                                ? adapter.forwarded_to(before)
+                                                : nullptr;
                     EXPECT_TRUE(after == before ||
                                 (forwarded != nullptr && forwarded == after));
                 }
             }
-            // Repeated references to both source and destination roots must not
-            // recopy or rescan objects, even after the initial drain.
+            // Both original and canonical roots may be supplied again without
+            // copying or scanning either kind of live object twice.
             for(TestCell &root: roots)
             {
                 collection.add_root(TestSlot(root));
@@ -179,202 +227,249 @@ namespace cl::gc::test
                 collection.add_root(TestSlot(root));
             }
             collection.drain();
-            for(TestObject *copy: destinations)
+            for(TestObject *current: canonical_live)
             {
-                EXPECT_EQ(1u, adapter.scan_count(copy));
+                EXPECT_EQ(1u, adapter.scan_count(current));
             }
-            EXPECT_EQ(live.size(), heap.destination_object_count(
-                                       EvacuationDestination::Ordinary) +
-                                       heap.destination_object_count(
-                                           EvacuationDestination::Stable));
+            EXPECT_EQ(destinations.size(), copied_count());
             collection.finish();
+            idx = 0;
             for(const auto &object: heap.objects())
             {
+                const TestObject &original = originals[idx++];
                 if(!live.contains(object.get()))
                 {
                     continue;
                 }
-                TestObject *copy = adapter.forwarded_to(object.get());
-                EXPECT_EQ(1u, adapter.weak_scan_count(copy));
-                ASSERT_EQ(object->weak_targets.size(),
-                          copy->weak_targets.size());
-                for(size_t weak = 0; weak < object->weak_targets.size(); ++weak)
+                TestObject *current = canonical(object.get());
+                EXPECT_EQ(1u, adapter.weak_scan_count(current));
+                ASSERT_EQ(original.weak_targets.size(),
+                          current->weak_targets.size());
+                for(size_t weak = 0; weak < original.weak_targets.size();
+                    ++weak)
                 {
-                    TestObject *target = object->weak_targets[weak];
-                    EXPECT_EQ(target == nullptr || !selected(target)
-                                  ? target
-                                  : adapter.forwarded_to(target),
-                              copy->weak_targets[weak]);
+                    TestObject *target = original.weak_targets[weak];
+                    TestObject *expected = target;
+                    if(target != nullptr && collected(target))
+                    {
+                        expected =
+                            live.contains(target) ? canonical(target) : nullptr;
+                    }
+                    EXPECT_EQ(expected, current->weak_targets[weak]);
+                }
+                if(moving(object.get()))
+                {
+                    EXPECT_EQ(original.strong_cells, object->strong_cells);
+                    EXPECT_EQ(original.weak_targets, object->weak_targets);
+                    EXPECT_EQ(original.weak_entries, object->weak_entries);
                 }
             }
         }
 
-        class FailingCopyAdapter : public TestHeapAdapter
+        class NullCopyAdapter : public TestHeapAdapter
         {
         public:
             using TestHeapAdapter::TestHeapAdapter;
-            std::array<Object *, 2> copy_group(const Group &,
-                                               EvacuationDestination)
-            {
-                throw std::bad_alloc();
-            }
-        };
-
-        class FailingScanAdapter : public TestHeapAdapter
-        {
-        public:
-            using TestHeapAdapter::TestHeapAdapter;
-            template <typename Visitor>
-            void visit_strong_slots(Object *, Visitor &&)
-            {
-                throw std::bad_alloc();
-            }
+            Object *copy_object(Object *) { return nullptr; }
         };
     }  // namespace
 
-    TEST(GCEvacuation, ConditionalGroupsRespectSelectionAndRootOrder)
+    TEST(GCEvacuation,
+         StrongEdgesRespectSelectionRootOrderAndIndependentPlacement)
     {
         enum class RootOrder
         {
             OwnerFirst,
-            CompanionFirst,
+            BackingFirst
         };
         for(auto kind:
             {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
             for(auto owner_generation:
                 {TestGeneration::Young, TestGeneration::Old})
-                for(auto companion_generation:
+                for(auto backing_generation:
                     {TestGeneration::Young, TestGeneration::Old})
                     for(auto order:
-                        {RootOrder::OwnerFirst, RootOrder::CompanionFirst})
-                        for(auto destination: {EvacuationDestination::Ordinary,
-                                               EvacuationDestination::Stable})
-                        {
-                            SCOPED_TRACE(static_cast<int>(kind));
-                            SCOPED_TRACE(static_cast<int>(owner_generation));
-                            SCOPED_TRACE(
-                                static_cast<int>(companion_generation));
-                            SCOPED_TRACE(static_cast<int>(order));
-                            SCOPED_TRACE(static_cast<int>(destination));
-                            TestHeap heap(1);
-                            auto group = heap.make_pair();
-                            TestObject *owner = group.members[0];
-                            TestObject *companion = group.members[1];
-                            owner->generation = owner_generation;
-                            companion->generation = companion_generation;
-                            owner->preferred_destination = destination;
-                            companion->preferred_destination = destination;
-                            companion->strong_cells = {TestCell::immediate(73)};
-                            bool owner_selected =
-                                kind == TestCollectionKind::Full ||
-                                owner_generation == TestGeneration::Young;
-                            bool companion_selected =
-                                kind == TestCollectionKind::Full ||
-                                companion_generation == TestGeneration::Young;
-                            TestHeapAdapter adapter(heap, kind);
-                            Evacuation<TestHeapAdapter> collection(adapter);
-                            TestCell owner_root = TestCell::reference(owner);
-                            TestCell companion_root =
-                                TestCell::reference(companion);
-                            auto add_owner = [&] {
-                                collection.add_root(TestSlot(owner_root));
-                            };
-                            auto add_companion = [&] {
-                                if(!owner_selected)
-                                {
-                                    // The old owner's actual cell is a supplied
-                                    // remembered slot. Merely rooting the
-                                    // companion would not patch it.
-                                    collection.add_root(
-                                        TestSlot(owner->companion));
-                                }
-                                collection.add_root(TestSlot(companion_root));
-                            };
-                            switch(order)
+                        {RootOrder::OwnerFirst, RootOrder::BackingFirst})
+                        for(auto owner_destination:
+                            {EvacuationDestination::Ordinary,
+                             EvacuationDestination::Stable})
+                            for(auto backing_destination:
+                                {EvacuationDestination::Ordinary,
+                                 EvacuationDestination::Stable})
                             {
-                                case RootOrder::OwnerFirst:
-                                    add_owner();
-                                    add_companion();
-                                    break;
-                                case RootOrder::CompanionFirst:
-                                    add_companion();
-                                    add_owner();
-                                    break;
-                            }
-                            collection.finish();
-                            TestObject *owner_result = pointer(owner_root);
-                            TestObject *companion_result =
-                                pointer(companion_root);
-                            EXPECT_EQ(companion_result,
-                                      pointer(owner_result->companion));
-                            EXPECT_EQ(TestCell::immediate(73),
-                                      companion_result->strong_cells[0]);
-                            EXPECT_EQ(owner_generation, owner->generation);
-                            EXPECT_EQ(companion_generation,
-                                      companion->generation);
-                            for(size_t idx = 0; idx < group.count; ++idx)
-                            {
-                                TestObject *source = group.members[idx];
-                                bool selected = idx == 0 ? owner_selected
-                                                         : companion_selected;
-                                TestObject *result =
-                                    idx == 0 ? owner_result : companion_result;
-                                if(selected)
+                                SCOPED_TRACE(static_cast<int>(kind));
+                                SCOPED_TRACE(
+                                    static_cast<int>(owner_generation));
+                                SCOPED_TRACE(
+                                    static_cast<int>(backing_generation));
+                                SCOPED_TRACE(static_cast<int>(order));
+                                SCOPED_TRACE(
+                                    static_cast<int>(owner_destination));
+                                SCOPED_TRACE(
+                                    static_cast<int>(backing_destination));
+                                TestHeap heap(1);
+                                TestObject *owner = heap.make_object();
+                                TestObject *backing = heap.make_object();
+                                owner->strong_cells = {
+                                    TestCell::reference(backing)};
+                                backing->strong_cells = {
+                                    TestCell::immediate(73)};
+                                owner->generation = owner_generation;
+                                backing->generation = backing_generation;
+                                owner->preferred_destination =
+                                    owner_destination;
+                                backing->preferred_destination =
+                                    backing_destination;
+                                bool owner_selected =
+                                    kind == TestCollectionKind::Full ||
+                                    owner_generation == TestGeneration::Young;
+                                bool backing_selected =
+                                    kind == TestCollectionKind::Full ||
+                                    backing_generation == TestGeneration::Young;
+                                TestHeapAdapter adapter(heap, kind);
+                                Evacuation<TestHeapAdapter> collection(adapter);
+                                TestCell owner_root =
+                                    TestCell::reference(owner);
+                                TestCell backing_root =
+                                    TestCell::reference(backing);
+                                auto add_owner = [&] {
+                                    collection.add_root(TestSlot(owner_root));
+                                };
+                                auto add_backing = [&] {
+                                    if(!owner_selected)
+                                    {
+                                        // Supply the old owner's actual
+                                        // remembered slot. Rooting its target
+                                        // alone cannot repair this cell.
+                                        collection.add_root(
+                                            TestSlot(owner->strong_cells[0]));
+                                    }
+                                    collection.add_root(TestSlot(backing_root));
+                                };
+                                switch(order)
                                 {
-                                    EXPECT_NE(source, result);
-                                    EXPECT_TRUE(
-                                        adapter.is_collected_source(source));
-                                    EXPECT_EQ(result,
-                                              adapter.forwarded_to(source));
-                                    EXPECT_EQ(TestGeneration::Old,
-                                              result->generation);
-                                    EXPECT_FALSE(
-                                        adapter.is_collected_source(result));
-                                    EXPECT_EQ(1u, adapter.scan_count(result));
-                                    EXPECT_EQ(1u,
-                                              adapter.weak_scan_count(result));
+                                    case RootOrder::OwnerFirst:
+                                        add_owner();
+                                        add_backing();
+                                        break;
+                                    case RootOrder::BackingFirst:
+                                        add_backing();
+                                        add_owner();
+                                        break;
                                 }
-                                else
+                                collection.finish();
+                                TestObject *owner_result = pointer(owner_root);
+                                TestObject *backing_result =
+                                    pointer(backing_root);
+                                EXPECT_EQ(
+                                    backing_result,
+                                    pointer(owner_result->strong_cells[0]));
+                                EXPECT_EQ(TestCell::immediate(73),
+                                          backing_result->strong_cells[0]);
+                                EXPECT_EQ(owner_generation, owner->generation);
+                                EXPECT_EQ(backing_generation,
+                                          backing->generation);
+                                for(TestObject *source: {owner, backing})
                                 {
-                                    EXPECT_EQ(source, result);
-                                    EXPECT_FALSE(
-                                        adapter.is_collected_source(source));
-                                    EXPECT_EQ(TestHeaderKind::Normal,
-                                              source->header.kind);
-                                    EXPECT_EQ(0u, adapter.scan_count(source));
+                                    bool selected = source == owner
+                                                        ? owner_selected
+                                                        : backing_selected;
+                                    TestObject *result = source == owner
+                                                             ? owner_result
+                                                             : backing_result;
+                                    if(selected)
+                                    {
+                                        EXPECT_NE(source, result);
+                                        EXPECT_TRUE(
+                                            adapter.is_collected(source));
+                                        EXPECT_TRUE(adapter.is_movable(source));
+                                        EXPECT_EQ(result,
+                                                  adapter.forwarded_to(source));
+                                        EXPECT_EQ(TestGeneration::Old,
+                                                  result->generation);
+                                        EXPECT_EQ(
+                                            kind == TestCollectionKind::Full &&
+                                                source->preferred_destination ==
+                                                    EvacuationDestination::
+                                                        Stable,
+                                            adapter.is_collected(result));
+                                        EXPECT_EQ(
+                                            source->preferred_destination ==
+                                                    EvacuationDestination::
+                                                        Stable
+                                                ? TestStorage::StableDestination
+                                                : TestStorage::
+                                                      OrdinaryDestination,
+                                            result->storage);
+                                        EXPECT_EQ(1u,
+                                                  adapter.scan_count(result));
+                                        EXPECT_EQ(1u, adapter.weak_scan_count(
+                                                          result));
+                                    }
+                                    else
+                                    {
+                                        EXPECT_EQ(source, result);
+                                        EXPECT_FALSE(
+                                            adapter.is_collected(source));
+                                        EXPECT_EQ(TestHeaderKind::Normal,
+                                                  source->header.kind);
+                                        EXPECT_EQ(0u,
+                                                  adapter.scan_count(source));
+                                    }
+                                }
+                                for(auto destination:
+                                    {EvacuationDestination::Ordinary,
+                                     EvacuationDestination::Stable})
+                                {
+                                    EXPECT_EQ(size_t(owner_selected &&
+                                                     owner_destination ==
+                                                         destination) +
+                                                  size_t(backing_selected &&
+                                                         backing_destination ==
+                                                             destination),
+                                              heap.destination_object_count(
+                                                  destination));
                                 }
                             }
-                            EXPECT_EQ(
-                                size_t(owner_selected) +
-                                    size_t(companion_selected),
-                                heap.destination_object_count(destination));
-                            if(owner_selected && companion_selected &&
-                               order == RootOrder::OwnerFirst)
-                            {
-                                EXPECT_EQ(sizeof(TestObject),
-                                          reinterpret_cast<uintptr_t>(
-                                              companion_result) -
-                                              reinterpret_cast<uintptr_t>(
-                                                  owner_result));
-                            }
-                        }
     }
 
-    TEST(GCEvacuation, StandaloneCompanionDoesNotRetainItsOwner)
+    TEST(GCEvacuation, ChildIsDiscoveredOnlyWhenOwnerIsScanned)
+    {
+        TestHeap heap(1);
+        TestObject *owner = heap.make_object();
+        TestObject *backing = heap.make_object();
+        owner->strong_cells = {TestCell::reference(backing)};
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell root = TestCell::reference(owner);
+        collection.add_root(TestSlot(root));
+        ASSERT_NE(nullptr, adapter.forwarded_to(owner));
+        EXPECT_EQ(nullptr, adapter.forwarded_to(backing));
+        EXPECT_EQ(
+            1u, heap.destination_object_count(EvacuationDestination::Ordinary));
+        collection.finish();
+        ASSERT_NE(nullptr, adapter.forwarded_to(backing));
+        EXPECT_EQ(adapter.forwarded_to(backing),
+                  pointer(pointer(root)->strong_cells[0]));
+        EXPECT_EQ(1u, adapter.scan_count(adapter.forwarded_to(backing)));
+    }
+
+    TEST(GCEvacuation, RootedBackingDoesNotRetainItsUnreachableOwner)
     {
         for(auto kind:
             {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
         {
             TestHeap heap;
-            auto group = heap.make_pair();
+            TestObject *owner = heap.make_object();
+            TestObject *backing = heap.make_object();
+            owner->strong_cells = {TestCell::reference(backing)};
             TestHeapAdapter adapter(heap, kind);
             Evacuation<TestHeapAdapter> collection(adapter);
-            TestCell root = TestCell::reference(group.members[1]);
+            TestCell root = TestCell::reference(backing);
             collection.add_root(TestSlot(root));
             collection.finish();
-            EXPECT_EQ(nullptr, adapter.forwarded_to(group.members[0]));
-            EXPECT_EQ(pointer(root), adapter.forwarded_to(group.members[1]));
-            EXPECT_EQ(nullptr, pointer(root)->exclusive_owner);
+            EXPECT_EQ(nullptr, adapter.forwarded_to(owner));
+            EXPECT_EQ(pointer(root), adapter.forwarded_to(backing));
             EXPECT_EQ(1u, adapter.scan_count(pointer(root)));
             EXPECT_EQ(1u, heap.destination_object_count(
                               EvacuationDestination::Ordinary));
@@ -387,21 +482,26 @@ namespace cl::gc::test
             {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
         {
             TestHeap heap;
-            auto group = heap.make_pair();
-            TestObject *owner = group.members[0];
-            owner->generation = TestGeneration::Old;
-            owner->storage = TestStorage::StableDestination;
+            TestObject *owner = heap.make_non_moving_object();
+            TestObject *backing = heap.make_object();
+            owner->strong_cells = {TestCell::reference(backing)};
             TestHeapAdapter adapter(heap, kind);
             Evacuation<TestHeapAdapter> collection(adapter);
             TestCell root = TestCell::reference(owner);
             collection.add_root(TestSlot(root));
-            collection.add_root(TestSlot(owner->companion));
+            // Full traces the owner itself. A minor collection still needs
+            // its actual remembered slot rather than an extra root copy.
+            if(kind == TestCollectionKind::YoungOnly)
+            {
+                collection.add_root(TestSlot(owner->strong_cells[0]));
+            }
             collection.finish();
             EXPECT_EQ(owner, pointer(root));
-            EXPECT_FALSE(adapter.is_collected_source(owner));
-            EXPECT_EQ(0u, adapter.scan_count(owner));
-            EXPECT_EQ(adapter.forwarded_to(group.members[1]),
-                      pointer(owner->companion));
+            EXPECT_FALSE(adapter.is_movable(owner));
+            EXPECT_EQ(kind == TestCollectionKind::Full ? 1u : 0u,
+                      adapter.scan_count(owner));
+            EXPECT_EQ(adapter.forwarded_to(backing),
+                      pointer(owner->strong_cells[0]));
             EXPECT_EQ(1u, heap.destination_object_count(
                               EvacuationDestination::Ordinary));
         }
@@ -438,9 +538,7 @@ namespace cl::gc::test
             TestObject *young = heap.make_object();
             TestObject *old = heap.make_object();
             old->generation = TestGeneration::Old;
-            TestObject *stable = heap.make_object();
-            stable->generation = TestGeneration::Old;
-            stable->storage = TestStorage::StableDestination;
+            TestObject *stable = heap.make_non_moving_object();
             TestHeapAdapter adapter(heap, kind);
             Evacuation<TestHeapAdapter> collection(adapter);
             TestCell root = TestCell::reference(young);
@@ -485,6 +583,205 @@ namespace cl::gc::test
         }
     }
 
+    TEST(GCEvacuation, NonMovingRootReachesMovingCycleAndWeakOnlyGarbage)
+    {
+        for(auto destination:
+            {EvacuationDestination::Ordinary, EvacuationDestination::Stable})
+        {
+            TestHeap heap(1);
+            TestObject *owner = heap.make_non_moving_object();
+            TestObject *child = heap.make_object();
+            TestObject *dead = heap.make_non_moving_object();
+            child->preferred_destination = destination;
+            owner->strong_cells = {TestCell::reference(child),
+                                   TestCell::reference(child)};
+            child->strong_cells = {TestCell::reference(owner),
+                                   TestCell::reference(child)};
+            owner->weak_targets = {child, dead};
+            child->weak_targets = {owner, dead};
+            std::array roots = {TestCell::reference(owner),
+                                TestCell::reference(owner)};
+            expect_evacuation(heap, roots, TestCollectionKind::Full);
+        }
+    }
+
+    TEST(GCEvacuation, FreshNonMovingCopiesAreMarkedBeforeRootsAreRewritten)
+    {
+        for(auto kind:
+            {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
+        {
+            TestHeap heap(1);
+            TestObject *existing = heap.make_non_moving_object();
+            TestObject *source = heap.make_object();
+            TestObject *child = heap.make_object();
+            source->preferred_destination = EvacuationDestination::Stable;
+            source->strong_cells = {TestCell::reference(source),
+                                    TestCell::reference(existing),
+                                    TestCell::reference(child)};
+            existing->strong_cells = {TestCell::reference(source)};
+            child->strong_cells = {TestCell::reference(source)};
+            TestHeapAdapter adapter(heap, kind);
+            Evacuation<TestHeapAdapter> collection(adapter);
+            TestCell root = TestCell::reference(source);
+            collection.add_root(TestSlot(root));
+            TestObject *copy = pointer(root);
+            ASSERT_NE(source, copy);
+            EXPECT_EQ(kind == TestCollectionKind::Full,
+                      adapter.is_collected(copy));
+            EXPECT_TRUE(adapter.is_marked(copy));
+            EXPECT_EQ(0u, adapter.scan_count(copy));
+
+            // A weak reference directly to the canonical copy resolves before
+            // scanning, without marking or tracing another object.
+            TestObject *weak = copy;
+            collection.add_weak_root(
+                TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
+            EXPECT_EQ(copy, weak);
+            EXPECT_EQ(0u, adapter.scan_count(copy));
+            collection.add_root(TestSlot(root));
+            TestCell original_root = TestCell::reference(source);
+            collection.add_root(TestSlot(original_root));
+            collection.finish();
+            EXPECT_EQ(copy, pointer(original_root));
+            EXPECT_EQ(copy, pointer(copy->strong_cells[0]));
+            EXPECT_EQ(existing, pointer(copy->strong_cells[1]));
+            ASSERT_NE(nullptr, adapter.forwarded_to(child));
+            EXPECT_EQ(adapter.forwarded_to(child),
+                      pointer(copy->strong_cells[2]));
+            EXPECT_EQ(copy,
+                      pointer(adapter.forwarded_to(child)->strong_cells[0]));
+            EXPECT_EQ(1u, adapter.scan_count(copy));
+            EXPECT_EQ(1u, adapter.weak_scan_count(copy));
+            EXPECT_EQ(kind == TestCollectionKind::Full ? 1u : 0u,
+                      adapter.scan_count(existing));
+            EXPECT_EQ(1u, heap.destination_object_count(
+                              EvacuationDestination::Stable));
+            EXPECT_EQ(1u, heap.destination_object_count(
+                              EvacuationDestination::Ordinary));
+        }
+    }
+
+    TEST(GCEvacuation, SharedNonMovingWeakUnitsUseMarksForOldAndFreshTargets)
+    {
+        TestHeap heap;
+        TestObject *source = heap.make_object();
+        source->preferred_destination = EvacuationDestination::Stable;
+        TestObject *late = heap.make_non_moving_object();
+        TestObject *dead = heap.make_non_moving_object();
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell root = TestCell::reference(source);
+        collection.add_root(TestSlot(root));
+        TestObject *copy = pointer(root);
+        TestWeakEntry retained =
+            TestWeakEntry::active(copy, late, TestCell::reference(copy));
+        TestWeakEntry invalidated =
+            TestWeakEntry::active(copy, late, TestCell::reference(dead));
+        for(TestWeakEntry *entry: {&retained, &invalidated})
+        {
+            collection.add_weak_root(
+                TestHeapAdapter::WeakUnit::bind<repair_test_weak_entry>(
+                    *entry));
+            EXPECT_EQ(1u, entry->repair_count);
+            EXPECT_EQ(0u, entry->reset_count);
+        }
+        EXPECT_FALSE(adapter.is_marked(late));
+        EXPECT_FALSE(adapter.is_marked(dead));
+        TestCell late_root = TestCell::reference(late);
+        collection.add_root(TestSlot(late_root));
+        collection.finish();
+        EXPECT_EQ((std::array{copy, late}), retained.guards);
+        EXPECT_EQ(TestCell::reference(copy), retained.payload);
+        EXPECT_EQ(2u, retained.repair_count);
+        EXPECT_EQ(0u, retained.reset_count);
+        EXPECT_EQ((std::array<TestObject *, 2>{nullptr, nullptr}),
+                  invalidated.guards);
+        EXPECT_EQ(TestCell::immediate(0), invalidated.payload);
+        EXPECT_EQ(1u, invalidated.reset_count);
+        EXPECT_EQ(1u, adapter.scan_count(copy));
+        EXPECT_EQ(1u, adapter.scan_count(late));
+        EXPECT_EQ(0u, adapter.scan_count(dead));
+    }
+
+    TEST(GCEvacuation, WeakOnlyUnmarkedNonMovingAllocationIsNotKeptAlive)
+    {
+        TestHeap heap;
+        TestObject *source = heap.make_object();
+        TestObject *child = heap.make_object();
+        source->preferred_destination = EvacuationDestination::Stable;
+        source->strong_cells = {TestCell::reference(child)};
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        // The raw primitive does not publish or mark its allocation. Placement
+        // in destination storage alone must not grant weak liveness.
+        TestObject *allocation = adapter.copy_object(source);
+        TestObject *weak = allocation;
+        Evacuation<TestHeapAdapter> collection(adapter);
+        collection.add_weak_root(
+            TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
+        EXPECT_EQ(allocation, weak);
+        EXPECT_FALSE(adapter.is_marked(allocation));
+        collection.finish();
+        EXPECT_EQ(nullptr, weak);
+        EXPECT_FALSE(adapter.is_marked(allocation));
+        EXPECT_EQ(0u, adapter.scan_count(allocation));
+        EXPECT_EQ(nullptr, adapter.forwarded_to(child));
+    }
+
+    TEST(GCEvacuation, NonMovingOnlyCyclesNeedNoCopies)
+    {
+        TestHeap heap;
+        TestObject *first = heap.make_non_moving_object();
+        TestObject *second = heap.make_non_moving_object();
+        TestObject *dead = heap.make_object();
+        first->strong_cells = {TestCell::reference(second),
+                               TestCell::reference(first)};
+        second->strong_cells = {TestCell::reference(first)};
+        second->weak_targets = {dead, first};
+        std::array roots = {TestCell::reference(first)};
+        expect_evacuation(heap, roots, TestCollectionKind::Full);
+        EXPECT_EQ(
+            0u, heap.destination_object_count(EvacuationDestination::Ordinary));
+        EXPECT_EQ(0u,
+                  heap.destination_object_count(EvacuationDestination::Stable));
+    }
+
+    TEST(GCEvacuation, WeakOnlyNonMovingOwnerDoesNotRetainItsStrongChildren)
+    {
+        TestHeap heap;
+        TestObject *head = heap.make_object();
+        TestObject *dead_owner = heap.make_non_moving_object();
+        TestObject *dead_child = heap.make_object();
+        dead_owner->strong_cells = {TestCell::reference(dead_child),
+                                    TestCell::reference(dead_owner)};
+        head->weak_targets = {dead_owner, dead_child};
+        std::array roots = {TestCell::reference(head)};
+        expect_evacuation(heap, roots, TestCollectionKind::Full);
+    }
+
+    TEST(GCEvacuation, NonMovingOwnerKeepsRepairedSlotsAfterSourceDisposal)
+    {
+        TestHeap heap(1);
+        TestObject *owner = heap.make_non_moving_object();
+        TestObject *child = heap.make_object();
+        owner->strong_cells = {TestCell::reference(child)};
+        child->strong_cells = {TestCell::reference(owner)};
+        owner->weak_targets = {child};
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell root = TestCell::reference(owner);
+        collection.add_root(TestSlot(root));
+        collection.finish();
+        TestObject *copy = adapter.forwarded_to(child);
+        ASSERT_NE(nullptr, copy);
+        heap.discard_source_storage(TestCollectionKind::Full);
+        ASSERT_EQ(1u, heap.objects().size());
+        EXPECT_EQ(owner, pointer(root));
+        EXPECT_EQ(copy, pointer(owner->strong_cells[0]));
+        EXPECT_EQ(owner, pointer(copy->strong_cells[0]));
+        EXPECT_EQ(copy, owner->weak_targets[0]);
+        EXPECT_EQ(1u, adapter.scan_count(owner));
+    }
+
     TEST(GCEvacuation, EmptyNullAndImmediateRoots)
     {
         TestHeap heap;
@@ -513,36 +810,38 @@ namespace cl::gc::test
         expect_evacuation(heap, roots, TestCollectionKind::Full);
     }
 
-    TEST(GCEvacuation, CompanionReferencesAndStablePathsJoinSameClosure)
+    TEST(GCEvacuation, OrdinaryAndStablePathsJoinSameClosure)
     {
         TestHeap heap(1);
-        auto first = heap.make_pair();
-        auto second = heap.make_pair();
+        TestObject *first = heap.make_object();
+        TestObject *first_backing = heap.make_object();
+        TestObject *second = heap.make_object();
+        TestObject *second_backing = heap.make_object();
         TestObject *child = heap.make_object();
-        first.members[1]->preferred_destination = EvacuationDestination::Stable;
-        first.members[1]->strong_cells = {
-            TestCell::reference(second.members[0])};
-        second.members[1]->strong_cells = {
-            TestCell::reference(first.members[0]), TestCell::reference(child)};
+        first->strong_cells = {TestCell::reference(first_backing)};
+        first_backing->preferred_destination = EvacuationDestination::Stable;
+        first_backing->strong_cells = {TestCell::reference(second)};
+        second->strong_cells = {TestCell::reference(second_backing)};
+        second_backing->strong_cells = {TestCell::reference(first),
+                                        TestCell::reference(child)};
         child->preferred_destination = EvacuationDestination::Stable;
         child->strong_cells = {TestCell::reference(child)};
-        std::array roots = {TestCell::reference(first.members[0])};
+        std::array roots = {TestCell::reference(first)};
         expect_evacuation(heap, roots, TestCollectionKind::Full);
-        EXPECT_EQ(3u,
+        EXPECT_EQ(2u,
                   heap.destination_object_count(EvacuationDestination::Stable));
         EXPECT_EQ(
-            2u, heap.destination_object_count(EvacuationDestination::Ordinary));
+            3u, heap.destination_object_count(EvacuationDestination::Ordinary));
     }
 
-    TEST(GCEvacuation,
-         OutsideSourceRootsAreUntouchedAndRememberedSlotsAreExplicit)
+    TEST(GCEvacuation, MinorNonMovingRootsNeedExplicitRememberedSlots)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        TestHeapAdapter adapter(heap, TestCollectionKind::YoungOnly);
         TestObject *child = heap.make_object();
-        TestObject *old =
-            adapter.copy_group(adapter.allocation_group(heap.make_object()),
-                               EvacuationDestination::Stable)[0];
+        TestObject *source = heap.make_object();
+        source->preferred_destination = EvacuationDestination::Stable;
+        TestObject *old = adapter.copy_object(source);
         old->strong_cells = {TestCell::reference(child)};
         TestCell root = TestCell::reference(old);
         Evacuation<TestHeapAdapter> collection(adapter);
@@ -600,7 +899,14 @@ namespace cl::gc::test
             std::vector<TestObject *> objects;
             for(size_t idx = 0; idx < 96; ++idx)
             {
-                objects.push_back(heap.make_object());
+                TestObject *object = idx % 4 == 0
+                                         ? heap.make_non_moving_object()
+                                         : heap.make_object();
+                if(idx % 4 == 1)
+                {
+                    object->generation = TestGeneration::Old;
+                }
+                objects.push_back(object);
             }
             for(TestObject *object: objects)
             {
@@ -621,18 +927,14 @@ namespace cl::gc::test
         }
     }
 
-    TEST(GCEvacuation, NativeAllocationExceptionsAreFatalAtPublicEntryPoints)
+    TEST(GCEvacuation, NullCopyIsFatalBeforePublishingForwarding)
     {
         TestHeap heap;
         TestCell root = TestCell::reference(heap.make_object());
-        FailingCopyAdapter failing_copy(heap, TestCollectionKind::Full);
-        Evacuation<FailingCopyAdapter> copying(failing_copy);
+        NullCopyAdapter failing_copy(heap, TestCollectionKind::Full);
+        Evacuation<NullCopyAdapter> copying(failing_copy);
         EXPECT_DEATH(copying.add_root(TestSlot(root)),
                      "test GC allocation failed");
-        FailingScanAdapter failing_scan(heap, TestCollectionKind::Full);
-        Evacuation<FailingScanAdapter> scanning(failing_scan);
-        scanning.add_root(TestSlot(root));
-        EXPECT_DEATH(scanning.drain(), "test GC allocation failed");
     }
 
     TEST(GCEvacuation, DestinationExhaustionDuringScanningIsFatal)

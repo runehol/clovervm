@@ -134,12 +134,12 @@ TEST(ByteArray, ExhaustionReleasesSourceAndItsBackingWhileIteratorStaysAlive)
         thread->make_object_value<ByteArrayIterator>(source.value()));
     auto next_name =
         context.vm().get_or_create_interned_string_value(L"__next__");
-    EXPECT_EQ(2, source.extract()->refcount);
+    EXPECT_EQ(2, source.extract()->refcount());
     context.vm().request_safepoint();
     EXPECT_EQ(Value::from_smi(7),
               thread->call_clovervm_method(iterator.raw_value(), next_name));
     // Returning the last item is not yet exhaustion.
-    EXPECT_EQ(2, source.extract()->refcount);
+    EXPECT_EQ(2, source.extract()->refcount());
     ASSERT_TRUE(thread->call_clovervm_method(iterator.raw_value(), next_name)
                     .is_exception_marker());
     ASSERT_EQ(PendingExceptionKind::Object, thread->pending_exception_kind());
@@ -147,12 +147,12 @@ TEST(ByteArray, ExhaustionReleasesSourceAndItsBackingWhileIteratorStaysAlive)
         thread->class_for_native_layout(NativeLayoutId::StopIteration),
         thread->class_of_value(thread->pending_exception_object().raw_value()));
     thread->clear_pending_exception();
-    EXPECT_EQ(1, source.extract()->refcount);
+    EXPECT_EQ(1, source.extract()->refcount());
     source.extract()->items.push_back(9);
     ASSERT_TRUE(thread->call_clovervm_method(iterator.raw_value(), next_name)
                     .is_exception_marker());
     thread->clear_pending_exception();
-    EXPECT_EQ(1, source.extract()->refcount);
+    EXPECT_EQ(1, source.extract()->refcount());
     source = thread->make_object_value<ByteArray>();
     ASSERT_EQ(thread->clover_frame_sentinel(), thread->clover_frame_frontier());
     thread->publish_safepoint_scan_record(

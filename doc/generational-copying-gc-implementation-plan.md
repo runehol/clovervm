@@ -7,7 +7,7 @@
 | Implementation | Partial |
 | Scope | Incremental transition from deferred refcounting to tracing and moving collection, including scanning, rewriting, barriers, and a collector model for Lean proofs |
 | Owning layers | Memory manager owns collection; runtime layouts and root publication supply precise mutable references; mutator store paths own barriers |
-| Validated against | Weak-unit migration working tree based on `649dca5b`; further frame-state work paused (2026-10-31) |
+| Validated against | Groundwork through `19cc5f8e` (2026-11-01); further frame-state work paused |
 | Supersedes | N/A |
 
 The target architecture is described in
@@ -59,13 +59,66 @@ must also run against a small test heap without constructing a VM.
 The template interface and concrete test-heap/CloverVM sketches are in
 [Isolated Collector and Heap Adapter](gc-collector-heap-adapter.md). The initial
 slice is non-moving strong closure over explicit roots; it is implemented in
-`src/gc/` in the current working tree, with both synthetic and real-object tests.
+`src/gc/`, with both synthetic and real-object tests.
 It does not depend on completing interpreter frame maps and does not enable
 production tracing or evacuation.
 
 The collector model and the production algorithm should expose corresponding
 state transitions. Lean proofs establish properties under explicit adapter
 assumptions; they do not by themselves verify the C++ adapter.
+
+### Byte-Copy Direction and Immediate Sequence
+
+Real-object evacuation uses generic `std::memcpy`, not C++ copy construction or
+per-native-layout relocation constructors. Query source layout, reserve its
+allocated extent, and copy its copy extent; then prepare destination state,
+publish forwarding, and repair traced references. The existing per-layout
+checklist covers self/interior pointers and other address-dependent state.
+
+Current RC-backed member wrappers temporarily prevent the C++20 implicit-lifetime
+guarantee for some copied records. This limitation is explicitly accepted for
+the memcpy implementation, not permission to break RC ownership. Replace those
+representations and enforce compile-time trivial-copyability checks for admitted
+movable records at the RC-wrapper cutover, rather than building a temporary
+relocation-constructor system.
+
+Completed preparatory slices include **5a: generic byte copying tested on exact
+Float** and **5b: dynamic extents and copied-reference repair**. **5c: admission
+and real-adapter readiness** is partially implemented, as detailed in the
+[copying-adapter sequence](gc-copying-adapter-readiness.md#follow-up-slices-proposed-for-review).
+These labels are local to that investigation, not implementation-plan stage
+numbers. Byte-copy fixtures leave sources unchanged. Separate raw-space
+evacuation fixtures exercise forwarding without enrolling objects in RC
+ownership; both kinds of fixture remain test-owned and unpublished.
+The classification-only part of 5c now has `gc::EvacuationSpaces`: a snapshot
+of selected HeapSpace mapping ranges with forwarding-safe generation/NonMoving
+checks. It distinguishes fresh destinations from selected sources without
+object enumeration or per-allocation bookkeeping. This does not wire evacuation
+into CloverHeapAdapter or implement full-collection stable-object liveness.
+The isolated test heap separately distinguishes collection participation
+(`is_collected`) from mode-independent movability (`is_movable`), and existing
+NonMoving objects from fresh destinations.
+The isolated Evacuation phase consumes both predicates, marks canonical copies
+and existing NonMoving objects in a single work queue, and resolves weak targets
+through forwarding or marks. This does not supply runtime immortal policy,
+stable sweeping, or ownership transfer.
+The bounded routing groundwork is documented in
+[collection routing and space lifetime](gc-copying-adapter-readiness.md#collection-routing-and-space-lifetime):
+minor collections append into existing old/NonMoving spaces; full moving
+collections use a separate ordinary destination while retaining NonMoving
+storage. Raw-space tests establish separation and lifetime only, not production
+retirement or a HeapSpace ownership-swap API.
+Test-only real-layout integration now composes the collector with actual
+OverflowSlots headers, reference slots, mapping containment, destination copying,
+and forwarding. It covers young/full routing, explicit remembered slots, mixed
+cycles, external weak roots, and retained graph validity after raw input storage
+is released. These fixtures never register objects with RC or activate runtime
+collection; see the
+[integration test boundary](gc-copying-adapter-readiness.md#real-layout-evacuation-integration-tests).
+Production activation still follows stages 4--9 below: precise roots/native
+references, barriers, tracing verification, tracing lifetime authority, then
+restricted movement. Byte-copy groundwork can proceed alongside integration;
+the paused frame-state design stays paused.
 
 ## Working Runtime Stages
 
@@ -83,7 +136,45 @@ assumptions; they do not by themselves verify the C++ adapter.
 | 10 | Wider coverage, refcount/ZCT retirement, and optimization | Tracing |
 
 Stages 1–3's layout/weak-processing primitives and audit are implemented.
-Production collector integration and stages 4–10 remain pending.
+Stages 4, 5, and 7 have substantial groundwork, but their completion and
+production integration gates remain open. Stages 6 and 8–10 are not activated.
+
+## Current Stopping Point and Forward Route
+
+The standalone strong remembered set is complete for its agreed borrowed-owner,
+single-writer contract: recording, header deduplication, iteration, minor reset,
+and consuming zero-copy handoff with spare-cache exchange. Repeated isolated
+minor collections exercise it with real layouts. Runtime wiring is not a small
+mechanical follow-up: borrowed entries must not outlive reclaimed owners.
+
+The major remaining steps are:
+
+1. **Runtime barriers and remembered ownership (stage 5).** Settle invalidation
+   before RC reclamation/address reuse, per-thread ownership and serialized
+   publication/handoff, weak remembered units, and full-collection retirement.
+   Then wire construction, ordinary/bulk/cache/generated stores and compare
+   coverage against an exhaustive scan.
+2. **Complete precise roots (stage 4, currently paused).** Resume the frame-state
+   design, then cover suspended calls, native handles and JIT boundaries. Reuse
+   deferred-RC collection coordination and audit publication rather than adding
+   an independent stop-the-world mechanism.
+3. **Verify tracing while RC remains authoritative (stage 6).** Compose complete
+   roots, scanners and barriers at coordinated points. Do not hide missing root
+   declarations by treating every positive refcount as a root.
+4. **Transfer lifetime authority with stable addresses (stage 8).** Establish
+   non-moving tracing reclamation, weak processing and native teardown, with
+   defined RC/ZCT behavior at the explicit cutover before any nursery discard.
+5. **Enable restricted movement (stage 9).** Wire the production adapter and
+   nursery for audited layouts. Repair roots/slots and verify no surviving
+   references enter discarded source storage before allowing reuse.
+6. **Expand and simplify (stage 10).** Broaden layout admission, retire RC/ZCT
+   and obsolete backing retirement, and optimize placement/capacity/header
+   widths separately.
+
+The isolated algorithm and proof/model work (stage 7), and bounded layout or
+ownership audits, can progress independently where their contracts are settled.
+They cannot bypass root completeness or the lifetime cutover. Each integration
+item needs its own readiness review; precise-frame work remains paused.
 
 Each stage is a review boundary, not necessarily one commit. Split root sources,
 layout families, and store families into bounded slices. Stages 1–7 can land
@@ -415,7 +506,7 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
       Touch summaries can conservatively request redundant clears; this is not
       a minimal-clear analysis. Verify structural placement, semantics, and
       before/after runtime cost before claiming loop-slot coverage.
-      Implemented and verified in the working tree; see the
+      Implemented and verified; see the
       [loop-entry-clear performance report](gc-loop-entry-clears-performance.md)
       for the full comparison and unresolved performance outlier.
     - **4d.2b.2: Exceptional-flow summaries.** Extend the decision to handlers,
@@ -450,15 +541,62 @@ movement or remove conservative root discovery.
 
 ### 5. Introduce Barriers Alongside Refcounting
 
-Add generation and remembered state alongside the current header fields. Accept
-the temporary larger header; do not remove refcount, lifecycle, or native-layout
-state to make room. Settle the concrete transitional header in its own review.
+Add generation and remembered state without removing refcount, lifecycle, or
+native-layout state. Keep the total header eight bytes: state byte, 8-bit native
+ID, 16-bit aux count, and 32-bit RC. The implemented state encoding uses bits
+0--1 for generation, bit 2 for per-object NonMoving, bits 3--4 as the pointer-tag
+forwarding discriminator (zero normally), bit 5 spare, and bits 6--7 for normal
+RC lifecycle. Preserve normal fields through accessor-based updates. The accepted
+eight-byte transition and final eight-byte
+target are specified in [GC Object Header](gc-object-header.md). Implement the
+transition's byte-state/encoded-pointer representation without enabling production
+forwarding, since a forwarding store destroys RC too. Migrate to the wider
+final native-ID/aux fields only in an explicit later layout cutover. Generation
+is retained in the source forwarding word. Audit moved RC/native-ID/aux offsets and
+measure performance even though total header size is unchanged.
+
+The representation is implemented with standalone `HeapHeader` storage contained
+by `HeapObject`. Pointer-tag detection, target decoding (`~0x03`), one-way
+NonMoving accessors/delegates, and encoding tests are implemented. Initial
+construction policy is implemented: callers supply an explicit
+`InitialMobilityPolicy` template argument through the heap APIs to shared
+construction. Debug checks storage agreement; Release has no runtime policy
+lookup or branch. Construction sets the bit before valid-object publication for
+interned storage and layouts declaring `native_destroy`. Ordinary managed layouts remain
+movable; stack construction and raw collector copies are outside that path.
+Keep every accessor fully inline and header forwarding
+reads/writes within HeapHeader. Do not add per-layout relocation constructors.
+
+NonMoving is independent of generation and can change from clear to set only
+through a one-way stable-placement transition. A movable string/backing may be
+copied into stable storage before a raw address is exposed; the source remains
+a movable forwarding source. Do not pin a nursery source in place by merely
+setting its bit. Full pinning bits/counts are deferred until reference mapping
+is in place. These header slices do not enable promotion, production forwarding,
+nursery routing, or barriers. The detailed slices and verification are in
+[the header contract](gc-object-header.md#code-migration-slices).
 
 Introduce object-level remembered sets and barrier entry points following the
 GC design's hot-path lessons. Cover ordinary members, raw pointer stores,
 backing arrays, bulk copies, runtime caches, and relevant generated stores.
 Distinguish construction into young storage from construction into old or
 stable storage. Retain current incref/decref behavior throughout.
+
+The standalone strong remembered-set primitive is implemented with reusable
+4 KiB linked blocks and header-based deduplication. Its post-store recording and
+minor-reset contract are exercised on test-owned headers and through real-layout
+evacuation, including conservative overwritten records and repeated collections.
+No runtime stores or ThreadState buffers are wired. Owner lifetime/invalidation,
+thread coordination/publication, weak remembered units, and full-collection
+retirement remain separate integration gates.
+The standalone `adopt_from(StrongRememberedSet &&)` handoff splices active
+blocks in constant time, preserving entry addresses and header membership.
+Sealed counts allow partial intermediate blocks. The receiver keeps its active
+prefix and takes the entire source chain; the source becomes empty and receives
+the receiver's displaced spare cache. Boundary/cache-exchange/destruction tests, resealing
+after refill, and repeated real-layout minor collections exercise the transfer.
+ThreadState adoption is not wired, and this does not provide RC invalidation or
+full-collection cleanup.
 
 Provide a non-moving test configuration with young and old classifications so
 the barrier is exercised before a nursery exists. Compare remembered coverage
@@ -494,16 +632,17 @@ through the agreed collector interface. Preserve readable layout
 metadata when a source object or its shape has already been forwarded.
 
 Test cycles, shared children, duplicate roots, old-to-young references, and work
-whose edges alternate between ordinary and stable destinations. Allocation
-groups use at most two inline members and a `size_t` count; relocate exclusively
-owned overflow storage next to its owner and enqueue both objects. No bitmap
+whose edges alternate between ordinary and stable destinations. Each object is
+copied, forwarded, and enqueued independently. Overflow backing
+storage is discovered through an ordinary strong slot; owner/backing adjacency
+is a deferred optimization, not part of the collector interface. No bitmap
 walk or Cheney/slab scan cursor is required. Collector-only allocation during
 enumeration must preserve visited storage and must not reenter the mutator/GC.
 Destination and work-queue allocation failure are fatal; there is no rollback,
 recoverable allocation result, or resumption of a partially rewritten heap.
 Removing current allocation bitmaps remains separate allocator integration work.
 
-Implement in bounded slices: test-heap grouped-copy/forwarding primitives,
+Implement in bounded slices: test-heap single-object copy/forwarding primitives,
 shared copying traversal, isolated weak units/source disposal, then CloverVM
 weak-unit enumeration. The [weak repair unit design](gc-weak-repair-units.md)
 defines early resolution, exact-unit deferral, and coordinated entry/payload
@@ -622,8 +761,7 @@ tests, and run release checks at the exact HEAD before pushing. Documentation
 and Lean-only changes use their relevant content or proof checks instead of
 unrelated VM rebuilds.
 
-The first code slice implements stage 1: ordinary reference-span resolution
-consumed by existing reclamation. Subsequent API details, header representation,
-native rooting, failure behavior, and the lifetime cutover receive their own
-bounded reviews. The staged direction is accepted; those material implementation
-decisions are not silently settled by this plan.
+Stage 1's ordinary reference-span resolution is implemented and consumed by
+existing reclamation. Remaining native-rooting, runtime integration, and
+lifetime-cutover decisions receive their own bounded reviews. The staged
+direction does not silently settle those material implementation decisions.

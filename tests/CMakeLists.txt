@@ -15,8 +15,13 @@ enable_sanitizers(test_clovervm)
 target_sources(test_clovervm PRIVATE
 	gc_test_heap.h
 	test_gc_mark_phase.cpp
+	test_gc_strong_remembered_set.cpp
+	test_gc_evacuation_destinations.cpp
+	test_gc_evacuation_spaces.cpp
 	test_gc_evacuation_primitives.cpp
 	test_gc_evacuation.cpp
+	test_gc_real_layout_evacuation.cpp
+	test_gc_no_exceptions.cpp
 	test_gc_weak_repair.cpp
 	test_codec.cpp
 	test_incremental_codec.cpp
@@ -35,6 +40,9 @@ target_sources(test_clovervm PRIVATE
 	test_num_parse.cpp
 	test_hash.cpp
 	test_heap.cpp
+	test_heap_space.cpp
+	test_heap_object_copy.cpp
+	test_heap_object.cpp
 	test_heap_reference_slot.cpp
 	test_scoped_root.cpp
 	test_persistent_roots.cpp
@@ -101,6 +109,9 @@ target_sources(test_clovervm PRIVATE
 	test_unicode.cpp
 	test_tuple.cpp
 	)
+
+set_source_files_properties(test_gc_no_exceptions.cpp PROPERTIES
+	COMPILE_OPTIONS "-fno-exceptions")
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
