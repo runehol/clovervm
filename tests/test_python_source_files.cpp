@@ -153,6 +153,16 @@ TEST(PythonSourceFiles,
     }
 }
 
+TEST(PythonSourceFiles, FloatIntegerRatioSurvivesEverySafepointReclamation)
+{
+    std::wstring source =
+        read_source_file("tests/python/float_as_integer_ratio.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
 TEST(PythonSourceFiles, MathLogAndIsnanSurviveEverySafepointReclamation)
 {
     for(const char *path: {"tests/python/test_math_log_integers.py",
