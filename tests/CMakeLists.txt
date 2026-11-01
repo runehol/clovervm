@@ -19,6 +19,7 @@ target_sources(test_clovervm PRIVATE
 	test_gc_evacuation_spaces.cpp
 	test_gc_evacuation_primitives.cpp
 	test_gc_evacuation.cpp
+	test_gc_real_layout_evacuation.cpp
 	test_gc_no_exceptions.cpp
 	test_gc_weak_repair.cpp
 	test_codec.cpp

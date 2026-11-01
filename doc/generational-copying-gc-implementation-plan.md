@@ -106,6 +106,13 @@ minor collections append into existing old/NonMoving spaces; full moving
 collections use a separate ordinary destination while retaining NonMoving
 storage. Raw-space tests establish separation and lifetime only, not production
 retirement or a HeapSpace ownership-swap API.
+Test-only real-layout integration now composes the collector with actual
+OverflowSlots headers, reference slots, mapping containment, destination copying,
+and forwarding. It covers young/full routing, explicit remembered slots, mixed
+cycles, external weak roots, and retained graph validity after raw input storage
+is released. These fixtures never register objects with RC or activate runtime
+collection; see the
+[integration test boundary](gc-copying-adapter-readiness.md#real-layout-evacuation-integration-tests).
 Production activation still follows stages 4--9 below: precise roots/native
 references, barriers, tracing verification, tracing lifetime authority, then
 restricted movement. Byte-copy groundwork can proceed alongside integration;

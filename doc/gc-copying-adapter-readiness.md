@@ -413,6 +413,38 @@ own activation audit.
 The exclusions must be enforced before allocating into the nursery, not found
 only after an ineligible object needs evacuation.
 
+## Real-Layout Evacuation Integration Tests
+
+`tests/test_gc_real_layout_evacuation.cpp` composes the generic `Evacuation`
+algorithm with actual HeapObject forwarding, EvacuationSpaces containment,
+EvacuationDestinations copying, and CloverHeapAdapter marks/slot enumeration.
+The adapter and its explicit placement policy are test-only plumbing, with
+separate Young/Full template instantiations. No production adapter copying
+methods or runtime placement/pinning policy are introduced.
+
+Fixtures construct actual OverflowSlots objects in raw HeapSpace storage,
+outside RC registration and the ZCT. Reference cells are initialized without
+retaining setters; source and copied storage are discarded without destruction
+or reference release. Full-copy tests snapshot source payloads before forwarding
+and never consult overwritten source layout/aux/RC fields afterward. Native
+side tables, not extra object fields, hold test scan/copy instrumentation.
+
+Coverage includes minor collections with explicit remembered slots into
+populated destinations, full collections with separate ordinary destinations,
+mixed moving/NonMoving cycles and sharing, duplicate roots, and external weak
+roots resolved through real forwarding or marks. Fresh NonMoving weak roots
+resolve immediately; dead moving and NonMoving weak targets are cleared after
+closure. The fixtures verify canonical copies and their strong edges are outside
+selected input mappings, then verify retained graph relationships after input
+storage is released. A multi-slab case covers zero-capacity objects and edges
+at the capacity tail even when logical size is zero.
+
+These are real-layout copying tests, not evidence of complete runtime roots,
+remembered-set discovery, weak units embedded in custom layouts, coordination,
+or tracing lifetime cutover. Oversized fixture allocations do not grant large-
+object movement admission. No production RC-owned object is forwarded, and the
+precise-frame-root design remains parked.
+
 ## Lifetime and Roots Still Block Production Activation
 
 The current collector reclaims through RC: it decrements children, enqueues ZCT
