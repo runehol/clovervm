@@ -263,6 +263,59 @@ Debug/Release checks. These checks do not enable production evacuation.
 
 ## Source Classification and Initial Admission
 
+### Collection Routing and Space Lifetime
+
+Space ownership is persistent; collection roles are temporary. Distinct spaces
+own disjoint slab mappings. Copies and originals may represent the same logical
+object, but never share storage or mapping ownership. No HeapSpace swap, slab
+transfer, or allocation-group mechanism is needed for minor promotion.
+
+| Collection | Frozen evacuation inputs | Ordinary destination | NonMoving destination |
+|---|---|---|---|
+| Young | Whole nursery | Append to existing old space | Append to existing NonMoving space |
+| Full moving | Nursery and selected movable old spaces | Fresh old space, outside every selected mapping | Append to existing NonMoving space |
+
+The memory manager owns destinations beyond the collection. The copying adapter
+borrows them; `copy_object()` chooses placement internally. A possible adapter
+configuration is two borrowed `HeapSpace` references named `old` and
+`non_moving`; this slice does not introduce that production API.
+
+For a young collection, stop mutators and invalidate borrowed nursery allocation
+cursors before freezing the evacuation mappings. Supply precise roots and
+remembered references, drain canonical strong work (including direct NonMoving
+promotions), and finish weak repair. Only then may nursery storage be discarded
+and fresh mutator allocation cursors installed. No source destructor or RC
+release accompanies that discard. This requires tracing lifetime authority;
+it is not allowed for production RC-owned objects today.
+
+For a full moving collection, the memory manager retains the old inputs and a
+fresh ordinary destination concurrently. It retires selected input storage only
+after strong and weak repair, retaining the destination as the old space used
+by subsequent minor collections. Existing NonMoving storage stays in place;
+its collection participants must be traced, and sweeping remains separate.
+Not every future full collection must move old objects: a tracing-only full
+collection can retain their addresses instead.
+
+The collection-scoped `EvacuationSpaces` index borrows frozen input mappings.
+Stop using it before those mappings are retired. Neither destination may be an
+evacuation input; destination growth must not change containment of inputs or
+earlier destination addresses. This is a caller contract, not a new runtime
+destination-validation API.
+
+Containment is not collection participation. In particular, during a full
+collection the NonMoving destination can contain both existing participants
+and fresh copies. The future production adapter must define their membership
+and weak-liveness semantics explicitly; whole-space containment alone cannot
+distinguish them. No production adapter or epoch bookkeeping is added here.
+
+Raw-header routing tests in `test_gc_evacuation_spaces.cpp` cover minor appends
+into populated destinations, full movement into separate ordinary storage,
+mapping disjointness through destination growth, and destination lifetime after
+disposable input storage is released. They do not model strong closure or
+authorize runtime retirement. The isolated collector's
+`OrdinaryAndStablePathsJoinSameClosure` test independently covers strong closure
+across ordinary and NonMoving promotion paths.
+
 The classification-only slice implements `HeapSpace::visit_memory_ranges()` and
 a collection-scoped `gc::EvacuationSpaces` index. Callers supply a span of
 `EvacuationSpace` records containing a borrowed space pointer and expected

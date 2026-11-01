@@ -325,6 +325,16 @@ barriers. Export shadows can instead provide stable data without relocating the
 original. Dead young objects are not copied. After the minor collection, the
 nursery can be reused wholesale.
 
+Minor promotion appends to existing ordinary old and stable storage; their
+ownership does not change at the collection boundary. If a full collection
+moves old objects, it instead needs separate ordinary destination storage outside
+the selected evacuation mappings. Existing stable storage remains in place.
+Input mappings stay alive until strong closure and weak repair complete, and
+until collection-scoped containment indexes are no longer used. The detailed
+[routing and lifetime contract](gc-copying-adapter-readiness.md#collection-routing-and-space-lifetime)
+does not select an old-generation movement policy or permit source discard
+while RC still owns lifetime.
+
 Minor collection should evacuate the full young generation reachable from roots
 and remembered old objects. Promoted objects should normally end the collection
 with old-to-old references to other promoted young survivors. New old-to-young

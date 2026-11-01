@@ -100,6 +100,12 @@ The isolated Evacuation phase consumes both predicates, marks canonical copies
 and existing NonMoving objects in a single work queue, and resolves weak targets
 through forwarding or marks. This does not supply runtime immortal policy,
 stable sweeping, or ownership transfer.
+The bounded routing groundwork is documented in
+[collection routing and space lifetime](gc-copying-adapter-readiness.md#collection-routing-and-space-lifetime):
+minor collections append into existing old/NonMoving spaces; full moving
+collections use a separate ordinary destination while retaining NonMoving
+storage. Raw-space tests establish separation and lifetime only, not production
+retirement or a HeapSpace ownership-swap API.
 Production activation still follows stages 4--9 below: precise roots/native
 references, barriers, tracing verification, tracing lifetime authority, then
 restricted movement. Byte-copy groundwork can proceed alongside integration;

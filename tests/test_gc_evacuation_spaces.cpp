@@ -31,7 +31,114 @@ namespace
     }
 
     using HeaderBytes = std::array<std::byte, sizeof(HeapObject)>;
+
+    void expect_disjoint_mappings(const HeapSpace &left, const HeapSpace &right)
+    {
+        left.visit_memory_ranges([&](uintptr_t left_begin, uintptr_t left_end) {
+            right.visit_memory_ranges([&](uintptr_t right_begin,
+                                          uintptr_t right_end) {
+                EXPECT_TRUE(left_end <= right_begin || right_end <= left_begin);
+            });
+        });
+    }
 }  // namespace
+
+TEST(GCEvacuationSpaces, MinorRoutingAppendsToExistingDestinations)
+{
+    HeapSpace nursery;
+    HeapSpace old;
+    HeapSpace non_moving;
+    auto *existing_old = make_header(old, HeapGenerationState::Old);
+    auto *existing_fixed = make_header(non_moving, HeapGenerationState::Old);
+    existing_fixed->make_non_moving();
+    HeaderBytes old_before = std::bit_cast<HeaderBytes>(*existing_old);
+    HeaderBytes fixed_before = std::bit_cast<HeaderBytes>(*existing_fixed);
+    std::array<HeapObject *, 4> inputs;
+    for(auto &input: inputs)
+    {
+        input = make_header(nursery, HeapGenerationState::Young);
+    }
+    std::array spaces{EvacuationSpace{&nursery, HeapGenerationState::Young}};
+    EvacuationSpaces selected(spaces);
+
+    // Raw headers exercise routing and storage only, not copying or GC lifetime
+    // authority. Alternate destinations and force both to grow new mappings.
+    for(size_t index = 0; index < inputs.size(); ++index)
+    {
+        HeapSpace &destination = index % 2 == 0 ? old : non_moving;
+        auto *copy = make_header(destination, HeapGenerationState::Old,
+                                 DefaultSlabSize + 1);
+        if(index % 2 != 0)
+        {
+            copy->make_non_moving();
+        }
+        inputs[index]->install_forwarding_target(copy);
+        EXPECT_TRUE(selected.contains(inputs[index]));
+        EXPECT_FALSE(selected.contains(copy));
+        EXPECT_EQ(copy, inputs[index]->forwarding_target());
+    }
+    EXPECT_FALSE(selected.contains(existing_old));
+    EXPECT_FALSE(selected.contains(existing_fixed));
+    EXPECT_EQ(old_before, std::bit_cast<HeaderBytes>(*existing_old));
+    EXPECT_EQ(fixed_before, std::bit_cast<HeaderBytes>(*existing_fixed));
+    expect_disjoint_mappings(nursery, old);
+    expect_disjoint_mappings(nursery, non_moving);
+    expect_disjoint_mappings(old, non_moving);
+}
+
+TEST(GCEvacuationSpaces, FullRoutingRetainsFreshOldAndExistingNonMovingStorage)
+{
+    HeapSpace next_old;
+    HeapSpace non_moving;
+    auto *existing_fixed = make_header(non_moving, HeapGenerationState::Old);
+    existing_fixed->make_non_moving();
+    HeaderBytes fixed_before = std::bit_cast<HeaderBytes>(*existing_fixed);
+    std::vector<HeapObject *> survivors;
+    {
+        HeapSpace nursery;
+        HeapSpace previous_old;
+        std::array inputs{
+            make_header(nursery, HeapGenerationState::Young),
+            make_header(previous_old, HeapGenerationState::Old),
+            make_header(previous_old, HeapGenerationState::OldRemembered)};
+        std::array spaces{
+            EvacuationSpace{&nursery, HeapGenerationState::Young},
+            EvacuationSpace{&previous_old, HeapGenerationState::Old}};
+        EvacuationSpaces selected(spaces);
+        for(HeapObject *input: inputs)
+        {
+            auto *ordinary = make_header(next_old, HeapGenerationState::Old,
+                                         DefaultSlabSize + 1);
+            auto *fixed = make_header(non_moving, HeapGenerationState::Old,
+                                      DefaultSlabSize + 1);
+            fixed->make_non_moving();
+            survivors.push_back(ordinary);
+            survivors.push_back(fixed);
+            input->install_forwarding_target(ordinary);
+            EXPECT_TRUE(selected.contains(input));
+            EXPECT_FALSE(selected.contains(ordinary));
+            EXPECT_FALSE(selected.contains(fixed));
+        }
+        for(const HeapSpace *source: {&nursery, &previous_old})
+        {
+            expect_disjoint_mappings(*source, next_old);
+            expect_disjoint_mappings(*source, non_moving);
+        }
+        expect_disjoint_mappings(next_old, non_moving);
+        // The containment index dies before its borrowed source mappings.
+        // These disposable headers have no RC children or runtime registration;
+        // this is not permission to discard production RC-owned storage.
+    }
+    for(HeapObject *survivor: survivors)
+    {
+        EXPECT_EQ(HeapGenerationState::Old, survivor->generation_state());
+        EXPECT_EQ(uint16_t{0xbeef}, survivor->native_layout_aux_count_value());
+    }
+    EXPECT_EQ(fixed_before, std::bit_cast<HeaderBytes>(*existing_fixed));
+    // Subsequent minor promotions append into the retained full destination.
+    make_header(next_old, HeapGenerationState::Old);
+    EXPECT_EQ(HeapGenerationState::Old, survivors.front()->generation_state());
+}
 
 TEST(GCEvacuationSpaces, EmptySelectionAndEmptySpaceContainNoObjects)
 {
