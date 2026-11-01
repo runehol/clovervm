@@ -50,13 +50,15 @@ namespace cl::gc::test
             EXPECT_EQ(kind == TestCollectionKind::Full,
                       adapter.is_collected(fixed));
             EXPECT_FALSE(adapter.is_movable(fixed));
-            // Existing Old NonMoving inputs and fresh Old stable copies have
-            // different participation, even though neither may be copied.
+            // Full collections treat existing and newly copied NonMoving
+            // objects alike. Raw copying alone does not mark or scan either.
             EXPECT_EQ(TestGeneration::Old, ordinary_copy->generation);
             EXPECT_EQ(TestGeneration::Old, stable_copy->generation);
             for(TestObject *copy: {ordinary_copy, stable_copy})
             {
-                EXPECT_FALSE(adapter.is_collected(copy));
+                EXPECT_EQ(kind == TestCollectionKind::Full &&
+                              copy == stable_copy,
+                          adapter.is_collected(copy));
                 EXPECT_FALSE(adapter.is_marked(copy));
                 EXPECT_EQ(0u, adapter.scan_count(copy));
             }
@@ -86,7 +88,7 @@ namespace cl::gc::test
             EXPECT_EQ(source == young, minor.is_collected(source));
             EXPECT_TRUE(minor.is_movable(source));
             EXPECT_EQ(source == young, full.is_movable(copy));
-            EXPECT_FALSE(full.is_collected(copy));
+            EXPECT_EQ(source == old, full.is_collected(copy));
             EXPECT_FALSE(minor.is_collected(copy));
         }
     }
@@ -153,7 +155,7 @@ namespace cl::gc::test
         source->strong_cells = {TestCell::reference(child)};
         TestObject *stable = adapter.copy_object(source);
         EXPECT_EQ(TestStorage::StableDestination, stable->storage);
-        EXPECT_FALSE(adapter.is_collected(stable));
+        EXPECT_TRUE(adapter.is_collected(stable));
         EXPECT_FALSE(adapter.is_movable(stable));
         EXPECT_EQ(child, TestSlot(stable->strong_cells[0]).load_pointer());
         EXPECT_EQ(

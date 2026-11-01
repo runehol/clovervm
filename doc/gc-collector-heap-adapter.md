@@ -367,10 +367,21 @@ The adapter answers two independent questions: `is_collected()` selects this
 collection's inputs, while `is_movable()` describes allocation capability and
 does not inspect collection mode or forwarding state. Both remain true for a
 selected forwarded source, so references still follow forwarding. A fresh
-ordinary destination is movable but uncollected; a stable destination is both
-uncollected and non-moving. Test membership before choosing copy versus trace
-in place. Source-space indexing is a lower-level allocator concern, not the
-meaning of the movability query.
+ordinary destination is movable but uncollected. Full collections include all
+NonMoving objects, including fresh stable copies; young collections exclude
+these old allocations. No per-collection allocation boundary or epoch field is
+needed to distinguish existing and fresh NonMoving records. Test membership
+before choosing copy versus trace in place. Source-space indexing is a
+lower-level allocator concern, not the meaning of the movability query.
+
+After copying, the collector publishes source forwarding, marks/enqueues the
+canonical copy, and only then rewrites the referencing strong slot. Copying and
+forwarding publication cannot invoke callbacks that reenter tracing. Thus a
+fresh NonMoving copy is already marked when encountered through a repaired
+reference: repeated strong discovery does not rescan it, and weak references
+directly to the copy resolve through its mark. A raw destination reservation or
+copy alone grants no weak liveness. Unmarked NonMoving targets remain pending
+early and become dead after strong closure, regardless of allocation age.
 
 Layout queries must remain valid when source metadata has been forwarded; do
 not dereference an overwritten source shape as though it were ordinary metadata.
@@ -579,14 +590,17 @@ selects young movable sources. Full participation includes young/old movable
 sources and existing NonMoving objects. Movability is independent of selection:
 an uncollected old moving object is still movable, as is a fresh ordinary
 destination. Existing NonMoving objects and fresh stable destinations are not
-movable. Fresh destinations are not selected inputs in either mode. Forwarding
+movable. Fresh ordinary destinations are excluded in either mode; fresh stable
+destinations participate in Full just like existing NonMoving objects. Forwarding
 does not change source membership or source movability, even when its target
 is non-moving.
 
 `TestStorage::NonMoving` and `make_non_moving_object()` represent existing stable
-objects independently of fresh StableDestination copies. Evacuation consumes
-both predicates: strong discovery canonicalizes moving references, then marks
-and queues canonical destinations or existing NonMoving objects once. Only
+objects; StableDestination records preserve allocation provenance for test
+instrumentation, not a different full-collection participation policy.
+Evacuation consumes both predicates: strong discovery canonicalizes moving
+references, then marks and queues canonical destinations or existing NonMoving
+objects once. Only
 canonical objects are scanned; movable source payloads remain untouched, while
 live NonMoving owners have their slots repaired in place. Use fresh per-phase
 adapter marks; do not run a separate mark pass over sources before copying.

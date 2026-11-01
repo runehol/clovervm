@@ -48,9 +48,9 @@ namespace cl::gc::test
                         return kind == TestCollectionKind::Full ||
                                object->generation == TestGeneration::Young;
                     case TestStorage::NonMoving:
+                    case TestStorage::StableDestination:
                         return kind == TestCollectionKind::Full;
                     case TestStorage::OrdinaryDestination:
-                    case TestStorage::StableDestination:
                         return false;
                 }
                 std::abort();
@@ -123,7 +123,10 @@ namespace cl::gc::test
                     if(moving(object.get()))
                     {
                         EXPECT_TRUE(destinations.insert(copy).second);
-                        EXPECT_FALSE(adapter.is_collected(copy));
+                        EXPECT_EQ(kind == TestCollectionKind::Full &&
+                                      object->preferred_destination ==
+                                          EvacuationDestination::Stable,
+                                  adapter.is_collected(copy));
                         EXPECT_EQ(object->logical_identity,
                                   copy->logical_identity);
                         EXPECT_EQ(TestHeaderKind::Normal, copy->header.kind);
@@ -384,7 +387,11 @@ namespace cl::gc::test
                                                   adapter.forwarded_to(source));
                                         EXPECT_EQ(TestGeneration::Old,
                                                   result->generation);
-                                        EXPECT_FALSE(
+                                        EXPECT_EQ(
+                                            kind == TestCollectionKind::Full &&
+                                                source->preferred_destination ==
+                                                    EvacuationDestination::
+                                                        Stable,
                                             adapter.is_collected(result));
                                         EXPECT_EQ(
                                             source->preferred_destination ==
@@ -598,6 +605,128 @@ namespace cl::gc::test
         }
     }
 
+    TEST(GCEvacuation, FreshNonMovingCopiesAreMarkedBeforeRootsAreRewritten)
+    {
+        for(auto kind:
+            {TestCollectionKind::YoungOnly, TestCollectionKind::Full})
+        {
+            TestHeap heap(1);
+            TestObject *existing = heap.make_non_moving_object();
+            TestObject *source = heap.make_object();
+            TestObject *child = heap.make_object();
+            source->preferred_destination = EvacuationDestination::Stable;
+            source->strong_cells = {TestCell::reference(source),
+                                    TestCell::reference(existing),
+                                    TestCell::reference(child)};
+            existing->strong_cells = {TestCell::reference(source)};
+            child->strong_cells = {TestCell::reference(source)};
+            TestHeapAdapter adapter(heap, kind);
+            Evacuation<TestHeapAdapter> collection(adapter);
+            TestCell root = TestCell::reference(source);
+            collection.add_root(TestSlot(root));
+            TestObject *copy = pointer(root);
+            ASSERT_NE(source, copy);
+            EXPECT_EQ(kind == TestCollectionKind::Full,
+                      adapter.is_collected(copy));
+            EXPECT_TRUE(adapter.is_marked(copy));
+            EXPECT_EQ(0u, adapter.scan_count(copy));
+
+            // A weak reference directly to the canonical copy resolves before
+            // scanning, without marking or tracing another object.
+            TestObject *weak = copy;
+            collection.add_weak_root(
+                TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
+            EXPECT_EQ(copy, weak);
+            EXPECT_EQ(0u, adapter.scan_count(copy));
+            collection.add_root(TestSlot(root));
+            TestCell original_root = TestCell::reference(source);
+            collection.add_root(TestSlot(original_root));
+            collection.finish();
+            EXPECT_EQ(copy, pointer(original_root));
+            EXPECT_EQ(copy, pointer(copy->strong_cells[0]));
+            EXPECT_EQ(existing, pointer(copy->strong_cells[1]));
+            ASSERT_NE(nullptr, adapter.forwarded_to(child));
+            EXPECT_EQ(adapter.forwarded_to(child),
+                      pointer(copy->strong_cells[2]));
+            EXPECT_EQ(copy,
+                      pointer(adapter.forwarded_to(child)->strong_cells[0]));
+            EXPECT_EQ(1u, adapter.scan_count(copy));
+            EXPECT_EQ(1u, adapter.weak_scan_count(copy));
+            EXPECT_EQ(kind == TestCollectionKind::Full ? 1u : 0u,
+                      adapter.scan_count(existing));
+            EXPECT_EQ(1u, heap.destination_object_count(
+                              EvacuationDestination::Stable));
+            EXPECT_EQ(1u, heap.destination_object_count(
+                              EvacuationDestination::Ordinary));
+        }
+    }
+
+    TEST(GCEvacuation, SharedNonMovingWeakUnitsUseMarksForOldAndFreshTargets)
+    {
+        TestHeap heap;
+        TestObject *source = heap.make_object();
+        source->preferred_destination = EvacuationDestination::Stable;
+        TestObject *late = heap.make_non_moving_object();
+        TestObject *dead = heap.make_non_moving_object();
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        TestCell root = TestCell::reference(source);
+        collection.add_root(TestSlot(root));
+        TestObject *copy = pointer(root);
+        TestWeakEntry retained =
+            TestWeakEntry::active(copy, late, TestCell::reference(copy));
+        TestWeakEntry invalidated =
+            TestWeakEntry::active(copy, late, TestCell::reference(dead));
+        for(TestWeakEntry *entry: {&retained, &invalidated})
+        {
+            collection.add_weak_root(
+                TestHeapAdapter::WeakUnit::bind<repair_test_weak_entry>(
+                    *entry));
+            EXPECT_EQ(1u, entry->repair_count);
+            EXPECT_EQ(0u, entry->reset_count);
+        }
+        EXPECT_FALSE(adapter.is_marked(late));
+        EXPECT_FALSE(adapter.is_marked(dead));
+        TestCell late_root = TestCell::reference(late);
+        collection.add_root(TestSlot(late_root));
+        collection.finish();
+        EXPECT_EQ((std::array{copy, late}), retained.guards);
+        EXPECT_EQ(TestCell::reference(copy), retained.payload);
+        EXPECT_EQ(2u, retained.repair_count);
+        EXPECT_EQ(0u, retained.reset_count);
+        EXPECT_EQ((std::array<TestObject *, 2>{nullptr, nullptr}),
+                  invalidated.guards);
+        EXPECT_EQ(TestCell::immediate(0), invalidated.payload);
+        EXPECT_EQ(1u, invalidated.reset_count);
+        EXPECT_EQ(1u, adapter.scan_count(copy));
+        EXPECT_EQ(1u, adapter.scan_count(late));
+        EXPECT_EQ(0u, adapter.scan_count(dead));
+    }
+
+    TEST(GCEvacuation, WeakOnlyUnmarkedNonMovingAllocationIsNotKeptAlive)
+    {
+        TestHeap heap;
+        TestObject *source = heap.make_object();
+        TestObject *child = heap.make_object();
+        source->preferred_destination = EvacuationDestination::Stable;
+        source->strong_cells = {TestCell::reference(child)};
+        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        // The raw primitive does not publish or mark its allocation. Placement
+        // in destination storage alone must not grant weak liveness.
+        TestObject *allocation = adapter.copy_object(source);
+        TestObject *weak = allocation;
+        Evacuation<TestHeapAdapter> collection(adapter);
+        collection.add_weak_root(
+            TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
+        EXPECT_EQ(allocation, weak);
+        EXPECT_FALSE(adapter.is_marked(allocation));
+        collection.finish();
+        EXPECT_EQ(nullptr, weak);
+        EXPECT_FALSE(adapter.is_marked(allocation));
+        EXPECT_EQ(0u, adapter.scan_count(allocation));
+        EXPECT_EQ(nullptr, adapter.forwarded_to(child));
+    }
+
     TEST(GCEvacuation, NonMovingOnlyCyclesNeedNoCopies)
     {
         TestHeap heap;
@@ -705,11 +834,10 @@ namespace cl::gc::test
             3u, heap.destination_object_count(EvacuationDestination::Ordinary));
     }
 
-    TEST(GCEvacuation,
-         OutsideSourceRootsAreUntouchedAndRememberedSlotsAreExplicit)
+    TEST(GCEvacuation, MinorNonMovingRootsNeedExplicitRememberedSlots)
     {
         TestHeap heap(1);
-        TestHeapAdapter adapter(heap, TestCollectionKind::Full);
+        TestHeapAdapter adapter(heap, TestCollectionKind::YoungOnly);
         TestObject *child = heap.make_object();
         TestObject *source = heap.make_object();
         source->preferred_destination = EvacuationDestination::Stable;

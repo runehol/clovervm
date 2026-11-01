@@ -196,8 +196,10 @@ actual remembered slot must be supplied to repair that reference. An already
 forwarded or unselected backing is not recopied.
 
 The test adapter supports YoungOnly and Full moving-source selection. Full
-selects young and old movable source records; neither mode selects fresh
-destinations or stable storage. Source membership remains true after forwarding.
+selects young and old movable source records for copying; neither mode copies
+fresh destinations or stable storage. Full additionally traces NonMoving
+objects in place, including fresh stable copies. Source membership remains true
+after forwarding.
 The source-disposal helper uses the same selection and preserves excluded old
 and stable records. Generation and collection-mode checks remain adapter-owned.
 
@@ -302,11 +304,16 @@ evacuation input; destination growth must not change containment of inputs or
 earlier destination addresses. This is a caller contract, not a new runtime
 destination-validation API.
 
-Containment is not collection participation. In particular, during a full
-collection the NonMoving destination can contain both existing participants
-and fresh copies. The future production adapter must define their membership
-and weak-liveness semantics explicitly; whole-space containment alone cannot
-distinguish them. No production adapter or epoch bookkeeping is added here.
+Containment is not collection participation. During a full collection, all
+NonMoving objects participate, including fresh copies appended beside existing
+objects. Their age need not be distinguished: canonical copies are marked and
+queued before repaired references expose them. Repeated strong discovery is
+deduplicated by marking; weak references directly to fresh copies resolve from
+their marks. Unmarked NonMoving targets are deferred early and cleared late.
+Young collections exclude these old NonMoving objects and rely on remembered
+slots for young children. Ordinary movable destinations must still be outside
+selected evacuation mappings to prevent recopying. No production adapter or
+epoch bookkeeping is added here.
 
 Raw-header routing tests in `test_gc_evacuation_spaces.cpp` cover minor appends
 into populated destinations, full movement into separate ordinary storage,
@@ -414,11 +421,11 @@ queue as ordinary promotion; it is not a terminal leaf allocation.
 The isolated phase now separates collection membership (`is_collected()`) from
 allocation capability (`is_movable()`). Movability does not depend on the
 collection mode or whether an object was forwarded: ordinary destinations are
-movable but uncollected, stable destinations are non-moving and uncollected.
-Full participation includes
-existing NonMoving objects; YoungOnly excludes them. Strong discovery marks and
-queues canonical copies or existing NonMoving objects once. Moving input
-payloads stay unchanged; live NonMoving owners have slots repaired in place.
+movable but uncollected. Stable destinations are non-moving and participate in
+Full alongside existing NonMoving objects; YoungOnly excludes both. Strong
+discovery marks and queues canonical copies or existing NonMoving objects once.
+Moving input payloads stay unchanged; live NonMoving owners have slots repaired
+in place.
 Weak repair follows moving-source forwarding or NonMoving marks, deferring
 unresolved collected targets early and clearing them after strong closure.
 Uncollected targets remain alive without being scanned implicitly. This closes
@@ -432,9 +439,11 @@ containment helper, not a collector adapter predicate.
 1. **Collection selection in the isolated heap (implemented).** Exercise old
    owners with young backing, young owners with old backing, repeated references,
    both root orders, and independent destination choices. Preserve one copy/scan
-   per selected source in YoungOnly and Full modes; fresh destinations are
-   excluded in both. Old weak-only targets survive YoungOnly but are cleared
-   under Full selection. No stable-heap marking/sweeping or runtime movement.
+   per selected source in YoungOnly and Full modes; fresh ordinary destinations
+   are excluded in both. Fresh NonMoving copies participate in Full and are
+   already marked before repaired references expose them. Old weak-only targets
+   survive YoungOnly but are cleared under Full selection. No runtime stable-heap
+   sweeping or movement is enabled.
 2. **Unified descriptor lookup (implemented).** The separate release/object-size
    LUTs are replaced with one NativeLayoutId-indexed table
    whose entries contain the existing ReleaseDescriptor and ObjectSizeDescriptor,

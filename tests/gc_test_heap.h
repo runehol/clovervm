@@ -167,9 +167,8 @@ namespace cl::gc::test
         Old,
     };
 
-    // Full participation includes existing non-moving objects as well as young
-    // and old movable sources. Evacuation does not consume is_collected yet;
-    // full non-moving tracing/weak liveness and sweeping remain separate work.
+    // Full participation includes all non-moving objects, including fresh
+    // copies, as well as young and old movable sources. Sweeping is separate.
     enum class TestCollectionKind : uint8_t
     {
         YoungOnly,
@@ -411,9 +410,9 @@ namespace cl::gc::test
                     return collection_kind_ == TestCollectionKind::Full ||
                            object->generation == TestGeneration::Young;
                 case TestStorage::NonMoving:
+                case TestStorage::StableDestination:
                     return collection_kind_ == TestCollectionKind::Full;
                 case TestStorage::OrdinaryDestination:
-                case TestStorage::StableDestination:
                     return false;
             }
             std::abort();
@@ -451,7 +450,10 @@ namespace cl::gc::test
         {
             assert(is_collected(source) && is_movable(source));
             assert(source->header.kind == TestHeaderKind::Normal);
-            assert(destination != nullptr && !is_collected(destination));
+            assert(destination != nullptr && destination != source);
+            assert(destination->storage == TestStorage::OrdinaryDestination ||
+                   destination->storage == TestStorage::StableDestination);
+            assert(destination->header.kind == TestHeaderKind::Normal);
             assert(source->logical_identity == destination->logical_identity);
             source->header = TestHeader::forwarded(destination);
         }
