@@ -131,12 +131,9 @@ namespace cl
         };
 
         void process_zero_count_table_entries(
-            std::vector<HeapObject *> &zero_count_table, ThreadState &thread,
+            std::vector<HeapObject *> &zero_count_table,
             const ReclamationRootSet &roots, ReclamationContext &context)
         {
-#ifndef NDEBUG
-            validate_zero_count_table_for_reclamation(thread);
-#endif
             size_t scan = 0;
             size_t keep = 0;
             while(scan < zero_count_table.size())
@@ -239,27 +236,19 @@ namespace cl
     }
 
 #ifndef NDEBUG
-    void validate_zero_count_table_for_reclamation(const ThreadState &thread)
-    {
-        absl::flat_hash_set<HeapObject *> seen;
-        for(HeapObject *obj: thread.zero_count_table)
-        {
-            assert(obj != nullptr);
-            assert(obj->lifecycle_state() == HeapLifecycleState::InZct);
-            bool inserted = seen.insert(obj).second;
-            assert(inserted && "duplicate heap object in zero count table");
-        }
-    }
-
     void
     validate_zero_count_tables_for_reclamation(const ThreadStateList &threads)
     {
+        // One set rejects duplicates within and across tables before any
+        // reclamation epoch mutates them. Processing retains its per-entry
+        // lifecycle assertions, including for newly enqueued children.
         absl::flat_hash_set<HeapObject *> seen;
         for(const std::unique_ptr<ThreadState> &thread: threads)
         {
-            validate_zero_count_table_for_reclamation(*thread);
             for(HeapObject *obj: thread->zero_count_table)
             {
+                assert(obj != nullptr);
+                assert(obj->lifecycle_state() == HeapLifecycleState::InZct);
                 bool inserted = seen.insert(obj).second;
                 assert(inserted && "duplicate heap object in zero count table");
             }
@@ -275,7 +264,7 @@ namespace cl
             thread.get_machine()->get_refcounted_global_heap(),
             zero_count_table);
         ThreadState::ActivationScope active_thread(&thread);
-        process_zero_count_table_entries(zero_count_table, thread, roots,
+        process_zero_count_table_entries(zero_count_table, roots,
                                          reclamation_context);
         scan_epoch_slab_bitmaps(thread.refcounted_heap, zero_count_table, roots,
                                 reclamation_context);

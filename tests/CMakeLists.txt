@@ -119,6 +119,7 @@ target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
 clovervm_export_symbols(test_clovervm EXTENSION_API)
 add_dependencies(test_clovervm clovervm
                              clovervm_native_module__binascii
+                             clovervm_native_module__errno
                              clovervm_native_module__json
                              clovervm_native_module__math
                              clovervm_native_module__os
@@ -175,11 +176,39 @@ if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
 	target_sources(test_clovervm PRIVATE test_map_jit.cpp)
 endif()
 
+# Heavy suites replay broad source fixtures with forced reclamation. Keep the
+# source-level marker shared by GTest filtering and CTest labels, including
+# parameterized suites whose instantiation prefix precedes the suite name.
+set(CLOVERVM_HEAVY_TEST_FILTER "Heavy*.*:*/Heavy*.*")
+
 gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-	DISCOVERY_MODE PRE_TEST)
+	DISCOVERY_MODE PRE_TEST
+	TEST_FILTER "-${CLOVERVM_HEAVY_TEST_FILTER}"
+	TEST_LIST clovervm_regular_tests
+	PROPERTIES LABELS full)
+
+gtest_discover_tests(test_clovervm
+	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+	DISCOVERY_MODE PRE_TEST
+	TEST_FILTER "${CLOVERVM_HEAVY_TEST_FILTER}"
+	TEST_LIST clovervm_full_only_tests
+	PROPERTIES LABELS full)
+
+# Older GoogleTest.cmake versions flatten list-valued discovery properties.
+# Apply the regular label after discovery, outside that serialization path.
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+	"${CMAKE_CURRENT_SOURCE_DIR}/test_labels.cmake")
 
 add_custom_target(check
+COMMAND test_clovervm "--gtest_filter=-${CLOVERVM_HEAVY_TEST_FILTER}" --gtest_brief=1
+COMMAND clovervm -c "assert 1 + 2 == 3"
+DEPENDS test_clovervm clovervm check_native_module_linkage
+WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+USES_TERMINAL
+)
+
+add_custom_target(check-all
 COMMAND test_clovervm --gtest_brief=1
 COMMAND clovervm -c "assert 1 + 2 == 3"
 DEPENDS test_clovervm clovervm check_native_module_linkage

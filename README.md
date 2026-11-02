@@ -30,9 +30,28 @@ ninja -C build-debug all
 ./build-debug/src/clovervm your_program.py
 ./build-debug/src/clovervm -c 'print(1 + 2)'
 
-# Run the test suite.
+# Run the regular suite (includes focused reclamation tests).
 ninja -C build-debug check
+
+# Run the full suite, including broad reclamation stress tests.
+ninja -C build-debug check-all
 ```
+
+Tests in suites whose names start with `Heavy` are broad fixtures replayed with
+forced reclamation. Small, focused lifetime and safepoint regressions stay in
+the regular suite. Use the `Heavy` suite prefix for new broad stress replays,
+including parameterized fixture classes.
+
+CTest labels expose the same two modes:
+
+```sh
+ctest --test-dir build-debug -L '^regular$' --output-on-failure
+ctest --test-dir build-debug -L '^full$' --output-on-failure
+```
+
+Regular tests carry both labels; broad stress replays carry only `full`.
+Unfiltered CTest and direct `test_clovervm` execution also run the full suite.
+CI runs full once in every build configuration.
 
 For a release build:
 
