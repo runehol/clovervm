@@ -74,6 +74,7 @@ target_link_libraries(bench_clovervm PRIVATE benchmark::benchmark)
 target_link_libraries(bench_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(bench_clovervm PRIVATE project_options project_warnings)
 clovervm_export_symbols(bench_clovervm EXTENSION_API)
+add_dependencies(bench_clovervm clovervm_native_module__math)
 target_compile_definitions(bench_clovervm
     PRIVATE CLOVERVM_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
 )

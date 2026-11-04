@@ -1,9 +1,11 @@
 #include <benchmark/benchmark.h>
 
+#include "builtin_types/unicode.h"
 #include "bytecode/code_object.h"
 #include "compiler/parser.h"
 #include "cpp_benchmarks.h"
 #include "object_model/value.h"
+#include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <chrono>
@@ -301,14 +303,17 @@ namespace
     {
     public:
         CloverProgram(const char *relative_path, int64_t n)
-            : thread_(vm_.get_default_thread())
+            : thread_(vm_.get_default_thread()),
+              context_(std::string(relative_path) + "/" + std::to_string(n))
         {
             Expected<CodeObject *> compilation = thread_->compile(
                 make_clover_source(relative_path, n).c_str(), StartRule::File);
             if(compilation.has_exception())
             {
                 throw std::runtime_error(
-                    "failed to compile Clover benchmark source");
+                    "failed to compile Clover benchmark " + context_ + ": " +
+                    unicode::encode_utf8(
+                        format_pending_python_exception(thread_)));
             }
             code_ = compilation.value();
         }
@@ -316,10 +321,18 @@ namespace
         int64_t run()
         {
             Value actual = thread_->run_clovervm_code_object(code_);
+            if(actual.is_exception_marker())
+            {
+                throw std::runtime_error(
+                    "Clover benchmark " + context_ + " raised " +
+                    unicode::encode_utf8(
+                        format_pending_python_exception(thread_)));
+            }
             if(!actual.is_smi())
             {
                 throw std::runtime_error(
-                    "benchmark produced non-integer Clover result");
+                    "benchmark produced non-integer Clover result for " +
+                    context_);
             }
             return actual.get_smi();
         }
@@ -328,6 +341,7 @@ namespace
         VirtualMachine vm_;
         ThreadState *thread_;
         CodeObject *code_ = nullptr;
+        std::string context_;
     };
 
     class CppProgram
