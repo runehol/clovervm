@@ -93,6 +93,28 @@ namespace cl::jit
         }
     }  // namespace
 
+    TEST(JitCoreBytecodeTranslator, EnterDefinesClearedLogicalSlots)
+    {
+        TranslatorFixture fixture;
+        {
+            CodeObjectBuilder::TemporaryReg slots(fixture.code_builder, 3);
+            fixture.code_builder.emit_ldar(0, uint32_t(slots) + 2).value();
+            fixture.code_builder.emit_return(0).value();
+        }
+        ControlFlowGraph *graph = fixture.translate();
+        Block *entry = graph->normal_entry_block();
+        ReturnInstruction result =
+            entry->instruction_at(entry->instructions().size() - 1)
+                .as<ReturnInstruction>();
+        auto unavailable =
+            instructions_of_kind(entry, InstructionKind::Uninitialized);
+        ASSERT_EQ(2u, unavailable.size());
+        EXPECT_EQ(unavailable.back().id(),
+                  result.return_value().instruction_id());
+        EXPECT_TRUE(
+            instructions_of_kind(entry, InstructionKind::Snapshot).empty());
+    }
+
     TEST(JitCoreBytecodeTranslator,
          ConstantsAndRegisterTransfersPreserveProgramValueIdentity)
     {
@@ -1480,7 +1502,7 @@ namespace cl::jit
             entry->instruction_at(entry->instructions().size() - 1)
                 .as<ConditionalBranchInstruction>();
 
-        EXPECT_EQ(1u, snapshot.resume_pc_offset());
+        EXPECT_EQ(4u, snapshot.resume_pc_offset());
         EXPECT_EQ(TaggedValueClass::any_inline(), guard.expected_class());
         EXPECT_EQ(snapshot.id(), guard.snapshot().instruction_id());
         EXPECT_EQ(snapshot.captured_values()[0].instruction_id(),
@@ -1724,7 +1746,7 @@ namespace cl::jit
 
         SnapshotInstruction snapshot =
             snapshots.front().as<SnapshotInstruction>();
-        EXPECT_EQ(2u, snapshot.resume_pc_offset());
+        EXPECT_EQ(5u, snapshot.resume_pc_offset());
         ASSERT_EQ(bytecode_state_size(*graph),
                   snapshot.captured_values().size());
         std::vector<Instruction> constants =

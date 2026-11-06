@@ -407,20 +407,6 @@ namespace cl
             return *analysis.deletes[node_idx];
         }
 
-        Expected<void> emit_local_binding_prologue()
-        {
-            for(const BindingInfo &binding: analysis.bindings)
-            {
-                if(binding.scope == BindingScope::Local &&
-                   binding.needs_entry_clear)
-                {
-                    CL_TRY(
-                        code_obj->emit_clear_local(0, binding.local_slot_idx));
-                }
-            }
-            return Expected<void>::ok();
-        }
-
         Expected<void> emit_variable_load(uint32_t source_offset,
                                           int32_t node_idx)
         {
@@ -3981,7 +3967,6 @@ namespace cl
     Expected<CodeObject *> AstCodegen::run_function_body(uint32_t source_offset,
                                                          int32_t body_idx)
     {
-        CL_TRY(emit_local_binding_prologue());
         CL_TRY(codegen_node(body_idx));
         // finally, emit return None just in case. as a future optimisation, we
         // could check that all return paths already have a return statement
@@ -3993,7 +3978,6 @@ namespace cl
     Expected<CodeObject *> AstCodegen::run_class_body(uint32_t source_offset,
                                                       int32_t body_idx)
     {
-        CL_TRY(emit_local_binding_prologue());
         CL_TRY(codegen_node(body_idx));
         CL_TRY(code_obj->emit_build_class(source_offset));
         return code_obj->finalize();

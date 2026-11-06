@@ -578,19 +578,6 @@ namespace cl
         }
     }
 
-    static void initialize_class_body_frame(Value *fp, CodeObject *body_code)
-    {
-        Scope *local_scope = body_code->get_local_scope_ptr();
-        for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
-        {
-            if(!local_scope->slot_is_named(slot_idx))
-            {
-                continue;
-            }
-            fp[body_code->encode_reg(slot_idx)] = Value::not_present();
-        }
-    }
-
     static Expected<void>
     reject_set_name_notifications_until_supported(Value *fp,
                                                   CodeObject *body_code)
@@ -2988,6 +2975,34 @@ namespace cl
         COMPLETE();
     }
 
+// Keep the pair stores scalar and prevent replacement with a fill helper.
+#pragma clang attribute push(__attribute__((no_builtin)), apply_to = function)
+#if defined(__aarch64__)
+#pragma clang attribute push(__attribute__((target("nosimd"))),                \
+                             apply_to = function)
+#endif
+    static INTERP_CC Value op_enter(PARAMS)
+    {
+        START(3);
+        int32_t n_slots = uint16_t(pc[1]) | (uint16_t(pc[2]) << 8);
+        assert((n_slots & 1) == 0);
+        Value *slots = fp - n_slots;
+        Value empty;
+        empty.as.integer = value_not_present;
+#pragma clang loop vectorize(disable) interleave(disable) unroll(disable)
+        for(; n_slots > 0; n_slots -= 2)
+        {
+            slots[0] = empty;
+            slots[1] = empty;
+            slots += 2;
+        }
+        COMPLETE();
+    }
+#if defined(__aarch64__)
+#pragma clang attribute pop
+#endif
+#pragma clang attribute pop
+
     static INTERP_CC Value op_clear_local(PARAMS)
     {
         START(2);
@@ -5121,7 +5136,6 @@ namespace cl
             FrameHeaderSizeAboveFp;
         assert(is_stack_frame_aligned(new_fp));
         initialize_frame_header(new_fp, fp, code_object, return_pc);
-        initialize_class_body_frame(new_fp, body_code.extract());
 
         fp = new_fp;
         code_object = body_code.extract();
@@ -6830,6 +6844,7 @@ namespace cl
 #define SET_TABLE_ENTRY(bytecode, fun) tbl.table[size_t(bytecode)] = fun
         SET_TABLE_ENTRY(Bytecode::Ldar, op_ldar);
         SET_TABLE_ENTRY(Bytecode::LoadLocalChecked, op_load_local_checked);
+        SET_TABLE_ENTRY(Bytecode::Enter, op_enter);
         SET_TABLE_ENTRY(Bytecode::ClearLocal, op_clear_local);
         SET_TABLE_ENTRY(Bytecode::Star, op_star);
         SET_TABLE_ENTRY(Bytecode::Mov, op_mov);

@@ -1570,7 +1570,8 @@ def run(): return reduce(subtract, [10, 2, 3])
             [](void *opaque, ThreadState *, Value accumulator, Value *,
                CodeObject *code, uint32_t pc_offset,
                const SafepointScanRecord &record) {
-                if(!code->has_jit_code() || pc_offset != 0)
+                if(!code->has_jit_code() ||
+                   pc_offset != bytecode_length(Bytecode::Enter))
                 {
                     return;
                 }

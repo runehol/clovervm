@@ -145,8 +145,23 @@ After adaptation, frame entry:
 3. records the canonical interpreter return code object and program counter;
 4. installs an executable compiled return target, either a generated
    continuation or the interpreter-return thunk;
-5. initializes the target's required local/temporary state;
-6. begins execution at the selected code object's entry point.
+5. begins execution at the selected code object's entry point, whose first
+   instruction is `Enter #n_slots`.
+
+`Enter` has an unsigned little-endian 16-bit operand counting actual slots,
+including alignment padding. The count is always even and equals the padded
+local/temporary storage below FP; parameters and frame-header cells are excluded.
+The builder reserves `Enter #0` before emitting the body and patches its operand
+in place during finalization. The interpreter clears pairs of slots to
+`not_present` with AArch64 `stp`; zero slots is valid. This replaces selective
+analysis-driven entry `ClearLocal` instructions and class-entry local clearing.
+Semantic clears and checked deletion remain in the body. Resumes into an existing
+frame skip `Enter`.
+
+This instruction only clears storage. Frame construction, argument adaptation,
+return handling, and safepoint scheduling are unchanged; existing call-side polls
+can still precede `Enter`. Compiled execution represents the cleared logical
+slots in its entry state without requiring physical stores for eliminated slots.
 
 The argument cells are not copied merely to establish the frame. Moving the
 frame pointer changes their interpretation from caller temporaries to callee

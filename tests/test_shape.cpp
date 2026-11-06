@@ -454,10 +454,12 @@ TEST(ConstructorAllocatorSelection, ListUsesDedicatedOpcode)
     ASSERT_FALSE(thunk.has_exception());
     ASSERT_TRUE(thunk.value().is_found());
     CodeObject *code = thunk.value().thunk->code_object.extract();
-    ASSERT_GE(code->code.size(), 2u);
-    EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateListKnownClass),
-              code->code[0]);
-    EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
+    ASSERT_EQ(Bytecode::Enter, decode_instruction(*code, 0).encoded_opcode());
+    auto allocation =
+        decode_instruction(*code, bytecode_length(Bytecode::Enter));
+    EXPECT_EQ(Bytecode::CreateListKnownClass, allocation.encoded_opcode());
+    EXPECT_EQ(cls.raw_value(),
+              code->constant_table[allocation.operands()[0].value].value());
     EXPECT_EQ(
         0u,
         cls.extract()->get_instance_root_shape()->get_inline_slot_capacity());
@@ -475,10 +477,12 @@ TEST(ConstructorAllocatorSelection, ExceptionUsesDedicatedOpcode)
     ASSERT_FALSE(thunk.has_exception());
     ASSERT_TRUE(thunk.value().is_found());
     CodeObject *code = thunk.value().thunk->code_object.extract();
-    ASSERT_GE(code->code.size(), 2u);
-    EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateExceptionKnownClass),
-              code->code[0]);
-    EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
+    ASSERT_EQ(Bytecode::Enter, decode_instruction(*code, 0).encoded_opcode());
+    auto allocation =
+        decode_instruction(*code, bytecode_length(Bytecode::Enter));
+    EXPECT_EQ(Bytecode::CreateExceptionKnownClass, allocation.encoded_opcode());
+    EXPECT_EQ(cls.raw_value(),
+              code->constant_table[allocation.operands()[0].value].value());
 }
 
 TEST(ConstructorAllocatorSelection, StopIterationUsesDedicatedOpcode)
@@ -493,10 +497,13 @@ TEST(ConstructorAllocatorSelection, StopIterationUsesDedicatedOpcode)
     ASSERT_FALSE(thunk.has_exception());
     ASSERT_TRUE(thunk.value().is_found());
     CodeObject *code = thunk.value().thunk->code_object.extract();
-    ASSERT_GE(code->code.size(), 2u);
-    EXPECT_EQ(static_cast<uint8_t>(Bytecode::CreateStopIterationKnownClass),
-              code->code[0]);
-    EXPECT_EQ(cls.raw_value(), code->constant_table[code->code[1]].value());
+    ASSERT_EQ(Bytecode::Enter, decode_instruction(*code, 0).encoded_opcode());
+    auto allocation =
+        decode_instruction(*code, bytecode_length(Bytecode::Enter));
+    EXPECT_EQ(Bytecode::CreateStopIterationKnownClass,
+              allocation.encoded_opcode());
+    EXPECT_EQ(cls.raw_value(),
+              code->constant_table[allocation.operands()[0].value].value());
 }
 
 TEST(ClassStorageSelection, InheritsPredefinedRootDescriptors)

@@ -614,6 +614,8 @@ namespace cl
         Expected<uint32_t> emit_jump(uint32_t source_offset, Bytecode c,
                                      JumpTarget &target);
         void set_int16(uint32_t pos, int16_t v);
+        void set_uint16(uint32_t pos, uint16_t v);
+        void emit_enter();
         void set_exception_table_start_pc(uint32_t entry_idx, uint32_t pc);
         void set_exception_table_end_pc(uint32_t entry_idx, uint32_t pc);
         void set_exception_table_handler_pc(uint32_t entry_idx, uint32_t pc);

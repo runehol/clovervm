@@ -260,6 +260,7 @@ namespace cl
         : code_obj(make_object_raw<CodeObject>(
               compilation_unit, defining_module, local_scope, name))
     {
+        emit_enter();
     }
 
     CodeObjectBuilder::CodeObjectBuilder(
@@ -269,6 +270,15 @@ namespace cl
         : code_obj(vm->make_immortal_object_raw<CodeObject>(
               compilation_unit, defining_module, local_scope, name))
     {
+        emit_enter();
+    }
+
+    void CodeObjectBuilder::emit_enter()
+    {
+        assert(code_obj->code.empty());
+        emplace_back(0, uint8_t(Bytecode::Enter));
+        emplace_back(0, 0);
+        emplace_back(0, 0);
     }
 
     uint32_t CodeObjectBuilder::first_temporary_reg() const
@@ -1349,6 +1359,15 @@ namespace cl
             ++first_free_arg_reg;
         }
         code_obj->first_free_arg_encoded_reg = encode_reg(first_free_arg_reg);
+        uint32_t n_slots = code_obj->get_padded_n_ordinary_below_frame_slots();
+        if(n_slots > UINT16_MAX)
+        {
+            return Expected<CodeObject *>::raise_exception(
+                L"SystemError", L"Enter slot count out of range");
+        }
+        assert((n_slots & 1) == 0);
+        assert(Bytecode(code_obj->code[0]) == Bytecode::Enter);
+        set_uint16(1, uint16_t(n_slots));
         finalized = true;
         return Expected<CodeObject *>::ok(code_obj);
     }
@@ -1673,6 +1692,14 @@ namespace cl
 
     void CodeObjectBuilder::set_int16(uint32_t pos, int16_t v)
     {
+        set_uint16(pos, uint16_t(v));
+    }
+
+    void CodeObjectBuilder::set_uint16(uint32_t pos, uint16_t v)
+    {
+        assert_not_finalized();
+        assert(pos < code_obj->code.size());
+        assert(code_obj->code.size() - pos >= sizeof(v));
         code_obj->code[pos + 0] = (v >> 0) & 0xff;
         code_obj->code[pos + 1] = (v >> 8) & 0xff;
     }

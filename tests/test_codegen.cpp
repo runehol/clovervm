@@ -84,10 +84,11 @@ void expect_trusted_builtin_compile_python_error(
 TEST(Codegen, simple2)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 1\n"
-                           "    2 LShiftSmi 4, operator_ic[0]\n"
-                           "    6 AddSmi 3, operator_ic[1]\n"
-                           "   10 Return\n";
+                           "    0 Enter #0\n"
+                           "    3 LdaSmi 1\n"
+                           "    5 LShiftSmi 4, operator_ic[0]\n"
+                           "    9 AddSmi 3, operator_ic[1]\n"
+                           "   13 Return\n";
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");
 
     EXPECT_EQ(expected, actual);
@@ -96,13 +97,15 @@ TEST(Codegen, simple2)
 TEST(Codegen, assignment2)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 4\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    8 InPlaceAddSmi 7, operator_ic[0]\n"
-        "   12 StaGlobal c[0], module_global_mutation_ic[1]\n"
-        "   15 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaSmi 4\n"
+        "    5 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "    8 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "   11 InPlaceAddSmi 7, operator_ic[0]\n"
+        "   15 StaGlobal c[0], module_global_mutation_ic[1]\n"
+        "   18 Return\n"
         "Constant 0: \"a\"\n";
     std::string actual = bytecode_str_from_file(L"a = 4\n"
                                                 "a += 7\n");
@@ -167,9 +170,10 @@ TEST(Codegen, attribute_augmented_assignment_selects_both_paired_forms)
 TEST(Codegen, interactive_expression_returns_value)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 1\n"
-                           "    2 AddSmi 2, operator_ic[0]\n"
-                           "    6 Return\n";
+                           "    0 Enter #0\n"
+                           "    3 LdaSmi 1\n"
+                           "    5 AddSmi 2, operator_ic[0]\n"
+                           "    9 Return\n";
     std::string actual = bytecode_str_from_interactive(L"1 + 2\n");
 
     EXPECT_EQ(expected, actual);
@@ -178,9 +182,10 @@ TEST(Codegen, interactive_expression_returns_value)
 TEST(Codegen, binary_power_uses_cached_operator_bytecode)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 2\n"
-                           "    2 BinaryPowSmi 3, operator_ic[0]\n"
-                           "    6 Return\n";
+                           "    0 Enter #0\n"
+                           "    3 LdaSmi 2\n"
+                           "    5 BinaryPowSmi 3, operator_ic[0]\n"
+                           "    9 Return\n";
     std::string actual = bytecode_str_from_file(L"2 ** 3\n");
 
     EXPECT_EQ(expected, actual);
@@ -189,11 +194,13 @@ TEST(Codegen, binary_power_uses_cached_operator_bytecode)
 TEST(Codegen, interactive_assignment_returns_none)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 4\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 LdaNone\n"
-        "    6 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaSmi 4\n"
+        "    5 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "    8 LdaNone\n"
+        "    9 Return\n"
         "Constant 0: \"a\"\n";
     std::string actual = bytecode_str_from_interactive(L"a = 4\n");
 
@@ -203,8 +210,9 @@ TEST(Codegen, interactive_assignment_returns_none)
 TEST(Codegen, empty_file_returns_none)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaNone\n"
-                           "    1 Return\n";
+                           "    0 Enter #0\n"
+                           "    3 LdaNone\n"
+                           "    4 Return\n";
     std::string actual = bytecode_str_from_file(L"");
 
     EXPECT_EQ(expected, actual);
@@ -357,11 +365,13 @@ TEST(Codegen, relative_import_level_overflow_throws)
 TEST(Codegen, import_statement_uses_import_name_and_normal_store)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaNone\n"
-        "    1 ImportName c[0], 0\n"
-        "    4 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaNone\n"
+        "    4 ImportName c[0], 0\n"
+        "    7 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "   10 Return\n"
         "Constant 0: \"assignment\"\n";
     std::string actual = bytecode_str_from_file(L"import assignment\n");
 
@@ -371,15 +381,17 @@ TEST(Codegen, import_statement_uses_import_name_and_normal_store)
 TEST(Codegen, multiple_import_statement_loops_over_aliases)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaNone\n"
-        "    1 ImportName c[0], 0\n"
-        "    4 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    7 LdaNone\n"
-        "    8 ImportName c[1], 0\n"
-        "   11 ImportFrom c[2]\n"
-        "   13 StaGlobal c[3], module_global_mutation_ic[1]\n"
-        "   16 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaNone\n"
+        "    4 ImportName c[0], 0\n"
+        "    7 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "   10 LdaNone\n"
+        "   11 ImportName c[1], 0\n"
+        "   14 ImportFrom c[2]\n"
+        "   16 StaGlobal c[3], module_global_mutation_ic[1]\n"
+        "   19 Return\n"
         "Constant 0: \"assignment\"\n"
         "Constant 1: \"pkg.mod\"\n"
         "Constant 2: \"mod\"\n"
@@ -393,11 +405,13 @@ TEST(Codegen, multiple_import_statement_loops_over_aliases)
 TEST(Codegen, dotted_import_statement_imports_full_name_and_stores_head)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaNone\n"
-        "    1 ImportName c[0], 0\n"
-        "    4 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaNone\n"
+        "    4 ImportName c[0], 0\n"
+        "    7 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "   10 Return\n"
         "Constant 0: \"pkg.mod\"\n"
         "Constant 1: \"pkg\"\n";
     std::string actual = bytecode_str_from_file(L"import pkg.mod\n");
@@ -408,17 +422,19 @@ TEST(Codegen, dotted_import_statement_imports_full_name_and_stores_head)
 TEST(Codegen, from_import_statement_uses_fromlist_and_import_from)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaConstant c[0]\n"
-        "    2 ImportName c[1], 0\n"
-        "    5 Star0\n"
-        "    6 Ldar0\n"
-        "    7 ImportFrom c[2]\n"
-        "    9 StaGlobal c[2], module_global_mutation_ic[0]\n"
-        "   12 Ldar0\n"
-        "   13 ImportFrom c[3]\n"
-        "   15 StaGlobal c[4], module_global_mutation_ic[1]\n"
-        "   18 Return\n"
+        "    0 Enter #2\n"
+        "    3 LdaConstant c[0]\n"
+        "    5 ImportName c[1], 0\n"
+        "    8 Star0\n"
+        "    9 Ldar0\n"
+        "   10 ImportFrom c[2]\n"
+        "   12 StaGlobal c[2], module_global_mutation_ic[0]\n"
+        "   15 Ldar0\n"
+        "   16 ImportFrom c[3]\n"
+        "   18 StaGlobal c[4], module_global_mutation_ic[1]\n"
+        "   21 Return\n"
         "Constant 0: (\"marker\", \"value\")\n"
         "Constant 1: \"assignment\"\n"
         "Constant 2: \"marker\"\n"
@@ -446,10 +462,11 @@ TEST(Codegen, parenthesized_from_import_statement_matches_flat_form)
 TEST(Codegen, star_from_import_statement_uses_import_star_intrinsic)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaConstant c[0]\n"
-                           "    2 ImportName c[1], 0\n"
-                           "    5 CallRuntimeIntrinsic0 ImportStar\n"
-                           "    7 Return\n"
+                           "    0 Enter #0\n"
+                           "    3 LdaConstant c[0]\n"
+                           "    5 ImportName c[1], 0\n"
+                           "    8 CallRuntimeIntrinsic0 ImportStar\n"
+                           "   10 Return\n"
                            "Constant 0: (\"*\",)\n"
                            "Constant 1: \"assignment\"\n";
     std::string actual = bytecode_str_from_file(L"from assignment import *\n");
@@ -460,12 +477,14 @@ TEST(Codegen, star_from_import_statement_uses_import_star_intrinsic)
 TEST(Codegen, relative_from_import_statement_emits_level)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaConstant c[0]\n"
-        "    2 ImportName c[1], 1\n"
-        "    5 ImportFrom c[2]\n"
-        "    7 StaGlobal c[2], module_global_mutation_ic[0]\n"
-        "   10 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaConstant c[0]\n"
+        "    5 ImportName c[1], 1\n"
+        "    8 ImportFrom c[2]\n"
+        "   10 StaGlobal c[2], module_global_mutation_ic[0]\n"
+        "   13 Return\n"
         "Constant 0: (\"marker\",)\n"
         "Constant 1: \"assignment\"\n"
         "Constant 2: \"marker\"\n";
@@ -486,21 +505,23 @@ TEST(Codegen, if_elif_else)
                                "b\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    3 JumpIfFalse operator_ic[0], 16\n"
-        "    8 LdaSmi 1\n"
-        "   10 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "   13 Jump 37\n"
-        "   16 LdaGlobal c[2], module_global_read_ic[1]\n"
-        "   19 JumpIfFalse operator_ic[1], 32\n"
-        "   24 LdaSmi 2\n"
-        "   26 StaGlobal c[1], module_global_mutation_ic[1]\n"
-        "   29 Jump 37\n"
-        "   32 LdaSmi 3\n"
-        "   34 StaGlobal c[1], module_global_mutation_ic[2]\n"
-        "   37 LdaGlobal c[1], module_global_read_ic[2]\n"
-        "   40 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "    6 JumpIfFalse operator_ic[0], 19\n"
+        "   11 LdaSmi 1\n"
+        "   13 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "   16 Jump 40\n"
+        "   19 LdaGlobal c[2], module_global_read_ic[1]\n"
+        "   22 JumpIfFalse operator_ic[1], 35\n"
+        "   27 LdaSmi 2\n"
+        "   29 StaGlobal c[1], module_global_mutation_ic[1]\n"
+        "   32 Jump 40\n"
+        "   35 LdaSmi 3\n"
+        "   37 StaGlobal c[1], module_global_mutation_ic[2]\n"
+        "   40 LdaGlobal c[1], module_global_read_ic[2]\n"
+        "   43 Return\n"
         "Constant 0: \"a\"\n"
         "Constant 1: \"b\"\n"
         "Constant 2: \"c\"\n";
@@ -520,22 +541,24 @@ TEST(Codegen, while_else)
                                "b\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 2\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 LdaSmi 0\n"
-        "    7 StaGlobal c[1], module_global_mutation_ic[1]\n"
-        "   10 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "   13 JumpIfFalse operator_ic[0], 36\n"
-        "   18 LdaGlobal c[0], module_global_read_ic[1]\n"
-        "   21 InPlaceSubSmi 1, operator_ic[1]\n"
-        "   25 StaGlobal c[0], module_global_mutation_ic[2]\n"
-        "   28 LdaGlobal c[0], module_global_read_ic[2]\n"
-        "   31 JumpIfTrue operator_ic[2], 18\n"
-        "   36 LdaSmi 7\n"
-        "   38 StaGlobal c[1], module_global_mutation_ic[3]\n"
-        "   41 LdaGlobal c[1], module_global_read_ic[3]\n"
-        "   44 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaSmi 2\n"
+        "    5 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "    8 LdaSmi 0\n"
+        "   10 StaGlobal c[1], module_global_mutation_ic[1]\n"
+        "   13 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "   16 JumpIfFalse operator_ic[0], 39\n"
+        "   21 LdaGlobal c[0], module_global_read_ic[1]\n"
+        "   24 InPlaceSubSmi 1, operator_ic[1]\n"
+        "   28 StaGlobal c[0], module_global_mutation_ic[2]\n"
+        "   31 LdaGlobal c[0], module_global_read_ic[2]\n"
+        "   34 JumpIfTrue operator_ic[2], 21\n"
+        "   39 LdaSmi 7\n"
+        "   41 StaGlobal c[1], module_global_mutation_ic[3]\n"
+        "   44 LdaGlobal c[1], module_global_read_ic[3]\n"
+        "   47 Return\n"
         "Constant 0: \"a\"\n"
         "Constant 1: \"b\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -550,28 +573,31 @@ TEST(Codegen, function_multiple_parameters)
                                "add3(1, 2, 3)\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "    8 Star0\n"
-        "    9 LdaSmi 1\n"
-        "   11 Star2\n"
-        "   12 LdaSmi 2\n"
-        "   14 Star3\n"
-        "   15 LdaSmi 3\n"
-        "   17 Star4\n"
-        "   18 CallPositional r0, {r2..r4}, call_ic[0]\n"
-        "   23 Return\n"
+        "    0 Enter #6\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "   11 Star0\n"
+        "   12 LdaSmi 1\n"
+        "   14 Star2\n"
+        "   15 LdaSmi 2\n"
+        "   17 Star3\n"
+        "   18 LdaSmi 3\n"
+        "   20 Star4\n"
+        "   21 CallPositional r0, {r2..r4}, call_ic[0]\n"
+        "   26 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 Add p0, operator_ic[0]\n"
-        "    6 Star0\n"
-        "    7 Ldar p2\n"
-        "    9 Add r0, operator_ic[1]\n"
-        "   13 Return\n"
-        "   14 LdaNone\n"
-        "   15 Return\n"
+        "    0 Enter #2\n"
+        "    3 Ldar p1\n"
+        "    5 Add p0, operator_ic[0]\n"
+        "    9 Star0\n"
+        "   10 Ldar p2\n"
+        "   12 Add r0, operator_ic[1]\n"
+        "   16 Return\n"
+        "   17 LdaNone\n"
+        "   18 Return\n"
         "\n"
         "Constant 1: \"add3\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -586,29 +612,32 @@ TEST(Codegen, function_keyword_call)
                                "add3(1, c=3, b=2)\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "    8 Star0\n"
-        "    9 LdaSmi 1\n"
-        "   11 Star4\n"
-        "   12 LdaSmi 3\n"
-        "   14 Star1\n"
-        "   15 LdaSmi 2\n"
-        "   17 Star2\n"
-        "   18 CallKeyword r0, {r4:1}, kw_values={r1..r2}, kw=(\"c\", \"b\"), "
+        "    0 Enter #6\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "   11 Star0\n"
+        "   12 LdaSmi 1\n"
+        "   14 Star4\n"
+        "   15 LdaSmi 3\n"
+        "   17 Star1\n"
+        "   18 LdaSmi 2\n"
+        "   20 Star2\n"
+        "   21 CallKeyword r0, {r4:1}, kw_values={r1..r2}, kw=(\"c\", \"b\"), "
         "keyword_call_ic[0]\n"
-        "   26 Return\n"
+        "   29 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 Add p0, operator_ic[0]\n"
-        "    6 Star0\n"
-        "    7 Ldar p2\n"
-        "    9 Add r0, operator_ic[1]\n"
-        "   13 Return\n"
-        "   14 LdaNone\n"
-        "   15 Return\n"
+        "    0 Enter #2\n"
+        "    3 Ldar p1\n"
+        "    5 Add p0, operator_ic[0]\n"
+        "    9 Star0\n"
+        "   10 Ldar p2\n"
+        "   12 Add r0, operator_ic[1]\n"
+        "   16 Return\n"
+        "   17 LdaNone\n"
+        "   18 Return\n"
         "\n"
         "Constant 1: \"add3\"\n"
         "Constant 2: (\"c\", \"b\")\n";
@@ -624,25 +653,28 @@ TEST(Codegen, function_defaults_use_create_function_with_defaults)
                                "f(1)\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 2\n"
-        "    2 Star0\n"
-        "    3 CreateTuple {r0:1}\n"
-        "    6 Star1\n"
-        "    7 CreateFunctionWithDefaults c[0], r1\n"
-        "   10 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "   13 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "   16 Star0\n"
-        "   17 LdaSmi 1\n"
-        "   19 Star2\n"
-        "   20 CallPositional r0, {r2:1}, call_ic[0]\n"
-        "   25 Return\n"
+        "    0 Enter #4\n"
+        "    3 LdaSmi 2\n"
+        "    5 Star0\n"
+        "    6 CreateTuple {r0:1}\n"
+        "    9 Star1\n"
+        "   10 CreateFunctionWithDefaults c[0], r1\n"
+        "   13 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "   16 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "   19 Star0\n"
+        "   20 LdaSmi 1\n"
+        "   22 Star2\n"
+        "   23 CallPositional r0, {r2:1}, call_ic[0]\n"
+        "   28 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 Add p0, operator_ic[0]\n"
-        "    6 Return\n"
-        "    7 LdaNone\n"
-        "    8 Return\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 Add p0, operator_ic[0]\n"
+        "    9 Return\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
         "\n"
         "Constant 1: \"f\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -812,16 +844,19 @@ TEST(Codegen, binary_expression_reuses_local_register_operand)
                                "    return a + b\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
-        "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 Add p0, operator_ic[0]\n"
-        "    6 Return\n"
-        "    7 LdaNone\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    8 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 Add p0, operator_ic[0]\n"
+        "    9 Return\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
         "\n"
         "Constant 1: \"add\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -835,16 +870,19 @@ TEST(Codegen, comparison_reuses_local_register_operand)
                                "    return a < b\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
-        "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 TestLess p0, operator_ic[0]\n"
-        "    6 Return\n"
-        "    7 LdaNone\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    8 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Enter #2\n"
+        "    3 Ldar p1\n"
+        "    5 TestLess p0, operator_ic[0]\n"
+        "    9 Return\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
         "\n"
         "Constant 1: \"lt\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -863,16 +901,19 @@ TEST(Codegen, equality_emits_paired_operator_check_byte)
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
-        "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 TestEqual p0, operator_ic[0]\n"
-        "    6 Return\n"
-        "    7 LdaNone\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    8 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Enter #2\n"
+        "    3 Ldar p1\n"
+        "    5 TestEqual p0, operator_ic[0]\n"
+        "    9 Return\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
         "\n"
         "Constant 1: \"eq\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -912,10 +953,11 @@ TEST(Codegen, matmul_uses_cached_operator_without_smi_shortcut)
 TEST(Codegen, assert_statement_uses_explicit_failure_path)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaFalse\n"
-                           "    1 JumpIfTrue operator_ic[0], 7\n"
-                           "    6 RaiseAssertionError\n"
-                           "    7 Return\n";
+                           "    0 Enter #0\n"
+                           "    3 LdaFalse\n"
+                           "    4 JumpIfTrue operator_ic[0], 10\n"
+                           "    9 RaiseAssertionError\n"
+                           "   10 Return\n";
     std::string actual = bytecode_str_from_file(L"assert False\n");
 
     EXPECT_EQ(expected, actual);
@@ -924,11 +966,12 @@ TEST(Codegen, assert_statement_uses_explicit_failure_path)
 TEST(Codegen, assert_statement_message_is_only_evaluated_on_failure)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaFalse\n"
-                           "    1 JumpIfTrue operator_ic[0], 9\n"
-                           "    6 LdaConstant c[0]\n"
-                           "    8 RaiseAssertionErrorWithMessage\n"
-                           "    9 Return\n"
+                           "    0 Enter #0\n"
+                           "    3 LdaFalse\n"
+                           "    4 JumpIfTrue operator_ic[0], 12\n"
+                           "    9 LdaConstant c[0]\n"
+                           "   11 RaiseAssertionErrorWithMessage\n"
+                           "   12 Return\n"
                            "Constant 0: \"lol\"\n";
     std::string actual = bytecode_str_from_file(L"assert False, \"lol\"\n");
 
@@ -938,9 +981,10 @@ TEST(Codegen, assert_statement_message_is_only_evaluated_on_failure)
 TEST(Codegen, raise_statement_evaluates_expression_and_unwinds)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-                           "    3 RaiseUnwind\n"
-                           "    4 Return\n"
+                           "    0 Enter #0\n"
+                           "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+                           "    6 RaiseUnwind\n"
+                           "    7 Return\n"
                            "Constant 0: \"ValueError\"\n";
     std::string actual = bytecode_str_from_file(L"raise ValueError\n");
 
@@ -950,18 +994,20 @@ TEST(Codegen, raise_statement_evaluates_expression_and_unwinds)
 TEST(Codegen, try_bare_except_emits_exception_table)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    3 RaiseUnwind\n"
-        "    4 Jump 16\n"
-        "    7 ClearActiveException\n"
-        "    8 LdaSmi 7\n"
-        "   10 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "   13 Jump 16\n"
-        "   16 LdaGlobal c[1], module_global_read_ic[1]\n"
-        "   19 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "    6 RaiseUnwind\n"
+        "    7 Jump 19\n"
+        "   10 ClearActiveException\n"
+        "   11 LdaSmi 7\n"
+        "   13 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "   16 Jump 19\n"
+        "   19 LdaGlobal c[1], module_global_read_ic[1]\n"
+        "   22 Return\n"
         "Exception table:\n"
-        "    0..4 -> 7\n"
+        "    3..7 -> 10\n"
         "Constant 0: \"ValueError\"\n"
         "Constant 1: \"result\"\n";
     std::string actual = bytecode_str_from_file(L"try:\n"
@@ -976,22 +1022,24 @@ TEST(Codegen, try_bare_except_emits_exception_table)
 TEST(Codegen, try_typed_except_checks_active_exception)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    3 RaiseUnwind\n"
-        "    4 Jump 26\n"
-        "    7 LdaGlobal c[1], module_global_read_ic[1]\n"
-        "   10 ActiveExceptionIsInstance\n"
-        "   11 JumpIfFalse operator_ic[0], 25\n"
-        "   16 ClearActiveException\n"
-        "   17 LdaSmi 7\n"
-        "   19 StaGlobal c[2], module_global_mutation_ic[0]\n"
-        "   22 Jump 26\n"
-        "   25 ReraiseActiveException\n"
-        "   26 LdaGlobal c[2], module_global_read_ic[2]\n"
-        "   29 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "    6 RaiseUnwind\n"
+        "    7 Jump 29\n"
+        "   10 LdaGlobal c[1], module_global_read_ic[1]\n"
+        "   13 ActiveExceptionIsInstance\n"
+        "   14 JumpIfFalse operator_ic[0], 28\n"
+        "   19 ClearActiveException\n"
+        "   20 LdaSmi 7\n"
+        "   22 StaGlobal c[2], module_global_mutation_ic[0]\n"
+        "   25 Jump 29\n"
+        "   28 ReraiseActiveException\n"
+        "   29 LdaGlobal c[2], module_global_read_ic[2]\n"
+        "   32 Return\n"
         "Exception table:\n"
-        "    0..4 -> 7\n"
+        "    3..7 -> 10\n"
         "Constant 0: \"ValueError\"\n"
         "Constant 1: \"Exception\"\n"
         "Constant 2: \"result\"\n";
@@ -1007,20 +1055,21 @@ TEST(Codegen, try_typed_except_checks_active_exception)
 TEST(Codegen, bare_raise_in_handler_uses_saved_exception_register)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-                           "    3 RaiseUnwind\n"
-                           "    4 Jump 24\n"
-                           "    7 LdaGlobal c[1], module_global_read_ic[1]\n"
-                           "   10 ActiveExceptionIsInstance\n"
-                           "   11 JumpIfFalse operator_ic[0], 23\n"
-                           "   16 DrainActiveExceptionInto r0\n"
-                           "   18 Ldar0\n"
-                           "   19 RaiseUnwind\n"
-                           "   20 Jump 24\n"
-                           "   23 ReraiseActiveException\n"
-                           "   24 Return\n"
+                           "    0 Enter #2\n"
+                           "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+                           "    6 RaiseUnwind\n"
+                           "    7 Jump 27\n"
+                           "   10 LdaGlobal c[1], module_global_read_ic[1]\n"
+                           "   13 ActiveExceptionIsInstance\n"
+                           "   14 JumpIfFalse operator_ic[0], 26\n"
+                           "   19 DrainActiveExceptionInto r0\n"
+                           "   21 Ldar0\n"
+                           "   22 RaiseUnwind\n"
+                           "   23 Jump 27\n"
+                           "   26 ReraiseActiveException\n"
+                           "   27 Return\n"
                            "Exception table:\n"
-                           "    0..4 -> 7\n"
+                           "    3..7 -> 10\n"
                            "Constant 0: \"ValueError\"\n"
                            "Constant 1: \"Exception\"\n";
     std::string actual = bytecode_str_from_file(L"try:\n"
@@ -1034,20 +1083,21 @@ TEST(Codegen, bare_raise_in_handler_uses_saved_exception_register)
 TEST(Codegen, non_bare_raise_in_handler_uses_saved_context_register)
 {
     std::string expected = "Code object:\n"
-                           "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-                           "    3 RaiseUnwind\n"
-                           "    4 Jump 27\n"
-                           "    7 LdaGlobal c[1], module_global_read_ic[1]\n"
-                           "   10 ActiveExceptionIsInstance\n"
-                           "   11 JumpIfFalse operator_ic[0], 26\n"
-                           "   16 DrainActiveExceptionInto r0\n"
-                           "   18 LdaGlobal c[2], module_global_read_ic[2]\n"
-                           "   21 RaiseUnwindWithContext r0\n"
-                           "   23 Jump 27\n"
-                           "   26 ReraiseActiveException\n"
-                           "   27 Return\n"
+                           "    0 Enter #2\n"
+                           "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+                           "    6 RaiseUnwind\n"
+                           "    7 Jump 30\n"
+                           "   10 LdaGlobal c[1], module_global_read_ic[1]\n"
+                           "   13 ActiveExceptionIsInstance\n"
+                           "   14 JumpIfFalse operator_ic[0], 29\n"
+                           "   19 DrainActiveExceptionInto r0\n"
+                           "   21 LdaGlobal c[2], module_global_read_ic[2]\n"
+                           "   24 RaiseUnwindWithContext r0\n"
+                           "   26 Jump 30\n"
+                           "   29 ReraiseActiveException\n"
+                           "   30 Return\n"
                            "Exception table:\n"
-                           "    0..4 -> 7\n"
+                           "    3..7 -> 10\n"
                            "Constant 0: \"NameError\"\n"
                            "Constant 1: \"Exception\"\n"
                            "Constant 2: \"ValueError\"\n";
@@ -1062,21 +1112,23 @@ TEST(Codegen, non_bare_raise_in_handler_uses_saved_context_register)
 TEST(Codegen, try_finally_emits_normal_and_exceptional_cleanup_paths)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 1\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 LdaSmi 2\n"
-        "    7 StaGlobal c[0], module_global_mutation_ic[1]\n"
-        "   10 Jump 22\n"
-        "   13 DrainActiveExceptionInto r0\n"
-        "   15 LdaSmi 2\n"
-        "   17 StaGlobal c[0], module_global_mutation_ic[2]\n"
-        "   20 Ldar0\n"
-        "   21 RaiseUnwind\n"
-        "   22 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "   25 Return\n"
+        "    0 Enter #2\n"
+        "    3 LdaSmi 1\n"
+        "    5 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "    8 LdaSmi 2\n"
+        "   10 StaGlobal c[0], module_global_mutation_ic[1]\n"
+        "   13 Jump 25\n"
+        "   16 DrainActiveExceptionInto r0\n"
+        "   18 LdaSmi 2\n"
+        "   20 StaGlobal c[0], module_global_mutation_ic[2]\n"
+        "   23 Ldar0\n"
+        "   24 RaiseUnwind\n"
+        "   25 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "   28 Return\n"
         "Exception table:\n"
-        "    0..5 -> 13\n"
+        "    3..8 -> 16\n"
         "Constant 0: \"result\"\n";
     std::string actual = bytecode_str_from_file(L"try:\n"
                                                 L"    result = 1\n"
@@ -1096,15 +1148,15 @@ TEST(Codegen, except_as_without_bare_raise_drains_and_clears_local)
                                                 L"        pass\n");
 
     EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r0\n"
-                                             "   18 LdaNone\n"
-                                             "   19 Star0\n"
-                                             "   20 DelLocal r0"));
+                                             "   21 LdaNone\n"
+                                             "   22 Star0\n"
+                                             "   23 DelLocal r0"));
     EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r1\n"
-                                             "   27 LdaNone\n"
-                                             "   28 Star0\n"
-                                             "   29 DelLocal r0\n"
-                                             "   31 Ldar1\n"
-                                             "   32 RaiseUnwind"));
+                                             "   30 LdaNone\n"
+                                             "   31 Star0\n"
+                                             "   32 DelLocal r0\n"
+                                             "   34 Ldar1\n"
+                                             "   35 RaiseUnwind"));
 }
 
 TEST(Codegen, except_as_with_bare_raise_keeps_hidden_original)
@@ -1117,17 +1169,18 @@ TEST(Codegen, except_as_with_bare_raise_keeps_hidden_original)
                                                 L"        raise\n");
 
     EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r1\n"
-                                             "   18 Ldar1\n"
-                                             "   19 Star0"));
-    EXPECT_NE(std::string::npos, actual.find("   24 Ldar1\n"
-                                             "   25 RaiseUnwind"));
+                                             "   21 Ldar1\n"
+                                             "   22 Star0"));
+    EXPECT_NE(std::string::npos, actual.find("   27 Ldar1\n"
+                                             "   28 RaiseUnwind"));
 }
 
 TEST(Codegen, bare_raise_outside_handler_is_runtime_reraise)
 {
     std::string expected = "Code object:\n"
-                           "    0 RaiseBare\n"
-                           "    1 Return\n";
+                           "    0 Enter #0\n"
+                           "    3 RaiseBare\n"
+                           "    4 Return\n";
     std::string actual = bytecode_str_from_file(L"raise\n");
 
     EXPECT_EQ(expected, actual);
@@ -1140,18 +1193,21 @@ TEST(Codegen, function_implicit_return_none)
                                "f()\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "    8 Star0\n"
-        "    9 CallPositional r0, {r2:0}, call_ic[0]\n"
-        "   14 Return\n"
+        "    0 Enter #4\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "   11 Star0\n"
+        "   12 CallPositional r0, {r2:0}, call_ic[0]\n"
+        "   17 Return\n"
         "Constant 0: Code object:\n"
-        "    0 LdaSmi 1\n"
-        "    2 Star0\n"
-        "    3 LdaNone\n"
-        "    4 Return\n"
+        "    0 Enter #2\n"
+        "    3 LdaSmi 1\n"
+        "    5 Star0\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
         "\n"
         "Constant 1: \"f\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1166,20 +1222,23 @@ TEST(Codegen, class_definition_passes_hidden_name_and_bases_to_create_class)
                                "Cls\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaConstant c[2]\n"
-        "    2 Star0\n"
-        "    3 CreateTuple {r0:1}\n"
-        "    6 Star1\n"
-        "    7 LdaConstant c[1]\n"
-        "    9 Star2\n"
-        "   10 Mov r3, r1\n"
-        "   13 CreateClass c[0], r2\n"
-        "   16 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "   19 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "   22 Return\n"
+        "    0 Enter #4\n"
+        "    3 LdaConstant c[2]\n"
+        "    5 Star0\n"
+        "    6 CreateTuple {r0:1}\n"
+        "    9 Star1\n"
+        "   10 LdaConstant c[1]\n"
+        "   12 Star2\n"
+        "   13 Mov r3, r1\n"
+        "   16 CreateClass c[0], r2\n"
+        "   19 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "   22 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "   25 Return\n"
         "Constant 0: Code object:\n"
-        "    0 BuildClass\n"
+        "    0 Enter #0\n"
+        "    3 BuildClass\n"
         "\n"
         "Constant 1: \"Cls\"\n"
         "Constant 2: <class object>\n";
@@ -1198,8 +1257,9 @@ TEST(Codegen, string_literal_constant_value)
                              code_obj->constant_table[0].value())));
 
     std::string expected = "Code object:\n"
-                           "    0 LdaConstant c[0]\n"
-                           "    2 Return\n"
+                           "    0 Enter #0\n"
+                           "    3 LdaConstant c[0]\n"
+                           "    5 Return\n"
                            "Constant 0: \"abc\"\n";
     EXPECT_EQ(expected, fmt::to_string(*code_obj));
 }
@@ -1220,8 +1280,9 @@ TEST(Codegen, bytes_literal_constant_value)
     EXPECT_EQ(uint8_t('c'), view[2]);
 
     std::string expected = "Code object:\n"
-                           "    0 LdaConstant c[0]\n"
-                           "    2 Return\n"
+                           "    0 Enter #0\n"
+                           "    3 LdaConstant c[0]\n"
+                           "    5 Return\n"
                            "Constant 0: b'abc'\n";
     EXPECT_EQ(expected, fmt::to_string(*code_obj));
 }
@@ -1243,15 +1304,18 @@ TEST(Codegen, attribute_load_uses_register_receiver)
                                "    return obj.value\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 LoadAttr p0, c[0], read_ic[0]\n"
-        "    4 Return\n"
-        "    5 LdaNone\n"
-        "    6 Return\n"
+        "    0 Enter #0\n"
+        "    3 LoadAttr p0, c[0], read_ic[0]\n"
+        "    7 Return\n"
+        "    8 LdaNone\n"
+        "    9 Return\n"
         "Constant 0: \"value\"\n"
         "\n"
         "Constant 1: \"get\"\n";
@@ -1266,15 +1330,18 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
                                "    obj.value = value\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
-        "    6 LdaNone\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 StoreAttr p0, c[0], mutation_ic[0]\n"
+        "    9 LdaNone\n"
+        "   10 Return\n"
         "Constant 0: \"value\"\n"
         "\n"
         "Constant 1: \"set\"\n";
@@ -1289,15 +1356,18 @@ TEST(Codegen, annotated_attribute_store_uses_register_receiver)
                                "    obj.value: int = value\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
-        "    6 LdaNone\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 StoreAttr p0, c[0], mutation_ic[0]\n"
+        "    9 LdaNone\n"
+        "   10 Return\n"
         "Constant 0: \"value\"\n"
         "\n"
         "Constant 1: \"set\"\n";
@@ -1312,14 +1382,17 @@ TEST(Codegen, attribute_delete_uses_register_receiver_and_mutation_cache)
                                "    del obj.value\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 DelAttr p0, c[0], mutation_ic[0]\n"
-        "    4 LdaNone\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 DelAttr p0, c[0], mutation_ic[0]\n"
+        "    7 LdaNone\n"
+        "    8 Return\n"
         "Constant 0: \"value\"\n"
         "\n"
         "Constant 1: \"clear\"\n";
@@ -1334,11 +1407,13 @@ TEST(Codegen, global_variable_delete_uses_binding_slot)
                                "del value\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 1\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 DelGlobal c[0]\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 LdaSmi 1\n"
+        "    5 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "    8 DelGlobal c[0]\n"
+        "   10 Return\n"
         "Constant 0: \"value\"\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -1351,17 +1426,20 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
                                "    return obj.method(value)\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Mov r0, p0\n"
-        "    3 Mov r1, p1\n"
-        "    6 CallMethodAttrPositional r0, c[0], read_ic[0], call_ic[0], 1\n"
-        "   12 Return\n"
-        "   13 LdaNone\n"
-        "   14 Return\n"
+        "    0 Enter #2\n"
+        "    3 Mov r0, p0\n"
+        "    6 Mov r1, p1\n"
+        "    9 CallMethodAttrPositional r0, c[0], read_ic[0], call_ic[0], 1\n"
+        "   15 Return\n"
+        "   16 LdaNone\n"
+        "   17 Return\n"
         "Constant 0: \"method\"\n"
         "\n"
         "Constant 1: \"invoke\"\n";
@@ -1376,21 +1454,23 @@ TEST(Codegen, direct_keyword_method_call_uses_callmethodattrkeyword)
                                "    return obj.method(value, scale=3)\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Mov r2, p0\n"
-        "    3 Mov r3, p1\n"
-        "    6 LdaSmi 3\n"
-        "    8 Star0\n"
-        "    9 CallMethodAttrKeyword r2, c[0], read_ic[0], "
-        "keyword_call_ic[0], "
+        "    0 Enter #4\n"
+        "    3 Mov r2, p0\n"
+        "    6 Mov r3, p1\n"
+        "    9 LdaSmi 3\n"
+        "   11 Star0\n"
+        "   12 CallMethodAttrKeyword r2, c[0], read_ic[0], keyword_call_ic[0], "
         "{r2:1}, kw_values={r0:1}, kw=(\"scale\",)\n"
-        "   18 Return\n"
-        "   19 LdaNone\n"
-        "   20 Return\n"
+        "   21 Return\n"
+        "   22 LdaNone\n"
+        "   23 Return\n"
         "Constant 0: \"method\"\n"
         "Constant 1: (\"scale\",)\n"
         "\n"
@@ -1405,14 +1485,15 @@ TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
     const wchar_t *test_case = L"[1, 2, 4]\n";
 
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 1\n"
-                           "    2 Star0\n"
-                           "    3 LdaSmi 2\n"
-                           "    5 Star1\n"
-                           "    6 LdaSmi 4\n"
-                           "    8 Star2\n"
-                           "    9 CreateList {r0..r2}\n"
-                           "   12 Return\n";
+                           "    0 Enter #4\n"
+                           "    3 LdaSmi 1\n"
+                           "    5 Star0\n"
+                           "    6 LdaSmi 2\n"
+                           "    8 Star1\n"
+                           "    9 LdaSmi 4\n"
+                           "   11 Star2\n"
+                           "   12 CreateList {r0..r2}\n"
+                           "   15 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -1423,14 +1504,15 @@ TEST(Codegen, tuple_literal_uses_createtuple_with_contiguous_register_range)
     const wchar_t *test_case = L"1, 2, 4\n";
 
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 1\n"
-                           "    2 Star0\n"
-                           "    3 LdaSmi 2\n"
-                           "    5 Star1\n"
-                           "    6 LdaSmi 4\n"
-                           "    8 Star2\n"
-                           "    9 CreateTuple {r0..r2}\n"
-                           "   12 Return\n";
+                           "    0 Enter #4\n"
+                           "    3 LdaSmi 1\n"
+                           "    5 Star0\n"
+                           "    6 LdaSmi 2\n"
+                           "    8 Star1\n"
+                           "    9 LdaSmi 4\n"
+                           "   11 Star2\n"
+                           "   12 CreateTuple {r0..r2}\n"
+                           "   15 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -1441,14 +1523,15 @@ TEST(Codegen, parenthesized_tuple_literal_uses_createtuple)
     const wchar_t *test_case = L"(1, 2, 4)\n";
 
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 1\n"
-                           "    2 Star0\n"
-                           "    3 LdaSmi 2\n"
-                           "    5 Star1\n"
-                           "    6 LdaSmi 4\n"
-                           "    8 Star2\n"
-                           "    9 CreateTuple {r0..r2}\n"
-                           "   12 Return\n";
+                           "    0 Enter #4\n"
+                           "    3 LdaSmi 1\n"
+                           "    5 Star0\n"
+                           "    6 LdaSmi 2\n"
+                           "    8 Star1\n"
+                           "    9 LdaSmi 4\n"
+                           "   11 Star2\n"
+                           "   12 CreateTuple {r0..r2}\n"
+                           "   15 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -1459,8 +1542,9 @@ TEST(Codegen, empty_tuple_literal_uses_createtuple)
     const wchar_t *test_case = L"()\n";
 
     std::string expected = "Code object:\n"
-                           "    0 CreateTuple {r0:0}\n"
-                           "    3 Return\n";
+                           "    0 Enter #2\n"
+                           "    3 CreateTuple {r0:0}\n"
+                           "    6 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -1471,16 +1555,17 @@ TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
     const wchar_t *test_case = L"{1: 2, 4: 8}\n";
 
     std::string expected = "Code object:\n"
-                           "    0 LdaSmi 1\n"
-                           "    2 Star0\n"
-                           "    3 LdaSmi 2\n"
-                           "    5 Star1\n"
-                           "    6 LdaSmi 4\n"
-                           "    8 Star2\n"
-                           "    9 LdaSmi 8\n"
-                           "   11 Star3\n"
-                           "   12 CreateDict {r0..r3}\n"
-                           "   15 Return\n";
+                           "    0 Enter #4\n"
+                           "    3 LdaSmi 1\n"
+                           "    5 Star0\n"
+                           "    6 LdaSmi 2\n"
+                           "    8 Star1\n"
+                           "    9 LdaSmi 4\n"
+                           "   11 Star2\n"
+                           "   12 LdaSmi 8\n"
+                           "   14 Star3\n"
+                           "   15 CreateDict {r0..r3}\n"
+                           "   18 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -1497,16 +1582,19 @@ TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
     ASSERT_EQ(1u, function_code->inline_caches.operator_caches.size());
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 GetItem p0, operator_ic[0]\n"
-        "    5 Return\n"
-        "    6 LdaNone\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 GetItem p0, operator_ic[0]\n"
+        "    8 Return\n"
+        "    9 LdaNone\n"
+        "   10 Return\n"
         "\n"
         "Constant 1: \"get\"\n";
     std::string actual = fmt::to_string(*module_code);
@@ -1520,19 +1608,22 @@ TEST(Codegen, subscript_load_builds_binary_slice_key)
                                L"    return obj[:stop]\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 LdaNone\n"
-        "    1 Star0\n"
-        "    2 Ldar p1\n"
-        "    4 CreateBinarySlice r0\n"
-        "    6 GetItem p0, operator_ic[0]\n"
-        "    9 Return\n"
-        "   10 LdaNone\n"
-        "   11 Return\n"
+        "    0 Enter #2\n"
+        "    3 LdaNone\n"
+        "    4 Star0\n"
+        "    5 Ldar p1\n"
+        "    7 CreateBinarySlice r0\n"
+        "    9 GetItem p0, operator_ic[0]\n"
+        "   12 Return\n"
+        "   13 LdaNone\n"
+        "   14 Return\n"
         "\n"
         "Constant 1: \"get\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1546,19 +1637,22 @@ TEST(Codegen, subscript_load_builds_ternary_slice_key)
                                L"    return obj[start:stop:step]\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Mov r0, p1\n"
-        "    3 Mov r1, p2\n"
-        "    6 Ldar p3\n"
-        "    8 CreateTernarySlice r0, r1\n"
-        "   11 GetItem p0, operator_ic[0]\n"
-        "   14 Return\n"
-        "   15 LdaNone\n"
-        "   16 Return\n"
+        "    0 Enter #2\n"
+        "    3 Mov r0, p1\n"
+        "    6 Mov r1, p2\n"
+        "    9 Ldar p3\n"
+        "   11 CreateTernarySlice r0, r1\n"
+        "   14 GetItem p0, operator_ic[0]\n"
+        "   17 Return\n"
+        "   18 LdaNone\n"
+        "   19 Return\n"
         "\n"
         "Constant 1: \"get\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1572,15 +1666,18 @@ TEST(Codegen, subscript_store_uses_receiver_value_regs_and_accumulator_key)
                                L"    obj[idx] = value\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 SetItem p0, p2, operator_ic[0]\n"
-        "    6 LdaNone\n"
-        "    7 Return\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 SetItem p0, p2, operator_ic[0]\n"
+        "    9 LdaNone\n"
+        "   10 Return\n"
         "\n"
         "Constant 1: \"set\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1617,15 +1714,18 @@ TEST(Codegen, subscript_delete_uses_receiver_reg_and_accumulator_key)
                                L"    del obj[idx]\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 DelItem p0, operator_ic[0]\n"
-        "    5 LdaNone\n"
-        "    6 Return\n"
+        "    0 Enter #0\n"
+        "    3 Ldar p1\n"
+        "    5 DelItem p0, operator_ic[0]\n"
+        "    8 LdaNone\n"
+        "    9 Return\n"
         "\n"
         "Constant 1: \"clear\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1639,19 +1739,22 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
                                L"    obj[idx] += 1\n";
 
     std::string expected =
+
         "Code object:\n"
-        "    0 CreateFunction c[0]\n"
-        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "    5 Return\n"
+        "    0 Enter #0\n"
+        "    3 CreateFunction c[0]\n"
+        "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Ldar p1\n"
-        "    2 GetItem p0, operator_ic[0]\n"
-        "    5 InPlaceAddSmi 1, operator_ic[1]\n"
-        "    9 Star0\n"
-        "   10 Ldar p1\n"
-        "   12 SetItem p0, r0, operator_ic[2]\n"
-        "   16 LdaNone\n"
-        "   17 Return\n"
+        "    0 Enter #2\n"
+        "    3 Ldar p1\n"
+        "    5 GetItem p0, operator_ic[0]\n"
+        "    8 InPlaceAddSmi 1, operator_ic[1]\n"
+        "   12 Star0\n"
+        "   13 Ldar p1\n"
+        "   15 SetItem p0, r0, operator_ic[2]\n"
+        "   19 LdaNone\n"
+        "   20 Return\n"
         "\n"
         "Constant 1: \"bump\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1662,46 +1765,48 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaSmi 0\n"
-        "    2 StaGlobal c[0], module_global_mutation_ic[0]\n"
-        "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
-        "    8 Star0\n"
-        "    9 LdaSmi 3\n"
-        "   11 Star1\n"
-        "   12 ForPrepRange1 r0, 40\n"
-        "   16 ForIterRange1 r0, 98\n"
-        "   20 StaGlobal c[2], module_global_mutation_ic[1]\n"
-        "   23 LdaGlobal c[0], module_global_read_ic[1]\n"
-        "   26 Star3\n"
-        "   27 LdaGlobal c[2], module_global_read_ic[2]\n"
-        "   30 InPlaceAdd r3, operator_ic[0]\n"
-        "   34 StaGlobal c[0], module_global_mutation_ic[2]\n"
-        "   37 Jump 16\n"
-        "   40 Mov r4, r1\n"
-        "   43 CallPositional r0, {r4:1}, call_ic[0]\n"
-        "   48 Star4\n"
-        "   49 CallSpecialMethod0 r4, c[3], operator_ic[1], c[4], c[5]\n"
-        "   55 Star2\n"
-        "   56 Mov r4, r2\n"
-        "   59 CallSpecialMethod0 r4, c[6], operator_ic[2], c[4], c[7]\n"
-        "   65 StaGlobal c[2], module_global_mutation_ic[3]\n"
-        "   68 LdaGlobal c[0], module_global_read_ic[3]\n"
-        "   71 Star3\n"
-        "   72 LdaGlobal c[2], module_global_read_ic[4]\n"
-        "   75 InPlaceAdd r3, operator_ic[3]\n"
-        "   79 StaGlobal c[0], module_global_mutation_ic[4]\n"
-        "   82 Jump 56\n"
-        "   85 LdaConstant c[8]\n"
-        "   87 ActiveExceptionIsInstance\n"
-        "   88 JumpIfFalse operator_ic[4], 97\n"
-        "   93 ClearActiveException\n"
-        "   94 Jump 98\n"
-        "   97 ReraiseActiveException\n"
-        "   98 LdaGlobal c[0], module_global_read_ic[5]\n"
-        "  101 Return\n"
+        "    0 Enter #6\n"
+        "    3 LdaSmi 0\n"
+        "    5 StaGlobal c[0], module_global_mutation_ic[0]\n"
+        "    8 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "   11 Star0\n"
+        "   12 LdaSmi 3\n"
+        "   14 Star1\n"
+        "   15 ForPrepRange1 r0, 43\n"
+        "   19 ForIterRange1 r0, 101\n"
+        "   23 StaGlobal c[2], module_global_mutation_ic[1]\n"
+        "   26 LdaGlobal c[0], module_global_read_ic[1]\n"
+        "   29 Star3\n"
+        "   30 LdaGlobal c[2], module_global_read_ic[2]\n"
+        "   33 InPlaceAdd r3, operator_ic[0]\n"
+        "   37 StaGlobal c[0], module_global_mutation_ic[2]\n"
+        "   40 Jump 19\n"
+        "   43 Mov r4, r1\n"
+        "   46 CallPositional r0, {r4:1}, call_ic[0]\n"
+        "   51 Star4\n"
+        "   52 CallSpecialMethod0 r4, c[3], operator_ic[1], c[4], c[5]\n"
+        "   58 Star2\n"
+        "   59 Mov r4, r2\n"
+        "   62 CallSpecialMethod0 r4, c[6], operator_ic[2], c[4], c[7]\n"
+        "   68 StaGlobal c[2], module_global_mutation_ic[3]\n"
+        "   71 LdaGlobal c[0], module_global_read_ic[3]\n"
+        "   74 Star3\n"
+        "   75 LdaGlobal c[2], module_global_read_ic[4]\n"
+        "   78 InPlaceAdd r3, operator_ic[3]\n"
+        "   82 StaGlobal c[0], module_global_mutation_ic[4]\n"
+        "   85 Jump 59\n"
+        "   88 LdaConstant c[8]\n"
+        "   90 ActiveExceptionIsInstance\n"
+        "   91 JumpIfFalse operator_ic[4], 100\n"
+        "   96 ClearActiveException\n"
+        "   97 Jump 101\n"
+        "  100 ReraiseActiveException\n"
+        "  101 LdaGlobal c[0], module_global_read_ic[5]\n"
+        "  104 Return\n"
         "Exception table:\n"
-        "    59..65 -> 85\n"
+        "    62..68 -> 88\n"
         "Constant 0: \"total\"\n"
         "Constant 1: \"range\"\n"
         "Constant 2: \"x\"\n"
@@ -1728,10 +1833,10 @@ TEST(Codegen, local_augmented_assignment_in_loop_uses_dominating_binding)
                                                 L"    return acc\n");
 
     EXPECT_NE(std::string::npos,
-              actual.find("   21 Ldar1\n"
-                          "   22 InPlaceAdd r0, operator_ic[0]\n"
-                          "   26 Star0\n"));
-    EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r1"));
+              actual.find("   22 Ldar1\n"
+                          "   23 InPlaceAdd r0, operator_ic[0]\n"
+                          "   27 Star0\n"));
+    EXPECT_NE(std::string::npos, actual.find("    0 Enter #8"));
     EXPECT_EQ(std::string::npos, actual.find("ClearLocal r0"));
     EXPECT_EQ(std::string::npos, actual.find("LoadLocalChecked r0"));
 }
@@ -1762,31 +1867,33 @@ TEST(Codegen, local_deleted_in_while_body_checks_next_condition_load)
 TEST(Codegen, non_direct_for_loop_uses_generic_iterator_protocol_calls)
 {
     std::string expected =
+
         "Code object:\n"
-        "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-        "    3 Star0\n"
-        "    4 LdaSmi 3\n"
-        "    6 Star2\n"
-        "    7 CallPositional r0, {r2:1}, call_ic[0]\n"
-        "   12 StaGlobal c[1], module_global_mutation_ic[0]\n"
-        "   15 LdaGlobal c[1], module_global_read_ic[1]\n"
-        "   18 Star2\n"
-        "   19 CallSpecialMethod0 r2, c[2], operator_ic[0], c[3], c[4]\n"
-        "   25 Star0\n"
-        "   26 Mov r2, r0\n"
-        "   29 CallSpecialMethod0 r2, c[5], operator_ic[1], c[3], c[6]\n"
-        "   35 StaGlobal c[8], module_global_mutation_ic[1]\n"
-        "   38 LdaGlobal c[8], module_global_read_ic[2]\n"
-        "   41 Jump 26\n"
-        "   44 LdaConstant c[7]\n"
-        "   46 ActiveExceptionIsInstance\n"
-        "   47 JumpIfFalse operator_ic[2], 56\n"
-        "   52 ClearActiveException\n"
-        "   53 Jump 57\n"
-        "   56 ReraiseActiveException\n"
-        "   57 Return\n"
+        "    0 Enter #4\n"
+        "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+        "    6 Star0\n"
+        "    7 LdaSmi 3\n"
+        "    9 Star2\n"
+        "   10 CallPositional r0, {r2:1}, call_ic[0]\n"
+        "   15 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "   18 LdaGlobal c[1], module_global_read_ic[1]\n"
+        "   21 Star2\n"
+        "   22 CallSpecialMethod0 r2, c[2], operator_ic[0], c[3], c[4]\n"
+        "   28 Star0\n"
+        "   29 Mov r2, r0\n"
+        "   32 CallSpecialMethod0 r2, c[5], operator_ic[1], c[3], c[6]\n"
+        "   38 StaGlobal c[8], module_global_mutation_ic[1]\n"
+        "   41 LdaGlobal c[8], module_global_read_ic[2]\n"
+        "   44 Jump 29\n"
+        "   47 LdaConstant c[7]\n"
+        "   49 ActiveExceptionIsInstance\n"
+        "   50 JumpIfFalse operator_ic[2], 59\n"
+        "   55 ClearActiveException\n"
+        "   56 Jump 60\n"
+        "   59 ReraiseActiveException\n"
+        "   60 Return\n"
         "Exception table:\n"
-        "    29..35 -> 44\n"
+        "    32..38 -> 47\n"
         "Constant 0: \"range\"\n"
         "Constant 1: \"it\"\n"
         "Constant 2: \"__iter__\"\n"
@@ -2069,12 +2176,13 @@ TEST(Codegen, user_clover_ternary_pow_name_is_ordinary_call)
 TEST(Codegen, conditional_expression_uses_existing_branches)
 {
     EXPECT_EQ("Code object:\n"
-              "    0 LdaGlobal c[0], module_global_read_ic[0]\n"
-              "    3 JumpIfFalse operator_ic[0], 13\n"
-              "    8 LdaSmi 1\n"
-              "   10 Jump 15\n"
-              "   13 LdaSmi 2\n"
-              "   15 Return\n"
+              "    0 Enter #0\n"
+              "    3 LdaGlobal c[0], module_global_read_ic[0]\n"
+              "    6 JumpIfFalse operator_ic[0], 16\n"
+              "   11 LdaSmi 1\n"
+              "   13 Jump 18\n"
+              "   16 LdaSmi 2\n"
+              "   18 Return\n"
               "Constant 0: \"flag\"\n",
               bytecode_str_from_file(L"1 if flag else 2\n"));
 }
@@ -2435,16 +2543,13 @@ TEST(Codegen, normal_joins_clear_maybe_bound_entry_storage_without_later_reads)
     {
         SCOPED_TRACE(source);
         std::string actual = bytecode_str_from_file(source);
-        // A single prologue clear, not a clear on either branch or at the
-        // later observation point. These bindings have no Python read.
-        EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r0"));
-        size_t clear = actual.find("ClearLocal ");
-        ASSERT_NE(std::string::npos, clear);
-        EXPECT_EQ(std::string::npos, actual.find("ClearLocal ", clear + 1));
+        // Enter owns entry initialization even when no Python read follows.
+        EXPECT_NE(std::string::npos, actual.find("    0 Enter #"));
+        EXPECT_EQ(std::string::npos, actual.find("ClearLocal "));
     }
 }
 
-TEST(Codegen, normal_joins_do_not_blanket_clear_local_storage)
+TEST(Codegen, normal_joins_do_not_emit_individual_entry_clears)
 {
     const wchar_t *sources[] = {
         L"def f(flag):\n    x = 1\n    if flag:\n        x = 2\n"
@@ -2491,7 +2596,7 @@ TEST(Codegen, loop_mixed_storage_is_cleared_only_in_the_prologue)
     struct Case
     {
         const wchar_t *source;
-        size_t clears;
+        size_t minimum_locals;
     };
     const Case cases[] = {
         {L"def f(flag):\n    while flag:\n        x = 1\n"
@@ -2530,21 +2635,19 @@ TEST(Codegen, loop_mixed_storage_is_cleared_only_in_the_prologue)
     {
         SCOPED_TRACE(test_case.source);
         std::string actual = bytecode_str_from_file(test_case.source);
-        std::string prologue;
-        for(size_t idx = 0; idx < test_case.clears; ++idx)
-        {
-            prologue += fmt::format("{:5} ClearLocal r{}\n", idx * 2, idx);
-        }
-        // Every expected clear must be contiguous at function entry. There
-        // must be no additional clear in a body, backedge, or loop exit.
-        size_t start = actual.find(prologue);
-        ASSERT_NE(std::string::npos, start) << actual;
-        EXPECT_EQ(std::string::npos,
-                  actual.find("ClearLocal ", start + prologue.size()));
+        EXPECT_EQ(std::string::npos, actual.find("ClearLocal "));
+        test::VmTestContext context;
+        CodeObject *module = context.compile_file(test_case.source);
+        CodeObject *function =
+            module->constant_table[0].value().get_ptr<CodeObject>();
+        auto enter = decode_instruction(*function, 0);
+        ASSERT_EQ(Bytecode::Enter, enter.encoded_opcode());
+        EXPECT_EQ(0u, enter.operands()[0].value & 1);
+        EXPECT_GE(enter.operands()[0].value, test_case.minimum_locals);
     }
 }
 
-TEST(Codegen, loop_clearing_does_not_blanket_initialize_bindings)
+TEST(Codegen, loop_entry_does_not_emit_individual_binding_clears)
 {
     const wchar_t *sources[] = {
         L"def f(x, flag):\n    while flag:\n        x = 1\n"
@@ -2582,7 +2685,7 @@ TEST(Codegen, loop_entry_clears_preserve_unbound_checks)
     {
         SCOPED_TRACE(source);
         std::string actual = bytecode_str_from_file(source);
-        EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r0"));
+        EXPECT_NE(std::string::npos, actual.find("    0 Enter #"));
         EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
     }
 }
@@ -2617,11 +2720,9 @@ TEST(Codegen, gc_entry_clear_does_not_make_a_local_semantically_bound)
 {
     std::string actual = bytecode_str_from_file(
         L"def f(flag):\n    if flag:\n        x = 1\n    return x\n");
-    EXPECT_NE(std::string::npos, actual.find("    0 ClearLocal r0"));
+    EXPECT_NE(std::string::npos, actual.find("    0 Enter #"));
     EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
-    size_t clear = actual.find("ClearLocal ");
-    ASSERT_NE(std::string::npos, clear);
-    EXPECT_EQ(std::string::npos, actual.find("ClearLocal ", clear + 1));
+    EXPECT_EQ(std::string::npos, actual.find("ClearLocal "));
 }
 
 TEST(Codegen, walrus_skipped_paths_require_checked_local_loads)

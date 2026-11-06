@@ -300,4 +300,6 @@ CL_BYTECODE(FinishJumpIfFalse, RelativeJump, ConditionalJump,
             ConditionalTruthinessContinuation)
 CL_BYTECODE(JumpIfEqualSmi, Smi8RelativeJump, ConditionalJump, None)
 
+CL_BYTECODE(Enter, SlotCountU16, Sequential, None)
+
 CL_BYTECODE(Invalid, Invalid, Invalid, None)

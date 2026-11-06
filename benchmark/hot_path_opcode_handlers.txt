@@ -102,3 +102,5 @@ op_to_bool
 op_to_bool_not
 op_to_exact_tuple
 op_to_exact_list
+
+op_enter

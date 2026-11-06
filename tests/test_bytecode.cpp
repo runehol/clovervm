@@ -270,7 +270,7 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
     EXPECT_EQ(BytecodeOperandKind::RelativeJumpI16, prep.operands()[1].kind);
     EXPECT_EQ(10, prep.operands()[1].signed_value());
     ASSERT_TRUE(prep.jump_target_pc_offset().has_value());
-    EXPECT_EQ(21, *prep.jump_target_pc_offset());
+    EXPECT_EQ(24, *prep.jump_target_pc_offset());
     ASSERT_EQ(2, prep.sources().size());
     ASSERT_EQ(2, prep.destinations().size());
     EXPECT_EQ(prep.sources()[0].frame_offset,
@@ -291,7 +291,7 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
         find_instruction(*code_object, Bytecode::Jump);
     ASSERT_TRUE(backedge.jump_target_pc_offset().has_value());
     EXPECT_LT(backedge.operands()[0].signed_value(), 0);
-    EXPECT_EQ(11, *backedge.jump_target_pc_offset());
+    EXPECT_EQ(14, *backedge.jump_target_pc_offset());
 }
 
 TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
@@ -336,16 +336,16 @@ TEST(BytecodeDecoder, exposes_entry_and_exception_handler_blocks)
 
     const BytecodeBlock &protected_block = find_block(decoder, 0);
     EXPECT_EQ(protected_block.id(), decoder.entry_block_id());
-    EXPECT_EQ(4, protected_block.end_pc_offset());
+    EXPECT_EQ(7, protected_block.end_pc_offset());
     EXPECT_TRUE(protected_block.successors().empty());
 
-    const BytecodeBlock &handler = find_block(decoder, 7);
+    const BytecodeBlock &handler = find_block(decoder, 10);
     ASSERT_EQ(1, decoder.exception_handler_block_ids().size());
     EXPECT_EQ(handler.id(), decoder.exception_handler_block_ids()[0]);
     ASSERT_EQ(1, handler.successors().size());
-    EXPECT_EQ(find_block(decoder, 16).id(), handler.successors()[0]);
+    EXPECT_EQ(find_block(decoder, 19).id(), handler.successors()[0]);
 
-    const BytecodeBlock &join = find_block(decoder, 16);
+    const BytecodeBlock &join = find_block(decoder, 19);
     EXPECT_EQ(1, join.predecessors().size());
 }
 
@@ -827,4 +827,40 @@ TEST(BytecodeInstruction, call_keyword_builders_and_traversal_effects)
     ASSERT_EQ(2u, insert.destinations().size());
     EXPECT_EQ(Value::None(), context.thread()->run_clovervm_code_object(code));
     EXPECT_EQ(1u, source.extract()->size());
+}
+
+TEST(BytecodeInstruction, enter_patches_even_count_without_moving_body_or_jumps)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"<enter-patch-test>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    EXPECT_EQ(3u, builder.size());
+    JumpTarget target(&builder);
+    uint32_t jump_pc = builder.emit_jump(0, target).value();
+    {
+        CodeObjectBuilder::TemporaryReg slots(builder, 3);
+        builder.emit_lda_smi(0, 7).value();
+    }
+    target.resolve().value();
+    uint32_t return_pc = builder.emit_return(0).value();
+    CodeObject *code = builder.finalize().value();
+    BytecodeInstruction enter = decode_instruction(*code, 0);
+    EXPECT_EQ(Bytecode::Enter, enter.encoded_opcode());
+    EXPECT_EQ(3u, enter.next_pc_offset());
+    ASSERT_EQ(1u, enter.operands().size());
+    EXPECT_EQ(BytecodeOperandKind::SlotCountU16, enter.operands()[0].kind);
+    EXPECT_EQ(4u, enter.operands()[0].value);
+    EXPECT_TRUE(enter.sources().empty());
+    ASSERT_EQ(3u, enter.destinations().size());
+    for(uint32_t i = 0; i < 3; ++i)
+        EXPECT_EQ(-int32_t(i) - 1, enter.destinations()[i].frame_offset);
+    EXPECT_EQ(3u, jump_pc);
+    EXPECT_EQ(return_pc,
+              decode_instruction(*code, jump_pc).jump_target_pc_offset());
 }

@@ -3847,7 +3847,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     ASSERT_TRUE(has_native_layout<Function>(function_value));
     CodeObject *function_code =
         native_cast<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(uint8_t(Bytecode::DelAttr), function_code->code[0]);
+    ASSERT_EQ(uint8_t(Bytecode::DelAttr),
+              function_code->code[bytecode_length(Bytecode::Enter)]);
     ASSERT_TRUE(function_code->inline_caches.attribute_read_caches.empty());
     ASSERT_EQ(1u,
               function_code->inline_caches.attribute_mutation_caches.size());
@@ -4461,8 +4462,9 @@ TEST(Interpreter, intrinsic_function_thunk_uses_return_or_raise_adapter)
     std::string actual =
         fmt::to_string(*native.extract()->code_object.extract());
     std::string expected = "Code object:\n"
-                           "    0 CallIntrinsic0 0\n"
-                           "    2 ReturnOrRaiseException\n";
+                           "    0 Enter #0\n"
+                           "    3 CallIntrinsic0 0\n"
+                           "    5 ReturnOrRaiseException\n";
     EXPECT_EQ(expected, actual);
 }
 
@@ -4612,14 +4614,15 @@ TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
 
     std::string actual = fmt::to_string(*adapter);
     std::string expected = "Code object:\n"
-                           "    0 Mov r0, p0\n"
-                           "    3 Mov r2, p1\n"
-                           "    6 Mov r3, p2\n"
-                           "    9 CallPositional r0, {r2..r3}, call_ic[0]\n"
-                           "   14 ReturnToNative\n"
-                           "   15 ReturnExceptionMarkerToNative\n"
+                           "    0 Enter #4\n"
+                           "    3 Mov r0, p0\n"
+                           "    6 Mov r2, p1\n"
+                           "    9 Mov r3, p2\n"
+                           "   12 CallPositional r0, {r2..r3}, call_ic[0]\n"
+                           "   17 ReturnToNative\n"
+                           "   18 ReturnExceptionMarkerToNative\n"
                            "Exception table:\n"
-                           "    9..14 -> 15\n";
+                           "    12..17 -> 18\n";
     EXPECT_EQ(expected, actual);
 }
 
@@ -8732,7 +8735,7 @@ TEST(Interpreter, to_bool_disassembly_hides_embedded_finisher)
     std::string printed = fmt::to_string(*code);
     EXPECT_NE(std::string::npos, printed.find("ToBool"));
     EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
-    EXPECT_NE(std::string::npos, printed.find("    5 Return"));
+    EXPECT_NE(std::string::npos, printed.find("    8 Return"));
     EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
 }
 
@@ -9019,7 +9022,7 @@ TEST(Interpreter, negative_truthiness_disassembly_hides_embedded_finisher)
     std::string printed = fmt::to_string(*code);
     EXPECT_NE(std::string::npos, printed.find("ToBoolNot"));
     EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
-    EXPECT_NE(std::string::npos, printed.find("    5 Return"));
+    EXPECT_NE(std::string::npos, printed.find("    8 Return"));
     EXPECT_EQ(Value::False(), context.thread()->run_clovervm_code_object(code));
 }
 
@@ -9699,4 +9702,56 @@ except StopIteration as caught:
     context.vm().request_safepoint();
     ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, enter_clears_only_padded_slots_and_resume_preserves_them)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    for(uint32_t logical_slots: {0u, 1u, 2u, 3u, 8u})
+    {
+        SCOPED_TRACE(logical_slots);
+        TValue<String> name =
+            context.vm().get_or_create_interned_string_value(L"<enter-test>");
+        CodeObjectBuilder builder(
+            &context.vm(), nullptr,
+            TValue<ModuleObject>::from_oop(context.make_test_module_object(
+                name, context.vm().global_builtins_module().raw_value())),
+            nullptr, name);
+        if(logical_slots != 0)
+        {
+            CodeObjectBuilder::TemporaryReg slots(builder, logical_slots);
+        }
+        builder.emit_return_to_native(0).value();
+        CodeObject *code = builder.finalize().value();
+        uint32_t padded_slots = (logical_slots + 1) & ~1u;
+        EXPECT_EQ(padded_slots,
+                  decode_instruction(*code, 0).operands()[0].value);
+
+        Value *caller_fp = context.thread()->clover_frame_frontier();
+        Value *fp = caller_fp - 32;
+        for(int32_t offset = -int32_t(padded_slots) - 1; offset < 6; ++offset)
+            fp[offset] = Value::from_smi(91);
+        fp[FrameHeaderPreviousFpOffset] = encode_frame_payload_ptr(caller_fp);
+        context.thread()->set_clover_frame_frontier(fp);
+        EXPECT_EQ(Value::from_smi(0),
+                  run_interpreter(fp, code, 0, context.thread()));
+        for(uint32_t index = 1; index <= padded_slots; ++index)
+            EXPECT_EQ(Value::not_present(), fp[-int32_t(index)]);
+        EXPECT_EQ(Value::from_smi(91), fp[-int32_t(padded_slots) - 1]);
+        EXPECT_EQ(encode_frame_payload_ptr(caller_fp), fp[0]);
+        for(int32_t offset = 1; offset < 6; ++offset)
+            EXPECT_EQ(Value::from_smi(91), fp[offset]);
+
+        if(padded_slots != 0)
+        {
+            fp[-1] = Value::from_smi(73);
+            context.thread()->set_clover_frame_frontier(fp);
+            EXPECT_EQ(Value::from_smi(0),
+                      run_interpreter(fp, code,
+                                      bytecode_length(Bytecode::Enter),
+                                      context.thread()));
+            EXPECT_EQ(Value::from_smi(73), fp[-1]);
+        }
+    }
 }

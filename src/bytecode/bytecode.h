@@ -28,6 +28,7 @@ namespace cl
         KeywordCount,
         ImportLevel,
         RelativeJumpI16,
+        SlotCountU16,
         AttributeReadCache,
         AttributeMutationCache,
         ModuleGlobalReadCache,
@@ -43,6 +44,7 @@ namespace cl
     enum class BytecodeFormat : uint8_t
     {
         NoOperands,
+        SlotCountU16,
         Constant,
         Smi8,
         Register,
@@ -127,8 +129,10 @@ namespace cl
         constexpr uint8_t operand_width(size_t idx) const
         {
             assert(idx < operand_count);
-            return operands[idx] == BytecodeOperandKind::RelativeJumpI16 ? 2
-                                                                         : 1;
+            return operands[idx] == BytecodeOperandKind::RelativeJumpI16 ||
+                           operands[idx] == BytecodeOperandKind::SlotCountU16
+                       ? 2
+                       : 1;
         }
 
         constexpr uint8_t operand_offset(size_t idx) const
@@ -185,6 +189,8 @@ namespace cl
         {
             case BytecodeFormat::NoOperands:
                 return make_bytecode_format_info();
+            case BytecodeFormat::SlotCountU16:
+                return make_bytecode_format_info(Operand::SlotCountU16);
             case BytecodeFormat::Constant:
                 return make_bytecode_format_info(Operand::Constant);
             case BytecodeFormat::Smi8:
