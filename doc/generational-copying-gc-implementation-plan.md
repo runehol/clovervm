@@ -348,6 +348,13 @@ release descriptor.
 
 ### 4. Publish Mutable Roots
 
+The [root-maps design](gc-root-maps.md) separates interpreter slot maps, JIT
+physical root maps, and writable unwind/save-location information from exit
+reconstruction. Exits retain executable transition programs. That design records
+the accepted direction; exact frame-state semantics and implementation slices
+still require readiness review, and the paused work below is not resumed merely
+by documenting it.
+
 Replace address-only root discovery with enumeration of the storage that owns
 each live reference. The current `ReclamationRootSet` loses those locations,
 and its conservative stack candidates cannot simply become writable roots.
@@ -533,8 +540,13 @@ controlled RC-neutral rewrites, and zero-count liveness across reclamation.
   and settle handle-cell address stability, overflow chunks, and interior
   pointers.
 - **4f: JIT boundaries and closure audit.** Cover supported JIT safepoints and
-  test complete root coverage. Preserve transition execution's no-safepoint
-  contract; do not introduce loop-backedge safepoints in this work.
+  test complete root coverage. Produce physical root maps at call sites that
+  can collect transitively, and pair them with separate unwind information
+  recovering writable saved-register locations across callees, as described in
+  [the root-maps design](gc-root-maps.md#unwind-information-is-separate).
+  Keep both separate from exit transition programs. Preserve transition
+  execution's no-safepoint contract; do not introduce loop-backedge safepoints
+  in this work.
 
 Each remaining slice requires its own readiness review. Slice 4a does not enable
 movement or remove conservative root discovery.
