@@ -28,10 +28,8 @@ four cells below its locals and temporaries for the next outgoing frame header.
 Call locates that header from the caller's FP and known frame layout:
 
 ```text
-outgoing_header = caller_fp
-                - caller_padded_parameter_slots
-                - caller_local_and_temporary_slots
-                - 4
+frame_size = caller's padded args + locals + temps
+new_fp = old_fp - frame_size - 4
 ```
 
 The callee's new FP is exactly this reserved header address. Its own parameter
@@ -69,47 +67,51 @@ that continuation travels in LR; compiled code saves it into `[1]` when needed
 for preservation or reconstruction. Exact cross-engine return routing remains
 open.
 
-With arguments below the header, the final adapted parameter count no longer determines where the
-header lands. Python argument adaptation is common enough that a stable header
+With arguments below the header, the final adapted parameter count no longer
+determines where the header lands. Python argument adaptation is common enough that a stable header
 address is central to the proposal.
 
 ## Call, Adaptation, Enter, and Return
 
-The following is conceptual opcode state flow. `outgoing_header` denotes an
-address computed from the caller's layout, not an agreed handler argument.
-Transporting that address to Enter is explicitly unresolved.
+The following is conceptual opcode state flow. Frame sizes and offsets are in
+eight-byte cells. `frame_size` is the caller's padded args + locals + temps,
+excluding the four reserved outgoing-header cells. Call computes `new_fp`; only
+how that address reaches Enter while preserving `old_fp` remains unresolved.
+The names below do not specify additional handler arguments.
 
 ```text
 Call (interpreted caller to interpreted callee):
-    outgoing_header = caller's reserved outgoing-header address
-    outgoing_header[2] = code_object
-    outgoing_header[3] = pc + size_of_this_call_instruction
+    old_fp = fp
+    frame_size = current code object's padded args + locals + temps
+    new_fp = old_fp - frame_size - 4
+    new_fp[2] = code_object
+    new_fp[3] = pc + size_of_this_call_instruction
 
-    prepare supplied arguments below outgoing_header
+    prepare supplied arguments below new_fp
     resolve and adapt the call into its final parameter window
-    keep outgoing_header fixed throughout adaptation
+    keep new_fp fixed throughout adaptation
 
     on failure:
         discard the prepared window
         propagate the exception in the caller
 
-    preserve caller fp until Enter saves it
-    make outgoing_header available to Enter (transport unresolved)
+    preserve old_fp and convey new_fp to Enter (transport unresolved)
     code_object = selected callee's CodeObject
     pc = selected callee's actual Enter bytecode
     continue threaded dispatch
 
 Interpreted Enter:
-    new_fp = outgoing_header (transport unresolved)
+    // new_fp was computed by Call; fp still holds old_fp.
     new_fp[0] = fp
     fp = new_fp
     arg_slots = code_object's padded parameter-slot count
+    n_slots = Enter's ordinary local/temporary-slot operand
 
     establish the allocation below fp for:
         arg_slots parameter cells
         n_slots ordinary local/temporary cells
         four reserved outgoing-header cells
-    clear the n_slots ordinary local/temporary cells
+    clear n_slots cells starting at fp - arg_slots - n_slots
     advance pc past Enter and continue threaded dispatch
 
 Interpreted Return (to an interpreted caller):
