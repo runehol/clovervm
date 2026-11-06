@@ -68,16 +68,16 @@ for preservation or reconstruction. Exact cross-engine return routing remains
 open.
 
 With arguments below the header, the final adapted parameter count no longer
-determines where the header lands. Python argument adaptation is common enough that a stable header
-address is central to the proposal.
+determines where the header lands. Python argument adaptation is common enough
+that a stable header address is central to the proposal.
 
 ## Call, Adaptation, Enter, and Return
 
 The following is conceptual opcode state flow. Frame sizes and offsets are in
 eight-byte cells. `frame_size` is the caller's padded args + locals + temps,
-excluding the four reserved outgoing-header cells. Call computes `new_fp`; only
-how that address reaches Enter while preserving `old_fp` remains unresolved.
-The names below do not specify additional handler arguments.
+excluding the four reserved outgoing-header cells. Call leaves FP pointing to
+the caller and passes the distance to the new frame as a tagged SMI in the
+accumulator. No additional handler argument is needed.
 
 ```text
 Call (interpreted caller to interpreted callee):
@@ -95,13 +95,15 @@ Call (interpreted caller to interpreted callee):
         discard the prepared window
         propagate the exception in the caller
 
-    preserve old_fp and convey new_fp to Enter (transport unresolved)
+    acc = SMI(frame_size + 4)
+    // fp still holds old_fp; install the distance after adaptation succeeds.
     code_object = selected callee's CodeObject
     pc = selected callee's actual Enter bytecode
     continue threaded dispatch
 
 Interpreted Enter:
-    // new_fp was computed by Call; fp still holds old_fp.
+    distance = acc.as_smi()
+    new_fp = fp - distance
     new_fp[0] = fp
     fp = new_fp
     arg_slots = code_object's padded parameter-slot count
@@ -174,9 +176,9 @@ operand meaning unless an explicit decision changes it.
 
 The interpreter carries FP and derives the outgoing-header address from its
 frame layout. No persistent stack-pointer argument is added to `PARAMS` or
-`ARGS`. How Call transports the new frame address to Enter remains unresolved.
-The following architectural stack pointers belong to the native backends, not
-the threaded interpreter's handler state.
+`ARGS`. The accumulator carries a tagged cell distance for the Call-to-Enter
+handoff. The following architectural stack pointers belong to the native
+backends, not the threaded interpreter's handler state.
 
 The reserved header's base must not automatically be identified with native SP
 on every target. AArch64 `bl` leaves SP unchanged and puts the return address in
@@ -190,27 +192,32 @@ The JIT backend owns architectural stack adjustments and any use of native
 `call`/`ret`. The proposed managed geometry is promising for a single physical
 stack, but the precise target mappings and native transitions remain open.
 
-## Unresolved New-FP Transport
+## Tagged Distance for Interpreted Entry
 
-Call knows the reserved header address, while Enter still needs the caller's FP
-to save in `[0]`. Simply replacing the existing FP handler argument with the new
-address would lose that caller FP before the callee saves it. No transport choice
-is settled here.
+Call passes `SMI(caller_frame_size + 4)` in the accumulator, measured in
+eight-byte cells. Enter subtracts the decoded distance from the existing caller
+FP, saves that FP in the new header's `[0]`, and activates the new frame. The
+distance depends only on the caller's padded args, locals, and temporaries plus
+the four header cells; callee argument adaptation does not change it. This
+bounded frame-slot count fits comfortably in an SMI.
 
-Two options discussed are:
+Call installs the SMI after adaptation succeeds, allowing adaptation to use the
+accumulator beforehand. During the handoff the accumulator remains an ordinary
+tagged integer: it contains neither a raw stack address nor a heap reference.
+GC therefore needs no special accumulator classification for entry, and no
+extra persistent handler register is required. This does not replace the rooting
+and publication requirements for the prepared arguments and frame metadata.
 
-- A dedicated, explicitly typed raw frame-pointer handler argument. It gives GC
-  an unambiguous non-heap address, but costs a full machine register, spending
-  the register previously saved by removing the interpreter stack-pointer
-  argument. This address has no required native-register identity.
-- Temporarily carrying the header address in the accumulator. This avoids an
-  extra handler argument, but a raw stack address is not an ordinary tagged
-  `Value`. Pointer-looking bits must never cause GC to dereference it as a heap
-  object. This requires an explicit entry-state classification and correct
-  tracing, publication, and safepoint handling throughout that phase.
+This distance is an interpreter handoff mechanism. Compiled execution with its
+native stack pointer appropriately positioned can omit both producing the SMI
+and decoding it. The backend establishes any required frame directly, or omits
+frame construction on an eligible frameless path. Entry into interpreted Enter
+still needs the SMI handoff; side-exit recovery instead reconstructs the frame
+and resumes after Enter as described below.
 
-Neither a new register argument nor an accumulator encoding is selected. The
-GC and register-pressure tradeoff must be resolved before implementation.
+The interpreter pays for encoding and decoding the distance. Generated assembly
+must be inspected before claiming how much of that work folds into address
+arithmetic; no performance result for this proposed convention is established.
 
 ## Compiled Leaves and Side Exits
 
@@ -293,8 +300,6 @@ implemented by that machinery.
 
 ## Remaining Decisions Before Implementation
 
-- New-FP transport from Call to Enter, including the register-versus-GC tradeoff
-  above. Neither an extra handler argument nor accumulator reuse is agreed.
 - Padding placement and homes for register-transported compiled parameters.
   The fixed header and descending parameter order are agreed; a complete
   padded/register-transported layout is not.
