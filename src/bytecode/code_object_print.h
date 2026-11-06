@@ -322,6 +322,11 @@ template <> struct fmt::formatter<cl::CodeObject>
 
         switch(bc)
         {
+            case cl::Bytecode::Enter:
+                fmt::format_to(out, " #{}", instruction.operands()[0].value);
+                pc += 2;
+                break;
+
             case cl::Bytecode::LdaTrue:
             case cl::Bytecode::LdaFalse:
             case cl::Bytecode::LdaNone:

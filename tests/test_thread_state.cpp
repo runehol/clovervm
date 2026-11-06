@@ -282,7 +282,7 @@ namespace cl
         Value result = thread->run_clovervm_code_object(code);
 
         EXPECT_EQ(Value::from_smi(42), result);
-        EXPECT_EQ(8u, recorder.pc_offset);
+        EXPECT_EQ(11u, recorder.pc_offset);
         EXPECT_NE(nullptr, recorder.record.lowest_live_stack_slot);
         EXPECT_EQ(Value::from_smi(42),
                   recorder.record.accumulator_or_not_present);

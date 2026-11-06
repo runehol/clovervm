@@ -144,6 +144,17 @@ namespace cl
             add_registers(instruction.sources_, 0, count);
         }
 
+        void destination_ordinary_slots(uint32_t count)
+        {
+            // Alignment padding has no logical register or JIT state entry.
+            assert(count ==
+                   code_object.get_padded_n_ordinary_below_frame_slots());
+            add_registers(instruction.destinations_,
+                          code_object.get_padded_n_parameters() +
+                              FrameHeaderSize,
+                          code_object.n_locals + code_object.n_temporaries);
+        }
+
         void source_locals(uint32_t count)
         {
             uint32_t first_local =
@@ -205,6 +216,10 @@ namespace cl
 
         switch(opcode)
         {
+            case Bytecode::Enter:
+                effects.destination_ordinary_slots(effects.operand(0));
+                break;
+
             case Bytecode::LdaConstant:
             case Bytecode::LdaSmi:
             case Bytecode::LdaTrue:
@@ -766,6 +781,11 @@ namespace cl
             {
                 value =
                     uint32_t(int32_t(int8_t(code_object.code[operand_offset])));
+            }
+            else if(kind == BytecodeOperandKind::SlotCountU16)
+            {
+                value = uint16_t(code_object.code[operand_offset]) |
+                        (uint16_t(code_object.code[operand_offset + 1]) << 8);
             }
             else if(kind == BytecodeOperandKind::RelativeJumpI16)
             {

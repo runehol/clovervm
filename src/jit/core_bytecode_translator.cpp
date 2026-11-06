@@ -155,6 +155,13 @@ namespace cl::jit
 
         switch(instruction.semantic_opcode())
         {
+            case Bytecode::Enter:
+                // make_entry_state already defines every ordinary logical slot
+                // with Uninitialized, which materializes as not_present. There
+                // is no physical clearing work for optimized-away slots.
+                assert(instruction.pc_offset() == 0);
+                return;
+
             case Bytecode::LdaConstant:
                 {
                     assert(instruction.operands().size() == 1);
