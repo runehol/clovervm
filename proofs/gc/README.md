@@ -47,6 +47,13 @@ disposal safety. [Weak Repair Units](weak-repair.md) then extends it with early
 resolution, exact deferral and coordinated late repair. Minor filtering and
 runtime integration remain outside this model.
 
+The planned file-based differential harness has a proposed
+[heap JSON format v1](differential-format.md), used unchanged before and after
+collection, with string object identities, integer allocation IDs and tagged
+object states. Algorithm and collection selection are separate run configuration.
+The document defines the projection to existing C++ and Lean representations;
+the file runners are not implemented.
+
 ### Proof Module Layout
 
 The final correctness results remain in `MarkProofs`, `CopyDiscoveryProofs`,
