@@ -1,0 +1,108 @@
+{
+  "format": "clover-gc-heap",
+  "version": 1,
+  "roots": [
+    {
+      "ref": 3
+    },
+    {
+      "ref": 3
+    }
+  ],
+  "objects": [
+    {
+      "object_id": "obj-0",
+      "allocation_id": 0,
+      "state": {
+        "kind": "nonmoving_original",
+        "marked": true
+      },
+      "strong": [
+        {
+          "ref": 3
+        }
+      ],
+      "weak": []
+    },
+    {
+      "object_id": "obj-1",
+      "allocation_id": 1,
+      "state": {
+        "kind": "young_original",
+        "copy_to": "ordinary",
+        "header": {
+          "kind": "forwarded",
+          "forwarded_to": 3
+        }
+      },
+      "strong": [
+        {
+          "ref": 0
+        },
+        {
+          "imm": 7
+        }
+      ],
+      "weak": [
+        {
+          "unit_id": 0,
+          "kind": "field",
+          "value": {
+            "imm": -7
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "obj-2",
+      "allocation_id": 2,
+      "state": {
+        "kind": "old_original",
+        "copy_to": "nonmoving",
+        "header": {
+          "kind": "normal",
+          "marked": false
+        }
+      },
+      "strong": [],
+      "weak": []
+    },
+    {
+      "object_id": "obj-1",
+      "allocation_id": 3,
+      "state": {
+        "kind": "ordinary_destination"
+      },
+      "strong": [
+        {
+          "ref": 0
+        },
+        {
+          "imm": 7
+        }
+      ],
+      "weak": [
+        {
+          "unit_id": 0,
+          "kind": "field",
+          "value": {
+            "imm": -7
+          }
+        }
+      ]
+    }
+  ],
+  "external_weak": [
+    {
+      "unit_id": 1,
+      "kind": "entry",
+      "guards": [
+        null,
+        null
+      ],
+      "payload": {
+        "imm": 0
+      }
+    }
+  ]
+}

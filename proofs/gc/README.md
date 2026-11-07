@@ -52,7 +52,9 @@ The planned file-based differential harness has a proposed
 collection, with string object identities, integer allocation IDs and tagged
 object states. Algorithm and collection selection are separate run configuration.
 The document defines the projection to existing C++ and Lean representations;
-the file runners are not implemented.
+the C++ typed format reader, validator and writer are implemented in
+`tests/gc_differential/heap_format.{h,cpp}` and tested against the documented snapshots.
+The file runners are not implemented.
 
 ### Proof Module Layout
 

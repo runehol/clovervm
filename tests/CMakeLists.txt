@@ -113,6 +113,8 @@ target_sources(test_clovervm PRIVATE
 set_source_files_properties(test_gc_no_exceptions.cpp PROPERTIES
 	COMPILE_OPTIONS "-fno-exceptions")
 
+add_subdirectory(gc_differential)
+
 target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
