@@ -207,15 +207,24 @@ theorem earlyVisit_deferred_iff (input : CopyInput n) (state : State n k) (id : 
 
 theorem collection_live_unit (input : CopyInput n) (weak : Input n k) (roots : List (Fin n))
     (wf : WellFormed weak) (id : Fin k) (registered : id ∈ (collectWeak input weak roots).registered)
+    (active : (weak.templates id).active = true)
     (all_live : ∀ object, some object ∈ (weak.templates id).targets → Reachable input.heap roots object) :
     (collectWeak input weak roots).units id =
-      ⟨(weak.templates id).targets.map (Option.map (canonical (evacuate input roots).1.copying)),
-        (weak.templates id).payload⟩ := by
+      (weak.templates id).map (canonical (evacuate input roots).1.copying) := by
   rw [collection_units_correct input weak roots wf id registered]
-  exact repair_live_template input roots (weak.templates id) all_live
+  exact repair_live_template input roots (weak.templates id) active all_live
 
-/-- Dead dominates Pending: one dead target clears every field and the payload,
-    including otherwise-live fields in the same coordinated unit. -/
+/-- Inactive entries reset even when their remaining references are live.
+    No added active-entry precondition is hidden in the general unit theorem. -/
+theorem collection_inactive_unit (input : CopyInput n) (weak : Input n k) (roots : List (Fin n))
+    (wf : WellFormed weak) (id : Fin k) (registered : id ∈ (collectWeak input weak roots).registered)
+    (inactive : (weak.templates id).active = false) :
+    (collectWeak input weak roots).units id = clear (weak.templates id).initial := by
+  rw [collection_units_correct input weak roots wf id registered]
+  exact congrArg Prod.fst (repair_inactive _ _ (by simpa [Template.initial] using inactive))
+
+/-- A dead guard or pointer payload resets the coordinated entry, including
+    otherwise-live guards. A standalone dead reference field becomes null. -/
 theorem collection_dead_unit (input : CopyInput n) (weak : Input n k) (roots : List (Fin n))
     (wf : WellFormed weak) (id : Fin k) (registered : id ∈ (collectWeak input weak roots).registered)
     (object : Fin n) (member : some object ∈ (weak.templates id).targets)
