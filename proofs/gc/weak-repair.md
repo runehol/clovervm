@@ -54,8 +54,8 @@ repair guard 0, guard 1, and a reference payload. Null reference payloads and
 immediates need no resolution. All three reference-bearing positions share one
 reset; a dead pointer payload invalidates the entry even if both guards live.
 Standalone fields have no mandatory guards: nulls and immediates are preserved,
-and a dead reference becomes null. The standalone tagged variant also permits
-immediates, whereas the current C++ `weak_targets` fixture stores raw pointers.
+and a dead reference becomes null. C++ standalone `weak_cells` use the same
+`TestCell` representation as entry payloads, including immediates and nulls.
 
 This is not a proof of every production cache callback. Production cache guards
 and resolved values are weak, but an expanded-call binding plan separately owns

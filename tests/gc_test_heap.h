@@ -85,11 +85,20 @@ namespace cl::gc::test
         return resolution.state;
     }
 
-    inline WeakRepairResult
-    repair_test_weak_field(TestObject *&target,
-                           WeakResolver<TestObject> resolver)
+    // Tagged weak cells preserve immediates and the pointer/null variant.
+    // This helper only resolves references; it never discovers strong objects.
+    inline WeakState repair_test_weak_cell(TestCell &cell,
+                                           WeakResolver<TestObject> resolver)
     {
-        return repair_test_weak_target(target, resolver) == WeakState::Pending
+        auto target = std::get_if<TestObject *>(&cell.contents);
+        return target == nullptr ? WeakState::Resolved
+                                 : repair_test_weak_target(*target, resolver);
+    }
+
+    inline WeakRepairResult
+    repair_test_weak_field(TestCell &cell, WeakResolver<TestObject> resolver)
+    {
+        return repair_test_weak_cell(cell, resolver) == WeakState::Pending
                    ? WeakRepairResult::Pending
                    : WeakRepairResult::Complete;
     }
@@ -106,19 +115,15 @@ namespace cl::gc::test
         }
         bool pending = false;
         bool dead = false;
-        auto inspect = [&](TestObject *&target) {
-            WeakState state = repair_test_weak_target(target, resolver);
+        auto observe = [&](WeakState state) {
             pending |= state == WeakState::Pending;
             dead |= state == WeakState::Dead;
         };
         for(TestObject *&guard: entry.guards)
         {
-            inspect(guard);
+            observe(repair_test_weak_target(guard, resolver));
         }
-        if(auto payload = std::get_if<TestObject *>(&entry.payload.contents))
-        {
-            inspect(*payload);
-        }
+        observe(repair_test_weak_cell(entry.payload, resolver));
         if(dead)
         {
             entry.clear();
@@ -185,7 +190,7 @@ namespace cl::gc::test
         EvacuationDestination preferred_destination =
             EvacuationDestination::Ordinary;
         std::vector<TestCell> strong_cells;
-        std::vector<TestObject *> weak_targets;
+        std::vector<TestCell> weak_cells;
         std::vector<TestWeakEntry> weak_entries;
     };
 
@@ -488,10 +493,10 @@ namespace cl::gc::test
         void visit_weak_units(Object *object, Visitor &&visitor)
         {
             ++weak_scan_counts_[object];
-            for(Object *&target: object->weak_targets)
+            for(TestCell &cell: object->weak_cells)
             {
                 std::invoke(visitor,
-                            WeakUnit::bind<repair_test_weak_field>(target));
+                            WeakUnit::bind<repair_test_weak_field>(cell));
             }
             for(TestWeakEntry &entry: object->weak_entries)
             {
