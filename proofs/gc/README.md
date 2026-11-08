@@ -58,8 +58,8 @@ The C++ native execution library in `tests/gc_differential/heap_runner.{h,cpp}`
 constructs fresh synthetic heaps, runs full mark or evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
 results, mixed destinations and invalid native states. The C++ file runner is
-implemented. Lean heap format and collection support are implemented; the Lean
-file CLI and automated cross-language comparison remain pending.
+implemented. The Lean format, collection and file CLI are also implemented;
+automated cross-language comparison remains pending.
 
 ### C++ File Runner
 
@@ -105,7 +105,17 @@ Capture checks completion, reference cardinality, copy marks, weak kinds and
 the resulting heap relationships. It emits observed references without following
 forwarding. The collector definitions and proof assumptions are unchanged;
 conversion and capture are tested runtime code outside their proof boundary.
-The Lean command-line interface remains a later slice.
+The `gc_lean` executable exposes the same file interface as `gc_cpp`:
+
+```sh
+lake exe gc_lean --algorithm evacuate --collection full \
+  ../../tests/gc_differential/fixtures/before.json > lean-after.json
+```
+
+It accepts `mark` or `evacuate`, requires full collection, and supports
+`--flag=value`, `--` before the path, and `--help`/`-h`. The complete result is
+serialized before writing stdout. Argument, file, format and collection errors
+produce a `gc_lean:` diagnostic on stderr and exit status 1.
 
 From `proofs/gc`, run:
 
@@ -113,13 +123,17 @@ From `proofs/gc`, run:
 lake build
 lake exe gc_format_tests
 lake exe gc_execution_tests
+lake exe gc_cli_tests
 ```
 
-The default build checks the existing proofs and builds both test executables.
+The default build checks the existing proofs and builds the runner and test executables.
 The format tests cover shared fixtures, round trips and heap validity. Execution
 tests cover both collectors, permuted identities, mixed destinations, weak
 repair, long cycles and deliberately inconsistent model results. These runtime
-tests are separate from the collector proofs and their axiom audits.
+tests are separate from the collector proofs and their axiom audits. CLI tests
+launch the built runner as a process and cover reviewed outputs, argument/file
+errors, exact paths, empty heaps and rejection of completed snapshots. Their
+Lake dependency builds `gc_lean` automatically; CMake remains independent of Lean.
 
 ### Proof Module Layout
 
