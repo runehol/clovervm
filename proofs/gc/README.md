@@ -58,7 +58,8 @@ The C++ native execution library in `tests/gc_differential/heap_runner.{h,cpp}`
 constructs fresh synthetic heaps, runs full mark or evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
 results, mixed destinations and invalid native states. The C++ file runner is
-implemented; Lean file integration and cross-language comparison remain pending.
+implemented. Lean heap format support is implemented; Lean collection/file
+integration and cross-language comparison remain pending.
 
 ### C++ File Runner
 
@@ -85,6 +86,27 @@ ctest --test-dir build-debug -R '^GCHeapCLI$' --output-on-failure
 The same checks run under `check`, `check-all`, and CTest's `regular`/`full`
 labels. They compare the reviewed mark/evacuation fixtures as JSON, preserve
 array ordering, and exercise argument, file and validation errors.
+
+### Lean Heap Format
+
+`CloverGC/Differential/HeapFormat.lean` uses bundled `Lean.Json` parsing and
+printing for the generated JSON v1 files. It checks supported tags, required
+values, integer bounds and heap relationships before collection. Validation
+orders allocation records once and checks that each allocation ID equals its
+index. The wire types are separate from the collector model's logical/physical
+references; model projection is a later slice.
+
+From `proofs/gc`, run:
+
+```sh
+lake build
+lake exe gc_format_tests
+```
+
+The default build checks the existing proofs and builds the format test
+executable. The second command executes its shared-fixture, round-trip and
+heap-validity checks. These runtime tests are separate from the collector
+proofs and their axiom audits.
 
 ### Proof Module Layout
 

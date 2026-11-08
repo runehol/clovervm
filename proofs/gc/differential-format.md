@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | C++ format and file runner implemented; Lean runner pending |
+| Implementation | C++ file runner and Lean format support implemented; Lean execution/CLI pending |
 | Scope | One heap snapshot schema with stable object identities, allocation IDs and tagged object states |
 | Owning layers | Runners validate and project snapshots; Lean owns the executable model and proofs; C++ uses the synthetic heap and collector templates |
 | Validated against | `986deae7` (2026-11-07), including tagged weak cells, native storage classes and the executable Lean definitions |
@@ -343,13 +343,16 @@ no destination allocations are added.
 
 ## Validation and Dumping
 
-- Files are UTF-8 JSON without a byte-order mark, comments or trailing commas.
-  All listed fields are required. Reject unknown fields, duplicate decoded keys,
-  wrong types, unknown enum variants and unsupported versions.
-- Numeric fields are decimal integer literals without fractions or exponents;
-  booleans are not integers. `object_id` must use its canonical string syntax;
-  allocation and unit IDs must use integers. Reject gaps and duplicate IDs in
-  their respective domains. Logical object IDs repeat only in their destinations.
+This is an internal format for generated test files. Producers emit the exact
+v1 shapes above: UTF-8 JSON, unique keys, known fields, and decimal integer
+literals without fractions or exponents. Readers use their JSON libraries;
+lexical rejection behavior for noncanonical or hand-edited files is not part of
+the comparison contract. The C++ reader currently performs additional checks.
+
+- Readers check required values, types, supported versions and enum variants.
+  Booleans are not integers. `object_id` uses its canonical string syntax;
+  allocation and unit IDs are integers. Reject gaps and duplicate IDs in their
+  respective domains. Logical object IDs repeat only in their destinations.
 - Roots, cells, guards and forwarding targets must name existing allocations.
   Each object ID has exactly one original allocation. In this single-collection
   scope it has at most one destination. The destination and its original have
@@ -375,6 +378,11 @@ no destination allocations are added.
   originals and destinations is outside this JSON contract. Existing native
   fixture tests continue to check its preservation. `copy_to` on movable
   originals remains part of the compared heap.
+
+The Lean format layer uses bundled `Lean.Json.parse` and printing directly.
+It shares the snapshot and fresh-run heap validation rules above; format parsing
+does not invoke the collector model. See
+[Lean format tests](README.md#lean-heap-format).
 
 ## C++ and Lean Projection
 
