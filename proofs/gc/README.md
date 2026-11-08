@@ -253,8 +253,9 @@ strong result and scan trace. Young weak collection is not yet connected to
 either runner. Exact registration order, unique registration and deferred-queue
 accounting are proved, as are local late completion and early/late repair
 compatibility. A semantic unit invariant is preserved by fresh early registration.
-Drain preservation, collection-wide repair correctness and final weak-safety proofs
-remain pending.
+Strong-state progress and weak drain preservation are proved, including the
+invariant immediately before actual deferred repair. Final deferred-repair
+correctness and retained-reference safety remain pending.
 
 [Young-only strong evacuation](young-strong.md) describes the proof-carrying
 heap representation and collection invariants. `RawGenerationalHeap` represents

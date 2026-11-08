@@ -25,3 +25,5 @@ import CloverGC.GenerationalWeakRepairExamples
 import CloverGC.GenerationalWeakRepairAudit
 import CloverGC.GenerationalWeakRepairInvariantExamples
 import CloverGC.GenerationalWeakRepairInvariantAudit
+import CloverGC.GenerationalWeakDrainExamples
+import CloverGC.GenerationalWeakDrainAudit

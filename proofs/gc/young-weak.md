@@ -80,9 +80,19 @@ registration list to be duplicate-free. Queue properties remain separate in
 the existing scheduling proofs. Directed examples cover settled, pending and
 unregistered units, with exact axiom guards for both preservation results.
 
+Slice seven proves that generational discovery, field repair, scans and bounded
+draining preserve existing marks and forwarding. Weak draining preserves the
+semantic unit invariant relative to its eventual strong result; the final
+registration list's uniqueness supplies fresh per-scan visits. Actual startup
+and draining establish the invariant immediately before deferred repair,
+relative to the independent `Generational.evacuate` result. This includes the
+explicit weak visits before strong seeding. Examples cover forwarding/mark
+preservation, zero fuel, remembered old storage, copied-owner units, unregistered
+storage and full mode. Exact axiom guards cover all seven new results.
+
 The remaining accepted slices are:
 
-1. Prove drain preservation, collection-wide repair correctness and retained
+1. Prove final deferred-repair correctness and retained
    weak-reference safety, preserving the existing full path and proof claims.
    Split the proof work into further reviewable commits as needed.
 2. Extend the shared before/after heap format to v3 with required ordered
