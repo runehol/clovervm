@@ -1,4 +1,4 @@
-import CloverGC.GenerationalProofs
+import CloverGC.GenerationalCorrectness
 
 namespace CloverGC.Generational.Examples
 

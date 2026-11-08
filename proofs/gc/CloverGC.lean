@@ -10,7 +10,6 @@ import CloverGC.EvacuationAudit
 import CloverGC.WeakRepairProofs
 import CloverGC.WeakExamples
 import CloverGC.WeakAudit
+import CloverGC.GenerationalCorrectness
+import CloverGC.GenerationalAudit
 import CloverGC.GenerationalExamples
-import CloverGC.GenerationalProofs
-import CloverGC.GenerationalFields
-import CloverGC.GenerationalSchedule
