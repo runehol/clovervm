@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | C++ and Lean file runners and host-Python comparator implemented |
+| Implementation | C++ and Lean file runners, host-Python comparator and bounded Hypothesis campaigns implemented |
 | Scope | One heap snapshot schema with stable object identities, allocation IDs and tagged object states |
 | Owning layers | Runners validate and project snapshots; Lean owns the executable model and proofs; C++ uses the synthetic heap and collector templates |
 | Validated against | `986deae7` (2026-11-07), including tagged weak cells, native storage classes and the executable Lean definitions |
@@ -444,7 +444,10 @@ outside the heap. The host-CPython comparator in `tests/gc_differential/compare.
 provides a file CLI and an importable `assert_equivalent` function for generated
 heap dictionaries. It compares both runners' complete JSON results, distinguishes
 mismatches from runner failures, and preserves original failing inputs and run
-outputs. Generation and shrinking remain future work. See the
+outputs. `heap_strategies.py` constructs valid fresh heaps directly, and
+`campaign.py` runs separate mark/evacuation properties with bounded Hypothesis
+generation and replay. Seeds and Python/Hypothesis versions are recorded with
+comparison failures, outside the heap. Shrinking remains future work. See the
 [comparison commands and API](README.md#host-python-comparison).
 
 A future shrinker restores the dense object-identity, allocation-ID and unit-ID

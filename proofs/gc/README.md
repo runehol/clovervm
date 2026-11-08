@@ -59,8 +59,8 @@ constructs fresh synthetic heaps, runs full mark or evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
 results, mixed destinations and invalid native states. The C++ file runner is
 implemented. The Lean format, collection and file CLI are also implemented;
-the host-CPython comparator runs both file interfaces. Generation and shrinking
-remain pending.
+the host-CPython comparator and bounded Hypothesis campaigns run both file
+interfaces. Shrinking remains pending.
 
 ### C++ File Runner
 
@@ -181,11 +181,59 @@ assert_equivalent(heap, cpp=cpp_path, lean=lean_path, algorithm="evacuate")
 
 The callable takes an ordinary heap dictionary, returns `None` on agreement,
 and raises `HeapMismatch` or `RunnerFailure`, each carrying `artifact_dir`.
-It accepts `timeout` and `failure_dir` as keyword arguments. This prepares the
-interface for Hypothesis; strategies, campaigns and shrinking are later slices.
+It accepts `timeout` and `failure_dir` as keyword arguments. The Hypothesis
+campaign below uses this same interface.
 The comparator and its tests use only Python's standard library and run outside
 the VM. Controlled-runner tests exercise mismatch/failure handling; the real
 runner integration test is skipped when either binary has not been built.
+
+### Hypothesis Campaigns
+
+Campaigns require host CPython 3.11 or newer. Install the pinned test dependencies in an isolated environment,
+then run from the repository root with both file runners already built:
+
+```sh
+python3 -m venv build-gc-python
+build-gc-python/bin/python -m pip install -r tests/gc_differential/requirements.txt
+build-gc-python/bin/python tests/gc_differential/campaign.py \
+  --cpp build-debug/tests/gc_differential/gc_cpp \
+  --lean proofs/gc/.lake/build/bin/gc_lean \
+  --collection full --examples 100 --max-objects 20 --seed 132
+build-gc-python/bin/python -m unittest discover -s tests/gc_differential
+```
+
+`heap_strategies.valid_heaps(max_objects=20)` constructs ordinary heap
+dictionaries with dense object, allocation and weak-unit IDs, references bounded
+by the current object count, and fresh original states. Logical identities and
+the input record order are independently permuted. Strong/root cells include
+signed 64-bit immediates and nullable references; owner fields precede entries,
+while external units can mix both kinds. References can form cycles and aliases,
+and guards can be inactive. Each owner has at most four strong slots, two weak
+fields and two entries; roots and external units have at most four elements.
+Construction needs no rejection filters or additional heap validator.
+
+`campaign.run_campaign(...)` runs separate mark and evacuation properties through
+`assert_equivalent`. `--algorithm mark|evacuate|both` defaults to both. The default
+budget is 100 examples per algorithm, with at most 20 objects; the summary reports
+actual comparison calls. Hypothesis may also confirm failing cases, each of which
+retains its own artifact. The test deadline is disabled; `--timeout` remains the
+per-runner timeout. Exit codes are 0 for a successful campaign, 1 for a heap
+mismatch, and 2 for runner, configuration or Hypothesis framework failures.
+
+Only Hypothesis's reuse and generation phases are enabled. Without an explicit
+seed, its configured example database can replay earlier failures; its default
+`.hypothesis/` directory is ignored by Git. `--seed` makes generation reproducible
+for the same strategy, settings, Python and Hypothesis versions and disables the
+example database. Campaign failures add the example budget, object bound, seed,
+attempt count, enabled phases and Python/Hypothesis versions to `run.json`.
+Preserved heap files can always be replayed directly with the comparator.
+Shrinking remains a separate slice so it can retain the specific failure class.
+
+The campaign tests exercise seed and persisted database replay, algorithm selection, injected mismatch
+and rejection capture, framework error classification, and generated heaps with
+both real runners (including zero-object heaps). Without the optional dependency,
+the campaign test module is skipped and the standard-library comparator tests
+remain runnable.
 
 ### Proof Module Layout
 

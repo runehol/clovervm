@@ -4,6 +4,7 @@
 .DS_Store
 __pycache__
 gc-differential-failures/
+.hypothesis/
 /cmake_test_discovery*
 .cache
 compile_commands.json
