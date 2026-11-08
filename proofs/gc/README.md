@@ -54,7 +54,11 @@ object states. Algorithm and collection selection are separate run configuration
 The document defines the projection to existing C++ and Lean representations;
 the C++ typed format reader, validator and writer are implemented in
 `tests/gc_differential/heap_format.{h,cpp}` and tested against the documented snapshots.
-The file runners are not implemented.
+The C++ native execution library in `tests/gc_differential/heap_runner.{h,cpp}`
+constructs fresh synthetic heaps, runs full mark or evacuation, and captures
+checked snapshots before source reclamation. Directed tests cover the documented
+results, mixed destinations and invalid native states. The command-line runners
+and Lean file integration are not implemented.
 
 ### Proof Module Layout
 

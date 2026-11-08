@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | C++ format support implemented; runners not started |
+| Implementation | C++ format and native execution implemented; CLIs and Lean runner pending |
 | Scope | One heap snapshot schema with stable object identities, allocation IDs and tagged object states |
 | Owning layers | Runners validate and project snapshots; Lean owns the executable model and proofs; C++ uses the synthetic heap and collector templates |
 | Validated against | `986deae7` (2026-11-07), including tagged weak cells, native storage classes and the executable Lean definitions |
