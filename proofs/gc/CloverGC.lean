@@ -21,3 +21,5 @@ import CloverGC.GenerationalWeakDriverExamples
 import CloverGC.GenerationalWeakDriverAudit
 import CloverGC.GenerationalWeakSchedulingExamples
 import CloverGC.GenerationalWeakSchedulingAudit
+import CloverGC.GenerationalWeakRepairExamples
+import CloverGC.GenerationalWeakRepairAudit

@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: resolver, proof-carrying weak heap and driver; final weak-safety proofs pending |
+| Implementation | Partial: resolver, weak heap, driver, scheduling and local repair proofs; collection repair and safety pending |
 | Scope | Extend the generational strong model with young weak repair |
 | Owning layers | Lean owns the model and proofs; differential runners own format conversion and capture |
 | Validated against | Lean 4.35.0 and `src/gc/evacuation.h::resolve_weak` |
@@ -60,9 +60,19 @@ that queue exactly, in order and without duplicates. Checked examples include
 an unrooted old owner's remembered unit and full-mode owner reachability.
 Exact axiom guards track the standard Lean axioms used by these proofs.
 
+Slice five lifts selection-aware resolver stability through optional fields,
+tagged cells and coordinated entries. Late unit repair always completes. Early
+repair followed by late repair equals direct late repair, and an early Complete
+result already equals its eventual late result, assuming strong-state progress.
+These local results do not require a copy invariant or valid-reference witness;
+they establish repair semantics, not retained-reference safety. Directed examples
+cover mixed ages, partial early relocation, dead-guard reset, inactive entries,
+nulls and immediates. Exact axiom guards require only `propext` for the three
+main results. The driver and existing full-model proofs are unchanged.
+
 The remaining accepted slices are:
 
-1. Prove early/late repair correctness and retained
+1. Prove collection-wide repair correctness and retained
    weak-reference safety, preserving the existing full path and proof claims.
    Split the proof work into further reviewable commits as needed.
 2. Extend the shared before/after heap format to v3 with required ordered
