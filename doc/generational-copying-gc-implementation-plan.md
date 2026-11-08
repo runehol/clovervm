@@ -762,8 +762,9 @@ enforcement are not proved.
 
 The [generational strong slice](../proofs/gc/young-strong.md) adds full/young
 selection over proof-carrying heaps, complete strong remembered-owner coverage,
-actual old-field repair, selected reachability and disposal safety. The standalone C++ and Lean file runners support full and strong-only
-young collection. Young weak collection and barrier
+actual old-field repair, selected reachability and disposal safety. The host
+CPython comparator and bounded Hypothesis campaigns exercise full and strong-only
+young collection against the C++ file runner. Young weak collection and barrier
 maintenance remain separate.
 
 The remaining direction is:

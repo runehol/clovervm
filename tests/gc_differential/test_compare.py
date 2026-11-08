@@ -163,7 +163,19 @@ class CompareTests(unittest.TestCase):
                 self.compare("missing", "missing", timeout=timeout)
         with self.assertRaises(ValueError):
             assert_equivalent(EMPTY, cpp="missing", lean="missing", algorithm="unknown")
+        with self.assertRaises(ValueError):
+            assert_equivalent(EMPTY, cpp="missing", lean="missing", algorithm="mark", collection="young")
         self.assertFalse(self.failure_dir.exists())
+
+    def test_young_failure_records_replay_configuration(self):
+        cpp = self.output_runner("cpp", EMPTY)
+        lean = self.output_runner("lean", {**EMPTY, "roots": [{"imm": 7}]})
+        with self.assertRaises(HeapMismatch) as caught:
+            assert_equivalent(EMPTY, cpp=cpp, lean=lean, algorithm="evacuate", collection="young",
+                              failure_dir=self.failure_dir)
+        report = self.report(caught.exception)
+        self.assertEqual(report["collection"], "young")
+        self.assertTrue(all(r["command"][4] == "young" for r in report["runners"].values()))
 
     def test_cli_exit_codes_and_exact_input_preservation(self):
         heap_file = self.directory / "input heap.json"

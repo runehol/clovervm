@@ -33,7 +33,8 @@ Heap format v2 adds required `remembered_strong` allocation IDs. Both runners
 validate the same generational contract; Lean conversion constructs the
 well-formedness proof. Input and output retain the supplied list, before reset
 or source retirement. Young mode initially requires empty weak storage and
-supports evacuation only.
+supports evacuation only. Generators construct remembered coverage for full
+and young heaps alike.
 
 Checked results establish selected reachability and termination, forwarding
 only selected movable objects, unselected-object preservation, exact repaired

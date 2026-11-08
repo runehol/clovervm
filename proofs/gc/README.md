@@ -183,7 +183,8 @@ assert_equivalent(heap, cpp=cpp_path, lean=lean_path, algorithm="evacuate")
 
 The callable takes an ordinary heap dictionary, returns `None` on agreement,
 and raises `HeapMismatch` or `RunnerFailure`, each carrying `artifact_dir`.
-It accepts `timeout` and `failure_dir` as keyword arguments. The Hypothesis
+It accepts `collection="full"|"young"`, `timeout` and `failure_dir` as keyword
+arguments. Young collection requires `algorithm="evacuate"`. The Hypothesis
 campaign below uses this same interface.
 The comparator and its tests use only Python's standard library and run outside
 the VM. Controlled-runner tests exercise mismatch/failure handling; the real
@@ -212,10 +213,16 @@ signed 64-bit immediates and nullable references; owner fields precede entries,
 while external units can mix both kinds. References can form cycles and aliases,
 and guards can be inactive. Each owner has at most four strong slots, two weak
 fields and two entries; roots and external units have at most four elements.
-Construction needs no rejection filters or additional heap validator.
+Construction needs no rejection filters or additional heap validator. Both modes
+construct complete strong remembered coverage, including conservative entries
+and permuted remembered-owner order. `collection="young"` generates empty weak
+storage.
 
 `campaign.run_campaign(...)` runs separate mark and evacuation properties through
-`assert_equivalent`. `--algorithm mark|evacuate|both` defaults to both. The default
+`assert_equivalent`. `--algorithm mark|evacuate|both` defaults to both for full
+collection. Young collection requires `--algorithm evacuate --collection young`.
+Full and young evacuation have separate Hypothesis identities and example
+databases, so running a young campaign cannot retire a full-only failure. The default
 budget is 100 examples per algorithm, with at most 20 objects; the summary reports
 actual comparison calls. Hypothesis may also confirm failing cases, each of which
 retains its own artifact. The test deadline is disabled; `--timeout` remains the

@@ -45,16 +45,20 @@ class CampaignTests(unittest.TestCase):
 
     def test_algorithm_selection_does_not_run_the_other_property(self):
         with patch("campaign.assert_equivalent") as check:
-            counts = run_campaign(cpp="unused", lean="unused", algorithm="evacuate",
+            counts = run_campaign(cpp="unused", lean="unused", algorithm="evacuate", collection="young",
                                   seed=1, examples=5)
         self.assertEqual(list(counts), ["evacuate"])
         self.assertEqual(check.call_count, counts["evacuate"])
         self.assertTrue(all(call.kwargs["algorithm"] == "evacuate" for call in check.call_args_list))
+        self.assertTrue(all(call.kwargs["collection"] == "young" for call in check.call_args_list))
+        self.assertTrue(all(not call.args[0]["external_weak"] and all(not o["weak"] for o in call.args[0]["objects"])
+                            for call in check.call_args_list))
 
     def test_invalid_configuration_does_not_run_collectors(self):
         with patch("campaign.assert_equivalent") as check:
             for options in [{"examples": 0}, {"max_objects": -1}, {"algorithm": "unknown"},
-                            {"timeout": 0}, {"timeout": float("nan")}]:
+                            {"timeout": 0}, {"timeout": float("nan")},
+                            {"collection": "young"}, {"collection": "unknown"}]:
                 with self.subTest(options=options), self.assertRaises(ValueError):
                     run_campaign(cpp="unused", lean="unused", **options)
             check.assert_not_called()
@@ -73,7 +77,7 @@ class CampaignTests(unittest.TestCase):
             cpp = directory / "cpp"
             cpp.write_text(prefix + "print(json.dumps(h))\n")
             lean = directory / "lean"
-            lean.write_text(prefix + "if h['objects']: h['roots'].append({'imm': 7})\nprint(json.dumps(h))\n")
+            lean.write_text(prefix + "if h['external_weak'] or any(o['weak'] for o in h['objects']): h['roots'].append({'imm': 7})\nprint(json.dumps(h))\n")
             for runner in [cpp, lean]:
                 runner.chmod(0o700)
             # Separate processes verify persisted reuse, rather than Hypothesis's
@@ -89,13 +93,14 @@ settings.register_profile('replay-test', derandomize=False,
     database=DirectoryBasedExampleDatabase(sys.argv[2]))
 settings.load_profile('replay-test')
 try:
-    run_campaign(cpp={str(cpp)!r}, lean={str(lean)!r}, algorithm='mark',
+    run_campaign(cpp={str(cpp)!r}, lean={str(lean)!r}, algorithm='evacuate', collection=sys.argv[3],
         max_objects=3, examples=int(sys.argv[1]), failure_dir={str(directory / 'failures')!r})
 except HeapMismatch:
     sys.exit(7)
 """
-            for budget, database, expected in [(1, "control", 0), (100, "database", 7), (1, "database", 7)]:
-                result = subprocess.run([sys.executable, "-c", code, str(budget), str(directory / database)],
+            for budget, database, collection, expected in [(1, "control", "full", 0), (100, "database", "full", 7),
+                                                           (1, "database", "young", 0), (1, "database", "full", 7)]:
+                result = subprocess.run([sys.executable, "-c", code, str(budget), str(directory / database), collection],
                                         cwd=directory, capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
 
@@ -149,11 +154,13 @@ class RealCampaignTests(unittest.TestCase):
         if not cpp.exists() or not lean.exists():
             self.skipTest("build gc_cpp and gc_lean to run generated-heap checks")
         with tempfile.TemporaryDirectory(prefix="gc-campaign-real-") as temp:
-            for bound in [0, 12]:
-                with self.subTest(max_objects=bound):
-                    counts = run_campaign(cpp=cpp, lean=lean, examples=20, max_objects=bound,
-                                          seed=132, failure_dir=temp)
-                    self.assertTrue(all(count > 0 for count in counts.values()))
+            for collection in ["full", "young"]:
+                for bound in [0, 12]:
+                    with self.subTest(max_objects=bound, collection=collection):
+                        counts = run_campaign(cpp=cpp, lean=lean, examples=20, max_objects=bound, collection=collection,
+                                              algorithm="both" if collection == "full" else "evacuate",
+                                              seed=132, failure_dir=temp)
+                        self.assertTrue(all(count > 0 for count in counts.values()))
             self.assertEqual(list(Path(temp).iterdir()), [])
 
 

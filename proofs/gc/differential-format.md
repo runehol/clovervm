@@ -483,8 +483,9 @@ provides a file CLI and an importable `assert_equivalent` function for generated
 heap dictionaries. It compares both runners' complete JSON results, distinguishes
 mismatches from runner failures, and preserves original failing inputs and run
 outputs. `heap_strategies.py` constructs valid fresh heaps directly, and
-`campaign.py` runs separate mark/evacuation properties with bounded Hypothesis
-generation and replay. Seeds and Python/Hypothesis versions are recorded with
+`campaign.py` runs separate full mark/full evacuation/young evacuation properties
+with bounded Hypothesis generation and replay. Young generation has no weak
+units; both modes construct complete strong remembered coverage. Seeds and Python/Hypothesis versions are recorded with
 comparison failures, outside the heap. Shrinking remains future work. See the
 [comparison commands and API](README.md#host-python-comparison).
 

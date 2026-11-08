@@ -37,9 +37,9 @@ class RunResult:
     canonical: str | None = None
 
 
-def run_runner(executable, heap_file, algorithm, timeout):
+def run_runner(executable, heap_file, algorithm, collection, timeout):
     command = [str(Path(executable).resolve()), "--algorithm", algorithm,
-               "--collection", "full", str(heap_file)]
+               "--collection", collection, str(heap_file)]
     try:
         process = subprocess.run(command, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired as error:
@@ -63,13 +63,13 @@ def run_runner(executable, heap_file, algorithm, timeout):
     return result
 
 
-def preserve_failure(input_bytes, runs, outcome, algorithm, timeout, failure_dir):
+def preserve_failure(input_bytes, runs, outcome, algorithm, collection, timeout, failure_dir):
     failure_dir = Path(failure_dir).resolve()
     failure_dir.mkdir(parents=True, exist_ok=True)
     artifact = Path(tempfile.mkdtemp(prefix="failure-", dir=failure_dir))
     heap_file = artifact / "input.json"
     heap_file.write_bytes(input_bytes)
-    report = {"outcome": outcome, "algorithm": algorithm, "collection": "full",
+    report = {"outcome": outcome, "algorithm": algorithm, "collection": collection,
               "timeout": timeout, "runners": {}}
     for name, run in runs.items():
         (artifact / f"{name}.stdout").write_bytes(run.stdout)
@@ -89,26 +89,28 @@ def preserve_failure(input_bytes, runs, outcome, algorithm, timeout, failure_dir
     return artifact
 
 
-def _assert_equivalent(input_bytes, *, cpp, lean, algorithm, timeout, failure_dir):
+def _assert_equivalent(input_bytes, *, cpp, lean, algorithm, collection, timeout, failure_dir):
     if algorithm not in ("mark", "evacuate"):
         raise ValueError("algorithm must be mark or evacuate")
+    if collection not in ("full", "young") or (collection == "young" and algorithm != "evacuate"):
+        raise ValueError("young collection supports evacuation only; collection must be full or young")
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("timeout must be finite and positive")
     with tempfile.TemporaryDirectory(prefix="gc-compare-") as temp:
         heap_file = Path(temp) / "input.json"
         heap_file.write_bytes(input_bytes)
-        runs = {name: run_runner(exe, heap_file, algorithm, timeout)
+        runs = {name: run_runner(exe, heap_file, algorithm, collection, timeout)
                 for name, exe in (("cpp", cpp), ("lean", lean))}
     failures = [f"{name}: {run.status}" for name, run in runs.items() if run.status != "success"]
     if failures:
-        artifact = preserve_failure(input_bytes, runs, "runner_failure", algorithm, timeout, failure_dir)
+        artifact = preserve_failure(input_bytes, runs, "runner_failure", algorithm, collection, timeout, failure_dir)
         raise RunnerFailure(", ".join(failures), artifact)
     if runs["cpp"].canonical != runs["lean"].canonical:
-        artifact = preserve_failure(input_bytes, runs, "mismatch", algorithm, timeout, failure_dir)
+        artifact = preserve_failure(input_bytes, runs, "mismatch", algorithm, collection, timeout, failure_dir)
         raise HeapMismatch("heap snapshots differ", artifact)
 
 
-def assert_equivalent(heap, *, cpp, lean, algorithm, timeout=15,
+def assert_equivalent(heap, *, cpp, lean, algorithm, collection="full", timeout=15,
                       failure_dir="gc-differential-failures"):
     """Assert equality for a generated heap dictionary; raise typed failures.
 
@@ -118,7 +120,7 @@ def assert_equivalent(heap, *, cpp, lean, algorithm, timeout=15,
     """
     input_bytes = (json.dumps(heap, allow_nan=False) + "\n").encode("utf-8")
     _assert_equivalent(input_bytes, cpp=cpp, lean=lean, algorithm=algorithm,
-                       timeout=timeout, failure_dir=failure_dir)
+                       collection=collection, timeout=timeout, failure_dir=failure_dir)
 
 
 def main(argv=None):
@@ -126,7 +128,7 @@ def main(argv=None):
     parser.add_argument("--cpp", type=Path, required=True)
     parser.add_argument("--lean", type=Path, required=True)
     parser.add_argument("--algorithm", choices=("mark", "evacuate"), required=True)
-    parser.add_argument("--collection", choices=("full",), required=True)
+    parser.add_argument("--collection", choices=("full", "young"), required=True)
     parser.add_argument("--timeout", type=float, default=15)
     parser.add_argument("--failure-dir", type=Path, default=Path("gc-differential-failures"))
     parser.add_argument("file", type=Path)
@@ -134,7 +136,7 @@ def main(argv=None):
     try:
         # Keep exact input bytes for reproduction, including rejected inputs.
         _assert_equivalent(args.file.read_bytes(), cpp=args.cpp, lean=args.lean,
-                           algorithm=args.algorithm, timeout=args.timeout,
+                           algorithm=args.algorithm, collection=args.collection, timeout=args.timeout,
                            failure_dir=args.failure_dir)
     except HeapMismatch as error:
         print(f"gc_compare: {error}", file=sys.stderr)
