@@ -1,6 +1,6 @@
 {
   "format": "clover-gc-heap",
-  "version": 1,
+  "version": 2,
   "roots": [
     {
       "ref": 3
@@ -104,5 +104,8 @@
         "imm": 0
       }
     }
+  ],
+  "remembered_strong": [
+    0
   ]
 }

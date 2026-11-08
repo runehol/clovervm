@@ -80,7 +80,7 @@ int main(int argc, const char *argv[])
     try
     {
         cxxopts::Options options("gc_cpp",
-                                 "Collect a GC heap JSON v1 snapshot.");
+                                 "Collect a GC heap JSON v2 snapshot.");
         options.custom_help("--algorithm mark|evacuate --collection full FILE");
         options.add_options()("h,help", "Print help and exit")(
             "algorithm", "Collection algorithm: mark or evacuate",

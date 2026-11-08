@@ -34,6 +34,8 @@ def valid_heaps(draw, max_objects=20):
     units = [unit for obj in objects for unit in obj["weak"]] + external
     for unit_id, unit in enumerate(units):
         unit["unit_id"] = unit_id
-    return {"format": "clover-gc-heap", "version": 1,
+    return {"format": "clover-gc-heap", "version": 2,
             "roots": draw(st.lists(cell, max_size=4)),
+            "remembered_strong": [obj["allocation_id"] for obj in objects
+                                  if obj["state"]["kind"] != "young_original"],
             "objects": list(draw(st.permutations(objects))), "external_weak": external}

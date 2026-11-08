@@ -37,7 +37,26 @@ namespace
         return text;
     }
     const std::string empty_heap =
-        R"({"format":"clover-gc-heap","version":1,"roots":[],"objects":[],"external_weak":[]})";
+        R"({"format":"clover-gc-heap","version":2,"roots":[],"objects":[],"external_weak":[],"remembered_strong":[]})";
+
+    TEST(GCHeapFormat, RememberedCoverageIsPartOfTheHeapContract)
+    {
+        auto heap = parse_heap(fixture("before"));
+        auto bad = heap;
+        bad.remembered_strong.clear();
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        bad = heap;
+        bad.remembered_strong.push_back({0});
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        bad = heap;
+        bad.remembered_strong.push_back({1});
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        bad = heap;
+        bad.remembered_strong.push_back({99});
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        heap.remembered_strong.push_back({2});
+        EXPECT_NO_THROW(validate_heap(heap));
+    }
 
     TEST(GCHeapFormat, DocumentedFreshAndCompletedSnapshots)
     {
@@ -155,15 +174,15 @@ namespace
             empty_heap + std::string("\0{}", 3),
             empty_heap + std::string(1, '\0'),
             "\xef\xbb\xbf" + empty_heap,
-            replace(empty_heap, "\"version\":1", "\"version\":1,\"version\":1"),
-            replace(empty_heap, "\"version\":1",
-                    "\"version\":1,\"ver\\u0073ion\":1"),
-            replace(empty_heap, "\"version\":1", "\"version\":1.0"),
-            replace(empty_heap, "\"version\":1", "\"version\":1e0"),
-            replace(empty_heap, "\"version\":1", "\"version\":true"),
-            replace(empty_heap, "\"version\":1", "\"version\":01"),
-            replace(empty_heap, "\"version\":1",
-                    "\"version\":18446744073709551616"),
+            replace(empty_heap, "\"version\":2", "\"version\":2,\"version\":2"),
+            replace(empty_heap, "\"version\":2",
+                    "\"version\":2,\"ver\\u0073ion\":1"),
+            replace(empty_heap, "\"version\":2", "\"version\":2.0"),
+            replace(empty_heap, "\"version\":2", "\"version\":2e0"),
+            replace(empty_heap, "\"version\":2", "\"version\":true"),
+            replace(empty_heap, "\"version\":2", "\"version\":01"),
+            replace(empty_heap, "\"version\":2",
+                    "\"version\":28446744073709551616"),
             replace(empty_heap, "\"roots\":[]",
                     "\"roots\":[{\"imm\":-9223372036854775809}]"),
             replace(empty_heap, "\"roots\":[]",
@@ -180,10 +199,10 @@ namespace
             replace(empty_heap, "\"roots\":[]",
                     "\"roots\":[{\"ref\":null,\"extra\":0}]"),
             replace(empty_heap, "\"roots\":[]", "\"roots\":{},"),
-            replace(empty_heap, "\"version\":1", "\"version\":/*comment*/1"),
-            replace(empty_heap, "\"version\":1", "\"version\":2"),
-            replace(empty_heap, "\"version\":1", "\"version\":1,\"extra\":0"),
-            replace(empty_heap, "\"version\":1,", ""),
+            replace(empty_heap, "\"version\":2", "\"version\":/*comment*/1"),
+            replace(empty_heap, "\"version\":2", "\"version\":3"),
+            replace(empty_heap, "\"version\":2", "\"version\":2,\"extra\":0"),
+            replace(empty_heap, "\"version\":2,", ""),
             replace(empty_heap, "\"external_weak\":[]",
                     "\"external_weak\":[],"),
             replace(empty_heap, "clover-gc-heap", std::string("bad\xff", 4)),

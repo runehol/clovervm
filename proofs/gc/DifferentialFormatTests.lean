@@ -13,7 +13,7 @@ private def fixture (name : String) : IO ByteArray :=
 private def changeObject (heap : HeapSnapshot) (id : Nat) (f : Allocation → Allocation) : HeapSnapshot :=
   { heap with objects := heap.objects.map fun a => if a.allocationId.value == id then f a else a }
 private def emptyText : String :=
-  "{\"format\":\"clover-gc-heap\",\"version\":1,\"roots\":[],\"objects\":[],\"external_weak\":[]}"
+  "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[],\"objects\":[],\"external_weak\":[],\"remembered_strong\":[]}"
 private def ref (n : Nat) : Cell := .reference (some ⟨n⟩)
 
 -- Runtime assertions deliberately stay outside collector proofs and their
@@ -39,6 +39,11 @@ def main : IO Unit := do
     snapshots := snapshots.push heap
   let some before := snapshots[0]? | throw (IO.userError "missing before fixture")
   let some after := snapshots[1]? | throw (IO.userError "missing after fixture")
+  rejectHeap "missing remembered coverage" { before with rememberedStrong := #[] }
+  rejectHeap "duplicate remembered owner" { before with rememberedStrong := #[⟨0⟩, ⟨0⟩] }
+  rejectHeap "young remembered owner" { before with rememberedStrong := #[⟨0⟩, ⟨1⟩] }
+  rejectHeap "unknown remembered owner" { before with rememberedStrong := #[⟨0⟩, ⟨99⟩] }
+  check "conservative remembered owner" (validateHeap { before with rememberedStrong := #[⟨0⟩, ⟨2⟩] }).isOk
   let [a, b, c] := before.objects.toList | throw (IO.userError "wrong original count")
   check "decoded roots" (before.roots == #[ref 1, ref 1])
   check "decoded identities" (a.objectId == ⟨"obj-0"⟩ && b.objectId == ⟨"obj-1"⟩ && c.objectId == ⟨"obj-2"⟩)
@@ -93,8 +98,8 @@ def main : IO Unit := do
   check "inactive values are valid fresh data" (validateFreshHeap mixed).isOk
 
   reject "malformed JSON" "{broken"
-  reject "missing required field" (emptyText.replace "\"version\":1," "")
-  reject "unsupported version" (emptyText.replace "\"version\":1" "\"version\":2")
+  reject "missing required field" (emptyText.replace "\"version\":2," "")
+  reject "unsupported version" (emptyText.replace "\"version\":2" "\"version\":3")
   for value in ["{\"imm\":-9223372036854775809}", "{\"imm\":9223372036854775808}",
       "{\"imm\":true}", "{\"ref\":-1}", "{\"ref\":true}", "{\"ref\":\"obj-0\"}"] do
     reject "invalid cell value" (emptyText.replace "\"roots\":[]" s!"\"roots\":[{value}]")

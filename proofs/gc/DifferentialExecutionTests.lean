@@ -23,7 +23,7 @@ private def mixedHeap (first second : CopyTo) : HeapSnapshot :=
     ⟨⟨"obj-1"⟩, ⟨3⟩, .youngOriginal first (.normal false), #[ref 1, .immediate 7, ref 0, .reference none],
       #[field 2 (.immediate (-7)), field 3 (ref 0), entry 4 (some 3) (some 1) (ref 2),
         entry 10 none (some 2) (ref 0)]⟩],
-    #[entry 0 (some 3) (some 1) (ref 0), field 1 (.immediate 0)]⟩
+    #[entry 0 (some 3) (some 1) (ref 0), field 1 (.immediate 0)], #[⟨0⟩, ⟨1⟩]⟩
 
 -- These are runtime assertions, outside the collector proofs' dependency graph.
 def main : IO Unit := do
@@ -35,7 +35,7 @@ def main : IO Unit := do
   for (algorithm, name) in [(Algorithm.mark, "after_mark"), (.evacuate, "after")] do
     check name ((← ok name (runCollection before algorithm)) == (← fixture name))
   let empty : HeapSnapshot := ⟨#[.immediate (-9223372036854775808), .reference none,
-    .immediate 9223372036854775807], #[], #[]⟩
+    .immediate 9223372036854775807], #[], #[], #[]⟩
   for algorithm in [Algorithm.mark, .evacuate] do
     check "empty and immediate roots" ((← ok "empty" (runCollection empty algorithm)) == empty)
   let external := { empty with externalWeak := #[⟨⟨0⟩, .field (.immediate 17)⟩,
@@ -66,7 +66,7 @@ def main : IO Unit := do
       ⟨⟨"obj-1"⟩, ⟨4⟩, destination first, #[ref 1, .immediate 7, ref 5, .reference none],
         #[field 2 (.immediate (-7)), field 3 (ref 5), reset 4, reset 10]⟩,
       ⟨⟨"obj-2"⟩, ⟨5⟩, destination second, #[ref 4, ref 5], #[field 7 (.reference none)]⟩],
-      #[entry 0 (some 4) (some 1) (ref 5), field 1 (.immediate 0)]⟩
+      #[entry 0 (some 4) (some 1) (ref 5), field 1 (.immediate 0)], #[⟨0⟩, ⟨1⟩]⟩
     check "mixed destinations and weak repair" ((← ok "mixed" (runCollection input .evacuate)) == expected)
     let ⟨_, _, mixed⟩ ← ok "mixed prepare" (prepareHeap input)
     let finished := Copying.Weak.collectWeak mixed.copying mixed.weak mixed.roots
@@ -134,7 +134,7 @@ def main : IO Unit := do
     (List.range count).toArray.map (fun i => ⟨⟨s!"obj-{count - 1 - i}"⟩, ⟨i⟩,
       .oldOriginal (if i % 2 == 0 then .ordinary else .nonmoving) (.normal false),
       #[.immediate (-7), ref ((i + 1) % count), .reference none],
-      #[⟨⟨i⟩, .field (ref ((i + 1) % count))⟩]⟩), #[]⟩
+      #[⟨⟨i⟩, .field (ref ((i + 1) % count))⟩]⟩), #[], #[]⟩
   let copied ← ok "long cycle" (runCollection chain .evacuate)
   check "all copies retained" (copied.objects.size == 2 * count)
   check "root slots retained" (copied.roots == #[ref count, .immediate 7, .reference none, ref count])

@@ -337,6 +337,7 @@ namespace cl::gc::test::differential
                external_weak_.size() != input_.external_weak.size())
                 inconsistent("root or external unit layout changed");
             format::HeapSnapshot result;
+            result.remembered_strong = input_.remembered_strong;
             for(const auto &root: roots_)
                 result.roots.push_back(capture_cell(root));
             for(size_t i = 0; i < records.size(); ++i)

@@ -15,8 +15,8 @@ from compare import HeapMismatch, RunnerFailure, assert_equivalent, main
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).with_name("fixtures")
-EMPTY = {"format": "clover-gc-heap", "version": 1, "roots": [],
-         "objects": [], "external_weak": []}
+EMPTY = {"format": "clover-gc-heap", "version": 2, "roots": [],
+         "objects": [], "external_weak": [], "remembered_strong": []}
 
 
 class CompareTests(unittest.TestCase):

@@ -56,7 +56,7 @@ expect_heap(path-with-spaces-and-comma "${FIXTURE_DIR}/after.json"
     --collection full --algorithm=evacuate -- "${TEST_DIR}/input heap, with spaces.json")
 
 file(WRITE "${TEST_DIR}/empty.json" [=[
-{"format":"clover-gc-heap","version":1,"roots":[],"objects":[],"external_weak":[]}
+{"format":"clover-gc-heap","version":2,"roots":[],"objects":[],"external_weak":[],"remembered_strong":[]}
 ]=])
 foreach(algorithm IN ITEMS mark evacuate)
     expect_heap("empty-${algorithm}" "${TEST_DIR}/empty.json"
@@ -98,7 +98,7 @@ expect_failure(unreadable-directory "cannot read input file"
 file(WRITE "${TEST_DIR}/malformed.json" "{broken")
 expect_failure(malformed-json "$" --algorithm mark --collection full "${TEST_DIR}/malformed.json")
 file(WRITE "${TEST_DIR}/invalid-reference.json" [=[
-{"format":"clover-gc-heap","version":1,"roots":[{"ref":0}],"objects":[],"external_weak":[]}
+{"format":"clover-gc-heap","version":2,"roots":[{"ref":0}],"objects":[],"external_weak":[],"remembered_strong":[]}
 ]=])
 expect_failure(invalid-reference "reference names no allocation"
     --algorithm evacuate --collection full "${TEST_DIR}/invalid-reference.json")

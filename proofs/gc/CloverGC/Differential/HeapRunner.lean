@@ -164,7 +164,7 @@ def captureEvacuated (heap : PreparedHeap n k) (state : Copying.Weak.State n k) 
       | .ordinary => Format.ObjectState.ordinaryDestination
       | .nonMoving => Format.ObjectState.nonmovingDestination
     objects := objects.push ⟨⟨s!"obj-{record.origin.val}"⟩, ⟨n + index⟩, objectState, strong.toArray, weak⟩
-  let result := Format.HeapSnapshot.mk roots.toArray objects (← captureUnits heap state heap.initial.externalWeak)
+  let result := Format.HeapSnapshot.mk roots.toArray objects (← captureUnits heap state heap.initial.externalWeak) heap.initial.rememberedStrong
   Format.validateHeap result
   return result
 

@@ -47,7 +47,7 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
       (← unwrap (Lean.Json.parse output.stdout)) == (← unwrap (Lean.Json.parse
         (← IO.FS.readFile (fixtures / "after_mark.json")))))
   let empty := temp / "empty.json"
-  IO.FS.writeFile empty "{\"format\":\"clover-gc-heap\",\"version\":1,\"roots\":[],\"objects\":[],\"external_weak\":[]}"
+  IO.FS.writeFile empty "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[],\"objects\":[],\"external_weak\":[],\"remembered_strong\":[]}"
   for algorithm in ["mark", "evacuate"] do
     success ("empty " ++ algorithm) empty #["--algorithm", algorithm, "--collection", "full", empty.toString]
   for args in [#["--help"], #["-h"], #["--algorithm", "unknown", "--help"],
@@ -83,7 +83,7 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
   IO.FS.writeBinFile malformed ⟨#[255]⟩
   failure "invalid UTF-8" "UTF-8" #["--algorithm", "mark", "--collection", "full", malformed.toString]
   let invalid := temp / "invalid.json"
-  IO.FS.writeFile invalid "{\"format\":\"clover-gc-heap\",\"version\":1,\"roots\":[{\"ref\":0}],\"objects\":[],\"external_weak\":[]}"
+  IO.FS.writeFile invalid "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[{\"ref\":0}],\"objects\":[],\"external_weak\":[],\"remembered_strong\":[]}"
   failure "invalid reference" "reference" #["--algorithm", "evacuate", "--collection", "full", invalid.toString]
   for algorithm in ["mark", "evacuate"] do
     failure "completed heap" "fresh heap" #["--algorithm", algorithm, "--collection", "full", (fixtures / "after.json").toString]

@@ -142,7 +142,8 @@ namespace
                    entry(4, f::AllocationId{3}, f::AllocationId{1}, ref(2)),
                    entry(10, std::nullopt, f::AllocationId{2}, ref(0))}}},
                 {entry(0, f::AllocationId{3}, f::AllocationId{1}, ref(0)),
-                 field(1, int64_t{0})}};
+                 field(1, int64_t{0})},
+                {f::AllocationId{0}, f::AllocationId{1}}};
     }
     f::HeapSnapshot mixed_expected(const f::HeapSnapshot &input)
     {
@@ -389,18 +390,19 @@ namespace
             native::EvacuationDestination::Stable;
         EXPECT_EQ(heap.capture(), fixture("after"));
         // Do not reconstruct repaired values from the expected input graph.
-        heap.roots()[0] = native::TestCell::reference(&heap.object({2}));
+        heap.roots()[0] = native::TestCell::reference(&heap.object({1}));
         heap.object({3}).strong_cells[0] =
-            native::TestCell::reference(&heap.object({1}));
+            native::TestCell::reference(&heap.object({2}));
         heap.object({1}).weak_cells[0] = native::TestCell::immediate(99);
         std::get<native::TestWeakEntry>(heap.external_weak()[0]).payload =
             native::TestCell::immediate(42);
         auto expected = fixture("after");
-        expected.roots[0] = ref(2);
-        expected.objects[3].strong[0] = ref(1);
+        expected.roots[0] = ref(1);
+        expected.objects[3].strong[0] = ref(2);
         expected.objects[1].weak[0] = field(0, int64_t{99});
         expected.external_weak[0] =
             entry(1, std::nullopt, std::nullopt, int64_t{42});
         EXPECT_EQ(heap.capture(), expected);
     }
+
 }  // namespace

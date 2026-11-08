@@ -1,4 +1,4 @@
-# GC Heap JSON Format v1
+# GC Heap JSON Format v2
 
 | Field | Value |
 |---|---|
@@ -13,7 +13,7 @@
 Both runners read a heap and dump a heap using this same schema. Object IDs
 are strings identifying logical objects. Allocation IDs are integers naming
 physical storage in one global namespace. Algorithm and collection selection
-are separate run configuration. The schemas below specify every v1 field.
+are separate run configuration. The schemas below specify every v2 field.
 
 ## Run Configuration
 
@@ -75,12 +75,12 @@ Null reference cells and immediate zero remain distinct.
 
 | Record | Required fields |
 |---|---|
-| Heap | `format`, `version`, `roots`, `objects`, `external_weak` |
+| Heap | `format`, `version`, `roots`, `objects`, `external_weak`, `remembered_strong` |
 | Object allocation | `object_id`, `allocation_id`, `state`, `strong`, `weak` |
 | Standalone weak field | `unit_id`, `kind: "field"`, `value` |
 | Weak entry | `unit_id`, `kind: "entry"`, `guards`, `payload` |
 
-`format` is `"clover-gc-heap"`; `version` is `1`. `roots` and each `strong` array
+`format` is `"clover-gc-heap"`; `version` is `2`. `roots` and each `strong` array
 are ordered cells, retaining duplicates and aliasing. `objects` contains every
 original and destination allocation before source reclamation.
 
@@ -95,6 +95,35 @@ within each kind. External units are visited in array order. A physical unit is
 identified by its container allocation and `unit_id`; an external unit by its
 `unit_id`. A logical unit can therefore appear in both an original allocation
 and its destination without aliasing their storage.
+
+## Generational Heap Invariant
+
+`remembered_strong` is an ordered array of distinct allocation IDs naming old
+originals: `old_original` or `nonmoving_original`. Membership represents strong
+remembered status; it is independent of the tracing `marked` flag. Nonmoving
+owners follow the same edge rule as other old objects.
+
+Every old-to-young strong reference must have its owner remembered. Young
+owners may point to any generation. Old owners may always point to old objects,
+including remembered old objects. Conservative remembered owners with no young
+references are allowed. These constraints hold independently of collection mode.
+Weak references have separate coverage obligations; strong remembered membership
+is not inferred from weak fields.
+
+Full collection ignores the remembered list as additional roots. Young collection
+processes roots, then the actual strong slots of remembered owners in list/slot
+order, then drains copied objects. Old owners are not marked or enqueued. This
+includes owners unreachable from the ordinary roots: their storage still survives
+minor collection. Both snapshots retain the supplied list, before reset or
+retirement. Copy destinations are old and marked; discarded original payloads
+remain visible in the diagnostic snapshot.
+
+The Lean collector accepts a proof-carrying `GenerationalHeap` whose `WellFormed`
+proof establishes unique old remembered owners and complete old-to-young strong
+coverage. Raw wire data is converted and checked before constructing this type.
+Collection-phase invariants account for pending copies with raw fields and
+processed owners with repaired fields; they do not impose a stable-heap rule on
+all intermediate physical storage.
 
 ## Object State Enums
 
@@ -135,7 +164,7 @@ the same object ID, and have a normal header with no further forwarding.
 ```json
 {
   "format": "clover-gc-heap",
-  "version": 1,
+  "version": 2,
   "roots": [
     {
       "ref": 1
@@ -215,6 +244,9 @@ the same object ID, and have a normal header with no further forwarding.
         "ref": 2
       }
     }
+  ],
+  "remembered_strong": [
+    0
   ]
 }
 ```
@@ -224,7 +256,7 @@ the same object ID, and have a normal header with no further forwarding.
 ```json
 {
   "format": "clover-gc-heap",
-  "version": 1,
+  "version": 2,
   "roots": [
     {
       "ref": 3
@@ -328,6 +360,9 @@ the same object ID, and have a normal header with no further forwarding.
         "imm": 0
       }
     }
+  ],
+  "remembered_strong": [
+    0
   ]
 }
 ```
@@ -338,13 +373,13 @@ unmarked, and the external weak entry resets because that target is dead.
 Original allocation fields remain visible until reclamation by the caller.
 
 For `--algorithm mark`, the schema is identical: reachable originals become
-marked, all headers remain normal, cells and weak units remain unchanged, and
+marked, all headers remain normal, cells, remembered membership and weak units remain unchanged, and
 no destination allocations are added.
 
 ## Validation and Dumping
 
 This is an internal format for generated test files. Producers emit the exact
-v1 shapes above: UTF-8 JSON, unique keys, known fields, and decimal integer
+v2 shapes above: UTF-8 JSON, unique keys, known fields, and decimal integer
 literals without fractions or exponents. Readers use their JSON libraries;
 lexical rejection behavior for noncanonical or hand-edited files is not part of
 the comparison contract. The C++ reader currently performs additional checks.
@@ -353,6 +388,8 @@ the comparison contract. The C++ reader currently performs additional checks.
   Booleans are not integers. `object_id` uses its canonical string syntax;
   allocation and unit IDs are integers. Reject gaps and duplicate IDs in their
   respective domains. Logical object IDs repeat only in their destinations.
+- Remembered owners must be unique old originals; every old-to-young strong
+  edge must have a remembered owner, including in full-collection inputs.
 - Roots, cells, guards and forwarding targets must name existing allocations.
   Each object ID has exactly one original allocation. In this single-collection
   scope it has at most one destination. The destination and its original have
