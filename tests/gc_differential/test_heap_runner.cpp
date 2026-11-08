@@ -405,4 +405,53 @@ namespace
         EXPECT_EQ(heap.capture(), expected);
     }
 
+    TEST(GCHeapRunner, YoungRepairsRememberedFieldsWithoutScanningOldOwners)
+    {
+        auto before = fixture("young_before");
+        NativeHeap heap(before, d::Collection::Young);
+        heap.collect(d::Algorithm::Evacuate);
+        EXPECT_EQ(heap.capture(), fixture("young_after"));
+        for(auto id: {0u, 2u, 4u})
+        {
+            EXPECT_FALSE(heap.adapter().is_marked(&heap.object({id})));
+            EXPECT_EQ(heap.adapter().scan_count(&heap.object({id})), 0u);
+        }
+        EXPECT_EQ(d::run_collection(before, d::Algorithm::Evacuate),
+                  fixture("young_full_after"));
+        before.roots.clear();
+        EXPECT_EQ(d::run_collection(before, d::Algorithm::Evacuate), before);
+        auto minor = d::run_collection(before, d::Algorithm::Evacuate,
+                                       d::Collection::Young);
+        EXPECT_EQ(minor.objects, fixture("young_after").objects);
+    }
+
+    TEST(GCHeapRunner,
+         YoungRejectsUnsupportedOperationsAndCorruptUnselectedState)
+    {
+        EXPECT_THROW(d::run_collection(fixture("young_before"),
+                                       d::Algorithm::Mark,
+                                       d::Collection::Young),
+                     d::RunnerError);
+        EXPECT_THROW(d::run_collection(fixture("before"),
+                                       d::Algorithm::Evacuate,
+                                       d::Collection::Young),
+                     d::RunnerError);
+        NativeHeap heap(fixture("young_before"), d::Collection::Young);
+        heap.collect(d::Algorithm::Evacuate);
+        heap.adapter().try_mark(&heap.object({0}));
+        EXPECT_THROW(heap.capture(), d::RunnerError);
+        NativeHeap forward(fixture("young_before"), d::Collection::Young);
+        forward.collect(d::Algorithm::Evacuate);
+        forward.object({0}).header =
+            native::TestHeader::forwarded(&forward.object({6}));
+        EXPECT_THROW(forward.capture(), d::RunnerError);
+        auto garbage = fixture("young_before");
+        garbage.objects[0].strong.clear();
+        garbage.objects[2].strong = {ref(4)};
+        garbage.remembered_strong.clear();
+        NativeHeap marked(garbage, d::Collection::Young);
+        marked.collect(d::Algorithm::Evacuate);
+        marked.adapter().try_mark(&marked.object({1}));
+        EXPECT_THROW(marked.capture(), d::RunnerError);
+    }
 }  // namespace

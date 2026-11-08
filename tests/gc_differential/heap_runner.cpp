@@ -83,10 +83,25 @@ namespace cl::gc::test::differential
             return copy;
         }
 
-        NativeHeap::NativeHeap(const format::HeapSnapshot &input)
-            : input_(input), adapter_(heap_, allocations_)
+        NativeHeap::NativeHeap(const format::HeapSnapshot &input,
+                               Collection collection)
+            : input_(input), collection_(collection),
+              adapter_(heap_, allocations_, collection)
         {
             format::validate_fresh_heap(input_);
+            if(collection != Collection::Full &&
+               collection != Collection::Young)
+                inconsistent("unknown collection");
+            if(collection == Collection::Young)
+            {
+                if(!input_.external_weak.empty())
+                    inconsistent("young collection currently requires empty "
+                                 "weak storage");
+                for(const auto &a: input_.objects)
+                    if(!a.weak.empty())
+                        inconsistent("young collection currently requires "
+                                     "empty weak storage");
+            }
             std::sort(input_.objects.begin(), input_.objects.end(),
                       [](const auto &a, const auto &b) {
                           return a.allocation_id.value < b.allocation_id.value;
@@ -177,6 +192,9 @@ namespace cl::gc::test::differential
 
         void NativeHeap::collect(Algorithm algorithm)
         {
+            if(collection_ == Collection::Young &&
+               algorithm != Algorithm::Evacuate)
+                inconsistent("young collection supports evacuation only");
             if(phase_ != Phase::Fresh)
                 inconsistent("collection context is single-use");
             try
@@ -228,6 +246,11 @@ namespace cl::gc::test::differential
                             }
                             for(auto &root: roots_)
                                 collection.add_root(TestSlot(root));
+                            if(collection_ == Collection::Young)
+                                for(auto owner: input_.remembered_strong)
+                                    for(auto &cell:
+                                        allocations_.object(owner).strong_cells)
+                                        collection.add_root(TestSlot(cell));
                             collection.finish();
                             break;
                         }
@@ -252,6 +275,15 @@ namespace cl::gc::test::differential
                 input_.objects[record.original_allocation.value];
             bool marked = adapter_.is_marked(record.address);
             bool is_original = id == record.original_allocation;
+            if(collection_ == Collection::Young && is_original && marked)
+                inconsistent("young evacuation marked an original");
+            if(collection_ == Collection::Young &&
+               !std::holds_alternative<format::YoungOriginal>(original.state))
+            {
+                if(!is_original || object.header.kind != TestHeaderKind::Normal)
+                    inconsistent("young collection changed unselected original "
+                                 "mark or forwarding");
+            }
             if(object.logical_identity != logical_identity(original.object_id))
                 inconsistent("logical identity changed");
             if(object.header.kind != TestHeaderKind::Normal &&
@@ -411,9 +443,10 @@ namespace cl::gc::test::differential
     }  // namespace detail
 
     format::HeapSnapshot run_collection(const format::HeapSnapshot &input,
-                                        Algorithm algorithm)
+                                        Algorithm algorithm,
+                                        Collection collection)
     {
-        detail::NativeHeap heap(input);
+        detail::NativeHeap heap(input, collection);
         heap.collect(algorithm);
         return heap.capture();
     }

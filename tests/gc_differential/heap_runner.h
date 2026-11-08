@@ -17,6 +17,11 @@ namespace cl::gc::test::differential
         Mark,
         Evacuate
     };
+    enum class Collection
+    {
+        Full,
+        Young
+    };
 
     class RunnerError : public std::runtime_error
     {
@@ -24,12 +29,13 @@ namespace cl::gc::test::differential
         using std::runtime_error::runtime_error;
     };
 
-    // One full collection, retaining all original storage in the result.
+    // One collection, retaining all original storage in the result.
     // Invalid input throws FormatError; inconsistent native state throws
     // RunnerError. Evacuation scratch/allocation failure remains fatal under
     // the existing collector's noexcept contract.
-    format::HeapSnapshot run_collection(const format::HeapSnapshot &input,
-                                        Algorithm algorithm);
+    format::HeapSnapshot
+    run_collection(const format::HeapSnapshot &input, Algorithm algorithm,
+                   Collection collection = Collection::Full);
 
     // Internal test support, also exposed here for capture fault-injection
     // tests.
@@ -60,8 +66,11 @@ namespace cl::gc::test::differential
         class RecordingAdapter : public TestHeapAdapter
         {
         public:
-            RecordingAdapter(TestHeap &heap, AllocationRegistry &allocations)
-                : TestHeapAdapter(heap, TestCollectionKind::Full),
+            RecordingAdapter(TestHeap &heap, AllocationRegistry &allocations,
+                             Collection collection)
+                : TestHeapAdapter(heap, collection == Collection::Full
+                                            ? TestCollectionKind::Full
+                                            : TestCollectionKind::YoungOnly),
                   allocations_(allocations)
             {
             }
@@ -75,7 +84,8 @@ namespace cl::gc::test::differential
         class NativeHeap
         {
         public:
-            explicit NativeHeap(const format::HeapSnapshot &input);
+            explicit NativeHeap(const format::HeapSnapshot &input,
+                                Collection collection = Collection::Full);
             NativeHeap(const NativeHeap &) = delete;
             NativeHeap &operator=(const NativeHeap &) = delete;
             NativeHeap(NativeHeap &&) = delete;
@@ -111,6 +121,7 @@ namespace cl::gc::test::differential
                 input_;  // Sorted originals; immutable layout metadata.
             TestHeap heap_;
             AllocationRegistry allocations_;
+            Collection collection_;
             RecordingAdapter adapter_;
             std::vector<TestCell> roots_;
             std::vector<NativeWeak> external_weak_;
