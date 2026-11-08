@@ -246,6 +246,11 @@ remain runnable.
 
 ### Generational Strong Model
 
+[Young weak resolution and repair](young-weak.md) tracks the next stage. Its
+selection-aware resolver and proof-carrying weak heap, with local proofs,
+validation and examples, are implemented; young weak collection is not yet
+connected to either runner.
+
 [Young-only strong evacuation](young-strong.md) describes the proof-carrying
 heap representation and collection invariants. `RawGenerationalHeap` represents
 decoded data; `GenerationalHeap` embeds `WellFormed`, enforcing unique old
