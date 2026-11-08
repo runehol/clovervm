@@ -49,11 +49,20 @@ remembered weak registration. Each strong scan visits its owner's units after
 repairing strong fields, and deferred repair runs after the drain. Erasing weak
 state preserves both the entire strong result and scan trace, with an auxiliary
 theorem for arbitrary fuel and state. Exact axiom guards and directed examples
-are included. Registration uniqueness and final weak safety are not yet proved.
+are included. Registration and deferred-queue proofs follow in slice four.
+
+Slice four proves exact registration order and membership: external units,
+mode-selected remembered units, then units belonging to logically scanned
+owners. Registration is unique. The old-owner witness separates remembered
+units from young scanned owners; full mode omits remembered registration.
+Deferred work is a subsequence of registration history, and late visits equal
+that queue exactly, in order and without duplicates. Checked examples include
+an unrooted old owner's remembered unit and full-mode owner reachability.
+Exact axiom guards track the standard Lean axioms used by these proofs.
 
 The remaining accepted slices are:
 
-1. Prove registration uniqueness, early/late repair correctness and retained
+1. Prove early/late repair correctness and retained
    weak-reference safety, preserving the existing full path and proof claims.
    Split the proof work into further reviewable commits as needed.
 2. Extend the shared before/after heap format to v3 with required ordered

@@ -19,3 +19,5 @@ import CloverGC.GenerationalWeakHeapExamples
 import CloverGC.GenerationalWeakHeapAudit
 import CloverGC.GenerationalWeakDriverExamples
 import CloverGC.GenerationalWeakDriverAudit
+import CloverGC.GenerationalWeakSchedulingExamples
+import CloverGC.GenerationalWeakSchedulingAudit
