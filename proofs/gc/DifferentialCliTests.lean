@@ -31,6 +31,10 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
 
   success "mark" (fixtures / "after_mark.json") #["--algorithm", "mark", "--collection", "full", before]
   success "evacuate" (fixtures / "after.json") #["--algorithm", "evacuate", "--collection", "full", before]
+  success "young" (fixtures / "young_after.json")
+    #["--algorithm", "evacuate", "--collection", "young", (fixtures / "young_before.json").toString]
+  success "full with remembered owners" (fixtures / "young_full_after.json")
+    #["--algorithm", "evacuate", "--collection", "full", (fixtures / "young_before.json").toString]
   let spaced := temp / "input heap, with spaces.json"
   IO.FS.writeBinFile spaced (← IO.FS.readBinFile (fixtures / "before.json"))
   success "equals, reordered flags and exact path" (fixtures / "after.json")
@@ -62,8 +66,9 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
   failure "missing collection" "--collection" #["--algorithm", "mark", before]
   failure "missing file" "one input heap file" #["--algorithm", "mark", "--collection", "full"]
   failure "extra file" "one input heap file" #["--algorithm", "mark", "--collection", "full", before, before]
-  for selection in ["young", "unknown"] do
-    failure "unsupported collection" "unsupported collection" #["--algorithm", "mark", "--collection", selection, before]
+  failure "unsupported collection" "unsupported collection" #["--algorithm", "mark", "--collection", "unknown", before]
+  failure "young mark" "evacuation only" #["--algorithm", "mark", "--collection", "young", before]
+  failure "young weak" "empty weak" #["--algorithm", "evacuate", "--collection", "young", before]
   failure "unsupported algorithm" "unsupported algorithm" #["--algorithm", "unknown", "--collection", "full", before]
   failure "unknown option" "unknown-option" #["--algorithm", "mark", "--collection", "full", "--unknown-option", before]
   for option in ["--algorithm", "--collection"] do

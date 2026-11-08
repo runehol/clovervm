@@ -5,7 +5,7 @@
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Abstract strong closure and full-selection evacuation with early/late weak units; not C++ runtime verification |
+| Scope | Abstract strong closure, full weak evacuation, and generational strong evacuation; not C++ runtime verification |
 | Owning layers | This Lean project owns the executable model and proofs; `src/gc/` owns the C++ collector |
 | Validated against | Lean 4.35.0; C++ `StrongClosure` and `Evacuation` at `33cb9cf6` (2026-11-01) |
 | Supersedes | N/A |
@@ -47,15 +47,15 @@ disposal safety. [Weak Repair Units](weak-repair.md) then extends it with early
 resolution, exact deferral and coordinated late repair. Minor filtering and
 runtime integration remain outside this model.
 
-The planned file-based differential harness has a proposed
-[heap JSON format v1](differential-format.md), used unchanged before and after
+The file-based differential harness uses
+[heap JSON format v2](differential-format.md), unchanged before and after
 collection, with string object identities, integer allocation IDs and tagged
 object states. Algorithm and collection selection are separate run configuration.
 The document defines the projection to existing C++ and Lean representations;
 the C++ typed format reader, validator and writer are implemented in
 `tests/gc_differential/heap_format.{h,cpp}` and tested against the documented snapshots.
 The C++ native execution library in `tests/gc_differential/heap_runner.{h,cpp}`
-constructs fresh synthetic heaps, runs full mark or evacuation, and captures
+constructs fresh synthetic heaps, runs full mark/full evacuation/young strong evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
 results, mixed destinations and invalid native states. The C++ file runner is
 implemented. The Lean format, collection and file CLI are also implemented;
@@ -74,7 +74,8 @@ build-debug/tests/gc_differential/gc_cpp --algorithm evacuate --collection full 
 
 Use `--algorithm mark` for marking without movement or weak repair, and `--help`
 for usage. Both algorithms retain all original allocations in the output.
-Only full collection is supported. The runner reads one file; stdout carries the
+Young collection supports strong-only evacuation with empty weak storage. Full
+collection supports both algorithms and weak storage. The runner reads one file; stdout carries the
 result heap and stderr carries errors. No VM initialization is required.
 
 Run the CLI process checks directly with either command:
@@ -91,14 +92,14 @@ array ordering, and exercise argument, file and validation errors.
 ### Lean Heap Format
 
 `CloverGC/Differential/HeapFormat.lean` uses bundled `Lean.Json` parsing and
-printing for the generated JSON v1 files. It checks supported tags, required
+printing for the generated JSON v2 files. It checks supported tags, required
 values, integer bounds and heap relationships before collection. Validation
 orders allocation records once and checks that each allocation ID equals its
 index. The wire types are separate from the collector model's logical/physical
 references.
 
 `CloverGC/Differential/HeapRunner.lean` converts fresh snapshots into the existing
-mark and weak-evacuation models, executes full collection, and captures the
+mark, full weak-evacuation and generational strong-evacuation models, and captures the
 result in the same heap schema. It retains immediate/null slot positions and
 original physical storage, maps logical identities through the explicit
 allocation pairing, and assigns copy IDs from the model's allocation ledger.
@@ -113,7 +114,8 @@ lake exe gc_lean --algorithm evacuate --collection full \
   ../../tests/gc_differential/fixtures/before.json > lean-after.json
 ```
 
-It accepts `mark` or `evacuate`, requires full collection, and supports
+It accepts `mark` or `evacuate` for full collection; young collection supports
+strong-only evacuation. It also supports
 `--flag=value`, `--` before the path, and `--help`/`-h`. The complete result is
 serialized before writing stdout. Argument, file, format and collection errors
 produce a `gc_lean:` diagnostic on stderr and exit status 1.
@@ -234,6 +236,30 @@ and rejection capture, framework error classification, and generated heaps with
 both real runners (including zero-object heaps). Without the optional dependency,
 the campaign test module is skipped and the standard-library comparator tests
 remain runnable.
+
+### Generational Strong Model
+
+[Young-only strong evacuation](young-strong.md) describes the proof-carrying
+heap representation and collection invariants. `RawGenerationalHeap` represents
+decoded data; `GenerationalHeap` embeds `WellFormed`, enforcing unique old
+remembered owners and complete old-to-young strong coverage. Generation,
+movability and destination derive from `OriginalKind`. Conversion establishes
+the proof with a decidable check; malformed raw heaps cannot become collector
+inputs without proving these constraints.
+
+The driver reuses the proved copy-discovery primitive with selection around it.
+Full selection is proved equal to the existing strong driver; the full weak
+model and its theorems remain intact. Young liveness includes selected roots and
+remembered-owner children, even for owners unreachable from ordinary roots.
+The final results cover termination, selected reachability, repaired retained
+fields, unselected objects remaining unmarked/unforwarded, unchanged selected
+movable source payloads, identity, scan uniqueness and retained-reference disposal
+safety. The reset theorem concerns the logical retained graph after promotion;
+it does not reset physical remembered sets or reclaim source storage.
+
+The shared `young_before.json`, `young_after.json` and `young_full_after.json`
+fixtures exercise this boundary, including permuted identities, ordinary and
+nonmoving destinations, aliases, cycles and conservative remembered owners.
 
 ### Proof Module Layout
 
@@ -365,5 +391,5 @@ layout safety, or a formal refinement from C++ to Lean. The C++ tests remain
 necessary. The separate copying-discovery slice establishes local forwarding
 properties; the strong-evacuation slice proves the complete abstract strong
 traversal. Executable differential comparison against the C++ test heap is
-implemented separately; minor-collection filtering and runtime ownership proofs
-remain later work.
+implemented separately; young strong selection and remembered coverage are modeled separately. Young
+weak collection, barrier maintenance and runtime ownership proofs remain later work.

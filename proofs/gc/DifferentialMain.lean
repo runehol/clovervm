@@ -4,7 +4,7 @@ open CloverGC.Differential
 
 private inductive Command where
   | help
-  | collect (algorithm : Algorithm) (file : System.FilePath)
+  | collect (algorithm : Algorithm) (file : System.FilePath) (collection : CloverGC.Generational.CollectionKind)
 
 private structure Arguments where
   algorithms : List String := []
@@ -15,14 +15,18 @@ private structure Arguments where
 private def Arguments.finish (args : Arguments) : Except String Command := do
   if args.help then return .help
   let [algorithm] := args.algorithms | throw "specify exactly one --algorithm mark|evacuate"
-  let [collection] := args.collections | throw "specify exactly one --collection full"
-  unless collection == "full" do throw "unsupported collection; only full is supported"
+  let [collection] := args.collections | throw "specify exactly one --collection full|young"
+  let collection ← match collection with
+    | "full" => pure CloverGC.Generational.CollectionKind.full
+    | "young" => pure CloverGC.Generational.CollectionKind.young
+    | _ => throw "unsupported collection; use full or young"
   let algorithm ← match algorithm with
     | "mark" => pure Algorithm.mark
     | "evacuate" => pure Algorithm.evacuate
     | _ => throw "unsupported algorithm; use mark or evacuate"
+  if collection == .young && algorithm == .mark then throw "young collection supports evacuation only"
   let [file] := args.files | throw "expected exactly one input heap file"
-  return .collect algorithm file
+  return .collect algorithm file collection
 
 private def parseArgs : List String → Arguments → Except String Command
   | [], args => args.finish
@@ -50,11 +54,11 @@ private def unwrap (result : Except String α) : IO α :=
 def main (args : List String) : IO UInt32 := do
   try
     let output ← match ← unwrap (parseArgs args {}) with
-      | .help => pure "Usage: gc_lean --algorithm mark|evacuate --collection full FILE\n"
-      | .collect algorithm file => do
+      | .help => pure "Usage: gc_lean --algorithm mark|evacuate --collection full|young FILE\n"
+      | .collect algorithm file collection => do
           if ← file.isDir then throw (IO.userError s!"cannot read input file: {file}")
           let heap ← unwrap (Format.parseHeap (← IO.FS.readBinFile file))
-          let result ← unwrap (runCollection heap algorithm)
+          let result ← unwrap (runCollection heap algorithm collection)
           unwrap (Format.writeHeap result)
     -- Finish validation and serialization before emitting the heap.
     let stdout ← IO.getStdout

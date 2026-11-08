@@ -19,6 +19,7 @@ namespace
     {
         differential::Algorithm algorithm;
         std::filesystem::path heap_file;
+        differential::Collection collection;
     };
 
     CommandLine parse_command_line(const cxxopts::ParseResult &parsed)
@@ -27,21 +28,28 @@ namespace
             throw std::runtime_error(
                 "specify exactly one --algorithm mark|evacuate");
         if(parsed.count("collection") != 1)
-            throw std::runtime_error("specify exactly one --collection full");
-        if(parsed["collection"].as<std::string>() != "full")
             throw std::runtime_error(
-                "unsupported collection; only full is supported");
+                "specify exactly one --collection full|young");
+        const auto collection = parsed["collection"].as<std::string>();
+        if(collection != "full" && collection != "young")
+            throw std::runtime_error(
+                "unsupported collection; use full or young");
         const auto algorithm = parsed["algorithm"].as<std::string>();
         if(algorithm != "mark" && algorithm != "evacuate")
             throw std::runtime_error(
                 "unsupported algorithm; use mark or evacuate");
+        if(collection == "young" && algorithm == "mark")
+            throw std::runtime_error(
+                "young collection supports evacuation only");
         // Non-option arguments are preserved verbatim, including commas in
         // paths. Unknown options are rejected by cxxopts itself.
         if(parsed.unmatched().size() != 1)
             throw std::runtime_error("expected exactly one input heap file");
         return {algorithm == "mark" ? differential::Algorithm::Mark
                                     : differential::Algorithm::Evacuate,
-                parsed.unmatched().front()};
+                parsed.unmatched().front(),
+                collection == "full" ? differential::Collection::Full
+                                     : differential::Collection::Young};
     }
 
     std::string read_file(const std::filesystem::path &path)
@@ -81,12 +89,13 @@ int main(int argc, const char *argv[])
     {
         cxxopts::Options options("gc_cpp",
                                  "Collect a GC heap JSON v2 snapshot.");
-        options.custom_help("--algorithm mark|evacuate --collection full FILE");
+        options.custom_help(
+            "--algorithm mark|evacuate --collection full|young FILE");
         options.add_options()("h,help", "Print help and exit")(
             "algorithm", "Collection algorithm: mark or evacuate",
-            cxxopts::value<std::string>())("collection",
-                                           "Collection selection: full",
-                                           cxxopts::value<std::string>());
+            cxxopts::value<std::string>())(
+            "collection", "Collection selection: full or young",
+            cxxopts::value<std::string>());
         const auto parsed = options.parse(argc, argv);
         if(parsed.count("help") != 0)
         {
@@ -95,8 +104,8 @@ int main(int argc, const char *argv[])
         }
         const auto command = parse_command_line(parsed);
         const auto input = format::parse_heap(read_file(command.heap_file));
-        const auto result =
-            differential::run_collection(input, command.algorithm);
+        const auto result = differential::run_collection(
+            input, command.algorithm, command.collection);
         // Validate and serialize the complete snapshot before emitting heap
         // data.
         const auto output = format::write_heap(result);

@@ -23,13 +23,14 @@ gc_lean --algorithm evacuate --collection full before.json > lean-after.json
 ```
 
 Both commands are implemented with matching file interfaces.
-`--algorithm` is `mark` or `evacuate`. This slice supports
-only `--collection full`; `young` is rejected
-until the model supports generation filtering. Seeds, generator settings,
+`--algorithm` is `mark` or `evacuate`. Full collection supports both. Young
+collection currently supports strong-only evacuation: `--algorithm evacuate
+--collection young`, with empty owner and external weak arrays. Young mark and
+young weak collection are rejected. Seeds, generator settings,
 completion status and diagnostic traces are outside the heap file. A rejected,
 crashed or unfinished run must fail rather than emit a successful heap result.
 
-Both runners require exactly one `--algorithm`, one `--collection`, and one input
+Both runners require exactly one `--algorithm`, one `--collection full|young`, and one input
 file. They reject duplicate selections and extra files. Collection success emits
 one heap to stdout and exits zero. Argument and validation errors emit no heap,
 write diagnostics to stderr and exit one. File/output and execution errors also
@@ -123,7 +124,7 @@ proof establishes unique old remembered owners and complete old-to-young strong
 coverage. Raw wire data is converted and checked before constructing this type.
 Collection-phase invariants account for pending copies with raw fields and
 processed owners with repaired fields; they do not impose a stable-heap rule on
-all intermediate physical storage.
+all intermediate physical storage. See [the model and proof boundaries](young-strong.md).
 
 ## Object State Enums
 

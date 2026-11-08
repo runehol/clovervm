@@ -49,6 +49,12 @@ expect_heap(mark "${FIXTURE_DIR}/after_mark.json"
     --algorithm mark --collection full "${before}")
 expect_heap(evacuate "${FIXTURE_DIR}/after.json"
     --algorithm evacuate --collection full "${before}")
+expect_heap(young "${FIXTURE_DIR}/young_after.json"
+    --algorithm evacuate --collection young "${FIXTURE_DIR}/young_before.json")
+expect_heap(full-with-remembered "${FIXTURE_DIR}/young_full_after.json"
+    --algorithm evacuate --collection full "${FIXTURE_DIR}/young_before.json")
+expect_failure(young-weak "empty weak"
+    --algorithm evacuate --collection young "${before}")
 
 # Exercise exact paths and end-of-options handling without a shell.
 configure_file("${before}" "${TEST_DIR}/input heap, with spaces.json" COPYONLY)
@@ -78,7 +84,7 @@ expect_failure(missing-algorithm "--algorithm" --collection full "${before}")
 expect_failure(missing-collection "--collection" --algorithm mark "${before}")
 expect_failure(missing-file "one input heap file" --algorithm mark --collection full)
 expect_failure(extra-file "one input heap file" --algorithm mark --collection full "${before}" "${before}")
-expect_failure(young "unsupported collection" --algorithm mark --collection young "${before}")
+expect_failure(young "evacuation only" --algorithm mark --collection young "${before}")
 expect_failure(unknown-collection "unsupported collection" --algorithm mark --collection unknown "${before}")
 expect_failure(unknown-algorithm "unsupported algorithm" --algorithm unknown --collection full "${before}")
 expect_failure(unknown-option "unknown-option" --algorithm mark --collection full --unknown-option "${before}")
