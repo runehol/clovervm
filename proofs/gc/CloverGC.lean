@@ -13,3 +13,5 @@ import CloverGC.WeakAudit
 import CloverGC.GenerationalCorrectness
 import CloverGC.GenerationalAudit
 import CloverGC.GenerationalExamples
+import CloverGC.GenerationalWeakExamples
+import CloverGC.GenerationalWeakAudit
