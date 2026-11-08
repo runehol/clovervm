@@ -254,8 +254,10 @@ either runner. Exact registration order, unique registration and deferred-queue
 accounting are proved, as are local late completion and early/late repair
 compatibility. A semantic unit invariant is preserved by fresh early registration.
 Strong-state progress and weak drain preservation are proved, including the
-invariant immediately before actual deferred repair. Final deferred-repair
-correctness and retained-reference safety remain pending.
+invariant immediately before actual deferred repair. Every registered unit is
+proved equal to direct late repair of its original template; unregistered units
+remain unchanged. Strong closure precedes late repair and the final weak queue
+is empty. Retained-reference safety remains pending.
 
 [Young-only strong evacuation](young-strong.md) describes the proof-carrying
 heap representation and collection invariants. `RawGenerationalHeap` represents

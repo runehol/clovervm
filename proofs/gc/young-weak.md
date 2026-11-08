@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Implementation plan |
 | Status | Accepted |
-| Implementation | Partial: resolver, weak heap, driver, scheduling and local repair proofs; collection repair and safety pending |
+| Implementation | Partial: model and repair correctness proved; retained-reference safety and runner integration pending |
 | Scope | Extend the generational strong model with young weak repair |
 | Owning layers | Lean owns the model and proofs; differential runners own format conversion and capture |
 | Validated against | Lean 4.35.0 and `src/gc/evacuation.h::resolve_weak` |
@@ -90,10 +90,20 @@ explicit weak visits before strong seeding. Examples cover forwarding/mark
 preservation, zero fuel, remembered old storage, copied-owner units, unregistered
 storage and full mode. Exact axiom guards cover all seven new results.
 
+Slice eight proves final unit-value correctness. Every registered unit equals
+direct late repair of its original template against the independent final
+strong result. Exact lookup for unique late visits combines compatibility of
+pending units with correctness of already-settled units. Unregistered units
+remain unchanged, including inactive storage that direct repair would clear.
+The strong queue is empty before late repair and the weak queue is empty after
+collection. Directed examples cover partial early writes, live relocation,
+dead-entry reset, early completion, unvisited inactive storage and full mode.
+Exact axiom guards cover all seven results. Retained-reference safety is still
+separate from these unit-value equalities.
+
 The remaining accepted slices are:
 
-1. Prove final deferred-repair correctness and retained
-   weak-reference safety, preserving the existing full path and proof claims.
+1. Prove retained weak-reference safety, preserving the existing full path and proof claims.
    Split the proof work into further reviewable commits as needed.
 2. Extend the shared before/after heap format to v3 with required ordered
    `remembered_weak` unit IDs. These use existing unit IDs, not allocation IDs
