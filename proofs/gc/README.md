@@ -74,7 +74,7 @@ build-debug/tests/gc_differential/gc_cpp --algorithm evacuate --collection full 
 
 Use `--algorithm mark` for marking without movement or weak repair, and `--help`
 for usage. Both algorithms retain all original allocations in the output.
-Young collection supports strong-only evacuation with empty weak storage. Full
+Young collection supports evacuation with strong and weak storage. Full
 collection supports both algorithms and weak storage. The runner reads one file; stdout carries the
 result heap and stderr carries errors. No VM initialization is required.
 
@@ -115,7 +115,7 @@ lake exe gc_lean --algorithm evacuate --collection full \
 ```
 
 It accepts `mark` or `evacuate` for full collection; young collection supports
-strong-only evacuation. It also supports
+evacuation with strong and weak fields. It also supports
 `--flag=value`, `--` before the path, and `--help`/`-h`. The complete result is
 serialized before writing stdout. Argument, file, format and collection errors
 produce a `gc_lean:` diagnostic on stderr and exit status 1.
@@ -214,9 +214,8 @@ while external units can mix both kinds. References can form cycles and aliases,
 and guards can be inactive. Each owner has at most four strong slots, two weak
 fields and two entries; roots and external units have at most four elements.
 Construction needs no rejection filters or additional heap validator. Both modes
-construct complete strong remembered coverage, including conservative entries
-and permuted remembered-owner order. `collection="young"` generates empty weak
-storage.
+construct complete remembered-owner coverage for both strong and weak references,
+including conservative entries and permuted remembered-owner order.
 
 `campaign.run_campaign(...)` runs separate mark and evacuation properties through
 `assert_equivalent`. `--algorithm mark|evacuate|both` defaults to both for full
@@ -246,18 +245,14 @@ remain runnable.
 
 ### Generational Strong Model
 
-[Young weak resolution and repair](young-weak.md) tracks the next stage. Its
-selection-aware resolver, proof-carrying weak heap and driver, with local proofs,
-validation and examples, are implemented. Erasing weak state preserves the exact
-strong result and scan trace. Young weak collection is not yet connected to
-either runner. Exact registration order, unique registration and deferred-queue
-accounting are proved, as are local late completion and early/late repair
-compatibility. A semantic unit invariant is preserved by fresh early registration.
-Strong-state progress and weak drain preservation are proved, including the
-invariant immediately before actual deferred repair. Every registered unit is
-proved equal to direct late repair of its original template; unregistered units
-remain unchanged. Strong closure precedes late repair and the final weak queue
-is empty. Retained-reference safety remains pending.
+[Generational weak resolution and repair](young-weak.md) uses one remembered
+owner list for strong and weak fields. C++ `RememberedSet`, the JSON `remembered`
+array and Lean `rememberedOwners` describe the same owner membership. Both
+runners support young weak evacuation, and host-CPython campaigns generate
+combined strong/weak coverage. Proofs establish exact strong projection,
+registration and queue accounting, repaired unit values, and safety of external
+storage and retained owners. Physical storage lifetimes and retirement remain
+adapter obligations.
 
 [Young-only strong evacuation](young-strong.md) describes the proof-carrying
 heap representation and collection invariants. `RawGenerationalHeap` represents
@@ -411,5 +406,6 @@ layout safety, or a formal refinement from C++ to Lean. The C++ tests remain
 necessary. The separate copying-discovery slice establishes local forwarding
 properties; the strong-evacuation slice proves the complete abstract strong
 traversal. Executable differential comparison against the C++ test heap is
-implemented separately; young strong selection and remembered coverage are modeled separately. Young
-weak collection, barrier maintenance and runtime ownership proofs remain later work.
+implemented separately. The generational weak model establishes owner-based
+remembered coverage and repair safety; barrier maintenance and runtime ownership
+proofs remain later work.

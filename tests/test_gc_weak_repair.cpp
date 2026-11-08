@@ -297,6 +297,34 @@ namespace cl::gc::test
         EXPECT_EQ(adapter.forwarded_to(child), pointer(owner->strong_cells[0]));
     }
 
+    TEST(GCWeakRepair,
+         RememberedOwnerVisitsBothKindsWithoutRetainingWeakTargets)
+    {
+        TestHeap heap;
+        TestObject *owner = heap.make_object();
+        owner->generation = TestGeneration::Old;
+        TestObject *live = heap.make_object();
+        TestObject *dead = heap.make_object();
+        owner->strong_cells = {TestCell::reference(live)};
+        owner->weak_cells = {TestCell::reference(live),
+                             TestCell::reference(dead)};
+        owner->weak_entries = {
+            TestWeakEntry::active(owner, dead, TestCell::immediate(7))};
+        TestHeapAdapter adapter(heap, TestCollectionKind::YoungOnly);
+        Evacuation<TestHeapAdapter> collection(adapter);
+        collection.add_remembered_owner(owner);
+        collection.finish();
+        EXPECT_FALSE(adapter.is_marked(owner));
+        EXPECT_EQ(TestHeaderKind::Normal, owner->header.kind);
+        EXPECT_NE(nullptr, adapter.forwarded_to(live));
+        EXPECT_EQ(nullptr, adapter.forwarded_to(dead));
+        EXPECT_EQ(TestCell::reference(adapter.forwarded_to(live)),
+                  owner->weak_cells[0]);
+        EXPECT_EQ(TestCell::reference(nullptr), owner->weak_cells[1]);
+        EXPECT_EQ(1u, owner->weak_entries[0].reset_count);
+        EXPECT_EQ(1u, adapter.weak_scan_count(owner));
+    }
+
     TEST(GCWeakRepair, NonMovingOwnersRepairCoordinatedUnitsInPlace)
     {
         TestHeap heap;

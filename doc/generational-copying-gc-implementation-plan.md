@@ -589,7 +589,7 @@ evacuation, including conservative overwritten records and repeated collections.
 No runtime stores or ThreadState buffers are wired. Owner lifetime/invalidation,
 thread coordination/publication, weak remembered units, and full-collection
 retirement remain separate integration gates.
-The standalone `adopt_from(StrongRememberedSet &&)` handoff splices active
+The standalone `adopt_from(RememberedSet &&)` handoff splices active
 blocks in constant time, preserving entry addresses and header membership.
 Sealed counts allow partial intermediate blocks. The receiver keeps its active
 prefix and takes the entire source chain; the source becomes empty and receives

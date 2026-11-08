@@ -1,4 +1,4 @@
-#include "gc/strong_remembered_set.h"
+#include "gc/remembered_set.h"
 
 #include "memory/heap_space.h"
 
@@ -29,11 +29,11 @@ namespace
         return object;
     }
 
-    TEST(GCStrongRememberedSet, EmptyResetAndOwnership)
+    TEST(GCRememberedSet, EmptyResetAndOwnership)
     {
-        static_assert(!std::is_copy_constructible_v<StrongRememberedSet>);
-        static_assert(!std::is_move_constructible_v<StrongRememberedSet>);
-        StrongRememberedSet set;
+        static_assert(!std::is_copy_constructible_v<RememberedSet>);
+        static_assert(!std::is_move_constructible_v<RememberedSet>);
+        RememberedSet set;
         EXPECT_TRUE(set.empty());
         size_t visits = 0;
         set.for_each_owner([&](HeapObject *) { ++visits; });
@@ -43,13 +43,13 @@ namespace
         EXPECT_EQ(0u, visits);
     }
 
-    TEST(GCStrongRememberedSet, FiltersStoresAndDeduplicatesWithHeaderState)
+    TEST(GCRememberedSet, FiltersStoresAndDeduplicatesWithHeaderState)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
         auto *old_child = make_header(objects, HeapGenerationState::Old);
         auto *owner = make_header(objects, HeapGenerationState::Old);
-        StrongRememberedSet set;
+        RememberedSet set;
         set.record_store(young, young);
         set.record_store(young, old_child);
         set.record_store(owner, nullptr);
@@ -76,7 +76,7 @@ namespace
         EXPECT_EQ(HeapGenerationState::Young, young->generation_state());
     }
 
-    TEST(GCStrongRememberedSet, PreconditionedRecordingCrossesAndReusesBlocks)
+    TEST(GCRememberedSet, PreconditionedRecordingCrossesAndReusesBlocks)
     {
         HeapSpace objects;
         std::vector<HeapObject *> owners;
@@ -89,7 +89,7 @@ namespace
             }
             owners.push_back(owner);
         }
-        StrongRememberedSet set;
+        RememberedSet set;
         for(size_t count: {size_t{1023}, size_t{1}, size_t{512}, size_t{1023}})
         {
             for(size_t index = 0; index < count; ++index)
@@ -114,7 +114,7 @@ namespace
         }
     }
 
-    TEST(GCStrongRememberedSet, PreservesOtherHeaderStateForBothMobilities)
+    TEST(GCRememberedSet, PreservesOtherHeaderStateForBothMobilities)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
@@ -127,7 +127,7 @@ namespace
             owner->refcount() = 17;
             owner->set_lifecycle_state(HeapLifecycleState::InZct);
             Bytes before = std::bit_cast<Bytes>(*owner);
-            StrongRememberedSet set;
+            RememberedSet set;
             set.record_store(owner, young);
             EXPECT_EQ(17, owner->refcount());
             EXPECT_EQ(uint16_t{0xbeef}, owner->native_layout_aux_count_value());
@@ -139,7 +139,7 @@ namespace
         }
     }
 
-    TEST(GCStrongRememberedSet, IteratesOnlyActivePrefixesAcrossBlockReuse)
+    TEST(GCRememberedSet, IteratesOnlyActivePrefixesAcrossBlockReuse)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
@@ -148,7 +148,7 @@ namespace
         {
             owners.push_back(make_header(objects, HeapGenerationState::Old));
         }
-        StrongRememberedSet set;
+        RememberedSet set;
         // Exact block ends, rollover, then smaller and larger reused prefixes.
         // Inactive cells retain stale values and must not be visited/reset.
         for(size_t count:
@@ -184,9 +184,9 @@ namespace
         }
     }
 
-    TEST(GCStrongRememberedSet, CachedBlocksDoNotKeepOldOwnerStorageAccessible)
+    TEST(GCRememberedSet, CachedBlocksDoNotKeepOldOwnerStorageAccessible)
     {
-        StrongRememberedSet set;
+        RememberedSet set;
         {
             HeapSpace objects;
             auto *young = make_header(objects, HeapGenerationState::Young);
@@ -216,7 +216,7 @@ namespace
         // Destruction must also ignore inactive cells whose owners are gone.
     }
 
-    TEST(GCStrongRememberedSet, HandoffPreservesHeadersAcrossBlockBoundaries)
+    TEST(GCRememberedSet, HandoffPreservesHeadersAcrossBlockBoundaries)
     {
         enum class CacheState
         {
@@ -250,11 +250,11 @@ namespace
                         }
                         owners.push_back(owner);
                     }
-                    StrongRememberedSet destination;
-                    StrongRememberedSet source;
+                    RememberedSet destination;
+                    RememberedSet source;
                     if(cache == CacheState::Reused)
                     {
-                        for(StrongRememberedSet *set: {&destination, &source})
+                        for(RememberedSet *set: {&destination, &source})
                         {
                             for(HeapObject *owner: owners)
                             {
@@ -324,7 +324,7 @@ namespace
                 }
     }
 
-    TEST(GCStrongRememberedSet, SpliceExchangesSpareChainsAndResealsOnRefill)
+    TEST(GCRememberedSet, SpliceExchangesSpareChainsAndResealsOnRefill)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
@@ -342,8 +342,8 @@ namespace
         auto appended_owners = make_owners(510);
         auto *source_replacement =
             make_header(objects, HeapGenerationState::Old);
-        StrongRememberedSet source;
-        StrongRememberedSet destination;
+        RememberedSet source;
+        RememberedSet destination;
         std::unordered_map<HeapObject *, HeapObject *const *> source_cells;
         std::unordered_map<HeapObject *, HeapObject *const *> destination_cells;
         for(HeapObject *owner: source_owners)
@@ -429,18 +429,18 @@ namespace
         }
     }
 
-    TEST(GCStrongRememberedSet, FreshSourcesReceiveTheReceiversDisplacedCache)
+    TEST(GCRememberedSet, FreshSourcesReceiveTheReceiversDisplacedCache)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
         auto *owner = make_header(objects, HeapGenerationState::Old);
         auto *replacement = make_header(objects, HeapGenerationState::Old);
-        StrongRememberedSet receiver;
+        RememberedSet receiver;
         HeapObject *const *previous_cell = nullptr;
         for(size_t cycle = 0; cycle < 100; ++cycle)
         {
             {
-                StrongRememberedSet source;
+                RememberedSet source;
                 source.record_store(owner, young);
                 HeapObject *const *incoming_cell = nullptr;
                 source.for_each_owner([&](HeapObject *const &entry) {
@@ -479,7 +479,7 @@ namespace
         }
     }
 
-    TEST(GCStrongRememberedSet, ChainedHandoffsSurviveSourceDestruction)
+    TEST(GCRememberedSet, ChainedHandoffsSurviveSourceDestruction)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
@@ -488,13 +488,13 @@ namespace
         {
             owners.push_back(make_header(objects, HeapGenerationState::Old));
         }
-        StrongRememberedSet receiver;
+        RememberedSet receiver;
         receiver.record_store(owners[0], young);
         {
-            StrongRememberedSet intermediate;
+            RememberedSet intermediate;
             intermediate.record_store(owners[1], young);
             {
-                StrongRememberedSet source;
+                RememberedSet source;
                 for(size_t index = 2; index < owners.size(); ++index)
                 {
                     source.record_store(owners[index], young);
@@ -519,15 +519,14 @@ namespace
         receiver.clear_after_collection();
     }
 
-    TEST(GCStrongRememberedSet,
-         SourceCanBeReusedWithoutLosingTransferredMembership)
+    TEST(GCRememberedSet, SourceCanBeReusedWithoutLosingTransferredMembership)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
         auto *first = make_header(objects, HeapGenerationState::Old);
         auto *second = make_header(objects, HeapGenerationState::Old);
-        StrongRememberedSet destination;
-        StrongRememberedSet source;
+        RememberedSet destination;
+        RememberedSet source;
         source.record_store(first, young);
         destination.adopt_from(std::move(source));
         // The source still observes global header membership in destination.
@@ -549,20 +548,20 @@ namespace
     }
 
 #ifndef NDEBUG
-    TEST(GCStrongRememberedSetDeathTest, RejectsSelfAdoption)
+    TEST(GCRememberedSetDeathTest, RejectsSelfAdoption)
     {
-        StrongRememberedSet set;
+        RememberedSet set;
         EXPECT_DEATH(set.adopt_from(std::move(set)), "this != &source");
     }
 #endif
 
-    TEST(GCStrongRememberedSet, HeaderMembershipCanBelongToAnotherThreadSet)
+    TEST(GCRememberedSet, HeaderMembershipCanBelongToAnotherThreadSet)
     {
         HeapSpace objects;
         auto *young = make_header(objects, HeapGenerationState::Young);
         auto *owner = make_header(objects, HeapGenerationState::Old);
-        StrongRememberedSet first;
-        StrongRememberedSet second;
+        RememberedSet first;
+        RememberedSet second;
         first.record_store(owner, young);
         second.record_store(owner, young);
         EXPECT_FALSE(first.empty());

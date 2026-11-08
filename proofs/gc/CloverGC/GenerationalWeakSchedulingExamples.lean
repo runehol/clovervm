@@ -9,13 +9,12 @@ private def minor : Input 2 2 := {
     data := {
       strong := {
         data := ⟨⟨fun _ => []⟩, fun o => if o = 0 then .oldMovable .ordinary
-          else .youngMovable .ordinary, []⟩
+          else .youngMovable .ordinary, [0]⟩
         valid := by decide }
       units := {
         templates := fun id => if id = 0 then .field (.reference (some 1)) else .field (.immediate 4)
         ownerUnits := fun owner => if owner = 0 then [0] else []
-        external := [1] }
-      rememberedWeak := [0] }
+        external := [1] } }
     valid := by decide }
   collection := .young
   roots := [] }

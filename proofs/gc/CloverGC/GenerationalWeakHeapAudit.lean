@@ -7,12 +7,6 @@ import CloverGC.GenerationalWeakHeap
 /-- info: 'CloverGC.Generational.Weak.WeakHeap.owner_not_external' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms CloverGC.Generational.Weak.WeakHeap.owner_not_external
-/-- info: 'CloverGC.Generational.Weak.WeakHeap.remembered_not_external' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms CloverGC.Generational.Weak.WeakHeap.remembered_not_external
-/-- info: 'CloverGC.Generational.Weak.WeakHeap.remembered_owner_old' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms CloverGC.Generational.Weak.WeakHeap.remembered_owner_old
 /-- info: 'CloverGC.Generational.Weak.WeakHeap.unremembered_targets_old' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms CloverGC.Generational.Weak.WeakHeap.unremembered_targets_old

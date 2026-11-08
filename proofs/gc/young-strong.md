@@ -29,7 +29,7 @@ the full weak protocol and its proofs. Young liveness is selected reachability
 from selected roots and remembered-owner edges; it includes children of old
 owners that are unreachable from the current roots.
 
-Heap format v2 adds required `remembered_strong` allocation IDs. Both runners
+Heap format v2 adds required `remembered` allocation IDs. Both runners
 validate the same generational contract; Lean conversion constructs the
 well-formedness proof. Input and output retain the supplied list, before reset
 or source retirement. Young mode initially requires empty weak storage and

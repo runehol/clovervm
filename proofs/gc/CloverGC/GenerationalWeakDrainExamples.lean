@@ -4,37 +4,36 @@ namespace CloverGC.Generational.Weak.DrainExamples
 
 open Copying
 
-private def input : Input 5 5 := {
+private def input : Input 6 5 := {
   heap := {
     data := {
       strong := {
         data := {
           graph := ⟨fun o => if o = 0 then [1] else if o = 1 then [2] else []⟩
           objectKind := fun o => if o = 0 then .oldMovable .ordinary
-            else if o = 3 then .nonmovingOld else .youngMovable .ordinary
-          rememberedOwners := [0] }
+            else if o = 5 then .oldMovable .ordinary else if o = 3 then .nonmovingOld else .youngMovable .ordinary
+          rememberedOwners := [3, 0] }
         valid := by decide }
       units := {
         templates := fun id => if id = 0 then .field (.reference (some 2))
           else if id = 1 then .entry ⟨some 0, some 1, .reference (some 2)⟩
           else if id = 4 then .field (.reference (some 3)) else .field (.reference (some 4))
-        ownerUnits := fun o => if o = 0 then [0, 4] else if o = 1 then [1]
+        ownerUnits := fun o => if o = 5 then [4] else if o = 0 then [0] else if o = 1 then [1]
           else if o = 3 then [3] else []
-        external := [2] }
-      rememberedWeak := [3, 0] }
+        external := [2] } }
     valid := by decide }
   collection := .young
   roots := [] }
 
-private def drained := (drainWeak input 5 (start input)).1
+private def drained := (drainWeak input 6 (start input)).1
 private def final := (Generational.evacuate input.strongInput).1.copying
 private theorem invariant : UnitInvariant input final drained := beforeFinish_units input
 
 -- Strong progress preserves the copy installed by the remembered strong field.
 example : final.forwarding 1 = some 0 :=
-  (Generational.drain_progress input.strongInput 5 (Generational.start input.strongInput)).forwarding 1 0 (by decide)
+  (Generational.drain_progress input.strongInput 6 (Generational.start input.strongInput)).forwarding 1 0 (by decide)
 example : Reference.copied 0 ∈ final.marked :=
-  (Generational.drain_progress input.strongInput 5 (Generational.start input.strongInput)).marked (.copied 0) (by decide)
+  (Generational.drain_progress input.strongInput 6 (Generational.start input.strongInput)).marked (.copied 0) (by decide)
 example : (Generational.discover input.strongInput final (.source 0)).1.forwarding 0 = none := by decide
 
 -- Zero fuel retains the exact explicit registration prefix.
@@ -55,7 +54,7 @@ example : desired input final 3 = .field (.reference none) := by decide
 -- Full mode also establishes the invariant, registering old units by scanning.
 example : UnitInvariant { input with collection := .full, roots := [0, 3] }
     (Generational.evacuate { input.strongInput with collection := .full, roots := [0, 3] }).1.copying
-    (drainWeak { input with collection := .full, roots := [0, 3] } 5
+    (drainWeak { input with collection := .full, roots := [0, 3] } 6
       (start { input with collection := .full, roots := [0, 3] })).1 := beforeFinish_units _
 
 end CloverGC.Generational.Weak.DrainExamples

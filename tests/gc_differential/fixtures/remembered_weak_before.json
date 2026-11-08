@@ -1,0 +1,95 @@
+{
+  "format": "clover-gc-heap",
+  "version": 2,
+  "roots": [
+    {
+      "ref": 1
+    }
+  ],
+  "objects": [
+    {
+      "object_id": "obj-0",
+      "allocation_id": 0,
+      "state": {
+        "kind": "old_original",
+        "copy_to": "ordinary",
+        "header": {
+          "kind": "normal",
+          "marked": false
+        }
+      },
+      "strong": [],
+      "weak": [
+        {
+          "unit_id": 0,
+          "kind": "field",
+          "value": {
+            "ref": 1
+          }
+        },
+        {
+          "unit_id": 1,
+          "kind": "entry",
+          "guards": [
+            0,
+            0
+          ],
+          "payload": {
+            "ref": 2
+          }
+        },
+        {
+          "unit_id": 2,
+          "kind": "entry",
+          "guards": [
+            null,
+            0
+          ],
+          "payload": {
+            "ref": 2
+          }
+        }
+      ]
+    },
+    {
+      "object_id": "obj-1",
+      "allocation_id": 1,
+      "state": {
+        "kind": "young_original",
+        "copy_to": "ordinary",
+        "header": {
+          "kind": "normal",
+          "marked": false
+        }
+      },
+      "strong": [],
+      "weak": []
+    },
+    {
+      "object_id": "obj-2",
+      "allocation_id": 2,
+      "state": {
+        "kind": "young_original",
+        "copy_to": "ordinary",
+        "header": {
+          "kind": "normal",
+          "marked": false
+        }
+      },
+      "strong": [],
+      "weak": []
+    }
+  ],
+  "external_weak": [
+    {
+      "unit_id": 3,
+      "kind": "field",
+      "value": {
+        "imm": 0
+      }
+    }
+  ],
+  "remembered": [
+    0
+  ]
+}

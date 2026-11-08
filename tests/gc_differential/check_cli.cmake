@@ -53,8 +53,12 @@ expect_heap(young "${FIXTURE_DIR}/young_after.json"
     --algorithm evacuate --collection young "${FIXTURE_DIR}/young_before.json")
 expect_heap(full-with-remembered "${FIXTURE_DIR}/young_full_after.json"
     --algorithm evacuate --collection full "${FIXTURE_DIR}/young_before.json")
-expect_failure(young-weak "empty weak"
+expect_heap(young-weak "${FIXTURE_DIR}/weak_young_after.json"
     --algorithm evacuate --collection young "${before}")
+expect_heap(remembered-weak "${FIXTURE_DIR}/remembered_weak_after.json"
+    --algorithm evacuate --collection young "${FIXTURE_DIR}/remembered_weak_before.json")
+expect_heap(full-remembered-weak "${FIXTURE_DIR}/remembered_weak_full_after.json"
+    --algorithm evacuate --collection full "${FIXTURE_DIR}/remembered_weak_before.json")
 
 # Exercise exact paths and end-of-options handling without a shell.
 configure_file("${before}" "${TEST_DIR}/input heap, with spaces.json" COPYONLY)
@@ -62,7 +66,7 @@ expect_heap(path-with-spaces-and-comma "${FIXTURE_DIR}/after.json"
     --collection full --algorithm=evacuate -- "${TEST_DIR}/input heap, with spaces.json")
 
 file(WRITE "${TEST_DIR}/empty.json" [=[
-{"format":"clover-gc-heap","version":2,"roots":[],"objects":[],"external_weak":[],"remembered_strong":[]}
+{"format":"clover-gc-heap","version":2,"roots":[],"objects":[],"external_weak":[],"remembered":[]}
 ]=])
 foreach(algorithm IN ITEMS mark evacuate)
     expect_heap("empty-${algorithm}" "${TEST_DIR}/empty.json"
@@ -104,7 +108,7 @@ expect_failure(unreadable-directory "cannot read input file"
 file(WRITE "${TEST_DIR}/malformed.json" "{broken")
 expect_failure(malformed-json "$" --algorithm mark --collection full "${TEST_DIR}/malformed.json")
 file(WRITE "${TEST_DIR}/invalid-reference.json" [=[
-{"format":"clover-gc-heap","version":2,"roots":[{"ref":0}],"objects":[],"external_weak":[],"remembered_strong":[]}
+{"format":"clover-gc-heap","version":2,"roots":[{"ref":0}],"objects":[],"external_weak":[],"remembered":[]}
 ]=])
 expect_failure(invalid-reference "reference names no allocation"
     --algorithm evacuate --collection full "${TEST_DIR}/invalid-reference.json")

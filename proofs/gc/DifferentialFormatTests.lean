@@ -13,7 +13,7 @@ private def fixture (name : String) : IO ByteArray :=
 private def changeObject (heap : HeapSnapshot) (id : Nat) (f : Allocation → Allocation) : HeapSnapshot :=
   { heap with objects := heap.objects.map fun a => if a.allocationId.value == id then f a else a }
 private def emptyText : String :=
-  "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[],\"objects\":[],\"external_weak\":[],\"remembered_strong\":[]}"
+  "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[],\"objects\":[],\"external_weak\":[],\"remembered\":[]}"
 private def ref (n : Nat) : Cell := .reference (some ⟨n⟩)
 
 -- Runtime assertions deliberately stay outside collector proofs and their
@@ -39,11 +39,17 @@ def main : IO Unit := do
     snapshots := snapshots.push heap
   let some before := snapshots[0]? | throw (IO.userError "missing before fixture")
   let some after := snapshots[1]? | throw (IO.userError "missing after fixture")
-  rejectHeap "missing remembered coverage" { before with rememberedStrong := #[] }
-  rejectHeap "duplicate remembered owner" { before with rememberedStrong := #[⟨0⟩, ⟨0⟩] }
-  rejectHeap "young remembered owner" { before with rememberedStrong := #[⟨0⟩, ⟨1⟩] }
-  rejectHeap "unknown remembered owner" { before with rememberedStrong := #[⟨0⟩, ⟨99⟩] }
-  check "conservative remembered owner" (validateHeap { before with rememberedStrong := #[⟨0⟩, ⟨2⟩] }).isOk
+  rejectHeap "missing remembered coverage" { before with remembered := #[] }
+  rejectHeap "duplicate remembered owner" { before with remembered := #[⟨0⟩, ⟨0⟩] }
+  rejectHeap "young remembered owner" { before with remembered := #[⟨0⟩, ⟨1⟩] }
+  rejectHeap "unknown remembered owner" { before with remembered := #[⟨0⟩, ⟨99⟩] }
+  check "conservative remembered owner" (validateHeap { before with remembered := #[⟨0⟩, ⟨2⟩] }).isOk
+  let weakOwner ← ok "weak-only fixture" (parseHeap (← IO.FS.readBinFile "../../tests/gc_differential/fixtures/remembered_weak_before.json"))
+  rejectHeap "weak-only missing remembered owner" { weakOwner with remembered := #[] }
+  let inactiveHeap := { changeObject weakOwner 0 (fun a =>
+      { a with weak := #[⟨⟨0⟩, .entry ⟨none, some ⟨0⟩, ref 2⟩⟩] }) with
+    externalWeak := #[⟨⟨1⟩, .field (.immediate 0)⟩], remembered := #[] }
+  rejectHeap "inactive weak payload needs remembered owner" inactiveHeap
   let [a, b, c] := before.objects.toList | throw (IO.userError "wrong original count")
   check "decoded roots" (before.roots == #[ref 1, ref 1])
   check "decoded identities" (a.objectId == ⟨"obj-0"⟩ && b.objectId == ⟨"obj-1"⟩ && c.objectId == ⟨"obj-2"⟩)

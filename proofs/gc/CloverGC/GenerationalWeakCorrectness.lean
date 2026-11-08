@@ -6,7 +6,7 @@ open Copying
 
 theorem beforeFinish_strong (input : Input n k) :
     (drainWeak input n (start input)).1.strong = (Generational.evacuate input.strongInput).1 := by
-  simpa [start, Generational.evacuate] using congrArg Prod.fst (drainWeak_strong input n (start input))
+  simpa [Generational.evacuate] using congrArg Prod.fst (drainWeak_strong input n (start input))
 
 theorem beforeFinish_complete (input : Input n k) :
     (drainWeak input n (start input)).1.strong.copying.pending = [] := by
@@ -69,7 +69,8 @@ theorem collection_unregistered_unchanged (input : Input n k) (id : Fin k)
   have outside : id ∉ before.registered := by
     simpa [collectWeak, finishDeferred, before] using unregistered
   have initialSub : (start input).pending.Sublist (start input).registered := by
-    apply earlyVisits_pending_sublist input _ _ (List.Sublist.refl [])
+    apply rememberOwners_pending_sublist
+    exact earlyVisits_pending_sublist input _ _ (List.Sublist.refl [])
   have sub := drainWeak_pending_sublist input n (start input) initialSub
   have not_pending : id ∉ before.pending := fun member => outside (sub.subset member)
   change (lateVisits input before before.pending).units id = _

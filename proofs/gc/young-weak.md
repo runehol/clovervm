@@ -1,122 +1,77 @@
-# Young Weak Resolution and Repair
+# Generational Weak Resolution and Repair
 
 | Field | Value |
 |---|---|
-| Document type | Implementation plan |
+| Document type | Design reference |
 | Status | Accepted |
-| Implementation | Partial: model and repair correctness proved; retained-reference safety and runner integration pending |
-| Scope | Extend the generational strong model with young weak repair |
-| Owning layers | Lean owns the model and proofs; differential runners own format conversion and capture |
-| Validated against | Lean 4.35.0 and `src/gc/evacuation.h::resolve_weak` |
-| Supersedes | N/A |
+| Implementation | Owner-based remembered scanning, model proofs and both differential runners |
+| Scope | One full or young collection with strong and weak fields |
+| Owning layers | C++ collector owns owner scanning; Lean owns the model and proofs; runners own conversion and capture |
+| Validated against | `src/gc/evacuation.h`, `src/gc/remembered_set.h`, Lean definitions and differential checks |
+| Supersedes | Separate weak-unit remembered-set proposal |
 
-Slice one implements `Generational.Weak.resolve`. Unselected sources resolve
-unchanged before forwarding or marks are inspected. Selected sources delegate
-to the existing full weak resolver. Allocated copies resolve unchanged; the
-strong invariant supplies their validity and marks. The resolver returns only a
-resolution, with no strong discovery, allocation or state update.
+## One remembered owner set
 
-Checked results establish old-target preservation in young mode, exact full
-resolver equivalence, no early Dead or late Pending, stability of early
-decisions under strong progress, and retained-reference safety for successful
-late resolution under the copy invariant and valid-reference preconditions.
-Examples cover old movable and nonmoving objects without
-marks, unresolved/forwarded young targets, mixed-age guards and weak payloads,
-coordinated reset, and distinct immediate/null cells. Exact axiom guards are
-imported by the default build. The full weak model is unchanged.
+`RememberedSet` stores borrowed old owner addresses. Entries neither confer
+liveness nor describe a strong or weak field. The store barrier records an old
+owner when a stored pointer targets a young object. Header membership deduplicates
+owners; conservative entries are allowed. Runtime store integration and physical
+retirement remain separate from the collector template.
 
-Slice two implements `RawWeakHeap`, `WeakWellFormed`, `WeakHeap` and a decidable
-validator that returns the validity witness with the unchanged data. It reuses
-the existing unit partition rules and requires every unit to be located at an
-owner or externally. Remembered weak unit IDs are unique and belong to old
-owners, including nonmoving owners. Every old-owner unit with a young target is
-covered, including either guard or the payload and inactive entries.
-Conservative remembered units are allowed. Coverage is independent of
-collection mode and separate from strong remembered membership.
+The JSON heap has one ordered `remembered` array of original allocation IDs.
+There is no `remembered_weak` array. Version 2 is updated in place because all
+consumers and fixtures belong to this internal testing format.
 
-Derived results establish owner uniqueness, owner/external and
-remembered/external separation, the age of a remembered unit's owner, and the
-absence of young targets in unremembered old-owner units. Checked examples test
-formal invalidity and validator rejection, complete location, each stored target
-position, conservative/nonmoving cases, order preservation and empty heaps.
-Unit IDs abstract disjoint repair storage; native address/lifetime correctness
-remains an adapter obligation.
+The Lean strong projection retains its `rememberedOwners` list. A proof-carrying
+`WeakHeap` adds unit ownership and weak coverage against that same owner list;
+it has no independent weak remembered state. Every old-to-young strong or weak
+reference requires its owner remembered. Weak coverage includes both guards and
+referenced payloads, even in inactive entries. Nulls and immediates add no edge.
 
-Slice three implements the driver with the existing weak state and repair
-semantics. It registers external units followed by remembered weak units in
-young mode, then seeds roots and strong remembered fields. Full mode omits
-remembered weak registration. Each strong scan visits its owner's units after
-repairing strong fields, and deferred repair runs after the drain. Erasing weak
-state preserves both the entire strong result and scan trace, with an auxiliary
-theorem for arbitrary fuel and state. Exact axiom guards and directed examples
-are included. Registration and deferred-queue proofs follow in slice four.
+## Collection schedule
 
-Slice four proves exact registration order and membership: external units,
-mode-selected remembered units, then units belonging to logically scanned
-owners. Registration is unique. The old-owner witness separates remembered
-units from young scanned owners; full mode omits remembered registration.
-Deferred work is a subsequence of registration history, and late visits equal
-that queue exactly, in order and without duplicates. Checked examples include
-an unrooted old owner's remembered unit and full-mode owner reachability.
-Exact axiom guards track the standard Lean axioms used by these proofs.
+External weak units are visited first, followed by strong roots. Young collection
+then processes each remembered owner in list order: strong slots first, then all
+weak units in that owner's storage. The owner itself is not marked, enqueued or
+moved. Strong slots discover young targets; weak units only relocate or clear
+references. Full collection ignores remembered membership as additional roots
+and visits owned units when their objects are scanned.
 
-Slice five lifts selection-aware resolver stability through optional fields,
-tagged cells and coordinated entries. Late unit repair always completes. Early
-repair followed by late repair equals direct late repair, and an early Complete
-result already equals its eventual late result, assuming strong-state progress.
-These local results do not require a copy invariant or valid-reference witness;
-they establish repair semantics, not retained-reference safety. Directed examples
-cover mixed ages, partial early relocation, dead-guard reset, inactive entries,
-nulls and immediates. Exact axiom guards require only `propext` for the three
-main results. The driver and existing full-model proofs are unchanged.
+Pending objects are drained in FIFO order, again visiting strong fields before
+weak units. Deferred weak repair runs after strong closure. The owner list stays
+in diagnostic output before any remembered-set retirement.
 
-Slice six introduces `desired`, direct late repair of an original template, and
-a three-field `UnitInvariant` relative to a fixed eventual strong result.
-Unregistered units retain their templates, registered units remain compatible
-with direct late repair, and registered units outside the pending queue already
-equal their desired values. Single and repeated fresh early visits preserve the
-invariant under strong-state progress. Batches require the combined
-registration list to be duplicate-free. Queue properties remain separate in
-the existing scheduling proofs. Directed examples cover settled, pending and
-unregistered units, with exact axiom guards for both preservation results.
+Unselected old references resolve unchanged before forwarding or marks are
+consulted. Selected sources follow the existing full resolver. Early repair can
+partially rewrite an entry before deferring it. Late dead guards or referenced
+payloads reset the coordinated entry to null/null/immediate zero. Inactive
+entries reset when visited; unvisited storage stays unchanged.
 
-Slice seven proves that generational discovery, field repair, scans and bounded
-draining preserve existing marks and forwarding. Weak draining preserves the
-semantic unit invariant relative to its eventual strong result; the final
-registration list's uniqueness supplies fresh per-scan visits. Actual startup
-and draining establish the invariant immediately before deferred repair,
-relative to the independent `Generational.evacuate` result. This includes the
-explicit weak visits before strong seeding. Examples cover forwarding/mark
-preservation, zero fuel, remembered old storage, copied-owner units, unregistered
-storage and full mode. Exact axiom guards cover all seven new results.
+## Proof and capture boundaries
 
-Slice eight proves final unit-value correctness. Every registered unit equals
-direct late repair of its original template against the independent final
-strong result. Exact lookup for unique late visits combines compatibility of
-pending units with correctness of already-settled units. Unregistered units
-remain unchanged, including inactive storage that direct repair would clear.
-The strong queue is empty before late repair and the weak queue is empty after
-collection. Directed examples cover partial early writes, live relocation,
-dead-entry reset, early completion, unvisited inactive storage and full mode.
-Exact axiom guards cover all seven results. Retained-reference safety is still
-separate from these unit-value equalities.
+Erasing weak state preserves the exact strong result and scan trace. Registration
+is external units, units of remembered owners in owner/unit order, then units of
+logically scanned owners. These locations are disjoint and registered once.
+Late visits equal the deferred queue, in order and without duplicates.
 
-The remaining accepted slices are:
+Local repair compatibility is lifted through a three-field semantic invariant:
+unregistered units retain templates, registered units remain compatible with
+final repair, and settled units already equal direct late repair. Owner scanning
+and draining preserve it. Every registered result equals direct late repair of
+its original template; unregistered units remain unchanged. Strong closure
+precedes late repair and the final weak queue is empty. Exact axiom guards are
+part of the default Lean build.
 
-1. Prove retained weak-reference safety, preserving the existing full path and proof claims.
-   Split the proof work into further reviewable commits as needed.
-2. Extend the shared before/after heap format to v3 with required ordered
-   `remembered_weak` unit IDs. These use existing unit IDs, not allocation IDs
-   or a new numbering scheme. Preserve the list through diagnostic capture.
-3. Bind the C++ runner's remembered units to actual old-owner storage and add
-   directed fixtures, without changing the production collector templates.
-4. Extend Lean conversion and capture. Unselected old movable owners must emit
-   repaired weak state; only selected movable originals preserve stale input
-   weak payloads. Add matching runner and process tests.
-5. Extend Python generation and campaigns to young weak heaps and document the
-   completed support. Keep remembered strong owners and weak units separate.
+External units and units of retained owners satisfy the strong model's `Safe`
+predicate. In the unregistered retained-owner case, coverage excludes young
+targets from the unremembered old owner. Discarded owners' diagnostic contents
+are outside this claim. Native storage separation and lifetimes remain adapter
+obligations.
 
-Both runners still reject young heaps containing weak storage. The weak heap's
-coverage is established in the Lean representation; final weak proofs, format
-and runner integration remain pending. Barriers, physical remembered-set retirement/reclamation,
-repeated collections and mutation testing remain separate work.
+Both runners support young weak evacuation. Capture keeps stale weak templates
+only in selected movable originals; unselected old originals emit their repaired
+weak state. Full mark remains marking-only, retaining all cells and units. Host
+CPython campaigns generate both strong and weak fields with combined coverage.
+
+Repeated collections, runtime write-barrier integration, physical remembered-set
+retirement/reclamation and deliberate mutation testing remain separate work.

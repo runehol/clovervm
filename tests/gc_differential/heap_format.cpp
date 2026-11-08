@@ -331,16 +331,14 @@ namespace cl::gc::test::format
         }
         fields(value, "$",
                {"format", "version", "roots", "objects", "external_weak",
-                "remembered_strong"});
+                "remembered"});
         if(string(value.at("format"), "$.format") != "clover-gc-heap")
             fail("$.format", "unsupported format");
         if(natural(value.at("version"), "$.version") != 2)
             fail("$.version", "unsupported version");
         HeapSnapshot heap;
-        for(const auto &v:
-            array(value.at("remembered_strong"), "$.remembered_strong"))
-            heap.remembered_strong.push_back(
-                {natural(v, "$.remembered_strong")});
+        for(const auto &v: array(value.at("remembered"), "$.remembered"))
+            heap.remembered.push_back({natural(v, "$.remembered")});
         heap.roots = cells(value.at("roots"), "$.roots");
         for(const auto &v: array(value.at("objects"), "$.objects"))
         {
@@ -416,13 +414,13 @@ namespace cl::gc::test::format
                 check_reference(*r, p + ".ref");
         };
         std::set<uint64_t> remembered;
-        for(auto id: heap.remembered_strong)
+        for(auto id: heap.remembered)
         {
             if(id.value >= originals ||
                std::holds_alternative<YoungOriginal>(
                    allocations[id.value]->state) ||
                !remembered.insert(id.value).second)
-                fail("$.remembered_strong",
+                fail("$.remembered",
                      "remembered owners must be unique old originals");
         }
         std::set<uint64_t> unit_ids;
@@ -476,6 +474,28 @@ namespace cl::gc::test::format
             check_units(a.weak, p + ".weak",
                         destination(a.state) ? UnitStorage::Destination
                                              : UnitStorage::Original);
+            auto check_weak_target = [&](const Reference &ref) {
+                if(ref && !std::holds_alternative<YoungOriginal>(a.state) &&
+                   std::holds_alternative<YoungOriginal>(
+                       allocations[ref->value]->state) &&
+                   !remembered.contains(a.allocation_id.value))
+                    fail(p + ".weak", "unremembered old-to-young weak edge");
+            };
+            for(const auto &unit: a.weak)
+            {
+                const Cell *cell;
+                if(auto *field = std::get_if<Field>(&unit.contents))
+                    cell = &field->value;
+                else
+                {
+                    const auto &entry = std::get<Entry>(unit.contents);
+                    for(const auto &guard: entry.guards)
+                        check_weak_target(guard);
+                    cell = &entry.payload;
+                }
+                if(auto *ref = std::get_if<Reference>(cell))
+                    check_weak_target(*ref);
+            }
         }
         uint64_t next = 0;
         for(auto id: unit_ids)
@@ -558,9 +578,9 @@ namespace cl::gc::test::format
                    {"roots", cells_json(heap.roots)},
                    {"objects", objects},
                    {"external_weak", units_json(heap.external_weak)},
-                   {"remembered_strong", Json::array()}};
-        for(auto id: heap.remembered_strong)
-            value["remembered_strong"].push_back(id.value);
+                   {"remembered", Json::array()}};
+        for(auto id: heap.remembered)
+            value["remembered"].push_back(id.value);
         return value.dump(2) + "\n";
     }
 }  // namespace cl::gc::test::format

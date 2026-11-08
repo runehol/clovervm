@@ -11,7 +11,7 @@
 namespace cl::gc
 {
     // One tracing/copying phase with fresh per-phase adapter marks. The caller
-    // supplies roots and remembered slots,
+    // supplies roots and remembered owners,
     // excludes mutator activity/safepoints, and keeps source storage alive.
     // Slot decoding, placement and copying belong to the adapter.
     // Only collected inputs are discovered. Mark/enqueue canonical copies or
@@ -41,6 +41,18 @@ namespace cl::gc
             discover_slot(slot);
         }
 
+        // Borrowed owner outside this collection. Scan both kinds of fields
+        // without marking, enqueueing or moving the owner itself.
+        void add_remembered_owner(Object *owner) noexcept
+        {
+            assert(phase_ == Phase::Tracing);
+            assert(owner != nullptr && !heap_.is_collected(owner));
+            heap_.visit_strong_slots(owner,
+                                     [&](Slot slot) { discover_slot(slot); });
+            heap_.visit_weak_units(owner,
+                                   [&](WeakUnit unit) { repair_early(unit); });
+        }
+
         void drain() noexcept
         {
             assert(phase_ == Phase::Tracing);
@@ -55,8 +67,8 @@ namespace cl::gc
             }
         }
 
-        // Explicit weak roots and weak-remembered units use the same protocol
-        // as units discovered in copied objects; neither retains its targets.
+        // Explicit external weak roots use the same repair protocol as units
+        // visited in objects; neither retains its targets.
         void add_weak_root(WeakUnit unit) noexcept
         {
             assert(phase_ == Phase::Tracing);

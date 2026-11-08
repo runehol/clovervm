@@ -49,8 +49,33 @@ theorem drainWeak_units (input : Input n k) (final : CopyState n) (fuel : Nat)
           simpa [drainWeak, step, visited, prepared, ids] using
             ih visited visitedInvariant (by simpa [visited, prepared] using tail_end) finalNodup
 
-/-- Actual startup and draining establish the unit invariant before deferred
-    repair, relative to the independently computed final strong result. -/
+theorem rememberOwners_units (input : Input n k) (final : CopyState n) (state : Copying.Weak.State n k)
+    (owners : List (Fin n)) (invariant : UnitInvariant input final state)
+    (progress : Progress (Generational.remember input.strongInput state.strong owners).copying final)
+    (nodup : (rememberOwners input state owners).registered.Nodup) :
+    UnitInvariant input final (rememberOwners input state owners) := by
+  induction owners generalizing state with
+  | nil => exact invariant
+  | cons owner rest ih =>
+      let result := Generational.repair input.strongInput state.strong.copying (state.strong.originalFields owner)
+      let next := writeFields { state.strong with copying := result.1 } (.source owner) result.2
+      let prepared := { state with strong := next }
+      let visited := rememberOwner input state owner
+      have tailProgress : Progress (Generational.remember input.strongInput next rest).copying final := by
+        simpa [Generational.remember, next, result] using progress
+      have nextProgress := Progress.trans _ _ _ (Generational.remember_progress input.strongInput next rest) tailProgress
+      have registrationNodup : (prepared.registered ++ input.heap.data.units.ownerUnits owner).Nodup := by
+        apply List.Nodup.sublist (List.prefix_append _ (rest.flatMap input.heap.data.units.ownerUnits)).sublist
+        simpa [rememberOwners_registered, List.append_assoc, prepared] using nodup
+      have preparedInvariant : UnitInvariant input final prepared :=
+        ⟨invariant.outside, invariant.compatible, invariant.settled⟩
+      have visitedInvariant : UnitInvariant input final visited :=
+        earlyVisits_preserves input final prepared _ preparedInvariant nextProgress registrationNodup
+      apply ih visited visitedInvariant
+      · simpa [visited, rememberOwner] using tailProgress
+      · simpa [rememberOwners, visited, List.append_assoc] using nodup
+
+/-- Roots and each remembered owner's strong/weak scan establish the invariant. -/
 theorem beforeFinish_units (input : Input n k) :
     UnitInvariant input (Generational.evacuate input.strongInput).1.copying
       (drainWeak input n (start input)).1 := by
@@ -58,21 +83,24 @@ theorem beforeFinish_units (input : Input n k) :
   let initial : Copying.Weak.State n k :=
     ⟨⟨.empty, rawFields input.strongInput.copyInput, []⟩,
       fun id => (input.heap.data.units.templates id).initial, [], [], []⟩
-  let ids := input.heap.data.units.external ++ input.remembered
   have h : UnitInvariant input final initial :=
     ⟨by simp [initial], by simp [initial], by simp [initial]⟩
   have progress : Progress initial.strong.copying final :=
     ⟨by simp [initial, CopyState.empty], by simp [initial, CopyState.empty]⟩
   have finalNodup : (drainWeak input n (start input)).1.registered.Nodup := by
     simpa [collectWeak, finishDeferred] using collection_registered_nodup input
-  have registrationNodup : (initial.registered ++ ids).Nodup := by
-    have initialNodup := List.Nodup.sublist (drainWeak_prefix input n (start input)).sublist finalNodup
-    simpa [start, initial, ids] using initialNodup
-  have seeded := earlyVisits_preserves input final initial ids h progress registrationNodup
-  have started : UnitInvariant input final (start input) :=
-    ⟨seeded.outside, seeded.compatible, seeded.settled⟩
+  have startNodup := List.Nodup.sublist (drainWeak_prefix input n (start input)).sublist finalNodup
+  have seeded := earlyVisits_preserves input final initial input.heap.data.units.external h progress
+    (by simpa [initial] using input.heap.valid.storage.external_nodup)
+  let rooted := { earlyVisits input initial input.heap.data.units.external with
+    strong := Generational.seedRoots input.strongInput }
+  have rootInvariant : UnitInvariant input final rooted := ⟨seeded.outside, seeded.compatible, seeded.settled⟩
+  have started : UnitInvariant input final (start input) := by
+    apply rememberOwners_units input final rooted input.strongInput.remembered rootInvariant
+    · exact Generational.drain_progress input.strongInput n (Generational.start input.strongInput)
+    · exact startNodup
   apply drainWeak_units input final n (start input) started
-  · rfl
+  · rw [start_strong]; rfl
   · exact finalNodup
 
 end CloverGC.Generational.Weak

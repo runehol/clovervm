@@ -21,3 +21,10 @@ import CloverGC.GenerationalWeakDrain
 /-- info: 'CloverGC.Generational.Weak.beforeFinish_units' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CloverGC.Generational.Weak.beforeFinish_units
+
+/-- info: 'CloverGC.Generational.remember_progress' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms CloverGC.Generational.remember_progress
+/-- info: 'CloverGC.Generational.Weak.rememberOwners_units' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Generational.Weak.rememberOwners_units

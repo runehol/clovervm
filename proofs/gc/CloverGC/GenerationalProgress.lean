@@ -21,6 +21,16 @@ theorem repair_progress (input : CollectionInput n) (state : CopyState n) (refer
   | cons reference rest ih =>
       exact Progress.trans _ _ _ (discover_progress input state reference) (ih (discover input state reference).1)
 
+theorem remember_progress (input : CollectionInput n) (state : EvacuationState n) (owners : List (Fin n)) :
+    Progress state.copying (remember input state owners).copying := by
+  induction owners generalizing state with
+  | nil => exact Progress.refl state.copying
+  | cons owner rest ih =>
+      let result := repair input state.copying (state.originalFields owner)
+      let next := writeFields { state with copying := result.1 } (.source owner) result.2
+      have first : Progress state.copying next.copying := repair_progress input state.copying (state.originalFields owner)
+      simpa [remember, result, next] using Progress.trans _ _ _ first (ih next)
+
 theorem scan_progress (input : CollectionInput n) (state next : EvacuationState n) (reference : Reference n)
     (step : scan input state = some (reference, next)) : Progress state.copying next.copying := by
   cases queue : state.copying.pending with

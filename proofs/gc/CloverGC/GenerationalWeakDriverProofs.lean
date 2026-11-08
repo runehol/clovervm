@@ -16,6 +16,18 @@ open Copying
   | nil => rfl
   | cons id rest ih => exact ih (lateVisit input state id)
 
+@[simp] theorem rememberOwners_strong (input : Input n k) (state : Copying.Weak.State n k)
+    (owners : List (Fin n)) : (rememberOwners input state owners).strong =
+      Generational.remember input.strongInput state.strong owners := by
+  induction owners generalizing state with
+  | nil => rfl
+  | cons owner rest ih =>
+      simpa [rememberOwners, rememberOwner, Generational.remember] using ih (rememberOwner input state owner)
+
+@[simp] theorem start_strong (input : Input n k) :
+    (start input).strong = Generational.start input.strongInput := by
+  simp [start, Generational.start]
+
 /-- Erasing weak storage preserves both the complete strong state and scan
     order, for every fuel and state, without any validity assumptions. -/
 theorem drainWeak_strong (input : Input n k) (fuel : Nat) (state : Copying.Weak.State n k) :
@@ -35,7 +47,7 @@ theorem drainWeak_strong (input : Input n k) (fuel : Nat) (state : Copying.Weak.
 theorem collectWeak_strong (input : Input n k) :
     ((collectWeak input).1.strong, (collectWeak input).2) =
       Generational.evacuate input.strongInput := by
-  simpa [collectWeak, finishDeferred, start, Generational.evacuate] using
+  simpa [collectWeak, finishDeferred, Generational.evacuate] using
     drainWeak_strong input n (start input)
 
 end CloverGC.Generational.Weak

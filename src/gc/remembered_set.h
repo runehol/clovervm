@@ -1,5 +1,5 @@
-#ifndef CL_GC_STRONG_REMEMBERED_SET_H
-#define CL_GC_STRONG_REMEMBERED_SET_H
+#ifndef CL_GC_REMEMBERED_SET_H
+#define CL_GC_REMEMBERED_SET_H
 
 #include "object_model/heap_object.h"
 #include "util/compiler.h"
@@ -16,16 +16,16 @@ namespace cl::gc
     // records across all sets participating in the same collection. Owners
     // must remain alive and non-forwarded through clear_after_collection().
     // No RC ownership, safepoints, or runtime store integration is provided.
-    class StrongRememberedSet
+    class RememberedSet
     {
     public:
-        StrongRememberedSet() noexcept = default;
-        ~StrongRememberedSet();
+        RememberedSet() noexcept = default;
+        ~RememberedSet();
 
-        StrongRememberedSet(const StrongRememberedSet &) = delete;
-        StrongRememberedSet &operator=(const StrongRememberedSet &) = delete;
-        StrongRememberedSet(StrongRememberedSet &&) = delete;
-        StrongRememberedSet &operator=(StrongRememberedSet &&) = delete;
+        RememberedSet(const RememberedSet &) = delete;
+        RememberedSet &operator=(const RememberedSet &) = delete;
+        RememberedSet(RememberedSet &&) = delete;
+        RememberedSet &operator=(RememberedSet &&) = delete;
 
         // After a store: child is its decoded pointer, or null for an inline
         // value. No forwarded objects or concurrent header transitions.
@@ -89,7 +89,7 @@ namespace cl::gc
         // An empty source is a no-op. Constant pointer/count
         // work only: no allocation, deallocation, or owner/entry traversal.
         // Both sets' owners must remain valid/non-forwarded.
-        void adopt_from(StrongRememberedSet &&source) noexcept;
+        void adopt_from(RememberedSet &&source) noexcept;
 
     private:
         static constexpr size_t entries_per_block = 510;
@@ -125,4 +125,4 @@ namespace cl::gc
     };
 }  // namespace cl::gc
 
-#endif  // CL_GC_STRONG_REMEMBERED_SET_H
+#endif  // CL_GC_REMEMBERED_SET_H

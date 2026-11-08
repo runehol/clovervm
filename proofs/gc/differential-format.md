@@ -24,9 +24,8 @@ gc_lean --algorithm evacuate --collection full before.json > lean-after.json
 
 Both commands are implemented with matching file interfaces.
 `--algorithm` is `mark` or `evacuate`. Full collection supports both. Young
-collection currently supports strong-only evacuation: `--algorithm evacuate
---collection young`, with empty owner and external weak arrays. Young mark and
-young weak collection are rejected. Seeds, generator settings,
+collection supports evacuation with strong and weak fields: `--algorithm evacuate
+--collection young`, with owner and external weak storage. Young mark is rejected. Seeds, generator settings,
 completion status and diagnostic traces are outside the heap file. A rejected,
 crashed or unfinished run must fail rather than emit a successful heap result.
 
@@ -76,7 +75,7 @@ Null reference cells and immediate zero remain distinct.
 
 | Record | Required fields |
 |---|---|
-| Heap | `format`, `version`, `roots`, `objects`, `external_weak`, `remembered_strong` |
+| Heap | `format`, `version`, `roots`, `objects`, `external_weak`, `remembered` |
 | Object allocation | `object_id`, `allocation_id`, `state`, `strong`, `weak` |
 | Standalone weak field | `unit_id`, `kind: "field"`, `value` |
 | Weak entry | `unit_id`, `kind: "entry"`, `guards`, `payload` |
@@ -99,7 +98,7 @@ and its destination without aliasing their storage.
 
 ## Generational Heap Invariant
 
-`remembered_strong` is an ordered array of distinct allocation IDs naming old
+`remembered` is an ordered array of distinct allocation IDs naming old
 originals: `old_original` or `nonmoving_original`. Membership represents strong
 remembered status; it is independent of the tracing `marked` flag. Nonmoving
 owners follow the same edge rule as other old objects.
@@ -108,12 +107,13 @@ Every old-to-young strong reference must have its owner remembered. Young
 owners may point to any generation. Old owners may always point to old objects,
 including remembered old objects. Conservative remembered owners with no young
 references are allowed. These constraints hold independently of collection mode.
-Weak references have separate coverage obligations; strong remembered membership
-is not inferred from weak fields.
+Every old-to-young weak reference also requires its owner in this same list.
+This includes both guards and referenced payloads, even in inactive entries.
+The list records owners, not strong or weak references.
 
 Full collection ignores the remembered list as additional roots. Young collection
-processes roots, then the actual strong slots of remembered owners in list/slot
-order, then drains copied objects. Old owners are not marked or enqueued. This
+processes roots, then each remembered owner in list order: its actual strong
+slots, followed by all its weak units. It then drains copied objects. Old owners are not marked or enqueued. External weak units are visited before roots. This
 includes owners unreachable from the ordinary roots: their storage still survives
 minor collection. Both snapshots retain the supplied list, before reset or
 retirement. Copy destinations are old and marked; discarded original payloads
@@ -246,7 +246,7 @@ the same object ID, and have a normal header with no further forwarding.
       }
     }
   ],
-  "remembered_strong": [
+  "remembered": [
     0
   ]
 }
@@ -362,7 +362,7 @@ the same object ID, and have a normal header with no further forwarding.
       }
     }
   ],
-  "remembered_strong": [
+  "remembered": [
     0
   ]
 }
@@ -445,7 +445,8 @@ executable model. This is the required projection:
 | Nonmoving original state | Initial classification plus actual model marks |
 | Rewritten reference slots and roots | `EvacuationState` fields/roots and copy records, merged with retained slot layouts |
 | Immediate and null strong/root slots | Their original positions and values in those retained layouts |
-| Weak values in movable originals | Initial templates, since source weak storage is not repaired |
+| Weak values in selected movable originals | Initial templates, since discarded source weak storage is not repaired |
+| Weak values in unselected old originals | Repaired owner storage |
 | Weak values in nonmoving originals and destinations | The corresponding current `Weak.State.units` values |
 | External weak values | Current `Weak.State.units` values for external units |
 
@@ -484,8 +485,8 @@ heap dictionaries. It compares both runners' complete JSON results, distinguishe
 mismatches from runner failures, and preserves original failing inputs and run
 outputs. `heap_strategies.py` constructs valid fresh heaps directly, and
 `campaign.py` runs separate full mark/full evacuation/young evacuation properties
-with bounded Hypothesis generation and replay. Young generation has no weak
-units; both modes construct complete strong remembered coverage. Seeds and Python/Hypothesis versions are recorded with
+with bounded Hypothesis generation and replay. Both modes generate strong and weak fields and construct complete remembered
+owner coverage for both kinds of reference. Seeds and Python/Hypothesis versions are recorded with
 comparison failures, outside the heap. Shrinking remains future work. See the
 [comparison commands and API](README.md#host-python-comparison).
 

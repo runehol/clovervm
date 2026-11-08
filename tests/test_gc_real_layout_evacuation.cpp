@@ -2,7 +2,7 @@
 #include "gc/evacuation.h"
 #include "gc/evacuation_destinations.h"
 #include "gc/evacuation_spaces.h"
-#include "gc/strong_remembered_set.h"
+#include "gc/remembered_set.h"
 #include "memory/heap_constants.h"
 #include "memory/heap_space.h"
 #include "object_model/overflow_slots.h"
@@ -252,7 +252,7 @@ namespace
         fixed_owner->make_non_moving();
         HeapObject *root = old_owner;
         HeapObject *fixed_root = fixed_owner;
-        StrongRememberedSet remembered;
+        RememberedSet remembered;
         WeakRoot dead{nullptr};
         {
             HeapSpace nursery;
@@ -286,16 +286,14 @@ namespace
             collection.drain();
             EXPECT_TRUE(adapter.copies().empty());
             remembered.for_each_owner([&](HeapObject *owner) {
-                visit_strong_reference_slots(
-                    owner,
-                    [&](HeapReferenceSlot slot) { collection.add_root(slot); });
+                collection.add_remembered_owner(owner);
             });
             collection.finish();
             remembered.clear_after_collection();
             ASSERT_EQ(2u, adapter.copies().size());
             adapter.expect_canonical_copies();
-            EXPECT_EQ(0u, adapter.scan_count(old_owner));
-            EXPECT_EQ(0u, adapter.scan_count(fixed_owner));
+            EXPECT_EQ(1u, adapter.scan_count(old_owner));
+            EXPECT_EQ(1u, adapter.scan_count(fixed_owner));
             ASSERT_TRUE(first->is_forwarded());
             ASSERT_TRUE(second->is_forwarded());
             EXPECT_EQ(first->forwarding_target(), edge(old_owner, 0));
@@ -328,7 +326,7 @@ namespace
         auto *overwritten = make_slots(old, 1, HeapGenerationState::Old);
         fixed->make_non_moving();
         std::array owners{owner, fixed, overwritten};
-        StrongRememberedSet remembered;
+        RememberedSet remembered;
         for(size_t iteration = 0; iteration < 2; ++iteration)
         {
             {
@@ -337,7 +335,7 @@ namespace
                 auto *live = make_slots(nursery, 1, HeapGenerationState::Young);
                 connect(live, 0, live);
                 {
-                    StrongRememberedSet retiring;
+                    RememberedSet retiring;
                     connect(owner, 0, dead);
                     retiring.record_store(owner, dead);
                     owner->slot_value_base()[0] = Value::None();
@@ -396,10 +394,7 @@ namespace
                 WeakRoot weak_dead{dead};
                 collection.add_weak_root(weak_dead.unit());
                 remembered.for_each_owner([&](HeapObject *object) {
-                    visit_strong_reference_slots(object,
-                                                 [&](HeapReferenceSlot slot) {
-                                                     collection.add_root(slot);
-                                                 });
+                    collection.add_remembered_owner(object);
                 });
                 collection.finish();
                 remembered.clear_after_collection();

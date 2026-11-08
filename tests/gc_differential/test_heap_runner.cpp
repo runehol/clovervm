@@ -143,7 +143,7 @@ namespace
                    entry(10, std::nullopt, f::AllocationId{2}, ref(0))}}},
                 {entry(0, f::AllocationId{3}, f::AllocationId{1}, ref(0)),
                  field(1, int64_t{0})},
-                {f::AllocationId{0}, f::AllocationId{1}}};
+                {f::AllocationId{0}, f::AllocationId{1}, f::AllocationId{2}}};
     }
     f::HeapSnapshot mixed_expected(const f::HeapSnapshot &input)
     {
@@ -405,7 +405,7 @@ namespace
         EXPECT_EQ(heap.capture(), expected);
     }
 
-    TEST(GCHeapRunner, YoungRepairsRememberedFieldsWithoutScanningOldOwners)
+    TEST(GCHeapRunner, YoungScansRememberedOwnersWithoutMarkingOrMovingThem)
     {
         auto before = fixture("young_before");
         NativeHeap heap(before, d::Collection::Young);
@@ -414,7 +414,9 @@ namespace
         for(auto id: {0u, 2u, 4u})
         {
             EXPECT_FALSE(heap.adapter().is_marked(&heap.object({id})));
-            EXPECT_EQ(heap.adapter().scan_count(&heap.object({id})), 0u);
+            EXPECT_EQ(heap.adapter().scan_count(&heap.object({id})), 1u);
+            EXPECT_EQ(heap.object({id}).header.kind,
+                      native::TestHeaderKind::Normal);
         }
         EXPECT_EQ(d::run_collection(before, d::Algorithm::Evacuate),
                   fixture("young_full_after"));
@@ -432,10 +434,13 @@ namespace
                                        d::Algorithm::Mark,
                                        d::Collection::Young),
                      d::RunnerError);
-        EXPECT_THROW(d::run_collection(fixture("before"),
-                                       d::Algorithm::Evacuate,
-                                       d::Collection::Young),
-                     d::RunnerError);
+        EXPECT_EQ(d::run_collection(fixture("before"), d::Algorithm::Evacuate,
+                                    d::Collection::Young),
+                  fixture("weak_young_after"));
+        EXPECT_EQ(d::run_collection(fixture("remembered_weak_before"),
+                                    d::Algorithm::Evacuate,
+                                    d::Collection::Young),
+                  fixture("remembered_weak_after"));
         NativeHeap heap(fixture("young_before"), d::Collection::Young);
         heap.collect(d::Algorithm::Evacuate);
         heap.adapter().try_mark(&heap.object({0}));
@@ -448,7 +453,7 @@ namespace
         auto garbage = fixture("young_before");
         garbage.objects[0].strong.clear();
         garbage.objects[2].strong = {ref(4)};
-        garbage.remembered_strong.clear();
+        garbage.remembered.clear();
         NativeHeap marked(garbage, d::Collection::Young);
         marked.collect(d::Algorithm::Evacuate);
         marked.adapter().try_mark(&marked.object({1}));

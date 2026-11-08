@@ -51,8 +51,17 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(check.call_count, counts["evacuate"])
         self.assertTrue(all(call.kwargs["algorithm"] == "evacuate" for call in check.call_args_list))
         self.assertTrue(all(call.kwargs["collection"] == "young" for call in check.call_args_list))
-        self.assertTrue(all(not call.args[0]["external_weak"] and all(not o["weak"] for o in call.args[0]["objects"])
-                            for call in check.call_args_list))
+        for call in check.call_args_list:
+            heap = call.args[0]
+            objects = {obj["allocation_id"]: obj for obj in heap["objects"]}
+            for owner in objects.values():
+                if owner["state"]["kind"] == "young_original":
+                    continue
+                refs = [cell.get("ref") for cell in owner["strong"]]
+                for unit in owner["weak"]:
+                    refs += unit.get("guards", []) + [unit.get("payload", unit.get("value", {})).get("ref")]
+                if any(ref is not None and objects[ref]["state"]["kind"] == "young_original" for ref in refs):
+                    self.assertIn(owner["allocation_id"], heap["remembered"])
 
     def test_invalid_configuration_does_not_run_collectors(self):
         with patch("campaign.assert_equivalent") as check:

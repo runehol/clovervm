@@ -92,16 +92,6 @@ namespace cl::gc::test::differential
             if(collection != Collection::Full &&
                collection != Collection::Young)
                 inconsistent("unknown collection");
-            if(collection == Collection::Young)
-            {
-                if(!input_.external_weak.empty())
-                    inconsistent("young collection currently requires empty "
-                                 "weak storage");
-                for(const auto &a: input_.objects)
-                    if(!a.weak.empty())
-                        inconsistent("young collection currently requires "
-                                     "empty weak storage");
-            }
             std::sort(input_.objects.begin(), input_.objects.end(),
                       [](const auto &a, const auto &b) {
                           return a.allocation_id.value < b.allocation_id.value;
@@ -247,10 +237,9 @@ namespace cl::gc::test::differential
                             for(auto &root: roots_)
                                 collection.add_root(TestSlot(root));
                             if(collection_ == Collection::Young)
-                                for(auto owner: input_.remembered_strong)
-                                    for(auto &cell:
-                                        allocations_.object(owner).strong_cells)
-                                        collection.add_root(TestSlot(cell));
+                                for(auto owner: input_.remembered)
+                                    collection.add_remembered_owner(
+                                        &allocations_.object(owner));
                             collection.finish();
                             break;
                         }
@@ -369,7 +358,7 @@ namespace cl::gc::test::differential
                external_weak_.size() != input_.external_weak.size())
                 inconsistent("root or external unit layout changed");
             format::HeapSnapshot result;
-            result.remembered_strong = input_.remembered_strong;
+            result.remembered = input_.remembered;
             for(const auto &root: roots_)
                 result.roots.push_back(capture_cell(root));
             for(size_t i = 0; i < records.size(); ++i)

@@ -23,7 +23,7 @@ private def mixedHeap (first second : CopyTo) : HeapSnapshot :=
     ⟨⟨"obj-1"⟩, ⟨3⟩, .youngOriginal first (.normal false), #[ref 1, .immediate 7, ref 0, .reference none],
       #[field 2 (.immediate (-7)), field 3 (ref 0), entry 4 (some 3) (some 1) (ref 2),
         entry 10 none (some 2) (ref 0)]⟩],
-    #[entry 0 (some 3) (some 1) (ref 0), field 1 (.immediate 0)], #[⟨0⟩, ⟨1⟩]⟩
+    #[entry 0 (some 3) (some 1) (ref 0), field 1 (.immediate 0)], #[⟨0⟩, ⟨1⟩, ⟨2⟩]⟩
 
 -- These are runtime assertions, outside the collector proofs' dependency graph.
 def main : IO Unit := do
@@ -42,7 +42,10 @@ def main : IO Unit := do
   check "full does not retain through garbage remembered owners" ((← ok "full floating" (runCollection floating .evacuate)) == floating)
   check "minor retains through unrooted old owners" ((← ok "young floating" (runCollection floating .evacuate .young)).objects == youngAfter.objects)
   check "young mark unsupported" (!(runCollection young .mark .young).isOk)
-  check "young weak unsupported" (!(runCollection before .evacuate .young).isOk)
+  check "young weak" ((← ok "young weak" (runCollection before .evacuate .young)) == (← fixture "weak_young_after"))
+  let weakOwner ← fixture "remembered_weak_before"
+  check "weak-only remembered owner" ((← ok "young weak owner" (runCollection weakOwner .evacuate .young)) == (← fixture "remembered_weak_after"))
+  check "full ignores weak-only remembered owner" ((← ok "full weak owner" (runCollection weakOwner .evacuate .full)) == (← fixture "remembered_weak_full_after"))
   let ⟨_, _, prepared⟩ ← ok "young prepare" (prepareHeap young)
   check "proof-carrying remembered logical pairing"
     (prepared.generational.data.rememberedOwners.map Fin.val == [4, 3, 2])
@@ -78,7 +81,7 @@ def main : IO Unit := do
       ⟨⟨"obj-1"⟩, ⟨4⟩, destination first, #[ref 1, .immediate 7, ref 5, .reference none],
         #[field 2 (.immediate (-7)), field 3 (ref 5), reset 4, reset 10]⟩,
       ⟨⟨"obj-2"⟩, ⟨5⟩, destination second, #[ref 4, ref 5], #[field 7 (.reference none)]⟩],
-      #[entry 0 (some 4) (some 1) (ref 5), field 1 (.immediate 0)], #[⟨0⟩, ⟨1⟩]⟩
+      #[entry 0 (some 4) (some 1) (ref 5), field 1 (.immediate 0)], #[⟨0⟩, ⟨1⟩, ⟨2⟩]⟩
     check "mixed destinations and weak repair" ((← ok "mixed" (runCollection input .evacuate)) == expected)
     let ⟨_, _, mixed⟩ ← ok "mixed prepare" (prepareHeap input)
     let finished := Copying.Weak.collectWeak mixed.copying mixed.weak mixed.roots

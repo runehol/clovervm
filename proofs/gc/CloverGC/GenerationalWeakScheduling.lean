@@ -24,6 +24,23 @@ open Copying
   | nil => rfl
   | cons id rest ih => exact ih (earlyVisit input state id)
 
+@[simp] theorem rememberOwner_registered (input : Input n k) (state : Copying.Weak.State n k) (owner : Fin n) :
+    (rememberOwner input state owner).registered = state.registered ++ input.heap.data.units.ownerUnits owner := by
+  simp [rememberOwner]
+
+@[simp] theorem rememberOwners_registered (input : Input n k) (state : Copying.Weak.State n k)
+    (owners : List (Fin n)) : (rememberOwners input state owners).registered =
+      state.registered ++ owners.flatMap input.heap.data.units.ownerUnits := by
+  induction owners generalizing state with
+  | nil => simp [rememberOwners]
+  | cons owner rest ih => simpa [rememberOwners, List.append_assoc] using ih (rememberOwner input state owner)
+
+@[simp] theorem rememberOwners_lateVisits (input : Input n k) (state : Copying.Weak.State n k)
+    (owners : List (Fin n)) : (rememberOwners input state owners).lateVisits = state.lateVisits := by
+  induction owners generalizing state with
+  | nil => rfl
+  | cons owner rest ih => simpa [rememberOwners, rememberOwner] using ih (rememberOwner input state owner)
+
 @[simp] theorem lateVisits_trace (input : Input n k) (state : Copying.Weak.State n k)
     (ids : List (Fin k)) : (lateVisits input state ids).lateVisits = state.lateVisits ++ ids := by
   induction ids generalizing state with
@@ -65,35 +82,32 @@ theorem drainWeak_registered (input : Input n k) (done scanned : List (Fin n)) (
               object rest marking queue)
           simpa [drainWeak, step, owner, CloverGC.drain, scanOne, queue, visited, List.append_assoc] using tail
 
-/-- Explicit storage precedes scanned owners; remembered weak units are
-    mode-selected independently of the strong remembered owner list. -/
+/-- External storage precedes units enumerated from the shared remembered
+    owner list, then units visited while draining selected objects. -/
 theorem collection_registered (input : Input n k) :
-    (collectWeak input).1.registered = input.heap.data.units.external ++ input.remembered ++
+    (collectWeak input).1.registered = input.heap.data.units.external ++ input.rememberedUnits ++
       (collect input.strongInput.selectedGraph input.strongInput.logicalRoots).2.flatMap
         input.heap.data.units.ownerUnits := by
   have ready : Ready input.strongInput input.strongInput.remembered []
       (seed input.strongInput.logicalRoots) (start input).strong := by
-    simpa [start] using ready_start input.strongInput
-  simpa [collectWeak, finishDeferred, start, collect, List.append_assoc] using
+    simpa only [start_strong] using ready_start input.strongInput
+  simpa [collectWeak, finishDeferred, start, collect, Input.rememberedUnits, List.append_assoc] using
     drainWeak_registered input input.strongInput.remembered [] n _ _ ready
       (seed_invariant input.strongInput.selectedGraph input.strongInput.logicalRoots)
 
 theorem collection_registered_iff (input : Input n k) (id : Fin k) :
     id ∈ (collectWeak input).1.registered ↔ id ∈ input.heap.data.units.external ∨
-      id ∈ input.remembered ∨ ∃ owner, Live input.strongInput owner ∧
+      id ∈ input.rememberedUnits ∨ ∃ owner, Live input.strongInput owner ∧
         id ∈ input.heap.data.units.ownerUnits owner := by
   simp [collection_registered, List.mem_flatMap, collect_trace_correct, Live]
 
 theorem collection_registered_nodup (input : Input n k) : (collectWeak input).1.registered.Nodup := by
-  have rememberedUnique : input.remembered.Nodup := by
-    cases mode : input.collection <;> simp [Input.remembered, mode, input.heap.valid.remembered_unique]
-  have rememberedOld (id : Fin k) (member : id ∈ input.remembered) :
+  have rememberedUnique : input.rememberedUnits.Nodup :=
+    Copying.Weak.owners_nodup _ input.heap.valid.storage _ (remembered_nodup input.strongInput)
+  have rememberedOld (id : Fin k) (member : id ∈ input.rememberedUnits) :
       ∃ owner, input.strongInput.selected owner = false ∧ id ∈ input.heap.data.units.ownerUnits owner := by
-    cases mode : input.collection with
-    | full => simp [Input.remembered, mode] at member
-    | young =>
-        obtain ⟨owner, old, owned⟩ := input.heap.valid.remembered_old id (by simpa [Input.remembered, mode] using member)
-        exact ⟨owner, by simpa [Input.strongInput, CollectionInput.selected, mode] using old, owned⟩
+    obtain ⟨owner, remembered, owned⟩ := List.mem_flatMap.mp member
+    exact ⟨owner, remembered_unselected input.strongInput owner remembered, owned⟩
   rw [collection_registered, List.append_assoc, List.nodup_append]
   refine ⟨input.heap.valid.storage.external_nodup, ?_, ?_⟩
   · rw [List.nodup_append]
@@ -145,6 +159,15 @@ theorem earlyVisits_pending_sublist (input : Input n k) (state : Copying.Weak.St
       · exact sub.append (List.Sublist.refl [id])
       · exact sub.trans (List.sublist_append_left _ _)
 
+theorem rememberOwners_pending_sublist (input : Input n k) (state : Copying.Weak.State n k)
+    (owners : List (Fin n)) (sub : state.pending.Sublist state.registered) :
+    (rememberOwners input state owners).pending.Sublist (rememberOwners input state owners).registered := by
+  induction owners generalizing state with
+  | nil => exact sub
+  | cons owner rest ih =>
+      apply ih (rememberOwner input state owner)
+      exact earlyVisits_pending_sublist input _ _ sub
+
 theorem drainWeak_pending_sublist (input : Input n k) (fuel : Nat) (state : Copying.Weak.State n k)
     (sub : state.pending.Sublist state.registered) :
     (drainWeak input fuel state).1.pending.Sublist (drainWeak input fuel state).1.registered := by
@@ -162,7 +185,8 @@ theorem drainWeak_pending_sublist (input : Input n k) (fuel : Nat) (state : Copy
 theorem collection_late_nodup (input : Input n k) : (collectWeak input).1.lateVisits.Nodup := by
   rw [collection_late_exact]
   have sub : (start input).pending.Sublist (start input).registered := by
-    apply earlyVisits_pending_sublist input _ _ (List.Sublist.refl [])
+    apply rememberOwners_pending_sublist
+    exact earlyVisits_pending_sublist input _ _ (List.Sublist.refl [])
   have registered : (drainWeak input n (start input)).1.registered.Nodup := by
     simpa [collectWeak, finishDeferred] using collection_registered_nodup input
   exact List.Nodup.sublist (drainWeak_pending_sublist input n (start input) sub) registered

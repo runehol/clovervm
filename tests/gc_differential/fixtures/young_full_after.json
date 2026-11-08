@@ -32,5 +32,5 @@
      "strong": [{"ref": 5}], "weak": []}
   ],
   "external_weak": [],
-  "remembered_strong": [2, 0, 4]
+  "remembered": [2, 0, 4]
 }

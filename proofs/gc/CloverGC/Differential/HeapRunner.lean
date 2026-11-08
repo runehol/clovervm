@@ -1,6 +1,6 @@
 import CloverGC.Differential.HeapFormat
 import CloverGC.WeakRepair
-import CloverGC.Generational
+import CloverGC.GenerationalWeakSafety
 
 namespace CloverGC.Differential
 
@@ -82,7 +82,7 @@ def prepareHeap (input : Format.HeapSnapshot) : Except String (Σ n, Σ k, Prepa
   let templates ← unitTable.mapM (required "heap conversion: missing weak unit")
   let children ← originals.mapM fun a => strongReferences objects a.strong
   let kinds ← originals.mapM fun a => originalKind a.state
-  let remembered ← initial.rememberedStrong.toList.mapM (originalReference objects)
+  let remembered ← initial.remembered.toList.mapM (originalReference objects)
   let generational ← (Generational.RawGenerationalHeap.mk ⟨children.get⟩ kinds.get remembered).validate
   let ownerUnits ← originals.mapM fun a => a.weak.toList.mapM unitId
   let external ← initial.externalWeak.toList.mapM unitId
@@ -165,7 +165,7 @@ private def captureStrong (heap : PreparedHeap n k) (state : Copying.EvacuationS
         pure (.forwarded (← convert (.copied index)))
     let objectState ← originalState initial.state header
     let strong ← mergeReferences convert initial.strong.toList (state.originalFields object)
-    let weak ← if heap.copying.movable object then pure initial.weak else captureUnits heap copying units initial.weak
+    let weak ← if selected object && heap.copying.movable object then pure initial.weak else captureUnits heap copying units initial.weak
     return { initial with state := objectState, strong := strong.toArray, weak := weak }
   let mut objects := originals.toArray
   for (record, index) in copying.copies.zipIdx do
@@ -178,7 +178,7 @@ private def captureStrong (heap : PreparedHeap n k) (state : Copying.EvacuationS
       | .ordinary => Format.ObjectState.ordinaryDestination
       | .nonMoving => Format.ObjectState.nonmovingDestination
     objects := objects.push ⟨⟨s!"obj-{record.origin.val}"⟩, ⟨n + index⟩, objectState, strong.toArray, weak⟩
-  let result := Format.HeapSnapshot.mk roots.toArray objects (← captureUnits heap copying units heap.initial.externalWeak) heap.initial.rememberedStrong
+  let result := Format.HeapSnapshot.mk roots.toArray objects (← captureUnits heap copying units heap.initial.externalWeak) heap.initial.remembered
   Format.validateHeap result
   return result
 
@@ -191,12 +191,13 @@ def captureEvacuated (heap : PreparedHeap n k) (state : Copying.Weak.State n k) 
 /-- Collection selection is derived from the validated generational heap. -/
 def runCollection (input : Format.HeapSnapshot) (algorithm : Algorithm)
     (collection : Generational.CollectionKind := .full) : Except String Format.HeapSnapshot := do
-  let ⟨_, k, heap⟩ ← prepareHeap input
+  let ⟨_, _, heap⟩ ← prepareHeap input
   if collection == .young then
     unless algorithm == .evacuate do throw "young collection supports evacuation only"
-    unless k == 0 do throw "young collection currently requires empty weak storage"
-    let result := (Generational.evacuate (heap.collectionInput .young)).1
-    captureStrong heap result (fun id => (heap.weak.templates id).initial) .young
+    let weakHeap ← (Generational.Weak.RawWeakHeap.mk heap.generational heap.weak).validate
+    let result := (Generational.Weak.collectWeak ⟨weakHeap, .young, heap.roots⟩).1
+    unless result.pending.isEmpty do throw "heap capture: incomplete weak repair"
+    captureStrong heap result.strong result.units .young
   else
     match algorithm with
     | .mark => captureMark heap (CloverGC.collect heap.copying.heap heap.roots).1

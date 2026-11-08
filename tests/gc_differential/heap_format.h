@@ -107,7 +107,7 @@ namespace cl::gc::test::format
         std::vector<Cell> roots;
         std::vector<Allocation> objects;
         std::vector<WeakUnit> external_weak;
-        std::vector<AllocationId> remembered_strong;
+        std::vector<AllocationId> remembered;
         bool operator==(const HeapSnapshot &) const = default;
     };
 

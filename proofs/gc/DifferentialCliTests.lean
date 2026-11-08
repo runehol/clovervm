@@ -51,7 +51,7 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
       (← unwrap (Lean.Json.parse output.stdout)) == (← unwrap (Lean.Json.parse
         (← IO.FS.readFile (fixtures / "after_mark.json")))))
   let empty := temp / "empty.json"
-  IO.FS.writeFile empty "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[],\"objects\":[],\"external_weak\":[],\"remembered_strong\":[]}"
+  IO.FS.writeFile empty "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[],\"objects\":[],\"external_weak\":[],\"remembered\":[]}"
   for algorithm in ["mark", "evacuate"] do
     success ("empty " ++ algorithm) empty #["--algorithm", algorithm, "--collection", "full", empty.toString]
   for args in [#["--help"], #["-h"], #["--algorithm", "unknown", "--help"],
@@ -68,7 +68,10 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
   failure "extra file" "one input heap file" #["--algorithm", "mark", "--collection", "full", before, before]
   failure "unsupported collection" "unsupported collection" #["--algorithm", "mark", "--collection", "unknown", before]
   failure "young mark" "evacuation only" #["--algorithm", "mark", "--collection", "young", before]
-  failure "young weak" "empty weak" #["--algorithm", "evacuate", "--collection", "young", before]
+  success "young weak" (fixtures / "weak_young_after.json") #["--algorithm", "evacuate", "--collection", "young", before]
+  for (collection, expected) in [("young", "remembered_weak_after.json"), ("full", "remembered_weak_full_after.json")] do
+    success ("remembered weak owner " ++ collection) (fixtures / expected)
+      #["--algorithm", "evacuate", "--collection", collection, (fixtures / "remembered_weak_before.json").toString]
   failure "unsupported algorithm" "unsupported algorithm" #["--algorithm", "unknown", "--collection", "full", before]
   failure "unknown option" "unknown-option" #["--algorithm", "mark", "--collection", "full", "--unknown-option", before]
   for option in ["--algorithm", "--collection"] do
@@ -88,7 +91,7 @@ def main : IO Unit := IO.FS.withTempDir fun temp => do
   IO.FS.writeBinFile malformed ⟨#[255]⟩
   failure "invalid UTF-8" "UTF-8" #["--algorithm", "mark", "--collection", "full", malformed.toString]
   let invalid := temp / "invalid.json"
-  IO.FS.writeFile invalid "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[{\"ref\":0}],\"objects\":[],\"external_weak\":[],\"remembered_strong\":[]}"
+  IO.FS.writeFile invalid "{\"format\":\"clover-gc-heap\",\"version\":2,\"roots\":[{\"ref\":0}],\"objects\":[],\"external_weak\":[],\"remembered\":[]}"
   failure "invalid reference" "reference" #["--algorithm", "evacuate", "--collection", "full", invalid.toString]
   for algorithm in ["mark", "evacuate"] do
     failure "completed heap" "fresh heap" #["--algorithm", algorithm, "--collection", "full", (fixtures / "after.json").toString]

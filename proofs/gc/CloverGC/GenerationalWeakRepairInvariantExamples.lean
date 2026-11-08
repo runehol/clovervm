@@ -9,15 +9,14 @@ private def input : Input 3 3 := {
     data := {
       strong := {
         data := ⟨⟨fun _ => []⟩, fun o => if o = 0 then .oldMovable .ordinary
-          else .youngMovable .ordinary, []⟩
+          else .youngMovable .ordinary, [0]⟩
         valid := by decide }
       units := {
         templates := fun id => if id = 0 then .field (.reference (some 1))
           else if id = 1 then .entry ⟨some 0, some 0, .immediate 7⟩
           else .entry ⟨some 0, some 2, .reference (some 1)⟩
         ownerUnits := fun owner => if owner = 0 then [0, 1, 2] else []
-        external := [] }
-      rememberedWeak := [0, 2] }
+        external := [] } }
     valid := by decide }
   collection := .young
   roots := [] }

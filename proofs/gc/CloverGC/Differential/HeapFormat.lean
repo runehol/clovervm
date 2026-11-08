@@ -59,7 +59,7 @@ structure HeapSnapshot where
   roots : Array Cell
   objects : Array Allocation
   externalWeak : Array WeakUnit
-  rememberedStrong : Array AllocationId
+  remembered : Array AllocationId
   deriving Repr, BEq, DecidableEq
 
 private def failAt (path message : String) : Except String α :=
@@ -213,12 +213,12 @@ private def validateAndOrder (input : HeapSnapshot) : Except String HeapSnapshot
   for id in seen.toList do
     unless id < seen.size do failAt "$.weak" "logical unit IDs must be dense"
   let mut remembered : Std.HashSet Nat := {}
-  for id in heap.rememberedStrong do
-    let some owner := heap.objects[id.value]? | failAt "$.remembered_strong" "unknown owner"
+  for id in heap.remembered do
+    let some owner := heap.objects[id.value]? | failAt "$.remembered" "unknown owner"
     match owner.state with
     | .oldOriginal _ _ | .nonmovingOriginal _ => pure ()
-    | _ => failAt "$.remembered_strong" "remembered owners must be old originals"
-    if remembered.contains id.value then failAt "$.remembered_strong" "duplicate remembered owner"
+    | _ => failAt "$.remembered" "remembered owners must be old originals"
+    if remembered.contains id.value then failAt "$.remembered" "duplicate remembered owner"
     remembered := remembered.insert id.value
   for a in heap.objects do
     if !(match a.state with | .youngOriginal _ _ => true | _ => false) then
@@ -227,6 +227,19 @@ private def validateAndOrder (input : HeapSnapshot) : Except String HeapSnapshot
           if let some (.youngOriginal _ _) := heap.objects[id.value]?.map Allocation.state then
             unless remembered.contains a.allocationId.value do
               failAt "$.objects.strong" "unremembered old-to-young strong edge"
+  for a in heap.objects do
+    if !(match a.state with | .youngOriginal _ _ => true | _ => false) then
+      for unit in a.weak do
+        let targets := match unit.contents with
+          | .field (.reference ref) => #[ref]
+          | .field (.immediate _) => #[]
+          | .entry e => #[e.firstGuard, e.secondGuard,
+              match e.payload with | .reference ref => ref | .immediate _ => none]
+        for ref in targets do
+          if let some id := ref then
+            if let some (.youngOriginal _ _) := heap.objects[id.value]?.map Allocation.state then
+              unless remembered.contains a.allocationId.value do
+                failAt "$.objects.weak" "unremembered old-to-young weak edge"
   for i in [:originalCount] do
     let some original := origins[i]! | failAt "$.objects" "missing original identity"
     let forwarded := (movable original.state).bind fun (_, h) =>
@@ -286,8 +299,8 @@ def parseHeap (bytes : ByteArray) : Except String HeapSnapshot := do
       ← units (← get item p "weak") (p ++ ".weak")⟩
   let heap := HeapSnapshot.mk (← cells (← get json "$" "roots") "$.roots") objects
     (← units (← get json "$" "external_weak") "$.external_weak")
-    (← (← array (← get json "$" "remembered_strong") "$.remembered_strong").mapM fun value =>
-      return ⟨← natural value "$.remembered_strong"⟩)
+    (← (← array (← get json "$" "remembered") "$.remembered").mapM fun value =>
+      return ⟨← natural value "$.remembered"⟩)
   validateAndOrder heap
 
 private def natJson (n : Nat) : Lean.Json := .num (.fromNat n)
@@ -325,7 +338,7 @@ def writeHeap (heap : HeapSnapshot) : Except String String := do
       ("allocation_id", natJson a.allocationId.value), ("state", stateJson a.state),
       ("strong", .arr (a.strong.map cellJson)), ("weak", unitsJson a.weak)])),
     ("external_weak", unitsJson heap.externalWeak),
-    ("remembered_strong", .arr (heap.rememberedStrong.map fun id => natJson id.value))]
+    ("remembered", .arr (heap.remembered.map fun id => natJson id.value))]
   return json.compress ++ "\n"
 
 end CloverGC.Differential.Format

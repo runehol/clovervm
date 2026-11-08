@@ -37,24 +37,48 @@ namespace
         return text;
     }
     const std::string empty_heap =
-        R"({"format":"clover-gc-heap","version":2,"roots":[],"objects":[],"external_weak":[],"remembered_strong":[]})";
+        R"({"format":"clover-gc-heap","version":2,"roots":[],"objects":[],"external_weak":[],"remembered":[]})";
+
+    TEST(GCHeapFormat, WeakOnlyEdgesUseTheSameRememberedOwners)
+    {
+        auto heap = parse_heap(fixture("remembered_weak_before"));
+        ASSERT_TRUE(heap.objects[0].strong.empty());
+        auto bad = heap;
+        bad.remembered.clear();
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        // Inactive entries still have stored references requiring coverage.
+        bad.objects[0].weak.erase(bad.objects[0].weak.begin(),
+                                  bad.objects[0].weak.begin() + 2);
+        bad.objects[0].weak[0].unit_id = {0};
+        bad.external_weak[0].unit_id = {1};
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        bad.remembered = {{0}};
+        EXPECT_NO_THROW(validate_heap(bad));
+        bad.remembered.clear();
+        auto &entry = std::get<Entry>(bad.objects[0].weak[0].contents);
+        entry.payload = int64_t{7};
+        entry.guards = {AllocationId{1}, AllocationId{0}};
+        EXPECT_THROW(validate_heap(bad), FormatError);
+        entry.guards = {AllocationId{0}, AllocationId{1}};
+        EXPECT_THROW(validate_heap(bad), FormatError);
+    }
 
     TEST(GCHeapFormat, RememberedCoverageIsPartOfTheHeapContract)
     {
         auto heap = parse_heap(fixture("before"));
         auto bad = heap;
-        bad.remembered_strong.clear();
+        bad.remembered.clear();
         EXPECT_THROW(validate_heap(bad), FormatError);
         bad = heap;
-        bad.remembered_strong.push_back({0});
+        bad.remembered.push_back({0});
         EXPECT_THROW(validate_heap(bad), FormatError);
         bad = heap;
-        bad.remembered_strong.push_back({1});
+        bad.remembered.push_back({1});
         EXPECT_THROW(validate_heap(bad), FormatError);
         bad = heap;
-        bad.remembered_strong.push_back({99});
+        bad.remembered.push_back({99});
         EXPECT_THROW(validate_heap(bad), FormatError);
-        heap.remembered_strong.push_back({2});
+        heap.remembered.push_back({2});
         EXPECT_NO_THROW(validate_heap(heap));
     }
 

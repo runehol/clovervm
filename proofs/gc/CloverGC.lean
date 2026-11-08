@@ -29,3 +29,5 @@ import CloverGC.GenerationalWeakDrainExamples
 import CloverGC.GenerationalWeakDrainAudit
 import CloverGC.GenerationalWeakCorrectnessExamples
 import CloverGC.GenerationalWeakCorrectnessAudit
+import CloverGC.GenerationalWeakSafetyExamples
+import CloverGC.GenerationalWeakSafetyAudit
