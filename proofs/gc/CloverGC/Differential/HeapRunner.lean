@@ -129,6 +129,23 @@ def captureMark (heap : PreparedHeap n k) (state : MarkState n) :
   let objects ← heap.initial.objects.toList.mapM (captureMarkedOriginal heap state)
   return { heap.initial with objects := objects.toArray }
 
+/-- Physical reference encoding preserves source allocation identity and uses
+    the global allocation ordinal for a copy. -/
+def encodeReference (heap : PreparedHeap n k) : Copying.Reference n → Format.AllocationId
+  | .source object => (heap.originals.get object).allocationId
+  | .copied index => ⟨n + index⟩
+
+/-- Tagged cell projection preserves immediate values and distinguishes null references. -/
+def encodeCell (heap : PreparedHeap n k) :
+    Copying.Weak.Cell (Copying.Reference n) → Format.Cell
+  | .immediate value => .immediate value
+  | .reference target => .reference (target.map (encodeReference heap))
+
+def CellReferencesValid (copying : Copying.CopyState n) :
+    Copying.Weak.Cell (Copying.Reference n) → Prop
+  | .immediate _ | .reference none => True
+  | .reference (some reference) => Copying.ValidReference copying reference
+
 /-- Decode observed references directly; do not follow source forwarding. -/
 private def allocationOfReference (heap : PreparedHeap n k) (state : Copying.CopyState n) :
     Copying.Reference n → Except String Format.AllocationId
@@ -150,6 +167,52 @@ private def captureCell (convert : Copying.Reference n → Except String Format.
     Copying.Weak.Cell (Copying.Reference n) → Except String Format.Cell
   | .immediate value => pure (.immediate value)
   | .reference ref => return .reference (← ref.mapM convert)
+
+/-- The executable reference conversion succeeds exactly for allocated references. -/
+theorem allocationOfReference_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (reference : Copying.Reference n) (output : Format.AllocationId) :
+    allocationOfReference heap copying reference = .ok output ↔
+      Copying.ValidReference copying reference ∧ output = encodeReference heap reference := by
+  cases reference with
+  | source object =>
+      simp [allocationOfReference, Copying.ValidReference, encodeReference, pure, Except.pure, eq_comm]
+  | copied index =>
+      cases allocated : copying.copies[index]? <;>
+        simp [allocationOfReference, required, allocated, Copying.ValidReference,
+          encodeReference, bind, Except.bind, pure, Except.pure, eq_comm]
+
+/-- Cell capture preserves its tag, value and physical reference encoding. -/
+theorem captureCell_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (cell : Copying.Weak.Cell (Copying.Reference n)) (output : Format.Cell) :
+    captureCell (allocationOfReference heap copying) cell = .ok output ↔
+      CellReferencesValid copying cell ∧ output = encodeCell heap cell := by
+  cases cell with
+  | immediate value =>
+      simp [captureCell, CellReferencesValid, encodeCell, pure, Except.pure, eq_comm]
+  | reference target =>
+      cases target with
+      | none =>
+          simp [captureCell, CellReferencesValid, encodeCell, Option.mapM,
+            bind, Except.bind, pure, Except.pure, eq_comm]
+      | some reference =>
+          cases converted : allocationOfReference heap copying reference with
+          | error message =>
+              have invalid := allocationOfReference_correct heap copying reference
+                (encodeReference heap reference)
+              simp [converted] at invalid
+              simp [captureCell, CellReferencesValid, invalid, Option.mapM, converted,
+                bind, Except.bind, Functor.map, Except.map]
+          | ok id =>
+              obtain ⟨valid, rfl⟩ := (allocationOfReference_correct heap copying reference id).mp converted
+              simp [captureCell, CellReferencesValid, valid, encodeCell, Option.mapM, converted,
+                bind, Except.bind, Functor.map, Except.map, pure, Except.pure, eq_comm]
+
+/-- Valid cells project successfully, including immediate zero and null references. -/
+theorem captureCell_succeeds (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (cell : Copying.Weak.Cell (Copying.Reference n)) (valid : CellReferencesValid copying cell) :
+    captureCell (allocationOfReference heap copying) cell = .ok (encodeCell heap cell) :=
+  (captureCell_correct heap copying cell _).mpr ⟨valid, rfl⟩
+
 private def captureUnits (heap : PreparedHeap n k) (copying : Copying.CopyState n)
     (units : Fin k → Copying.Weak.Unit n) (layout : Array Format.WeakUnit) : Except String (Array Format.WeakUnit) :=
   layout.mapM fun unit => do

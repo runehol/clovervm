@@ -22,3 +22,12 @@ import CloverGC.Differential.HeapRunner
 /-- info: 'CloverGC.Differential.runCollection_preserves_original' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CloverGC.Differential.runCollection_preserves_original
+/-- info: 'CloverGC.Differential.allocationOfReference_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.allocationOfReference_correct
+/-- info: 'CloverGC.Differential.captureCell_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureCell_correct
+/-- info: 'CloverGC.Differential.captureCell_succeeds' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureCell_succeeds

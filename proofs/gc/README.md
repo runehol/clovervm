@@ -111,8 +111,17 @@ original physical storage, maps logical identities through the explicit
 allocation pairing, and assigns copy IDs from the model's allocation ledger.
 Capture checks completion, reference cardinality, copy marks, weak kinds and
 the resulting heap relationships. It emits observed references without following
-forwarding. The collector definitions and proof assumptions are unchanged;
-conversion and capture are tested runtime code outside their proof boundary.
+forwarding. Full snapshot projection and end-to-end success for valid wire inputs
+remain separate proof obligations.
+
+The pure `encodeReference` and `encodeCell` specifications describe physical
+reference and tagged-cell projection independently of the fallible capture code.
+`allocationOfReference_correct` and `captureCell_correct` prove success exactly
+when referenced copies are allocated, with the specified output. Source references
+retain their original allocation ID; immediates retain their value and tag, and
+null reference cells remain distinct from immediate zero. `captureCell_succeeds`
+provides the local success theorem for valid cells. These claims are axiom-audited.
+
 Capture preservation is also proved at the executable boundary. Fresh preparation
 preserves the allocation records up to sorting; capture reads originals directly
 from that retained snapshot and appends destination copies in allocation order.
