@@ -98,6 +98,12 @@ orders allocation records once and checks that each allocation ID equals its
 index. The wire types are separate from the collector model's logical/physical
 references.
 
+`HeapFormat.WeakRememberedCovered` expresses owned weak coverage by allocation ID,
+independently of object-array order. Validation uses a proof-producing decidable
+check covering every stored guard and payload, including inactive entries.
+`validateHeap_weak_covered` and `prepareFreshHeap_weak_covered` certify the public
+validation boundaries; `HeapFormatAudit` guards their axiom dependencies.
+
 `CloverGC/Differential/HeapRunner.lean` converts fresh snapshots into the existing
 mark, full weak-evacuation and generational strong-evacuation models, and captures the
 result in the same heap schema. It retains immediate/null slot positions and

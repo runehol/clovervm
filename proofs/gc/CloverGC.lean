@@ -31,3 +31,4 @@ import CloverGC.GenerationalWeakCorrectnessExamples
 import CloverGC.GenerationalWeakCorrectnessAudit
 import CloverGC.GenerationalWeakSafetyExamples
 import CloverGC.GenerationalWeakSafetyAudit
+import CloverGC.Differential.HeapFormatAudit

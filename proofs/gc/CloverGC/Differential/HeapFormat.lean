@@ -1,6 +1,7 @@
 import Lean.Data.Json.Parser
 import Lean.Data.Json.Printer
 import Std.Data.HashSet
+import Init.Data.Array.Sort.Lemmas
 
 namespace CloverGC.Differential.Format
 
@@ -9,7 +10,7 @@ structure ObjectId where
   deriving Repr, BEq, DecidableEq
 structure AllocationId where
   value : Nat
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 structure UnitId where
   value : Nat
   deriving Repr, BEq, DecidableEq
@@ -61,6 +62,29 @@ structure HeapSnapshot where
   externalWeak : Array WeakUnit
   remembered : Array AllocationId
   deriving Repr, BEq, DecidableEq
+
+/-- Includes every stored reference, even guards and payloads of inactive entries. -/
+def WeakContents.targets : WeakContents → List AllocationId
+  | .field (.immediate _) => []
+  | .field (.reference target) => target.toList
+  | .entry e => e.firstGuard.toList ++ e.secondGuard.toList ++
+      (match e.payload with | .reference target => target.toList | .immediate _ => [])
+
+def ObjectState.isYoung : ObjectState → Bool
+  | .youngOriginal _ _ => true
+  | _ => false
+
+/-- Coverage uses allocation identity, independently of array order.
+    External weak units have no owner and impose no remembered membership. -/
+def WeakRememberedCovered (heap : HeapSnapshot) : Prop :=
+  ∀ owner ∈ heap.objects.toList, owner.state.isYoung = false →
+    ∀ unit ∈ owner.weak.toList, ∀ target ∈ unit.contents.targets,
+      ∀ allocation ∈ heap.objects.toList, allocation.allocationId = target →
+        allocation.state.isYoung = true → owner.allocationId ∈ heap.remembered.toList
+
+instance (heap : HeapSnapshot) : Decidable (WeakRememberedCovered heap) := by
+  unfold WeakRememberedCovered
+  infer_instance
 
 private def failAt (path message : String) : Except String α :=
   .error s!"{path}: {message}"
@@ -183,9 +207,8 @@ private def checkUnits (values : Array WeakUnit) (path : String) (storage : Unit
       checkCell entry.payload count (p ++ ".payload")
   return seen
 
-/-- Establish physical ordering once and validate collector preconditions. -/
-private def validateAndOrder (input : HeapSnapshot) : Except String HeapSnapshot := do
-  let heap := { input with objects := input.objects.qsort (fun a b => a.allocationId.value < b.allocationId.value) }
+/-- Validate structural preconditions of an allocation-ordered snapshot. -/
+private def validateStructure (heap : HeapSnapshot) : Except String Unit := do
   let count := heap.objects.size
   let originalCount := heap.objects.foldl (fun n a => if isDestination a.state then n else n + 1) 0
   let mut origins : Array (Option Allocation) := Array.replicate originalCount none
@@ -227,19 +250,6 @@ private def validateAndOrder (input : HeapSnapshot) : Except String HeapSnapshot
           if let some (.youngOriginal _ _) := heap.objects[id.value]?.map Allocation.state then
             unless remembered.contains a.allocationId.value do
               failAt "$.objects.strong" "unremembered old-to-young strong edge"
-  for a in heap.objects do
-    if !(match a.state with | .youngOriginal _ _ => true | _ => false) then
-      for unit in a.weak do
-        let targets := match unit.contents with
-          | .field (.reference ref) => #[ref]
-          | .field (.immediate _) => #[]
-          | .entry e => #[e.firstGuard, e.secondGuard,
-              match e.payload with | .reference ref => ref | .immediate _ => none]
-        for ref in targets do
-          if let some id := ref then
-            if let some (.youngOriginal _ _) := heap.objects[id.value]?.map Allocation.state then
-              unless remembered.contains a.allocationId.value do
-                failAt "$.objects.weak" "unremembered old-to-young weak edge"
   for i in [:originalCount] do
     let some original := origins[i]! | failAt "$.objects" "missing original identity"
     let forwarded := (movable original.state).bind fun (_, h) =>
@@ -261,21 +271,75 @@ private def validateAndOrder (input : HeapSnapshot) : Except String HeapSnapshot
         unless a.unitId == b.unitId && sameKind do failAt "$.objects" "destination weak layout differs"
     | _, _ => failAt "$.objects" "destination and original require reciprocal forwarding"
 
-  return heap
+private def orderedHeap (input : HeapSnapshot) : HeapSnapshot :=
+  { input with objects := input.objects.mergeSort (fun a b => a.allocationId.value ≤ b.allocationId.value) }
+
+private theorem orderedHeap_coverage (input : HeapSnapshot) :
+    WeakRememberedCovered (orderedHeap input) ↔ WeakRememberedCovered input := by
+  simp only [WeakRememberedCovered, orderedHeap, ← Array.mem_def, Array.mem_mergeSort]
+
+private def validateAndOrder (input : HeapSnapshot) :
+    Except String { heap : HeapSnapshot // WeakRememberedCovered heap } := do
+  let heap := orderedHeap input
+  validateStructure heap
+  if covered : WeakRememberedCovered heap then pure ⟨heap, covered⟩
+  else throw "$.objects.weak: unremembered old-to-young weak edge"
 
 /-- Validate both fresh and completed snapshot structure, without collecting. -/
 def validateHeap (heap : HeapSnapshot) : Except String Unit := do
   let _ ← validateAndOrder heap
 
-/-- Validate fresh-run preconditions and return the ordered input. -/
-def prepareFreshHeap (input : HeapSnapshot) : Except String HeapSnapshot := do
-  let heap ← validateAndOrder input
+private def checkFreshHeap (heap : HeapSnapshot) : Except String Unit := do
   for a in heap.objects do
     match a.state with
     | .youngOriginal _ (.normal false) | .oldOriginal _ (.normal false)
     | .nonmovingOriginal false => pure ()
     | _ => failAt "$.objects" "fresh heap requires only normal unmarked originals"
-  return heap
+
+/-- Validate fresh-run preconditions and return the ordered input. -/
+def prepareFreshHeap (input : HeapSnapshot) : Except String HeapSnapshot := do
+  let checked ← validateAndOrder input
+  checkFreshHeap checked.val
+  return checked.val
+
+private theorem validateAndOrder_value (input : HeapSnapshot)
+    (checked : { heap : HeapSnapshot // WeakRememberedCovered heap })
+    (accepted : validateAndOrder input = .ok checked) : checked.val = orderedHeap input := by
+  unfold validateAndOrder at accepted
+  cases structureResult : validateStructure (orderedHeap input) with
+  | error message => simp [structureResult, bind, Except.bind] at accepted
+  | ok value =>
+      simp only [structureResult, bind, Except.bind] at accepted
+      split at accepted
+      · simp only [pure, Except.pure, Except.ok.injEq] at accepted
+        cases accepted
+        rfl
+      · contradiction
+
+/-- Successful public validation certifies coverage of the supplied snapshot. -/
+theorem validateHeap_weak_covered (heap : HeapSnapshot)
+    (accepted : validateHeap heap = .ok ()) : WeakRememberedCovered heap := by
+  unfold validateHeap at accepted
+  cases result : validateAndOrder heap with
+  | error message => simp [result, bind, Except.bind] at accepted
+  | ok checked =>
+      have covered := checked.property
+      rw [validateAndOrder_value heap checked result] at covered
+      exact (orderedHeap_coverage heap).mp covered
+
+/-- Successful fresh preparation certifies coverage of the returned snapshot. -/
+theorem prepareFreshHeap_weak_covered (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : WeakRememberedCovered heap := by
+  unfold prepareFreshHeap at accepted
+  cases result : validateAndOrder input with
+  | error message => simp [result, bind, Except.bind] at accepted
+  | ok checked =>
+      cases fresh : checkFreshHeap checked.val with
+      | error message => simp [result, fresh, bind, Except.bind] at accepted
+      | ok value =>
+          simp [result, fresh, bind, Except.bind, pure, Except.pure] at accepted
+          subst heap
+          exact checked.property
 
 /-- A separate restriction for a single fresh full-selection run. -/
 def validateFreshHeap (heap : HeapSnapshot) : Except String Unit := do
@@ -301,7 +365,7 @@ def parseHeap (bytes : ByteArray) : Except String HeapSnapshot := do
     (← units (← get json "$" "external_weak") "$.external_weak")
     (← (← array (← get json "$" "remembered") "$.remembered").mapM fun value =>
       return ⟨← natural value "$.remembered"⟩)
-  validateAndOrder heap
+  return (← validateAndOrder heap).val
 
 private def natJson (n : Nat) : Lean.Json := .num (.fromNat n)
 private def refJson : Reference → Lean.Json
@@ -331,7 +395,7 @@ where
 
 /-- Validate first and preserve every root/slot/unit order and cell tag. -/
 def writeHeap (heap : HeapSnapshot) : Except String String := do
-  let heap ← validateAndOrder heap
+  let heap := (← validateAndOrder heap).val
   let json := Lean.Json.mkObj [("format", .str "clover-gc-heap"), ("version", natJson 2),
     ("roots", .arr (heap.roots.map cellJson)),
     ("objects", .arr (heap.objects.map fun a => .mkObj [("object_id", .str a.objectId.value),
