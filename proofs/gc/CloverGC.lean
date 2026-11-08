@@ -10,3 +10,4 @@ import CloverGC.EvacuationAudit
 import CloverGC.WeakRepairProofs
 import CloverGC.WeakExamples
 import CloverGC.WeakAudit
+import CloverGC.GenerationalExamples
