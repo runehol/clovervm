@@ -1,6 +1,6 @@
 name = "clover_gc"
 version = "0.1.0"
-defaultTargets = ["CloverGC", "gc_format_tests"]
+defaultTargets = ["CloverGC", "gc_format_tests", "gc_execution_tests"]
 
 [[lean_lib]]
 name = "CloverGC"
@@ -11,3 +11,7 @@ warningAsError = true
 [[lean_exe]]
 name = "gc_format_tests"
 root = "DifferentialFormatTests"
+
+[[lean_exe]]
+name = "gc_execution_tests"
+root = "DifferentialExecutionTests"

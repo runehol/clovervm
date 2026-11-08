@@ -238,14 +238,19 @@ private def validateAndOrder (input : HeapSnapshot) : Except String HeapSnapshot
 def validateHeap (heap : HeapSnapshot) : Except String Unit := do
   let _ ← validateAndOrder heap
 
-/-- A separate restriction for a single fresh full-selection run. -/
-def validateFreshHeap (heap : HeapSnapshot) : Except String Unit := do
-  let heap ← validateAndOrder heap
+/-- Validate fresh-run preconditions and return the ordered input. -/
+def prepareFreshHeap (input : HeapSnapshot) : Except String HeapSnapshot := do
+  let heap ← validateAndOrder input
   for a in heap.objects do
     match a.state with
     | .youngOriginal _ (.normal false) | .oldOriginal _ (.normal false)
     | .nonmovingOriginal false => pure ()
     | _ => failAt "$.objects" "fresh heap requires only normal unmarked originals"
+  return heap
+
+/-- A separate restriction for a single fresh full-selection run. -/
+def validateFreshHeap (heap : HeapSnapshot) : Except String Unit := do
+  let _ ← prepareFreshHeap heap
 
 /-- Read generated JSON with the bundled parser, then validate the heap. -/
 def parseHeap (bytes : ByteArray) : Except String HeapSnapshot := do

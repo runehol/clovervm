@@ -58,8 +58,8 @@ The C++ native execution library in `tests/gc_differential/heap_runner.{h,cpp}`
 constructs fresh synthetic heaps, runs full mark or evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
 results, mixed destinations and invalid native states. The C++ file runner is
-implemented. Lean heap format support is implemented; Lean collection/file
-integration and cross-language comparison remain pending.
+implemented. Lean heap format and collection support are implemented; the Lean
+file CLI and automated cross-language comparison remain pending.
 
 ### C++ File Runner
 
@@ -94,19 +94,32 @@ printing for the generated JSON v1 files. It checks supported tags, required
 values, integer bounds and heap relationships before collection. Validation
 orders allocation records once and checks that each allocation ID equals its
 index. The wire types are separate from the collector model's logical/physical
-references; model projection is a later slice.
+references.
+
+`CloverGC/Differential/HeapRunner.lean` converts fresh snapshots into the existing
+mark and weak-evacuation models, executes full collection, and captures the
+result in the same heap schema. It retains immediate/null slot positions and
+original physical storage, maps logical identities through the explicit
+allocation pairing, and assigns copy IDs from the model's allocation ledger.
+Capture checks completion, reference cardinality, copy marks, weak kinds and
+the resulting heap relationships. It emits observed references without following
+forwarding. The collector definitions and proof assumptions are unchanged;
+conversion and capture are tested runtime code outside their proof boundary.
+The Lean command-line interface remains a later slice.
 
 From `proofs/gc`, run:
 
 ```sh
 lake build
 lake exe gc_format_tests
+lake exe gc_execution_tests
 ```
 
-The default build checks the existing proofs and builds the format test
-executable. The second command executes its shared-fixture, round-trip and
-heap-validity checks. These runtime tests are separate from the collector
-proofs and their axiom audits.
+The default build checks the existing proofs and builds both test executables.
+The format tests cover shared fixtures, round trips and heap validity. Execution
+tests cover both collectors, permuted identities, mixed destinations, weak
+repair, long cycles and deliberately inconsistent model results. These runtime
+tests are separate from the collector proofs and their axiom audits.
 
 ### Proof Module Layout
 
