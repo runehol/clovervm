@@ -34,6 +34,18 @@ def main : IO Unit := do
   let before ← fixture "before"
   for (algorithm, name) in [(Algorithm.mark, "after_mark"), (.evacuate, "after")] do
     check name ((← ok name (runCollection before algorithm)) == (← fixture name))
+  let young ← fixture "young_before"
+  let youngAfter ← fixture "young_after"
+  check "young remembered field repair" ((← ok "young" (runCollection young .evacuate .young)) == youngAfter)
+  check "full ignores remembered roots" ((← ok "full" (runCollection young .evacuate)) == (← fixture "young_full_after"))
+  let floating := { young with roots := #[] }
+  check "full does not retain through garbage remembered owners" ((← ok "full floating" (runCollection floating .evacuate)) == floating)
+  check "minor retains through unrooted old owners" ((← ok "young floating" (runCollection floating .evacuate .young)).objects == youngAfter.objects)
+  check "young mark unsupported" (!(runCollection young .mark .young).isOk)
+  check "young weak unsupported" (!(runCollection before .evacuate .young).isOk)
+  let ⟨_, _, prepared⟩ ← ok "young prepare" (prepareHeap young)
+  check "proof-carrying remembered logical pairing"
+    (prepared.generational.data.rememberedOwners.map Fin.val == [4, 3, 2])
   let empty : HeapSnapshot := ⟨#[.immediate (-9223372036854775808), .reference none,
     .immediate 9223372036854775807], #[], #[], #[]⟩
   for algorithm in [Algorithm.mark, .evacuate] do
