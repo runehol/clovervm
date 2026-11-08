@@ -12,3 +12,4 @@ import CloverGC.WeakExamples
 import CloverGC.WeakAudit
 import CloverGC.GenerationalExamples
 import CloverGC.GenerationalProofs
+import CloverGC.GenerationalFields
