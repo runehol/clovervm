@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | C++ format and native execution implemented; CLIs and Lean runner pending |
+| Implementation | C++ format and file runner implemented; Lean runner pending |
 | Scope | One heap snapshot schema with stable object identities, allocation IDs and tagged object states |
 | Owning layers | Runners validate and project snapshots; Lean owns the executable model and proofs; C++ uses the synthetic heap and collector templates |
 | Validated against | `986deae7` (2026-11-07), including tagged weak cells, native storage classes and the executable Lean definitions |
@@ -22,11 +22,21 @@ gc_cpp  --algorithm evacuate --collection full before.json > cpp-after.json
 gc_lean --algorithm evacuate --collection full before.json > lean-after.json
 ```
 
-The commands illustrate the planned runner interface. `--algorithm` is `mark`
-or `evacuate`. This slice supports only `--collection full`; `young` is rejected
+The C++ command is implemented; the Lean command illustrates its planned
+matching interface. `--algorithm` is `mark` or `evacuate`. This slice supports
+only `--collection full`; `young` is rejected
 until the model supports generation filtering. Seeds, generator settings,
 completion status and diagnostic traces are outside the heap file. A rejected,
 crashed or unfinished run must fail rather than emit a successful heap result.
+
+`gc_cpp` requires exactly one `--algorithm`, one `--collection`, and one input
+file. It rejects duplicate selections and extra files. Collection success emits
+one heap to stdout and exits zero. Argument and validation errors emit no heap,
+write diagnostics to stderr and exit one. File/output and execution errors also
+fail the process. The complete result is validated and serialized before writing
+stdout.
+`--help` prints usage to stdout and exits zero. See the
+[build and test commands](README.md#c-file-runner) for the in-tree executable.
 
 ## IDs and Cells
 

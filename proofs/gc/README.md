@@ -57,8 +57,34 @@ the C++ typed format reader, validator and writer are implemented in
 The C++ native execution library in `tests/gc_differential/heap_runner.{h,cpp}`
 constructs fresh synthetic heaps, runs full mark or evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
-results, mixed destinations and invalid native states. The command-line runners
-and Lean file integration are not implemented.
+results, mixed destinations and invalid native states. The C++ file runner is
+implemented; Lean file integration and cross-language comparison remain pending.
+
+### C++ File Runner
+
+From the repository root:
+
+```sh
+ninja -C build-debug gc_cpp
+build-debug/tests/gc_differential/gc_cpp --algorithm evacuate --collection full \
+  tests/gc_differential/fixtures/before.json > cpp-after.json
+```
+
+Use `--algorithm mark` for marking without movement or weak repair, and `--help`
+for usage. Both algorithms retain all original allocations in the output.
+Only full collection is supported. The runner reads one file; stdout carries the
+result heap and stderr carries errors. No VM initialization is required.
+
+Run the CLI process checks directly with either command:
+
+```sh
+ninja -C build-debug check_gc_cpp
+ctest --test-dir build-debug -R '^GCHeapCLI$' --output-on-failure
+```
+
+The same checks run under `check`, `check-all`, and CTest's `regular`/`full`
+labels. They compare the reviewed mark/evacuation fixtures as JSON, preserve
+array ordering, and exercise argument, file and validation errors.
 
 ### Proof Module Layout
 

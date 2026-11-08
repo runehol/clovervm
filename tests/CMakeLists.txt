@@ -217,3 +217,6 @@ DEPENDS test_clovervm clovervm check_native_module_linkage
 WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 USES_TERMINAL
 )
+
+add_dependencies(check check_gc_cpp)
+add_dependencies(check-all check_gc_cpp)
