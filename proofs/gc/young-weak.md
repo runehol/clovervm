@@ -70,9 +70,19 @@ cover mixed ages, partial early relocation, dead-guard reset, inactive entries,
 nulls and immediates. Exact axiom guards require only `propext` for the three
 main results. The driver and existing full-model proofs are unchanged.
 
+Slice six introduces `desired`, direct late repair of an original template, and
+a three-field `UnitInvariant` relative to a fixed eventual strong result.
+Unregistered units retain their templates, registered units remain compatible
+with direct late repair, and registered units outside the pending queue already
+equal their desired values. Single and repeated fresh early visits preserve the
+invariant under strong-state progress. Batches require the combined
+registration list to be duplicate-free. Queue properties remain separate in
+the existing scheduling proofs. Directed examples cover settled, pending and
+unregistered units, with exact axiom guards for both preservation results.
+
 The remaining accepted slices are:
 
-1. Prove collection-wide repair correctness and retained
+1. Prove drain preservation, collection-wide repair correctness and retained
    weak-reference safety, preserving the existing full path and proof claims.
    Split the proof work into further reviewable commits as needed.
 2. Extend the shared before/after heap format to v3 with required ordered

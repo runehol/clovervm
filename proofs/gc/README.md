@@ -252,7 +252,8 @@ validation and examples, are implemented. Erasing weak state preserves the exact
 strong result and scan trace. Young weak collection is not yet connected to
 either runner. Exact registration order, unique registration and deferred-queue
 accounting are proved, as are local late completion and early/late repair
-compatibility. Collection-wide repair correctness and final weak-safety proofs
+compatibility. A semantic unit invariant is preserved by fresh early registration.
+Drain preservation, collection-wide repair correctness and final weak-safety proofs
 remain pending.
 
 [Young-only strong evacuation](young-strong.md) describes the proof-carrying

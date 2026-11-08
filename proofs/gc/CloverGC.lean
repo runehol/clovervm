@@ -23,3 +23,5 @@ import CloverGC.GenerationalWeakSchedulingExamples
 import CloverGC.GenerationalWeakSchedulingAudit
 import CloverGC.GenerationalWeakRepairExamples
 import CloverGC.GenerationalWeakRepairAudit
+import CloverGC.GenerationalWeakRepairInvariantExamples
+import CloverGC.GenerationalWeakRepairInvariantAudit
