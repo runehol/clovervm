@@ -4,7 +4,7 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | C++ and Lean file runners implemented |
+| Implementation | C++ and Lean file runners and host-Python comparator implemented |
 | Scope | One heap snapshot schema with stable object identities, allocation IDs and tagged object states |
 | Owning layers | Runners validate and project snapshots; Lean owns the executable model and proofs; C++ uses the synthetic heap and collector templates |
 | Validated against | `986deae7` (2026-11-07), including tagged weak cells, native storage classes and the executable Lean definitions |
@@ -440,7 +440,12 @@ C++ RapidCheck or a Python campaign can generate the same fresh heap and run
 both collectors with identical separate run configuration. The format does not
 depend on the generator. Directed heap/expected-heap pairs require no generation.
 Seeds, campaign settings and runner revisions belong to reproduction metadata
-outside the heap. These tools are not implemented by this document.
+outside the heap. The host-CPython comparator in `tests/gc_differential/compare.py`
+provides a file CLI and an importable `assert_equivalent` function for generated
+heap dictionaries. It compares both runners' complete JSON results, distinguishes
+mismatches from runner failures, and preserves original failing inputs and run
+outputs. Generation and shrinking remain future work. See the
+[comparison commands and API](README.md#host-python-comparison).
 
 A future shrinker restores the dense object-identity, allocation-ID and unit-ID
 domains separately and updates all affected references and associations. It

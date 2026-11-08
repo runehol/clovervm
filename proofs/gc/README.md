@@ -59,7 +59,8 @@ constructs fresh synthetic heaps, runs full mark or evacuation, and captures
 checked snapshots before source reclamation. Directed tests cover the documented
 results, mixed destinations and invalid native states. The C++ file runner is
 implemented. The Lean format, collection and file CLI are also implemented;
-automated cross-language comparison remains pending.
+the host-CPython comparator runs both file interfaces. Generation and shrinking
+remain pending.
 
 ### C++ File Runner
 
@@ -134,6 +135,57 @@ tests are separate from the collector proofs and their axiom audits. CLI tests
 launch the built runner as a process and cover reviewed outputs, argument/file
 errors, exact paths, empty heaps and rejection of completed snapshots. Their
 Lake dependency builds `gc_lean` automatically; CMake remains independent of Lean.
+
+### Host Python Comparison
+
+Use standard host CPython 3.10 or newer for this harness. Build `gc_cpp` and `gc_lean` using
+the commands above, then run from the repository root:
+
+```sh
+python3 tests/gc_differential/compare.py \
+  --cpp build-debug/tests/gc_differential/gc_cpp \
+  --lean proofs/gc/.lake/build/bin/gc_lean \
+  --algorithm evacuate --collection full \
+  tests/gc_differential/fixtures/before.json
+python3 -m unittest discover -s tests/gc_differential
+```
+
+The comparator copies the input once, supplies the same file to both runners,
+and compares complete JSON output. It ignores object member order and whitespace,
+preserves array order, and distinguishes booleans, integers and other JSON value
+types. It does not renumber IDs or follow forwarding. Runners own heap validation;
+the Python harness does not implement another heap parser or collector.
+
+Exit codes are 0 for agreement, 1 for a heap mismatch, and 2 for runner/input
+failure. Both runners are attempted even if one fails. Rejection (including
+identical rejection by both), crash, timeout, launch errors, invalid JSON and
+stderr on a successful exit are runner failures. `--timeout` is a finite positive
+per-runner limit in seconds, defaulting to 15.
+
+Every comparison failure creates a unique directory under
+`gc-differential-failures/` (or `--failure-dir`). It contains the original
+`input.json` bytes, raw `cpp.stdout`/`cpp.stderr` and `lean.stdout`/`lean.stderr`,
+and `run.json` with outcome, run configuration, statuses, exit codes and replayable
+commands pointing to the preserved input. Mismatches also include
+`difference.diff`. Existing failures are never overwritten. Keep the referenced
+executables to replay a result; the harness does not build or archive binaries.
+
+`tests/gc_differential/compare.py` is also importable by property tests in that
+directory (or with `PYTHONPATH=tests/gc_differential`):
+
+```python
+from compare import assert_equivalent
+
+assert_equivalent(heap, cpp=cpp_path, lean=lean_path, algorithm="evacuate")
+```
+
+The callable takes an ordinary heap dictionary, returns `None` on agreement,
+and raises `HeapMismatch` or `RunnerFailure`, each carrying `artifact_dir`.
+It accepts `timeout` and `failure_dir` as keyword arguments. This prepares the
+interface for Hypothesis; strategies, campaigns and shrinking are later slices.
+The comparator and its tests use only Python's standard library and run outside
+the VM. Controlled-runner tests exercise mismatch/failure handling; the real
+runner integration test is skipped when either binary has not been built.
 
 ### Proof Module Layout
 
@@ -264,5 +316,6 @@ the mark-phase slice. In particular it does not establish production root comple
 layout safety, or a formal refinement from C++ to Lean. The C++ tests remain
 necessary. The separate copying-discovery slice establishes local forwarding
 properties; the strong-evacuation slice proves the complete abstract strong
-traversal. Executable differential comparison against the C++ test heap,
-minor-collection filtering and runtime ownership proofs remain later work.
+traversal. Executable differential comparison against the C++ test heap is
+implemented separately; minor-collection filtering and runtime ownership proofs
+remain later work.
