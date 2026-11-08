@@ -327,9 +327,9 @@ theorem validateHeap_weak_covered (heap : HeapSnapshot)
       rw [validateAndOrder_value heap checked result] at covered
       exact (orderedHeap_coverage heap).mp covered
 
-/-- Successful fresh preparation certifies coverage of the returned snapshot. -/
-theorem prepareFreshHeap_weak_covered (input heap : HeapSnapshot)
-    (accepted : prepareFreshHeap input = .ok heap) : WeakRememberedCovered heap := by
+private theorem prepareFreshHeap_checked (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) :
+    ∃ checked, validateAndOrder input = .ok checked ∧ checked.val = heap := by
   unfold prepareFreshHeap at accepted
   cases result : validateAndOrder input with
   | error message => simp [result, bind, Except.bind] at accepted
@@ -338,8 +338,22 @@ theorem prepareFreshHeap_weak_covered (input heap : HeapSnapshot)
       | error message => simp [result, fresh, bind, Except.bind] at accepted
       | ok value =>
           simp [result, fresh, bind, Except.bind, pure, Except.pure] at accepted
-          subst heap
-          exact checked.property
+          exact ⟨checked, rfl, accepted⟩
+
+/-- Successful fresh preparation certifies coverage of the returned snapshot. -/
+theorem prepareFreshHeap_weak_covered (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : WeakRememberedCovered heap := by
+  obtain ⟨checked, _, same⟩ := prepareFreshHeap_checked input heap accepted
+  rw [← same]
+  exact checked.property
+
+/-- Fresh preparation only orders allocations; none are removed or replaced. -/
+theorem prepareFreshHeap_objects_perm (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) :
+    heap.objects.toList.Perm input.objects.toList := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  rw [← same, validateAndOrder_value input checked validated]
+  exact Array.perm_iff_toList_perm.mp Array.mergeSort_perm
 
 /-- A separate restriction for a single fresh full-selection run. -/
 def validateFreshHeap (heap : HeapSnapshot) : Except String Unit := do

@@ -53,6 +53,12 @@ def main : IO Unit := do
     .immediate 9223372036854775807], #[], #[], #[]⟩
   for algorithm in [Algorithm.mark, .evacuate] do
     check "empty and immediate roots" ((← ok "empty" (runCollection empty algorithm)) == empty)
+  let oldOnly : HeapSnapshot := { empty with roots := #[], objects := #[
+    ⟨⟨"obj-0"⟩, ⟨1⟩, .nonmovingOriginal false, #[], #[]⟩,
+    ⟨⟨"obj-1"⟩, ⟨0⟩, .oldOriginal .nonmoving (.normal false), #[], #[]⟩] }
+  let oldOnlyExpected := { oldOnly with objects := oldOnly.objects.reverse }
+  check "young retains unreachable old originals with permuted IDs"
+    ((← ok "old-only young" (runCollection oldOnly .evacuate .young)) == oldOnlyExpected)
   let external := { empty with externalWeak := #[⟨⟨0⟩, .field (.immediate 17)⟩,
     ⟨⟨1⟩, .entry ⟨none, none, .immediate 42⟩⟩] }
   let repaired := { external with externalWeak := #[⟨⟨0⟩, .field (.immediate 17)⟩,

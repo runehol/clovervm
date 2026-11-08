@@ -113,6 +113,15 @@ Capture checks completion, reference cardinality, copy marks, weak kinds and
 the resulting heap relationships. It emits observed references without following
 forwarding. The collector definitions and proof assumptions are unchanged;
 conversion and capture are tested runtime code outside their proof boundary.
+Capture preservation is also proved at the executable boundary. Fresh preparation
+preserves the allocation records up to sorting; capture reads originals directly
+from that retained snapshot and appends destination copies in allocation order.
+`runCollection_original_prefix` and `runCollection_preserves_original` establish
+that successful output retains every input original's object ID, allocation ID,
+storage kind, generation and placement policy, including unreachable old originals
+in a young collection. Headers and repaired fields may change. The corresponding
+`HeapRunnerAudit` guards the transitive axiom dependencies.
+
 The `gc_lean` executable exposes the same file interface as `gc_cpp`:
 
 ```sh
