@@ -146,6 +146,13 @@ positions and tagged payload values are preserved; capture also preserves
 unvisited inactive entries. These claims remain in the separate proof module
 and are axiom-audited.
 
+`ReferenceValid` and `FreshStates` independently specify reference bounds and
+fresh object states. `checkReference_correct` and `checkFreshHeap_correct` prove
+acceptance exactly when these predicates hold, including null references, empty
+heaps, and both placement policies. The state predicate admits only unmarked
+originals without forwarding. These leaf validation proofs are axiom-audited;
+they impose no restriction on immediate payloads.
+
 `SnapshotProjection` composes the cell and weak-unit relations into the complete
 physical evacuation snapshot. `captureStrong_projects` covers both full and young
 capture: ordered originals followed by copies, exact identities and headers,

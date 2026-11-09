@@ -176,7 +176,7 @@ private def isDestination : ObjectState → Bool
 private def movable : ObjectState → Option (CopyTo × Header)
   | .youngOriginal copyTo h | .oldOriginal copyTo h => some (copyTo, h)
   | _ => none
-private def checkReference (ref : Reference) (count : Nat) (path : String) : Except String Unit := do
+def checkReference (ref : Reference) (count : Nat) (path : String) : Except String Unit := do
   if let some id := ref then
     unless id.value < count do failAt path "reference names no allocation"
 private def checkCell (value : Cell) (count : Nat) (path : String) : Except String Unit := do

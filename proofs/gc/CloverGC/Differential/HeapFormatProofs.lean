@@ -60,4 +60,53 @@ theorem prepareFreshHeap_objects_perm (input heap : HeapSnapshot)
   rw [← same, validateAndOrder_value input checked validated]
   exact Array.perm_iff_toList_perm.mp Array.mergeSort_perm
 
+/-- Null references are valid; non-null references name an existing physical allocation. -/
+def ReferenceValid (count : Nat) (ref : Reference) : Prop :=
+  ∀ id ∈ ref, id.value < count
+
+/-- Fresh inputs contain only unmarked original allocations without forwarding. -/
+def FreshState : ObjectState → Prop
+  | .youngOriginal _ (.normal false) | .oldOriginal _ (.normal false)
+  | .nonmovingOriginal false => True
+  | _ => False
+
+def FreshStates (heap : HeapSnapshot) : Prop :=
+  ∀ allocation ∈ heap.objects.toList, FreshState allocation.state
+
+/-- Reference checking accepts exactly null or in-range physical allocation IDs. -/
+theorem checkReference_correct (ref : Reference) (count : Nat) (path : String) :
+    checkReference ref count path = .ok () ↔ ReferenceValid count ref := by
+  cases ref with
+  | none => simp [checkReference, ReferenceValid, pure, Except.pure]
+  | some id =>
+      by_cases valid : id.value < count <;>
+        simp [checkReference, ReferenceValid, valid, pure, Except.pure]
+      intro impossible
+      cases impossible
+
+/-- The fresh-state check accepts exactly the independent state predicate. -/
+theorem checkFreshHeap_correct (heap : HeapSnapshot) :
+    checkFreshHeap heap = .ok () ↔ FreshStates heap := by
+  unfold checkFreshHeap FreshStates
+  rw [← Array.forIn_toList]
+  generalize heap.objects.toList = objects
+  induction objects with
+  | nil => simp [List.forIn_nil, bind, Except.bind, pure, Except.pure]
+  | cons a rest ih =>
+      cases state : a.state with
+      | youngOriginal policy header | oldOriginal policy header =>
+          cases header with
+          | normal marked => cases marked <;>
+              simp_all [List.forIn_cons, FreshState, bind, Except.bind, pure, Except.pure] <;>
+                (intro impossible; cases impossible)
+          | forwarded target =>
+              simp_all [List.forIn_cons, FreshState, bind, Except.bind, pure, Except.pure] <;>
+                (intro impossible; cases impossible)
+      | nonmovingOriginal marked => cases marked <;>
+          simp_all [List.forIn_cons, FreshState, bind, Except.bind, pure, Except.pure] <;>
+                (intro impossible; cases impossible)
+      | ordinaryDestination | nonmovingDestination =>
+          simp_all [List.forIn_cons, FreshState, bind, Except.bind, pure, Except.pure] <;>
+                (intro impossible; cases impossible)
+
 end CloverGC.Differential.Format
