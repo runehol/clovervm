@@ -114,6 +114,15 @@ the resulting heap relationships. It emits observed references without following
 forwarding. Full snapshot projection and end-to-end success for valid wire inputs
 remain separate proof obligations.
 
+The adapter follows the same implementation/proof split as the collector:
+`HeapFormat.lean` and `HeapRunner.lean` contain executable definitions;
+`HeapFormatProofs.lean` and `HeapRunnerProofs.lean` contain their correctness
+claims and projection specifications. Each audit imports its proof module.
+The default `lake build` checks both layers. For adapter mutation checks, build
+`CloverGC.Differential.HeapFormatProofs` and
+`CloverGC.Differential.HeapRunnerProofs` explicitly; an implementation-only
+build does not check those theorems.
+
 The pure `encodeReference` and `encodeCell` specifications describe physical
 reference and tagged-cell projection independently of the fallible capture code.
 `allocationOfReference_correct` and `captureCell_correct` prove success exactly

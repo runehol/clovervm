@@ -1,4 +1,4 @@
-import CloverGC.Differential.HeapRunner
+import CloverGC.Differential.HeapRunnerProofs
 
 /- Capture preservation applies to executable output, not just the logical collector. -/
 /-- info: 'CloverGC.Differential.Format.prepareFreshHeap_objects_perm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
