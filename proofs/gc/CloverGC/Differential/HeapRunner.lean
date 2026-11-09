@@ -1,4 +1,5 @@
 import CloverGC.Differential.HeapFormat
+import CloverGC.Differential.HeapFormatProofs
 import CloverGC.WeakRepair
 import CloverGC.GenerationalWeakSafety
 

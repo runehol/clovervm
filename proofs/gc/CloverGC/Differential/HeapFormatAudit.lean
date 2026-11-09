@@ -1,4 +1,4 @@
-import CloverGC.Differential.HeapFormat
+import CloverGC.Differential.HeapFormatProofs
 
 /- Guard transitive dependencies of the executable validators' coverage proofs. -/
 /-- info: 'CloverGC.Differential.Format.validateHeap_weak_covered' depends on axioms: [propext, Classical.choice, Quot.sound] -/

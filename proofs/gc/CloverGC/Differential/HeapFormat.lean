@@ -1,7 +1,7 @@
 import Lean.Data.Json.Parser
 import Lean.Data.Json.Printer
 import Std.Data.HashSet
-import Init.Data.Array.Sort.Lemmas
+import Init.Data.Array.Sort.Basic
 
 namespace CloverGC.Differential.Format
 
@@ -208,7 +208,7 @@ private def checkUnits (values : Array WeakUnit) (path : String) (storage : Unit
   return seen
 
 /-- Validate structural preconditions of an allocation-ordered snapshot. -/
-private def validateStructure (heap : HeapSnapshot) : Except String Unit := do
+def validateStructure (heap : HeapSnapshot) : Except String Unit := do
   let count := heap.objects.size
   let originalCount := heap.objects.foldl (fun n a => if isDestination a.state then n else n + 1) 0
   let mut origins : Array (Option Allocation) := Array.replicate originalCount none
@@ -271,14 +271,10 @@ private def validateStructure (heap : HeapSnapshot) : Except String Unit := do
         unless a.unitId == b.unitId && sameKind do failAt "$.objects" "destination weak layout differs"
     | _, _ => failAt "$.objects" "destination and original require reciprocal forwarding"
 
-private def orderedHeap (input : HeapSnapshot) : HeapSnapshot :=
+def orderedHeap (input : HeapSnapshot) : HeapSnapshot :=
   { input with objects := input.objects.mergeSort (fun a b => a.allocationId.value ≤ b.allocationId.value) }
 
-private theorem orderedHeap_coverage (input : HeapSnapshot) :
-    WeakRememberedCovered (orderedHeap input) ↔ WeakRememberedCovered input := by
-  simp only [WeakRememberedCovered, orderedHeap, ← Array.mem_def, Array.mem_mergeSort]
-
-private def validateAndOrder (input : HeapSnapshot) :
+def validateAndOrder (input : HeapSnapshot) :
     Except String { heap : HeapSnapshot // WeakRememberedCovered heap } := do
   let heap := orderedHeap input
   validateStructure heap
@@ -289,7 +285,7 @@ private def validateAndOrder (input : HeapSnapshot) :
 def validateHeap (heap : HeapSnapshot) : Except String Unit := do
   let _ ← validateAndOrder heap
 
-private def checkFreshHeap (heap : HeapSnapshot) : Except String Unit := do
+def checkFreshHeap (heap : HeapSnapshot) : Except String Unit := do
   for a in heap.objects do
     match a.state with
     | .youngOriginal _ (.normal false) | .oldOriginal _ (.normal false)
@@ -301,59 +297,6 @@ def prepareFreshHeap (input : HeapSnapshot) : Except String HeapSnapshot := do
   let checked ← validateAndOrder input
   checkFreshHeap checked.val
   return checked.val
-
-private theorem validateAndOrder_value (input : HeapSnapshot)
-    (checked : { heap : HeapSnapshot // WeakRememberedCovered heap })
-    (accepted : validateAndOrder input = .ok checked) : checked.val = orderedHeap input := by
-  unfold validateAndOrder at accepted
-  cases structureResult : validateStructure (orderedHeap input) with
-  | error message => simp [structureResult, bind, Except.bind] at accepted
-  | ok value =>
-      simp only [structureResult, bind, Except.bind] at accepted
-      split at accepted
-      · simp only [pure, Except.pure, Except.ok.injEq] at accepted
-        cases accepted
-        rfl
-      · contradiction
-
-/-- Successful public validation certifies coverage of the supplied snapshot. -/
-theorem validateHeap_weak_covered (heap : HeapSnapshot)
-    (accepted : validateHeap heap = .ok ()) : WeakRememberedCovered heap := by
-  unfold validateHeap at accepted
-  cases result : validateAndOrder heap with
-  | error message => simp [result, bind, Except.bind] at accepted
-  | ok checked =>
-      have covered := checked.property
-      rw [validateAndOrder_value heap checked result] at covered
-      exact (orderedHeap_coverage heap).mp covered
-
-private theorem prepareFreshHeap_checked (input heap : HeapSnapshot)
-    (accepted : prepareFreshHeap input = .ok heap) :
-    ∃ checked, validateAndOrder input = .ok checked ∧ checked.val = heap := by
-  unfold prepareFreshHeap at accepted
-  cases result : validateAndOrder input with
-  | error message => simp [result, bind, Except.bind] at accepted
-  | ok checked =>
-      cases fresh : checkFreshHeap checked.val with
-      | error message => simp [result, fresh, bind, Except.bind] at accepted
-      | ok value =>
-          simp [result, fresh, bind, Except.bind, pure, Except.pure] at accepted
-          exact ⟨checked, rfl, accepted⟩
-
-/-- Successful fresh preparation certifies coverage of the returned snapshot. -/
-theorem prepareFreshHeap_weak_covered (input heap : HeapSnapshot)
-    (accepted : prepareFreshHeap input = .ok heap) : WeakRememberedCovered heap := by
-  obtain ⟨checked, _, same⟩ := prepareFreshHeap_checked input heap accepted
-  rw [← same]
-  exact checked.property
-
-/-- Fresh preparation only orders allocations; none are removed or replaced. -/
-theorem prepareFreshHeap_objects_perm (input heap : HeapSnapshot)
-    (accepted : prepareFreshHeap input = .ok heap) :
-    heap.objects.toList.Perm input.objects.toList := by
-  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
-  rw [← same, validateAndOrder_value input checked validated]
-  exact Array.perm_iff_toList_perm.mp Array.mergeSort_perm
 
 /-- A separate restriction for a single fresh full-selection run. -/
 def validateFreshHeap (heap : HeapSnapshot) : Except String Unit := do
