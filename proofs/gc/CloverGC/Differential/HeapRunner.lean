@@ -154,6 +154,21 @@ private def allocationOfReference (heap : PreparedHeap n k) (state : Copying.Cop
     let _ ← required "heap capture: unallocated copy reference" state.copies[index]?
     return ⟨n + index⟩
 
+/-- Slot-by-slot projection preserves scalar cells and consumes exactly one
+    valid model reference at each non-null reference position. -/
+inductive CellsProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n) :
+    List Format.Cell → List (Copying.Reference n) → List Format.Cell → Prop where
+  | nil : CellsProjection heap copying [] [] []
+  | immediate (value : Int) (tail : CellsProjection heap copying layout refs output) :
+      CellsProjection heap copying (.immediate value :: layout) refs (.immediate value :: output)
+  | null (tail : CellsProjection heap copying layout refs output) :
+      CellsProjection heap copying (.reference none :: layout) refs (.reference none :: output)
+  | reference (old : Format.AllocationId) (reference : Copying.Reference n)
+      (valid : Copying.ValidReference copying reference)
+      (tail : CellsProjection heap copying layout refs output) :
+      CellsProjection heap copying (.reference (some old) :: layout) (reference :: refs)
+        (.reference (some (encodeReference heap reference)) :: output)
+
 private def mergeReferences (convert : α → Except String Format.AllocationId) :
     List Format.Cell → List α → Except String (List Format.Cell)
   | [], [] => pure []
@@ -180,6 +195,71 @@ theorem allocationOfReference_correct (heap : PreparedHeap n k) (copying : Copyi
       cases allocated : copying.copies[index]? <;>
         simp [allocationOfReference, required, allocated, Copying.ValidReference,
           encodeReference, bind, Except.bind, pure, Except.pure, eq_comm]
+
+private theorem mergeReferences_sound (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (layout : List Format.Cell) (refs : List (Copying.Reference n)) (output : List Format.Cell)
+    (accepted : mergeReferences (allocationOfReference heap copying) layout refs = .ok output) :
+    CellsProjection heap copying layout refs output := by
+  induction layout generalizing refs output with
+  | nil =>
+      cases refs <;> simp [mergeReferences, pure, Except.pure] at accepted
+      subst output
+      exact .nil
+  | cons cell layout ih =>
+      cases cell with
+      | immediate value =>
+          cases rest : mergeReferences (allocationOfReference heap copying) layout refs with
+          | error message => simp [mergeReferences, rest, bind, Except.bind] at accepted
+          | ok tail =>
+              simp [mergeReferences, rest, bind, Except.bind, pure, Except.pure] at accepted
+              subst output
+              exact .immediate value (ih refs tail rest)
+      | reference target =>
+          cases target with
+          | none =>
+              cases rest : mergeReferences (allocationOfReference heap copying) layout refs with
+              | error message => simp [mergeReferences, rest, bind, Except.bind] at accepted
+              | ok tail =>
+                  simp [mergeReferences, rest, bind, Except.bind, pure, Except.pure] at accepted
+                  subst output
+                  exact .null (ih refs tail rest)
+          | some old =>
+              cases refs with
+              | nil => simp [mergeReferences] at accepted
+              | cons reference refs =>
+                  cases converted : allocationOfReference heap copying reference with
+                  | error message => simp [mergeReferences, converted, bind, Except.bind] at accepted
+                  | ok id =>
+                      cases rest : mergeReferences (allocationOfReference heap copying) layout refs with
+                      | error message => simp [mergeReferences, converted, rest, bind, Except.bind] at accepted
+                      | ok tail =>
+                          simp [mergeReferences, converted, rest, bind, Except.bind, pure, Except.pure] at accepted
+                          subst output
+                          obtain ⟨valid, rfl⟩ := (allocationOfReference_correct heap copying reference id).mp converted
+                          exact .reference old reference valid (ih refs tail rest)
+
+private theorem mergeReferences_complete (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (projected : CellsProjection heap copying layout refs output) :
+    mergeReferences (allocationOfReference heap copying) layout refs = .ok output := by
+  induction projected with
+  | nil => rfl
+  | immediate value tail ih => simp [mergeReferences, ih, bind, Except.bind, pure, Except.pure]
+  | null tail ih => simp [mergeReferences, ih, bind, Except.bind, pure, Except.pure]
+  | reference old reference valid tail ih =>
+      have converted := (allocationOfReference_correct heap copying reference
+        (encodeReference heap reference)).mpr ⟨valid, rfl⟩
+      simp [mergeReferences, converted, ih, bind, Except.bind, pure, Except.pure]
+
+/-- Ordered merging succeeds exactly when every cell has the specified projection. -/
+theorem mergeReferences_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (layout : List Format.Cell) (refs : List (Copying.Reference n)) (output : List Format.Cell) :
+    mergeReferences (allocationOfReference heap copying) layout refs = .ok output ↔
+      CellsProjection heap copying layout refs output :=
+  ⟨mergeReferences_sound heap copying layout refs output, mergeReferences_complete heap copying⟩
+
+theorem CellsProjection.length (projected : CellsProjection heap copying layout refs output) :
+    output.length = layout.length := by
+  induction projected <;> simp_all
 
 /-- Cell capture preserves its tag, value and physical reference encoding. -/
 theorem captureCell_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
@@ -491,5 +571,77 @@ theorem runCollection_preserves_original (input output : Format.HeapSnapshot) (a
   have present := originalPrefix.mem_iff.mpr (List.mem_map.mpr ⟨original, member, rfl⟩)
   obtain ⟨allocation, inside, same⟩ := List.mem_map.mp present
   exact ⟨allocation, List.mem_of_mem_take inside, same⟩
+
+/-- Original strong slots expose the fields of the corresponding model object. -/
+theorem captureOriginal_strong (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (initial output : Format.Allocation)
+    (accepted : captureOriginal heap state units collection initial = .ok output) :
+    ∃ object, originalReference heap.objectOfAllocation initial.allocationId = .ok object ∧
+      CellsProjection heap state.copying initial.strong.toList
+        (state.originalFields object) output.strong.toList := by
+  unfold captureOriginal at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    refine ⟨_, by assumption, ?_⟩
+    exact (mergeReferences_correct _ _ _ _ _).mp (by assumption)
+
+/-- Destination strong slots expose their copy record's repaired fields. -/
+theorem captureCopy_strong (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (record : Copying.CopyRecord n) (index : Nat) (output : Format.Allocation)
+    (accepted : captureCopy heap state units collection record index = .ok output) :
+    CellsProjection heap state.copying (heap.originals.get record.origin).strong.toList
+      record.strongChildren output.strong.toList := by
+  unfold captureCopy at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    exact (mergeReferences_correct _ _ _ _ _).mp (by assumption)
+
+/-- The emitted root array preserves every cell and the model's ordered references. -/
+theorem captureStrong_roots (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (output : Format.HeapSnapshot)
+    (accepted : captureStrong heap state units collection = .ok output) :
+    CellsProjection heap state.copying heap.initial.roots.toList state.roots output.roots.toList := by
+  unfold captureStrong at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    exact (mergeReferences_correct _ _ _ _ _).mp (by assumption)
+
+theorem captureEvacuated_roots (heap : PreparedHeap n k) (state : Copying.Weak.State n k)
+    (output : Format.HeapSnapshot) (accepted : captureEvacuated heap state = .ok output) :
+    CellsProjection heap state.strong.copying heap.initial.roots.toList
+      state.strong.roots output.roots.toList := by
+  unfold captureEvacuated at accepted
+  simp only [bind, Except.bind] at accepted
+  split at accepted
+  · exact captureStrong_roots heap state.strong state.units .full output accepted
+  · contradiction
+
+/-- Mark capture leaves the root cells in their original order. -/
+theorem captureMark_roots (heap : PreparedHeap n k) (state : MarkState n)
+    (output : Format.HeapSnapshot) (accepted : captureMark heap state = .ok output) :
+    output.roots = heap.initial.roots := by
+  unfold captureMark at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals cases accepted; rfl
+
+/-- Marking changes headers while leaving every original strong slot unchanged. -/
+theorem captureMarkedOriginal_strong (heap : PreparedHeap n k) (state : MarkState n)
+    (initial output : Format.Allocation)
+    (accepted : captureMarkedOriginal heap state initial = .ok output) :
+    output.strong = initial.strong := by
+  unfold captureMarkedOriginal at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals cases accepted; rfl
 
 end CloverGC.Differential

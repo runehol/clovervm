@@ -122,6 +122,13 @@ retain their original allocation ID; immediates retain their value and tag, and
 null reference cells remain distinct from immediate zero. `captureCell_succeeds`
 provides the local success theorem for valid cells. These claims are axiom-audited.
 
+`CellsProjection` specifies ordered root and strong-slot projection: immediate
+and null cells remain in place, and each non-null reference position consumes
+exactly one valid model reference. `mergeReferences_correct` proves this relation
+is equivalent to successful merging. The capture theorems connect it to emitted
+root arrays and the strong fields of originals and copies, including exact cell
+counts and duplicate references. Mark capture preserves root and strong cells.
+
 Capture preservation is also proved at the executable boundary. Fresh preparation
 preserves the allocation records up to sorting; capture reads originals directly
 from that retained snapshot and appends destination copies in allocation order.

@@ -31,3 +31,27 @@ import CloverGC.Differential.HeapRunner
 /-- info: 'CloverGC.Differential.captureCell_succeeds' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms CloverGC.Differential.captureCell_succeeds
+/-- info: 'CloverGC.Differential.mergeReferences_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.mergeReferences_correct
+/-- info: 'CloverGC.Differential.CellsProjection.length' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.CellsProjection.length
+/-- info: 'CloverGC.Differential.captureOriginal_strong' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureOriginal_strong
+/-- info: 'CloverGC.Differential.captureCopy_strong' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureCopy_strong
+/-- info: 'CloverGC.Differential.captureStrong_roots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureStrong_roots
+/-- info: 'CloverGC.Differential.captureEvacuated_roots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureEvacuated_roots
+/-- info: 'CloverGC.Differential.captureMark_roots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureMark_roots
+/-- info: 'CloverGC.Differential.captureMarkedOriginal_strong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureMarkedOriginal_strong
