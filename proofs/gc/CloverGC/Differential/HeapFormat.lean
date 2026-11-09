@@ -161,7 +161,7 @@ private def objectState (json : Lean.Json) (path : String) : Except String Objec
   if kind == "nonmoving_destination" then return .nonmovingDestination
   failAt (path ++ ".kind") "unknown object state"
 
-private def objectNumber (id : ObjectId) (path : String) : Except String Nat := do
+def objectNumber (id : ObjectId) (path : String) : Except String Nat := do
   unless id.value.startsWith "obj-" do failAt path "expected canonical obj-N identity"
   let digits := String.ofList (id.value.toList.drop 4)
   unless !digits.isEmpty && digits.toList.all (fun c => '0' ≤ c && c ≤ '9') do
@@ -170,7 +170,7 @@ private def objectNumber (id : ObjectId) (path : String) : Except String Nat := 
   let some number := digits.toNat? | failAt path "invalid object identity"
   if number > uint64Max then failAt path "object identity out of range"
   return number
-private def isDestination : ObjectState → Bool
+def isDestination : ObjectState → Bool
   | .ordinaryDestination | .nonmovingDestination => true
   | _ => false
 private def movable : ObjectState → Option (CopyTo × Header)
@@ -207,32 +207,49 @@ private def checkUnits (values : Array WeakUnit) (path : String) (storage : Unit
       checkCell entry.payload count (p ++ ".payload")
   return seen
 
+/-- Tables carried through the per-allocation structural checks. -/
+structure AllocationTables where
+  origins : Array (Option Allocation)
+  copies : Array (Option Allocation)
+  seen : Std.HashSet Nat
+
+def validateAllocation (count originalCount : Nat) (tables : AllocationTables)
+    (pair : Allocation × Nat) : Except String AllocationTables := do
+  let (a, i) := pair
+  let mut origins := tables.origins
+  let mut copies := tables.copies
+  let mut seen := tables.seen
+  let p := indexPath "$.objects" i
+  unless a.allocationId.value == i do failAt p "allocation IDs must be unique and dense"
+  let logical ← objectNumber a.objectId (p ++ ".object_id")
+  if isDestination a.state then
+    unless a.allocationId.value ≥ originalCount do failAt p "original IDs must precede destinations"
+    if h : logical < copies.size then
+      if copies[logical].isSome then failAt p "duplicate destination identity"
+      copies := copies.set logical (some a)
+    else failAt p "object identities must be dense"
+  else
+    unless a.allocationId.value < originalCount do failAt p "original IDs must precede destinations"
+    if h : logical < origins.size then
+      if origins[logical].isSome then failAt p "duplicate original identity"
+      origins := origins.set logical (some a)
+    else failAt p "object identities must be dense"
+  for (value, j) in a.strong.toList.zipIdx do checkCell value count (indexPath (p ++ ".strong") j)
+  seen ← checkUnits a.weak (p ++ ".weak") (if isDestination a.state then .destination else .original) count seen
+  return ⟨origins, copies, seen⟩
+
 /-- Validate structural preconditions of an allocation-ordered snapshot. -/
 def validateStructure (heap : HeapSnapshot) : Except String Unit := do
   let count := heap.objects.size
   let originalCount := heap.objects.foldl (fun n a => if isDestination a.state then n else n + 1) 0
-  let mut origins : Array (Option Allocation) := Array.replicate originalCount none
-  let mut copies : Array (Option Allocation) := Array.replicate originalCount none
+  let origins : Array (Option Allocation) := Array.replicate originalCount none
+  let copies : Array (Option Allocation) := Array.replicate originalCount none
   for (value, i) in heap.roots.toList.zipIdx do checkCell value count (indexPath "$.roots" i)
-  let mut seen ← checkUnits heap.externalWeak "$.external_weak" .external count {}
-  for (a, i) in heap.objects.toList.zipIdx do
-    let p := indexPath "$.objects" i
-    unless a.allocationId.value == i do failAt p "allocation IDs must be unique and dense"
-    let logical ← objectNumber a.objectId (p ++ ".object_id")
-    if isDestination a.state then
-      unless a.allocationId.value ≥ originalCount do failAt p "original IDs must precede destinations"
-      if h : logical < copies.size then
-        if copies[logical].isSome then failAt p "duplicate destination identity"
-        copies := copies.set logical (some a)
-      else failAt p "object identities must be dense"
-    else
-      unless a.allocationId.value < originalCount do failAt p "original IDs must precede destinations"
-      if h : logical < origins.size then
-        if origins[logical].isSome then failAt p "duplicate original identity"
-        origins := origins.set logical (some a)
-      else failAt p "object identities must be dense"
-    for (value, j) in a.strong.toList.zipIdx do checkCell value count (indexPath (p ++ ".strong") j)
-    seen ← checkUnits a.weak (p ++ ".weak") (if isDestination a.state then .destination else .original) count seen
+  let seen ← checkUnits heap.externalWeak "$.external_weak" .external count {}
+  let tables ← heap.objects.toList.zipIdx.foldlM (validateAllocation count originalCount) ⟨origins, copies, seen⟩
+  let origins := tables.origins
+  let copies := tables.copies
+  let seen := tables.seen
   for id in seen.toList do
     unless id < seen.size do failAt "$.weak" "logical unit IDs must be dense"
   let mut remembered : Std.HashSet Nat := {}

@@ -13,3 +13,9 @@ import CloverGC.Differential.HeapFormatProofs
 /-- info: 'CloverGC.Differential.Format.checkFreshHeap_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms CloverGC.Differential.Format.checkFreshHeap_correct
+/-- info: 'CloverGC.Differential.Format.validateStructure_fresh_ids' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.Format.validateStructure_fresh_ids
+/-- info: 'CloverGC.Differential.Format.prepareFreshHeap_ids' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.Format.prepareFreshHeap_ids

@@ -153,6 +153,14 @@ heaps, and both placement policies. The state predicate admits only unmarked
 originals without forwarding. These leaf validation proofs are axiom-audited;
 they impose no restriction on immediate payloads.
 
+`FreshIds` specifies dense physical allocation IDs in array order and canonical
+logical `obj-N` identities whose ordinals are a permutation of the same range.
+It allows any pairing between logical and physical IDs. The canonical syntax
+predicate is independent of the executable parser. `validateStructure_fresh_ids`
+proves these properties for successfully checked fresh structures;
+`prepareFreshHeap_ids` establishes them on the ordered preparation result.
+These soundness claims do not assert that every well-formed input is accepted.
+
 `SnapshotProjection` composes the cell and weak-unit relations into the complete
 physical evacuation snapshot. `captureStrong_projects` covers both full and young
 capture: ordered originals followed by copies, exact identities and headers,
