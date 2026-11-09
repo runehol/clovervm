@@ -586,4 +586,151 @@ theorem UnitsProjection.ids (projected : UnitsProjection heap copying units layo
     output.toList.map Format.WeakUnit.unitId = layout.toList.map Format.WeakUnit.unitId :=
   UnitListProjection.ids projected
 
+/-- Headers encode the observed forwarding table, or the source mark when unforwarded. -/
+def encodeHeader (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (object : Fin n) : Format.Header :=
+  match copying.forwarding object with
+  | none => .normal (decide (.source object ∈ copying.marked))
+  | some index => .forwarded (encodeReference heap (.copied index))
+
+/-- Generation and placement stay attached to an original while its header changes. -/
+inductive OriginalStateProjection : Format.ObjectState → Format.Header → Format.ObjectState → Prop where
+  | young : OriginalStateProjection (.youngOriginal policy old) header (.youngOriginal policy header)
+  | old : OriginalStateProjection (.oldOriginal policy old) header (.oldOriginal policy header)
+  | nonmoving : OriginalStateProjection (.nonmovingOriginal old) (.normal marked) (.nonmovingOriginal marked)
+
+/-- Physical original IDs select the corresponding logical object through the retained pairing. -/
+def OriginalObject (heap : PreparedHeap n k) (initial : Format.Allocation) (object : Fin n) : Prop :=
+  ∃ index : Fin n, index.val = initial.allocationId.value ∧ heap.objectOfAllocation.get index = object
+
+structure OriginalProjection (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (initial output : Format.Allocation) : Prop where
+  object : ∃ object, OriginalObject heap initial object ∧
+    OriginalStateProjection initial.state (encodeHeader heap state.copying object) output.state ∧
+    CellsProjection heap state.copying initial.strong.toList (state.originalFields object) output.strong.toList ∧
+    (if (heap.collectionInput collection).selected object && heap.copying.movable object then
+      output.weak = initial.weak else UnitsProjection heap state.copying units initial.weak output.weak)
+  objectId : output.objectId = initial.objectId
+  allocationId : output.allocationId = initial.allocationId
+
+structure CopyProjection (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (pair : Copying.CopyRecord n × Nat)
+    (output : Format.Allocation) : Prop where
+  identity : output.identity = copyIdentity n pair
+  strong : CellsProjection heap state.copying (heap.originals.get pair.1.origin).strong.toList
+    pair.1.strongChildren output.strong.toList
+  weak : UnitsProjection heap state.copying units (heap.originals.get pair.1.origin).weak output.weak
+
+/-- An ordered, length-preserving relation; no allocation can be dropped or duplicated. -/
+inductive ListProjection (relation : α → β → Prop) : List α → List β → Prop where
+  | nil : ListProjection relation [] []
+  | cons : relation a b → ListProjection relation rest output →
+      ListProjection relation (a :: rest) (b :: output)
+
+/-- Complete physical evacuation output, independently specified from capture control flow. -/
+structure SnapshotProjection (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (output : Format.HeapSnapshot) : Prop where
+  roots : CellsProjection heap state.copying heap.initial.roots.toList state.roots output.roots.toList
+  objects : ∃ originals copies,
+    output.objects.toList = originals ++ copies ∧
+    ListProjection (OriginalProjection heap state units collection) heap.initial.objects.toList originals ∧
+    ListProjection (CopyProjection heap state units) state.copying.copies.zipIdx copies
+  externalWeak : UnitsProjection heap state.copying units heap.initial.externalWeak output.externalWeak
+  remembered : output.remembered = heap.initial.remembered
+
+private theorem originalReference_correct (heap : PreparedHeap n k) (initial : Format.Allocation)
+    (object : Fin n) (accepted : originalReference heap.objectOfAllocation initial.allocationId = .ok object) :
+    OriginalObject heap initial object := by
+  unfold originalReference at accepted
+  cases checked : checkedFin initial.allocationId.value n with
+  | error message => simp [checked, bind, Except.bind] at accepted
+  | ok index =>
+      simp [checked, bind, Except.bind, pure, Except.pure] at accepted
+      exact ⟨index, (checkedFin_correct _ _ _).mp checked, accepted⟩
+
+private theorem originalState_projects (initial output : Format.ObjectState) (header : Format.Header)
+    (accepted : originalState initial header = .ok output) :
+    OriginalStateProjection initial header output := by
+  cases initial <;> cases header <;>
+    simp [originalState, pure, Except.pure] at accepted <;> cases accepted <;> constructor
+
+private theorem captureOriginal_projects (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (initial output : Format.Allocation)
+    (accepted : captureOriginal heap state units collection initial = .ok output) :
+    OriginalProjection heap state units collection initial output := by
+  unfold captureOriginal at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    refine ⟨⟨_, originalReference_correct _ _ _ (by assumption), ?_,
+      (mergeReferences_correct _ _ _ _ _).mp (by assumption), ?_⟩, rfl, rfl⟩
+    · have projected := originalState_projects _ _ _ (by assumption)
+      try
+        have converted := (allocationOfReference_correct heap state.copying _ _).mp (by assumption)
+        obtain ⟨_, rfl⟩ := converted
+      simp only [encodeHeader, *]
+    · split <;> first | rfl | contradiction | exact (captureUnits_correct _ _ _ _ _).mp (by assumption)
+
+private theorem captureCopy_projects (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (pair : Copying.CopyRecord n × Nat) (output : Format.Allocation)
+    (accepted : captureCopy heap state units collection pair.1 pair.2 = .ok output) :
+    CopyProjection heap state units pair output := by
+  refine ⟨captureCopy_identity _ _ _ _ _ _ _ accepted, captureCopy_strong _ _ _ _ _ _ _ accepted, ?_⟩
+  unfold captureCopy at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    exact (captureUnits_correct _ _ _ _ _).mp (by assumption)
+
+private theorem mapM_projects (f : α → Except String β) (relation : α → β → Prop)
+    (projects : ∀ a b, f a = .ok b → relation a b)
+    (xs : List α) (ys : List β) (accepted : xs.mapM f = .ok ys) :
+    ListProjection relation xs ys := by
+  induction xs generalizing ys with
+  | nil =>
+      simp [pure, Except.pure] at accepted
+      subst ys
+      exact .nil
+  | cons x xs ih =>
+      cases first : f x with
+      | error message => simp [List.mapM_cons, first, bind, Except.bind] at accepted
+      | ok y =>
+          cases rest : xs.mapM f with
+          | error message => simp [List.mapM_cons, first, rest, bind, Except.bind] at accepted
+          | ok tail =>
+              simp [List.mapM_cons, first, rest, bind, Except.bind, pure, Except.pure] at accepted
+              subst ys
+              exact .cons (projects x y first) (ih tail rest)
+
+/-- Every successful full or young evacuation snapshot has the complete projection. -/
+theorem captureStrong_projects (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
+    (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
+    (output : Format.HeapSnapshot) (accepted : captureStrong heap state units collection = .ok output) :
+    SnapshotProjection heap state units collection output := by
+  have roots := captureStrong_roots heap state units collection output accepted
+  unfold captureStrong at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    refine ⟨roots, ⟨_, _, rfl, ?_, ?_⟩, (captureUnits_correct _ _ _ _ _).mp (by assumption), rfl⟩
+    · exact mapM_projects _ _ (captureOriginal_projects heap state units collection) _ _ (by assumption)
+    · exact mapM_projects _ _ (captureCopy_projects heap state units collection) _ _ (by assumption)
+
+/-- Full weak evacuation uses the same complete physical projection. -/
+theorem captureEvacuated_projects (heap : PreparedHeap n k) (state : Copying.Weak.State n k)
+    (output : Format.HeapSnapshot) (accepted : captureEvacuated heap state = .ok output) :
+    SnapshotProjection heap state.strong state.units .full output := by
+  unfold captureEvacuated at accepted
+  simp only [bind, Except.bind] at accepted
+  split at accepted
+  · exact captureStrong_projects heap state.strong state.units .full output accepted
+  · contradiction
+
 end CloverGC.Differential

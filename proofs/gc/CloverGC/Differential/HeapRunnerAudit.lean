@@ -67,3 +67,9 @@ import CloverGC.Differential.HeapRunnerProofs
 /-- info: 'CloverGC.Differential.UnitsProjection.ids' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms CloverGC.Differential.UnitsProjection.ids
+/-- info: 'CloverGC.Differential.captureStrong_projects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureStrong_projects
+/-- info: 'CloverGC.Differential.captureEvacuated_projects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureEvacuated_projects

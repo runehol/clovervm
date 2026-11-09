@@ -146,6 +146,15 @@ positions and tagged payload values are preserved; capture also preserves
 unvisited inactive entries. These claims remain in the separate proof module
 and are axiom-audited.
 
+`SnapshotProjection` composes the cell and weak-unit relations into the complete
+physical evacuation snapshot. `captureStrong_projects` covers both full and young
+capture: ordered originals followed by copies, exact identities and headers,
+strong slots, weak units, external weak order, and the unchanged remembered set.
+Selected movable originals retain their diagnostic weak templates; other
+originals and destinations expose the observed unit state. The full weak wrapper
+is covered by `captureEvacuated_projects`. These are successful-capture claims;
+preparation correspondence and whole-run success remain separate proof work.
+
 Capture preservation is also proved at the executable boundary. Fresh preparation
 preserves the allocation records up to sorting; capture reads originals directly
 from that retained snapshot and appends destination copies in allocation order.
