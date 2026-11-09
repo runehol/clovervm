@@ -25,7 +25,7 @@ def PreparedHeap.copying (heap : PreparedHeap n k) : Copying.CopyInput n :=
 def required (message : String) : Option α → Except String α
   | some value => pure value
   | none => throw message
-private def checkedFin (value limit : Nat) : Except String (Fin limit) := do
+def checkedFin (value limit : Nat) : Except String (Fin limit) := do
   if h : value < limit then return ⟨value, h⟩
   else throw "heap conversion: index out of range"
 def originalReference (objects : Vector (Fin n) n) (id : Format.AllocationId) :
@@ -139,17 +139,20 @@ def captureCell (convert : Copying.Reference n → Except String Format.Allocati
   | .immediate value => pure (.immediate value)
   | .reference ref => return .reference (← ref.mapM convert)
 
-private def captureUnits (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+def captureUnit (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (unit : Format.WeakUnit) : Except String Format.WeakUnit := do
+  let id ← checkedFin unit.unitId.value k
+  let convert := allocationOfReference heap copying
+  let contents : Format.WeakContents ← match unit.contents, units id with
+    | .field _, .field value => pure (.field (← captureCell convert value))
+    | .entry _, .entry entry => pure (.entry ⟨← entry.firstGuard.mapM convert,
+        ← entry.secondGuard.mapM convert, ← captureCell convert entry.payload⟩)
+    | _, _ => throw "heap capture: weak unit kind changed"
+  return ⟨unit.unitId, contents⟩
+
+def captureUnits (heap : PreparedHeap n k) (copying : Copying.CopyState n)
     (units : Fin k → Copying.Weak.Unit n) (layout : Array Format.WeakUnit) : Except String (Array Format.WeakUnit) :=
-  layout.mapM fun unit => do
-    let id ← checkedFin unit.unitId.value k
-    let convert := allocationOfReference heap copying
-    let contents : Format.WeakContents ← match unit.contents, units id with
-      | .field _, .field value => pure (.field (← captureCell convert value))
-      | .entry _, .entry entry => pure (.entry ⟨← entry.firstGuard.mapM convert,
-          ← entry.secondGuard.mapM convert, ← captureCell convert entry.payload⟩)
-      | _, _ => throw "heap capture: weak unit kind changed"
-    return ⟨unit.unitId, contents⟩
+  layout.mapM (captureUnit heap copying units)
 
 def captureOriginal (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
     (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)

@@ -55,3 +55,15 @@ import CloverGC.Differential.HeapRunnerProofs
 /-- info: 'CloverGC.Differential.captureMarkedOriginal_strong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms CloverGC.Differential.captureMarkedOriginal_strong
+/-- info: 'CloverGC.Differential.captureUnit_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureUnit_correct
+/-- info: 'CloverGC.Differential.captureUnits_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.captureUnits_correct
+/-- info: 'CloverGC.Differential.UnitsProjection.size' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.UnitsProjection.size
+/-- info: 'CloverGC.Differential.UnitsProjection.ids' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms CloverGC.Differential.UnitsProjection.ids

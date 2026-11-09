@@ -59,6 +59,11 @@ def main : IO Unit := do
   let oldOnlyExpected := { oldOnly with objects := oldOnly.objects.reverse }
   check "young retains unreachable old originals with permuted IDs"
     ((← ok "old-only young" (runCollection oldOnly .evacuate .young)) == oldOnlyExpected)
+  let inactiveOld : HeapSnapshot := { empty with roots := #[], objects := #[
+    ⟨⟨"obj-0"⟩, ⟨0⟩, .nonmovingOriginal false, #[],
+      #[entry 0 none none (.immediate 42)]⟩] }
+  check "young capture preserves an unvisited inactive old entry"
+    ((← ok "unvisited inactive old" (runCollection inactiveOld .evacuate .young)) == inactiveOld)
   let external := { empty with externalWeak := #[⟨⟨0⟩, .field (.immediate 17)⟩,
     ⟨⟨1⟩, .entry ⟨none, none, .immediate 42⟩⟩] }
   let repaired := { external with externalWeak := #[⟨⟨0⟩, .field (.immediate 17)⟩,

@@ -417,4 +417,173 @@ theorem captureMarkedOriginal_strong (heap : PreparedHeap n k) (state : MarkStat
   repeat' first | contradiction | split at accepted
   all_goals cases accepted; rfl
 
+/-- Encoding observes the supplied unit, including inactive entries. -/
+def encodeUnit (heap : PreparedHeap n k) : Copying.Weak.Unit n → Format.WeakContents
+  | .field cell => .field (encodeCell heap cell)
+  | .entry e => .entry ⟨e.firstGuard.map (encodeReference heap),
+      e.secondGuard.map (encodeReference heap), encodeCell heap e.payload⟩
+
+def GuardReferencesValid (copying : Copying.CopyState n) (guard : Option (Copying.Reference n)) : Prop :=
+  ∀ reference ∈ guard, Copying.ValidReference copying reference
+
+def UnitReferencesValid (copying : Copying.CopyState n) : Copying.Weak.Unit n → Prop
+  | .field cell => CellReferencesValid copying cell
+  | .entry e => GuardReferencesValid copying e.firstGuard ∧
+      GuardReferencesValid copying e.secondGuard ∧ CellReferencesValid copying e.payload
+
+def UnitKindMatches : Format.WeakContents → Copying.Weak.Unit n → Prop
+  | .field _, .field _ | .entry _, .entry _ => True
+  | _, _ => False
+
+/-- The physical layout supplies the logical unit ID and kind; contents come
+    from the actual model unit without additional weak repair. -/
+def UnitProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : Format.WeakUnit) : Prop :=
+  ∃ id : Fin k, id.val = layout.unitId.value ∧ UnitKindMatches layout.contents (units id) ∧
+    UnitReferencesValid copying (units id) ∧ output = ⟨layout.unitId, encodeUnit heap (units id)⟩
+
+inductive UnitListProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) : List Format.WeakUnit → List Format.WeakUnit → Prop where
+  | nil : UnitListProjection heap copying units [] []
+  | cons (unit : UnitProjection heap copying units before after)
+      (tail : UnitListProjection heap copying units rest output) :
+      UnitListProjection heap copying units (before :: rest) (after :: output)
+
+def UnitsProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : Array Format.WeakUnit) : Prop :=
+  UnitListProjection heap copying units layout.toList output.toList
+
+private theorem checkedFin_correct (value limit : Nat) (id : Fin limit) :
+    checkedFin value limit = .ok id ↔ id.val = value := by
+  by_cases bound : value < limit
+  · simp [checkedFin, bound, pure, Except.pure, Fin.ext_iff, eq_comm]
+  · simp only [checkedFin, dite_eq_right bound, reduceCtorEq, false_iff]
+    intro same
+    exact bound (same ▸ id.isLt)
+
+private theorem captureGuard_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (guard : Option (Copying.Reference n)) (output : Format.Reference) :
+    guard.mapM (allocationOfReference heap copying) = .ok output ↔
+      GuardReferencesValid copying guard ∧ output = guard.map (encodeReference heap) := by
+  cases guard with
+  | none => simp [Option.mapM, GuardReferencesValid, pure, Except.pure, eq_comm]
+  | some reference =>
+      have cell := captureCell_correct heap copying (.reference (some reference)) (.reference output)
+      cases converted : allocationOfReference heap copying reference <;>
+        simpa [captureCell, CellReferencesValid, GuardReferencesValid, encodeCell,
+          Option.mapM, converted, bind, Except.bind, Functor.map, Except.map,
+          pure, Except.pure] using cell
+
+private theorem captureUnit_sound (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : Format.WeakUnit)
+    (accepted : captureUnit heap copying units layout = .ok output) :
+    UnitProjection heap copying units layout output := by
+  unfold captureUnit at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    refine ⟨_, (checkedFin_correct _ _ _).mp (by assumption), ?_⟩
+  all_goals
+    have payload := (captureCell_correct heap copying _ _).mp (by assumption)
+    simp_all [UnitKindMatches, UnitReferencesValid, encodeUnit]
+  all_goals
+    repeat' constructor
+    all_goals first
+      | exact ((captureGuard_correct heap copying _ _).mp (by assumption)).1
+      | exact ((captureGuard_correct heap copying _ _).mp (by assumption)).2
+
+private theorem captureUnit_complete (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : Format.WeakUnit)
+    (projected : UnitProjection heap copying units layout output) :
+    captureUnit heap copying units layout = .ok output := by
+  obtain ⟨id, lookup, kind, valid, rfl⟩ := projected
+  have checked := (checkedFin_correct layout.unitId.value k id).mpr lookup
+  cases shape : layout.contents with
+  | field old =>
+      cases model : units id with
+      | field cell =>
+          have captured := captureCell_succeeds heap copying cell
+            (by simpa [model, UnitReferencesValid] using valid)
+          simp [captureUnit, checked, shape, model, captured, encodeUnit, bind, Except.bind, pure, Except.pure]
+      | entry e => simp [shape, model, UnitKindMatches] at kind
+  | entry old =>
+      cases model : units id with
+      | field cell => simp [shape, model, UnitKindMatches] at kind
+      | entry e =>
+          simp only [model, UnitReferencesValid] at valid
+          have first := (captureGuard_correct heap copying e.firstGuard _).mpr ⟨valid.1, rfl⟩
+          have second := (captureGuard_correct heap copying e.secondGuard _).mpr ⟨valid.2.1, rfl⟩
+          have payload := captureCell_succeeds heap copying e.payload valid.2.2
+          simp [captureUnit, checked, shape, model, first, second, payload,
+            encodeUnit, bind, Except.bind, pure, Except.pure]
+
+theorem captureUnit_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : Format.WeakUnit) :
+    captureUnit heap copying units layout = .ok output ↔ UnitProjection heap copying units layout output :=
+  ⟨captureUnit_sound heap copying units layout output, captureUnit_complete heap copying units layout output⟩
+
+private theorem captureUnitList_sound (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : List Format.WeakUnit)
+    (accepted : layout.mapM (captureUnit heap copying units) = .ok output) :
+    UnitListProjection heap copying units layout output := by
+  induction layout generalizing output with
+  | nil =>
+      simp [pure, Except.pure] at accepted
+      subst output
+      exact .nil
+  | cons unit rest ih =>
+      cases first : captureUnit heap copying units unit with
+      | error message => simp [List.mapM_cons, first, bind, Except.bind] at accepted
+      | ok captured =>
+          cases tail : rest.mapM (captureUnit heap copying units) with
+          | error message => simp [List.mapM_cons, first, tail, bind, Except.bind] at accepted
+          | ok remaining =>
+              simp [List.mapM_cons, first, tail, bind, Except.bind, pure, Except.pure] at accepted
+              subst output
+              exact .cons ((captureUnit_correct heap copying units unit captured).mp first) (ih remaining tail)
+
+private theorem captureUnitList_complete (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (projected : UnitListProjection heap copying units layout output) :
+    layout.mapM (captureUnit heap copying units) = .ok output := by
+  induction projected with
+  | nil => rfl
+  | cons unit tail ih =>
+      simp [List.mapM_cons, (captureUnit_correct heap copying units _ _).mpr unit,
+        ih, bind, Except.bind, pure, Except.pure]
+
+/-- Capture preserves unit order, IDs, kinds, and every observed guard and payload. -/
+theorem captureUnits_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
+    (units : Fin k → Copying.Weak.Unit n) (layout output : Array Format.WeakUnit) :
+    captureUnits heap copying units layout = .ok output ↔ UnitsProjection heap copying units layout output := by
+  have relation : UnitListProjection heap copying units layout.toList output.toList ↔
+      layout.toList.mapM (captureUnit heap copying units) = .ok output.toList :=
+    ⟨captureUnitList_complete heap copying units, captureUnitList_sound heap copying units _ _⟩
+  unfold captureUnits UnitsProjection
+  rw [Array.mapM_eq_mapM_toList, relation]
+  cases layout.toList.mapM (captureUnit heap copying units) <;>
+    simp [Functor.map, Except.map, Array.toArray_eq]
+
+private theorem UnitListProjection.length (projected : UnitListProjection heap copying units layout output) :
+    output.length = layout.length := by
+  induction projected with
+  | nil => rfl
+  | cons unit tail ih => simpa using congrArg Nat.succ ih
+
+theorem UnitsProjection.size (projected : UnitsProjection heap copying units layout output) :
+    output.size = layout.size := by
+  simpa using UnitListProjection.length projected
+
+private theorem UnitListProjection.ids (projected : UnitListProjection heap copying units layout output) :
+    output.map Format.WeakUnit.unitId = layout.map Format.WeakUnit.unitId := by
+  induction projected with
+  | nil => rfl
+  | cons unit tail ih =>
+      obtain ⟨_, _, _, _, rfl⟩ := unit
+      simp [ih]
+
+theorem UnitsProjection.ids (projected : UnitsProjection heap copying units layout output) :
+    output.toList.map Format.WeakUnit.unitId = layout.toList.map Format.WeakUnit.unitId :=
+  UnitListProjection.ids projected
+
 end CloverGC.Differential

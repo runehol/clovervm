@@ -138,6 +138,14 @@ is equivalent to successful merging. The capture theorems connect it to emitted
 root arrays and the strong fields of originals and copies, including exact cell
 counts and duplicate references. Mark capture preserves root and strong cells.
 
+`encodeUnit`, `UnitProjection`, and `UnitsProjection` specify weak-unit capture
+from the supplied model state. `captureUnit_correct` and `captureUnits_correct`
+prove success exactly for matching unit kinds, in-range logical unit IDs and
+valid referenced copies, with exact output contents. Unit order, IDs, guard
+positions and tagged payload values are preserved; capture also preserves
+unvisited inactive entries. These claims remain in the separate proof module
+and are axiom-audited.
+
 Capture preservation is also proved at the executable boundary. Fresh preparation
 preserves the allocation records up to sorting; capture reads originals directly
 from that retained snapshot and appends destination copies in allocation order.
