@@ -31,8 +31,9 @@ theorem drainWeak_strong (input : CopyInput n) (weak : Input n k) (fuel : Nat) (
           simpa [drainWeak, drainCopies, step] using
             ih (earlyVisits input { state with strong := pair.2 } (ownerUnitsFor weak pair.2 pair.1))
 
-/-- Non-retention is a structural erasure theorem: weak work changes no strong
-    state at all in this representative payload model. -/
+/-- Non-retention is a structural erasure theorem: weak guards, tagged weak
+    payloads and standalone weak fields change no strong state. This does not
+    model production callbacks that release separate strongly owned plans. -/
 theorem collectWeak_strong (input : CopyInput n) (weak : Input n k) (roots : List (Fin n)) :
     (collectWeak input weak roots).strong = (evacuate input roots).1 := by
   simp [collectWeak, finishDeferred, drainWeak_strong, start, evacuate]

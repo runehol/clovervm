@@ -589,7 +589,7 @@ evacuation, including conservative overwritten records and repeated collections.
 No runtime stores or ThreadState buffers are wired. Owner lifetime/invalidation,
 thread coordination/publication, weak remembered units, and full-collection
 retirement remain separate integration gates.
-The standalone `adopt_from(StrongRememberedSet &&)` handoff splices active
+The standalone `adopt_from(RememberedSet &&)` handoff splices active
 blocks in constant time, preserving entry addresses and header membership.
 Sealed counts allow partial intermediate blocks. The receiver keeps its active
 prefix and takes the entire source chain; the source becomes empty and receives
@@ -756,8 +756,16 @@ collector with stable unit IDs, external and per-owner enumeration, early repair
 and exact deferred late visits. It proves non-retention, stable early resolution,
 unique visits, late completion, all-live payload preservation, coordinated reset
 when any target dies, and retained weak-reference disposal safety. The concrete
-callback has optional fields and an opaque payload; cache-specific guard/union
-policy, RC/native cleanup and storage-lifetime enforcement are not proved.
+callback has two nullable guards and a tagged weak payload, with all three
+references weak. Arbitrary callback policy, RC/native cleanup and storage-lifetime
+enforcement are not proved.
+
+The [generational strong slice](../proofs/gc/young-strong.md) adds full/young
+selection over proof-carrying heaps, complete strong remembered-owner coverage,
+actual old-field repair, selected reachability and disposal safety. The host
+CPython comparator and bounded Hypothesis campaigns exercise full and strong-only
+young collection against the C++ file runner. Young weak collection and barrier
+maintenance remain separate.
 
 The remaining direction is:
 
@@ -773,12 +781,12 @@ The implemented strong model covers unique destinations, graph preservation,
 strong source-disposal safety, termination and closure across ordinary and
 NonMoving destinations. Remaining extensions are:
 
-- extend those results to young-only selection with explicit remembered coverage;
+- extend young-only collection to weak repair and weak remembered coverage;
 - prove the write barrier preserves coverage of old-to-young references;
 - extend the implemented representative weak-unit protocol to any additional
   callback/ownership contracts required by runtime integration;
-- connect executable model comparison to the C++ test heap without claiming
-  that differential testing constitutes a formal C++ refinement proof.
+- extend executable campaigns to further supported phases and failure-preserving
+  shrinking, without claiming formal C++ refinement from differential agreement.
 
 Build the model alongside the isolated collector rather than reconstructing it
 after runtime integration. Compare executable model results with the C++ test

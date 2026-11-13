@@ -8,6 +8,13 @@ option(CLOVERVM_BUILD_BENCHMARK_DEPS "Fetch and build googlebenchmark dependenci
 
 
 FetchContent_Declare(
+  nlohmann_json
+  URL https://codeload.github.com/nlohmann/json/tar.gz/refs/tags/v3.12.0
+  URL_HASH SHA256=4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_Declare(
   googletest
   URL               https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
   URL_MD5           b6f100bc2a5853a48046aa168ececf84
@@ -89,7 +96,7 @@ endblock()
 
 block()
   set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
-  FetchContent_MakeAvailable(googletest)
+  FetchContent_MakeAvailable(googletest nlohmann_json)
   if(CLOVERVM_BUILD_BENCHMARK_DEPS)
     FetchContent_MakeAvailable(googlebenchmark)
   endif()

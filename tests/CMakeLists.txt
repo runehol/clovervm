@@ -15,7 +15,7 @@ enable_sanitizers(test_clovervm)
 target_sources(test_clovervm PRIVATE
 	gc_test_heap.h
 	test_gc_mark_phase.cpp
-	test_gc_strong_remembered_set.cpp
+	test_gc_remembered_set.cpp
 	test_gc_evacuation_destinations.cpp
 	test_gc_evacuation_spaces.cpp
 	test_gc_evacuation_primitives.cpp
@@ -112,6 +112,8 @@ target_sources(test_clovervm PRIVATE
 
 set_source_files_properties(test_gc_no_exceptions.cpp PROPERTIES
 	COMPILE_OPTIONS "-fno-exceptions")
+
+add_subdirectory(gc_differential)
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
@@ -215,3 +217,6 @@ DEPENDS test_clovervm clovervm check_native_module_linkage
 WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 USES_TERMINAL
 )
+
+add_dependencies(check check_gc_cpp)
+add_dependencies(check-all check_gc_cpp)

@@ -380,7 +380,7 @@ minor collection. After the remembered object has been scanned and repaired, the
 collector clears its remembered state back to `Old`; future old-to-young stores
 rebuild remembered-set entries through the write barrier.
 
-The standalone `gc::StrongRememberedSet` component uses a singly linked owning
+The standalone `gc::RememberedSet` component uses a singly linked owning
 chain of fixed 4 KiB blocks, each containing one owning link, a sealed count,
 and 510 owner pointers. A borrowed current-block cursor and its hot used count
 delimit the active prefix. Blocks before the cursor use their sealed counts and

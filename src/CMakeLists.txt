@@ -25,8 +25,8 @@ configure_file(
 
 add_library(libclovervm_objects OBJECT
     gc/strong_closure.h
-    gc/strong_remembered_set.cpp
-    gc/strong_remembered_set.h
+    gc/remembered_set.cpp
+    gc/remembered_set.h
     gc/evacuation.h
     gc/weak_repair.h
     gc/clover_heap_adapter.h

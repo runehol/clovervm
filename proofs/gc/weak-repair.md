@@ -5,9 +5,9 @@
 | Document type | Design |
 | Status | Accepted |
 | Implementation | Implemented |
-| Scope | Full-selection early/late weak resolution, exact-unit scheduling and representative coordinated invalidation |
+| Scope | Full-selection early/late weak resolution, tagged weak fields and two-guard coordinated entries |
 | Owning layers | Lean models the resolver/driver and a concrete unit callback; C++ layouts retain callback policy and storage-lifetime responsibilities |
-| Validated against | Lean 4.35.0; C++ `Evacuation` and weak-unit protocol at `bb6c259e` (2026-11-01) |
+| Validated against | Lean 4.35.0; C++ `Evacuation` and synthetic weak-entry source at `f8491b3b` (2026-11-07) |
 | Supersedes | N/A; extends the strong evacuation proof |
 
 Build with `lake build`. The implementation is in
@@ -26,8 +26,11 @@ Objects still use the strong model's logical IDs and canonical references.
 Weak units have separate stable IDs (`Fin k`), standing for disjoint repair
 storage in final/stable owners or external locations. They are not object roots.
 `Input.ownerUnits` enumerates units for each logical owner; `external` supplies
-units independently of owner traversal. Unit templates contain optional original
-object IDs and an opaque payload. Null slots are ignored by the resolver.
+units independently of owner traversal. Input templates contain original IDs,
+never preexisting copy indices. `RepairUnit α` has two variants: a standalone
+`field` containing a tagged `Cell α`, or an `entry` containing an `Entry α`.
+Using the same shape with `Fin n` for templates and `Reference n` for collection
+state avoids separate representations that could disagree.
 
 `WellFormed` explicitly requires unique external IDs, unique IDs within each
 owner, disjoint owners' units and disjoint external/owner enumeration. In the
@@ -36,11 +39,31 @@ ownership and non-overlapping callback storage remain adapter obligations.
 The registration theorem covers the declared enumeration, not completeness of
 CloverVM's real cache/root inventory.
 
-The representative callback has optional weak fields and an opaque scalar
-payload. It is not a proof of every cache-specific callback: mandatory guards,
-active union arms, tagged sentinels, RC-owned plans and native destruction are
-not modeled. In particular, null optional fields are harmless here, whereas a
-specific IC may treat a null mandatory guard as grounds for invalidation.
+`Entry α` has exactly two nullable mandatory guards and a tagged payload.
+`Cell α` is either `immediate Int` or `reference (Option α)`: null references,
+immediate zero, and nonzero immediates remain distinct. `WeakGuard`, `WeakField`
+and `WeakEntry` are aliases documenting roles, not different pointer/value bits.
+Weakness comes from visiting these positions only through weak repair: neither
+guards nor pointer payloads contribute strong graph edges. The integer payload
+is a preservation abstraction, with no arithmetic or C++ integer conversion.
+
+The entry follows `TestWeakEntry` in `tests/gc_test_heap.h`. Both guards must be
+present to be active. Either missing guard resets both guards to null and the
+payload to immediate zero, without consulting the resolver. Active entries
+repair guard 0, guard 1, and a reference payload. Null reference payloads and
+immediates need no resolution. All three reference-bearing positions share one
+reset; a dead pointer payload invalidates the entry even if both guards live.
+Standalone fields have no mandatory guards: nulls and immediates are preserved,
+and a dead reference becomes null. C++ standalone `weak_cells` use the same
+`TestCell` representation as entry payloads, including immediates and nulls.
+
+This is not a proof of every production cache callback. Production cache guards
+and resolved values are weak, but an expanded-call binding plan separately owns
+strong keyword-name references. Those names are traced during strong closure;
+reset can release them. The model deliberately does not represent that ownership,
+RC/native destruction, other cache-specific union arms, or validity-cell policy.
+The two-mandatory-guard reset rule is the synthetic entry contract, not a claim
+that every production cache resets on null fields.
 
 ## Early and Late Resolution
 
@@ -53,15 +76,18 @@ is Dead. No uncollected-old shortcut is modeled yet.
 Neither resolver marks, copies, scans, or schedules a strong object. The
 `collectWeak_strong` theorem erases all weak work and obtains exactly the
 previous strong collector result. This is stronger than a test that a particular
-weak-only target stayed dead. Its scope is this opaque-payload model: real
-callbacks may drop strong payload references already conservatively traced;
-that ownership behavior is not claimed to leave real heap bytes unchanged.
+weak-only target stayed dead. It remains exact for the richer tagged weak
+payload because weak updates still change no strong field or collector state.
+It does not claim that production resets releasing separately owned strong
+plans leave real heap bytes or RC state unchanged. Logical weak-target liveness
+is not a statement about the timing or effects of real finalization.
 
-`repairUnit` maps the field repair over every active weak field before combining
-statuses. Resolved fields are rewritten immediately, Pending fields retain their
-exact abstract references, and null fields remain null. A Dead field dominates
-Pending and resets every field plus the payload. It does not merely clear the
-dead pointer, and Pending cannot short-circuit checking later fields.
+`repairUnit` repairs all positions of an active entry before `finishEntry`
+combines their statuses. Resolved references are rewritten immediately; Pending
+positions retain their exact references. A Dead result dominates Pending and
+resets the whole entry. Pending cannot prevent a later guard or payload rewrite.
+The resolver is pure in Lean: these definitions specify repair results, not an
+observable effectful callback invocation trace or a C++ evaluation-order proof.
 
 ## Executable Schedule
 
@@ -112,24 +138,43 @@ original template, even when its early fields were only partially resolved.
 | `resolve_early_not_dead` / `resolve_late_not_pending` | The two phases cannot confuse Pending and Dead |
 | `resolve_stable` | Early resolved targets remain valid and unchanged |
 | `repair_late_complete` | Late unit repair cannot remain Pending |
-| `repair_dead_dominates` | Any Dead field forces coordinated clearing, regardless of other Pending fields |
+| `repair_dead_dominates` | A Dead reference forces clearing, regardless of other Pending positions |
+| `repair_inactive` | Inactive entries reset for any resolver |
+| `repair_early_immediate` / `repair_early_reference` | Active immediate payloads are preserved early; pointer payloads follow weak relocation, including null |
 | `early_unit_compatible` / `early_complete_correct` | Partial writes preserve final meaning; early-settled units need no late work |
 | `collectWeak_strong` | Weak processing cannot retain targets or alter strong traversal |
 | `collection_registered_iff` | Exactly external units and units of strongly reachable owners are supplied |
 | `collection_registered_nodup` | No supplied unit gets two early visits |
 | `collection_late_exact` / `collection_late_nodup` | Late visits are exactly the deferred IDs, with no duplicates |
 | `collection_units_correct` | Every registered unit equals its original template's final repair |
-| `collection_live_unit` | If all targets survive, fields are canonical and the payload is preserved |
-| `collection_dead_unit` | Any dead target clears the entire unit and payload, including otherwise-live fields |
+| `collection_live_unit` | Active units whose referenced guards/payload survive are mapped to canonical references; immediates are preserved |
+| `collection_inactive_unit` | A supplied inactive entry resets regardless of its remaining references |
+| `collection_dead_unit` | A dead guard/pointer payload resets an entry; a dead standalone reference becomes null |
 | `collection_disposal_safe` | Every retained registered weak reference is canonical after collection |
 
-Examples exercise a movable target copied into NonMoving storage, a live
-NonMoving original initially Pending, a dead NonMoving original, weak-only
-garbage and its strong child, adjacent settled/deferred units in the same owner,
-external units, null slots and coordinated payload reset. An unreachable
-owner's unit deliberately retains stale fields: it is not a surviving unit and
-does not root its owner. A synthetic resolver checks Pending-before-Dead
-precedence even though full-selection early resolution itself never returns Dead.
+The general `collection_units_correct` theorem retains its existing conclusion
+and disjoint-enumeration premises: each registered unit equals a direct late
+repair of its original template. Strong-state erasure, compatibility, exact
+registration/deferral and completion likewise keep their conclusions. There
+are no new premises on the general collection theorem that exclude inactive
+or dead-payload entries.
+
+Two old claims needed substantive changes. Unconditional early payload
+preservation is false: active pointer payloads can relocate, and inactive entries
+reset immediately. `repair_early_immediate` and `repair_early_reference` replace
+it. The live-unit theorem now explicitly requires `active = true`; its all-live
+premise covers payload references as well as guards, and its conclusion maps
+those references rather than preserving an opaque payload. The inactive theorem
+covers the complementary case. Disposal safety now includes every retained
+reference payload through `RepairUnit.targets`.
+
+Examples cover live/dead movable and NonMoving targets, ordinary and NonMoving
+destinations, aliasing across all three entry positions, immediate and null
+payloads, early and late payload repair, missing first/second/both guards,
+adjacent settled/deferred units, unreachable owners, and forbidden duplicate or
+overlapping enumeration. Synthetic resolver examples expose Dead-over-Pending
+precedence and visible rewrites after a Pending guard, although the actual
+full-selection resolver never returns Dead early or Pending late.
 
 ## Remaining Boundary
 

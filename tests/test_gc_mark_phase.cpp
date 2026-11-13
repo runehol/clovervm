@@ -69,11 +69,11 @@ namespace
         auto expected = expected_reachable(heap, roots);
         std::vector<TestCell> original_roots(roots.begin(), roots.end());
         std::vector<std::vector<TestCell>> original_cells;
-        std::vector<std::vector<TestObject *>> original_weak;
+        std::vector<std::vector<TestCell>> original_weak;
         for(const auto &object: heap.objects())
         {
             original_cells.push_back(object->strong_cells);
-            original_weak.push_back(object->weak_targets);
+            original_weak.push_back(object->weak_cells);
         }
 
         TestHeapAdapter adapter(heap, TestCollectionKind::Full);
@@ -95,7 +95,7 @@ namespace
             EXPECT_EQ(live, adapter.is_marked(object.get()));
             EXPECT_EQ(live ? 1u : 0u, adapter.scan_count(object.get()));
             EXPECT_EQ(original_cells[idx], object->strong_cells);
-            EXPECT_EQ(original_weak[idx], object->weak_targets);
+            EXPECT_EQ(original_weak[idx], object->weak_cells);
             ++idx;
         }
     }
@@ -125,7 +125,8 @@ TEST(GCMarkPhase, CyclesSharingDuplicateRootsAndWeakEdges)
                        TestCell::immediate(-1), TestCell::reference(nullptr)};
     b->strong_cells = {TestCell::reference(c), TestCell::reference(shared)};
     c->strong_cells = {TestCell::reference(a)};
-    a->weak_targets = {weak_only};
+    a->weak_cells = {TestCell::reference(weak_only), TestCell::immediate(0),
+                     TestCell::immediate(-7), TestCell::reference(nullptr)};
     // A disconnected object pointing into the live graph must not itself
     // become reachable. Nor may the weak-only object's strong children.
     garbage->strong_cells = {TestCell::reference(a)};
@@ -193,8 +194,7 @@ TEST(GCMarkPhase, GeneratedGraphsMatchIndependentOracle)
             {
                 object->strong_cells.push_back(random_cell());
             }
-            object->weak_targets.push_back(
-                heap.objects()[random() % count].get());
+            object->weak_cells.push_back(random_cell());
         }
         std::vector<TestCell> roots;
         size_t root_count = random() % 9;

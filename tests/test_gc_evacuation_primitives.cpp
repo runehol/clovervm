@@ -16,7 +16,7 @@ namespace cl::gc::test
         EXPECT_EQ(TestGeneration::Old, fixed->generation);
         EXPECT_EQ(TestHeaderKind::Normal, fixed->header.kind);
         EXPECT_TRUE(fixed->strong_cells.empty());
-        EXPECT_TRUE(fixed->weak_targets.empty());
+        EXPECT_TRUE(fixed->weak_cells.empty());
         EXPECT_TRUE(fixed->weak_entries.empty());
         EXPECT_NE(before->logical_identity, fixed->logical_identity);
         EXPECT_NE(after->logical_identity, fixed->logical_identity);
@@ -102,14 +102,16 @@ namespace cl::gc::test
         source->strong_cells = {TestCell::immediate(42),
                                 TestCell::reference(child),
                                 TestCell::reference(source)};
-        source->weak_targets = {child, nullptr};
+        source->weak_cells = {TestCell::reference(child),
+                              TestCell::immediate(0), TestCell::immediate(-7),
+                              TestCell::reference(nullptr)};
         TestObject *copy = adapter.copy_object(source);
         ASSERT_NE(nullptr, copy);
         EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(copy) % alignof(TestObject));
         EXPECT_NE(source, copy);
         EXPECT_EQ(source->logical_identity, copy->logical_identity);
         EXPECT_EQ(source->strong_cells, copy->strong_cells);
-        EXPECT_EQ(source->weak_targets, copy->weak_targets);
+        EXPECT_EQ(source->weak_cells, copy->weak_cells);
         EXPECT_EQ(TestHeaderKind::Normal, copy->header.kind);
         EXPECT_EQ(TestStorage::OrdinaryDestination, copy->storage);
         EXPECT_FALSE(adapter.is_collected(copy));

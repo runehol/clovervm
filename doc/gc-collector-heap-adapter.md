@@ -145,7 +145,7 @@ struct TestObject
 {
     uint64_t logical_identity;
     std::vector<TestCell> strong_cells;
-    std::vector<TestObject *> weak_targets; // Excluded from strong enumeration.
+    std::vector<TestCell> weak_cells; // Excluded from strong enumeration.
 };
 
 class TestSlot

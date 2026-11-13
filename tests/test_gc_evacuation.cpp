@@ -182,7 +182,7 @@ namespace cl::gc::test
                 if(moving(object.get()) || !live.contains(object.get()))
                 {
                     EXPECT_EQ(original.strong_cells, object->strong_cells);
-                    EXPECT_EQ(original.weak_targets, object->weak_targets);
+                    EXPECT_EQ(original.weak_cells, object->weak_cells);
                     EXPECT_EQ(original.weak_entries, object->weak_entries);
                 }
                 EXPECT_EQ(original.generation, object->generation);
@@ -202,18 +202,19 @@ namespace cl::gc::test
                 }
                 // Early weak repair can follow existing forwarding, but cannot
                 // clear an unresolved collected target before strong closure.
-                ASSERT_EQ(original.weak_targets.size(),
-                          current->weak_targets.size());
-                for(size_t weak = 0; weak < original.weak_targets.size();
-                    ++weak)
+                ASSERT_EQ(original.weak_cells.size(),
+                          current->weak_cells.size());
+                for(size_t weak = 0; weak < original.weak_cells.size(); ++weak)
                 {
-                    TestObject *before = original.weak_targets[weak];
-                    TestObject *after = current->weak_targets[weak];
-                    TestObject *forwarded = before != nullptr && moving(before)
-                                                ? adapter.forwarded_to(before)
+                    const TestCell &before = original.weak_cells[weak];
+                    const TestCell &after = current->weak_cells[weak];
+                    TestObject *target = pointer(before);
+                    TestObject *forwarded = target != nullptr && moving(target)
+                                                ? adapter.forwarded_to(target)
                                                 : nullptr;
                     EXPECT_TRUE(after == before ||
-                                (forwarded != nullptr && forwarded == after));
+                                (forwarded != nullptr &&
+                                 after == TestCell::reference(forwarded)));
                 }
             }
             // Both original and canonical roots may be supplied again without
@@ -243,24 +244,24 @@ namespace cl::gc::test
                 }
                 TestObject *current = canonical(object.get());
                 EXPECT_EQ(1u, adapter.weak_scan_count(current));
-                ASSERT_EQ(original.weak_targets.size(),
-                          current->weak_targets.size());
-                for(size_t weak = 0; weak < original.weak_targets.size();
-                    ++weak)
+                ASSERT_EQ(original.weak_cells.size(),
+                          current->weak_cells.size());
+                for(size_t weak = 0; weak < original.weak_cells.size(); ++weak)
                 {
-                    TestObject *target = original.weak_targets[weak];
-                    TestObject *expected = target;
+                    TestCell expected = original.weak_cells[weak];
+                    TestObject *target = pointer(expected);
                     if(target != nullptr && collected(target))
                     {
-                        expected =
-                            live.contains(target) ? canonical(target) : nullptr;
+                        expected = TestCell::reference(live.contains(target)
+                                                           ? canonical(target)
+                                                           : nullptr);
                     }
-                    EXPECT_EQ(expected, current->weak_targets[weak]);
+                    EXPECT_EQ(expected, current->weak_cells[weak]);
                 }
                 if(moving(object.get()))
                 {
                     EXPECT_EQ(original.strong_cells, object->strong_cells);
-                    EXPECT_EQ(original.weak_targets, object->weak_targets);
+                    EXPECT_EQ(original.weak_cells, object->weak_cells);
                     EXPECT_EQ(original.weak_entries, object->weak_entries);
                 }
             }
@@ -515,13 +516,14 @@ namespace cl::gc::test
             TestHeap heap;
             TestObject *target = heap.make_object();
             target->generation = TestGeneration::Old;
-            TestObject *weak = target;
+            TestCell weak = TestCell::reference(target);
             TestHeapAdapter adapter(heap, kind);
             Evacuation<TestHeapAdapter> collection(adapter);
             collection.add_weak_root(
                 TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
             collection.finish();
-            EXPECT_EQ(kind == TestCollectionKind::Full ? nullptr : target,
+            EXPECT_EQ(TestCell::reference(
+                          kind == TestCollectionKind::Full ? nullptr : target),
                       weak);
             EXPECT_EQ(TestHeaderKind::Normal, target->header.kind);
             EXPECT_EQ(0u, heap.destination_object_count(
@@ -575,7 +577,8 @@ namespace cl::gc::test
             head->strong_cells = {TestCell::reference(old),
                                   TestCell::reference(young)};
             young->strong_cells = {TestCell::reference(head)};
-            head->weak_targets = {old, dead_old};
+            head->weak_cells = {TestCell::reference(old),
+                                TestCell::reference(dead_old)};
             // The old node has no outgoing young edges, so this fixture needs
             // no remembered slots beyond its roots in YoungOnly mode.
             std::array roots = {TestCell::reference(head)};
@@ -597,8 +600,10 @@ namespace cl::gc::test
                                    TestCell::reference(child)};
             child->strong_cells = {TestCell::reference(owner),
                                    TestCell::reference(child)};
-            owner->weak_targets = {child, dead};
-            child->weak_targets = {owner, dead};
+            owner->weak_cells = {TestCell::reference(child),
+                                 TestCell::reference(dead)};
+            child->weak_cells = {TestCell::reference(owner),
+                                 TestCell::reference(dead)};
             std::array roots = {TestCell::reference(owner),
                                 TestCell::reference(owner)};
             expect_evacuation(heap, roots, TestCollectionKind::Full);
@@ -633,10 +638,10 @@ namespace cl::gc::test
 
             // A weak reference directly to the canonical copy resolves before
             // scanning, without marking or tracing another object.
-            TestObject *weak = copy;
+            TestCell weak = TestCell::reference(copy);
             collection.add_weak_root(
                 TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
-            EXPECT_EQ(copy, weak);
+            EXPECT_EQ(TestCell::reference(copy), weak);
             EXPECT_EQ(0u, adapter.scan_count(copy));
             collection.add_root(TestSlot(root));
             TestCell original_root = TestCell::reference(source);
@@ -714,14 +719,14 @@ namespace cl::gc::test
         // The raw primitive does not publish or mark its allocation. Placement
         // in destination storage alone must not grant weak liveness.
         TestObject *allocation = adapter.copy_object(source);
-        TestObject *weak = allocation;
+        TestCell weak = TestCell::reference(allocation);
         Evacuation<TestHeapAdapter> collection(adapter);
         collection.add_weak_root(
             TestHeapAdapter::WeakUnit::bind<repair_test_weak_field>(weak));
-        EXPECT_EQ(allocation, weak);
+        EXPECT_EQ(TestCell::reference(allocation), weak);
         EXPECT_FALSE(adapter.is_marked(allocation));
         collection.finish();
-        EXPECT_EQ(nullptr, weak);
+        EXPECT_EQ(TestCell::reference(nullptr), weak);
         EXPECT_FALSE(adapter.is_marked(allocation));
         EXPECT_EQ(0u, adapter.scan_count(allocation));
         EXPECT_EQ(nullptr, adapter.forwarded_to(child));
@@ -736,7 +741,8 @@ namespace cl::gc::test
         first->strong_cells = {TestCell::reference(second),
                                TestCell::reference(first)};
         second->strong_cells = {TestCell::reference(first)};
-        second->weak_targets = {dead, first};
+        second->weak_cells = {TestCell::reference(dead),
+                              TestCell::reference(first)};
         std::array roots = {TestCell::reference(first)};
         expect_evacuation(heap, roots, TestCollectionKind::Full);
         EXPECT_EQ(
@@ -753,7 +759,8 @@ namespace cl::gc::test
         TestObject *dead_child = heap.make_object();
         dead_owner->strong_cells = {TestCell::reference(dead_child),
                                     TestCell::reference(dead_owner)};
-        head->weak_targets = {dead_owner, dead_child};
+        head->weak_cells = {TestCell::reference(dead_owner),
+                            TestCell::reference(dead_child)};
         std::array roots = {TestCell::reference(head)};
         expect_evacuation(heap, roots, TestCollectionKind::Full);
     }
@@ -765,7 +772,7 @@ namespace cl::gc::test
         TestObject *child = heap.make_object();
         owner->strong_cells = {TestCell::reference(child)};
         child->strong_cells = {TestCell::reference(owner)};
-        owner->weak_targets = {child};
+        owner->weak_cells = {TestCell::reference(child)};
         TestHeapAdapter adapter(heap, TestCollectionKind::Full);
         Evacuation<TestHeapAdapter> collection(adapter);
         TestCell root = TestCell::reference(owner);
@@ -778,7 +785,7 @@ namespace cl::gc::test
         EXPECT_EQ(owner, pointer(root));
         EXPECT_EQ(copy, pointer(owner->strong_cells[0]));
         EXPECT_EQ(owner, pointer(copy->strong_cells[0]));
-        EXPECT_EQ(copy, owner->weak_targets[0]);
+        EXPECT_EQ(TestCell::reference(copy), owner->weak_cells[0]);
         EXPECT_EQ(1u, adapter.scan_count(owner));
     }
 
@@ -804,7 +811,7 @@ namespace cl::gc::test
         b->strong_cells = {TestCell::reference(c), TestCell::reference(a)};
         c->strong_cells = {TestCell::immediate(-7),
                            TestCell::reference(nullptr)};
-        a->weak_targets = {weak, c};
+        a->weak_cells = {TestCell::reference(weak), TestCell::reference(c)};
         std::array roots = {TestCell::reference(a), TestCell::reference(a),
                             TestCell::reference(c)};
         expect_evacuation(heap, roots, TestCollectionKind::Full);
@@ -919,7 +926,10 @@ namespace cl::gc::test
                         objects[random() % objects.size()]));
                 }
                 object->strong_cells.push_back(TestCell::immediate(random()));
-                object->weak_targets = {objects[random() % objects.size()]};
+                object->weak_cells = {
+                    TestCell::reference(objects[random() % objects.size()]),
+                    TestCell::immediate(0), TestCell::immediate(-7),
+                    TestCell::reference(nullptr)};
             }
             std::array roots = {
                 TestCell::reference(objects[random() % objects.size()])};

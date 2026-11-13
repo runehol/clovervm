@@ -1,4 +1,4 @@
-#include "gc/strong_remembered_set.h"
+#include "gc/remembered_set.h"
 
 #include "runtime/fatal.h"
 
@@ -7,7 +7,7 @@
 
 namespace cl::gc
 {
-    StrongRememberedSet::~StrongRememberedSet()
+    RememberedSet::~RememberedSet()
     {
         // Dropping outstanding records would orphan their header markers.
         assert(empty());
@@ -18,18 +18,18 @@ namespace cl::gc
         }
     }
 
-    std::unique_ptr<StrongRememberedSet::Block>
-    StrongRememberedSet::allocate_block() noexcept
+    std::unique_ptr<RememberedSet::Block>
+    RememberedSet::allocate_block() noexcept
     {
         std::unique_ptr<Block> block(new(std::nothrow) Block);
         if(!block)
         {
-            fatal("failed to allocate strong remembered-set block");
+            fatal("failed to allocate remembered-set block");
         }
         return block;
     }
 
-    void StrongRememberedSet::advance_block_slow() noexcept
+    void RememberedSet::advance_block_slow() noexcept
     {
         if(current_ == nullptr)
         {
@@ -48,7 +48,7 @@ namespace cl::gc
         used_ = 0;
     }
 
-    void StrongRememberedSet::adopt_from(StrongRememberedSet &&source) noexcept
+    void RememberedSet::adopt_from(RememberedSet &&source) noexcept
     {
         assert(this != &source);
         if(source.empty())
@@ -79,7 +79,7 @@ namespace cl::gc
         source.used_ = 0;
     }
 
-    void StrongRememberedSet::clear_after_collection() noexcept
+    void RememberedSet::clear_after_collection() noexcept
     {
         for_each_owner([](HeapObject *owner) {
             assert(!owner->is_forwarded());

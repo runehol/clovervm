@@ -1,0 +1,24 @@
+{
+  "format": "clover-gc-heap",
+  "version": 2,
+  "roots": [{"ref": 0}, {"imm": 0}, {"ref": null}, {"ref": 0}],
+  "objects": [
+    {"allocation_id": 0, "object_id": "obj-3",
+     "state": {"kind": "old_original", "copy_to": "ordinary", "header": {"kind": "normal", "marked": false}},
+     "strong": [{"ref": 1}, {"imm": -9223372036854775808}, {"ref": null}, {"ref": 1}], "weak": []},
+    {"allocation_id": 1, "object_id": "obj-0",
+     "state": {"kind": "young_original", "copy_to": "ordinary", "header": {"kind": "normal", "marked": false}},
+     "strong": [{"ref": 2}, {"ref": 3}], "weak": []},
+    {"allocation_id": 2, "object_id": "obj-4",
+     "state": {"kind": "nonmoving_original", "marked": false},
+     "strong": [{"ref": 3}, {"ref": 4}], "weak": []},
+    {"allocation_id": 3, "object_id": "obj-1",
+     "state": {"kind": "young_original", "copy_to": "nonmoving", "header": {"kind": "normal", "marked": false}},
+     "strong": [{"ref": 0}, {"ref": 1}], "weak": []},
+    {"allocation_id": 4, "object_id": "obj-2",
+     "state": {"kind": "old_original", "copy_to": "nonmoving", "header": {"kind": "normal", "marked": false}},
+     "strong": [{"ref": 0}], "weak": []}
+  ],
+  "external_weak": [],
+  "remembered": [2, 0, 4]
+}
