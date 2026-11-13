@@ -789,5 +789,181 @@ theorem prepareFreshHeap_fields_first (input heap : HeapSnapshot)
   rw [← same]
   exact validateStructure_fields_first checked.val (validateAndOrder_structure input checked validated)
 
+/-- Logical weak-unit IDs are shared globally by originals and external units. -/
+def freshUnitIds (heap : HeapSnapshot) : List Nat :=
+  (heap.externalWeak.toList ++ heap.objects.toList.flatMap (fun owner => owner.weak.toList)).map
+    (fun unit => unit.unitId.value)
+
+def FreshUnitIds (heap : HeapSnapshot) : Prop :=
+  (freshUnitIds heap).Perm (List.range (freshUnitIds heap).length)
+
+/-- Exact correspondence between a unique ID sequence and its scan set. -/
+structure IdLedger (ids : List Nat) (seen : Std.HashSet Nat) : Prop where
+  unique : ids.Nodup
+  members : ∀ value, seen.contains value = true ↔ value ∈ ids
+  size : seen.size = ids.length
+
+theorem IdLedger.insert (ledger : IdLedger ids seen) (id : Nat)
+    (absent : seen.contains id = false) : IdLedger (ids ++ [id]) (seen.insert id) := by
+  have fresh : id ∉ ids := by
+    intro yes
+    have occupied := (ledger.members id).mpr yes
+    simp [absent] at occupied
+  constructor
+  · rw [List.nodup_append]
+    refine ⟨ledger.unique, by simp, ?_⟩
+    intro a member b last
+    simp only [List.mem_singleton] at last
+    subst b
+    intro same
+    exact fresh (same ▸ member)
+  · intro value
+    simp only [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq,
+      ledger.members, List.mem_append, List.mem_singleton]
+    grind
+  · have missing := Std.HashSet.contains_eq_false_iff_not_mem.mp absent
+    simp [Std.HashSet.size_insert, missing, ledger.size]
+
+theorem IdLedger.empty : IdLedger [] {} := by
+  constructor <;> simp [Std.HashSet.size_empty]
+
+private theorem checkUnitIds_progress (pairs : List (WeakUnit × Nat))
+    (ledger : IdLedger ids before.1) (notCopy : storage ≠ .destination)
+    (accepted : pairs.foldlM (checkUnit path storage count) before = .ok after) :
+    IdLedger (ids ++ pairs.map (fun pair => pair.1.unitId.value)) after.1 := by
+  induction pairs generalizing before ids with
+  | nil =>
+      simp [List.foldlM_nil, pure, Except.pure] at accepted
+      subst after
+      simpa using ledger
+  | cons pair rest ih =>
+      cases step : checkUnit path storage count before pair with
+      | error message => simp [List.foldlM_cons, step, bind, Except.bind] at accepted
+      | ok next =>
+          simp only [List.foldlM_cons, step, bind, Except.bind] at accepted
+          obtain ⟨_, fresh, _, updated⟩ := (checkUnit_correct _ _ _ _ _ _).mp step
+          have absent := fresh notCopy
+          have updated : next.1 = before.1.insert pair.1.unitId.value := by
+            simpa [notCopy] using congrArg Prod.fst updated
+          have inserted := ledger.insert pair.1.unitId.value absent
+          rw [← updated] at inserted
+          simpa [List.append_assoc] using ih inserted accepted
+
+private theorem checkUnits_id_progress (values : Array WeakUnit) (path : String) (storage : UnitStorage)
+    (count : Nat) (before after : Std.HashSet Nat) (ledger : IdLedger ids before)
+    (notCopy : storage ≠ .destination)
+    (accepted : checkUnits values path storage count before = .ok after) :
+    IdLedger (ids ++ values.toList.map (fun unit => unit.unitId.value)) after := by
+  unfold checkUnits at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    have progress := checkUnitIds_progress values.toList.zipIdx ledger notCopy (by assumption)
+    have mapped : values.toList.zipIdx.map (fun pair => pair.1.unitId.value) = values.toList.map (fun unit => unit.unitId.value) := by
+      simpa only [List.map_map, Function.comp_def] using
+        congrArg (List.map (fun unit => unit.unitId.value)) (List.zipIdx_map_fst 0 values.toList)
+    simpa only [mapped] using progress
+
+private theorem validateAllocation_id_progress (count originalCount : Nat) (before after : AllocationTables)
+    (pair : Allocation × Nat) (ledger : IdLedger ids before.seen) (fresh : FreshState pair.1.state)
+    (accepted : validateAllocation count originalCount before pair = .ok after) :
+    IdLedger (ids ++ pair.1.weak.toList.map (fun unit => unit.unitId.value)) after.seen := by
+  have original := FreshState.not_destination fresh
+  unfold validateAllocation at accepted
+  simp only [original, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    exact checkUnits_id_progress _ _ .original _ _ _ ledger (by decide) (by assumption)
+
+private theorem validateAllocationIds_progress (pairs : List (Allocation × Nat))
+    (ledger : IdLedger ids before.seen) (fresh : ∀ pair ∈ pairs, FreshState pair.1.state)
+    (accepted : pairs.foldlM (validateAllocation count originalCount) before = .ok after) :
+    IdLedger (ids ++ pairs.flatMap (fun pair => pair.1.weak.toList.map (fun unit => unit.unitId.value))) after.seen := by
+  induction pairs generalizing before ids with
+  | nil =>
+      simp [List.foldlM_nil, pure, Except.pure] at accepted
+      subst after
+      simpa using ledger
+  | cons pair rest ih =>
+      cases step : validateAllocation count originalCount before pair with
+      | error message => simp [List.foldlM_cons, step, bind, Except.bind] at accepted
+      | ok next =>
+          simp only [List.foldlM_cons, step, bind, Except.bind] at accepted
+          have progressed := validateAllocation_id_progress _ _ _ _ _ ledger (fresh pair (by simp)) step
+          simpa [List.append_assoc] using ih progressed (fun pair h => fresh pair (by simp [h])) accepted
+
+private theorem checkDenseUnitIds_correct (seen : Std.HashSet Nat)
+    (accepted : checkDenseUnitIds seen = .ok ()) : ∀ id ∈ seen.toList, id < seen.size := by
+  unfold checkDenseUnitIds at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    apply forIn_all_checked _ _ _ _ (fun id => id < seen.size) ?_ (by assumption)
+    intro id before result succeeds
+    repeat' first | contradiction | split at succeeds
+    all_goals cases succeeds; exact ⟨_, rfl, by assumption⟩
+
+/-- Dense globally unique IDs are obtained from the actual insertion/checking path. -/
+theorem validateStructure_fresh_unit_ids (heap : HeapSnapshot) (fresh : FreshStates heap)
+    (accepted : validateStructure heap = .ok ()) : FreshUnitIds heap := by
+  unfold validateStructure at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    have external := checkUnits_id_progress heap.externalWeak _ .external _ _ _ IdLedger.empty (by decide) (by assumption)
+    simp only [List.nil_append] at external
+    have owners := validateAllocationIds_progress heap.objects.toList.zipIdx external
+      (fun pair member => fresh pair.1 (List.fst_mem_of_mem_zipIdx member)) (by assumption)
+    have mapped : heap.objects.toList.zipIdx.flatMap (fun pair => pair.1.weak.toList.map (fun unit => unit.unitId.value)) =
+        heap.objects.toList.flatMap (fun owner => owner.weak.toList.map (fun unit => unit.unitId.value)) := by
+      simpa only [List.flatMap_map, Function.comp_def] using
+        congrArg (List.flatMap (fun owner => owner.weak.toList.map (fun unit => unit.unitId.value)))
+          (List.zipIdx_map_fst 0 heap.objects.toList)
+    rw [mapped] at owners
+    have dense := checkDenseUnitIds_correct _ (by assumption)
+    apply nodup_perm_range (freshUnitIds heap) ?_ ?_
+    · simpa [freshUnitIds, List.map_flatMap] using owners.unique
+    · intro id member
+      have present := (owners.members id).mpr (by simpa [freshUnitIds, List.map_flatMap] using member)
+      have inSet : id ∈ _ := Std.HashSet.contains_iff_mem.mp present
+      have valid := dense id (Std.HashSet.mem_toList.mpr inSet)
+      simpa [owners.size, freshUnitIds, List.map_flatMap] using valid
+
+theorem prepareFreshHeap_unit_ids (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : FreshUnitIds heap := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  have fresh := prepareFreshHeap_states input heap accepted
+  apply validateStructure_fresh_unit_ids heap fresh
+  rw [← same]
+  exact validateAndOrder_structure input checked validated
+
+/-- Independent semantic preconditions of an allocation-ordered fresh snapshot.
+    Immediates are opaque; no executable validator is a premise of this specification. -/
+structure FreshWellFormed (heap : HeapSnapshot) : Prop where
+  states : FreshStates heap
+  identities : FreshIds heap
+  references : HeapCellReferencesValid heap
+  remembered : RememberedValid heap
+  ownerLayout : ∀ owner ∈ heap.objects.toList, FieldsBeforeEntries owner.weak.toList
+  units : FreshUnitIds heap
+
+/-- Preparation returns the exact input snapshot with allocations sorted by physical ID. -/
+theorem prepareFreshHeap_ordered (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : heap = orderedHeap input := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  rw [← same]
+  exact validateAndOrder_value input checked validated
+
+/-- Successful preparation certifies all independent fresh-heap invariants. -/
+theorem prepareFreshHeap_wellFormed (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : FreshWellFormed heap :=
+  ⟨prepareFreshHeap_states input heap accepted,
+    prepareFreshHeap_ids input heap accepted,
+    prepareFreshHeap_cell_references input heap accepted,
+    prepareFreshHeap_remembered input heap accepted,
+    prepareFreshHeap_fields_first input heap accepted,
+    prepareFreshHeap_unit_ids input heap accepted⟩
 
 end CloverGC.Differential.Format
