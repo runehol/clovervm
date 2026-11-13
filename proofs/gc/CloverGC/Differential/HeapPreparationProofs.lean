@@ -244,5 +244,164 @@ theorem modelObjectId_correct (count : Nat) (id : Format.ObjectId) (object : Fin
   simp only [modelObjectId, parsed, required, bind, Except.bind, pure, Except.pure]
   exact checkedFin_correct _ _ _
 
+/-- The retained physical-to-logical vector matches input object names slot by slot. -/
+def PhysicalObjectMap (initial : Format.HeapSnapshot)
+    (objects : Vector (Fin initial.objects.size) initial.objects.size) : Prop :=
+  objects.toList.map Fin.val = initial.objects.toList.map (fun a => Format.logicalOrdinal a.objectId)
+
+/-- Every valid identity permutation converts to the exact physical-to-logical map. -/
+theorem modelObjectIds_succeeds (initial : Format.HeapSnapshot) (ids : Format.FreshIds initial) :
+    ∃ objects, initial.objects.toVector.mapM (fun a => modelObjectId initial.objects.size a.objectId) = .ok objects ∧
+      PhysicalObjectMap initial objects := by
+  obtain ⟨objects, checked, projected⟩ := vector_mapM_success initial.objects.toVector
+    (fun a => modelObjectId initial.objects.size a.objectId)
+    (fun a object => object.val = Format.logicalOrdinal a.objectId) (by
+      intro a member
+      have inside : a ∈ initial.objects.toList := by simpa using member
+      have bounded : Format.logicalOrdinal a.objectId < initial.objects.size :=
+        List.mem_range.mp (ids.objects.mem_iff.mp (List.mem_map.mpr ⟨a, inside, rfl⟩))
+      let object : Fin initial.objects.size := ⟨Format.logicalOrdinal a.objectId, bounded⟩
+      exact ⟨object, (modelObjectId_correct _ _ _ (ids.canonical a inside)).mpr rfl, rfl⟩)
+  refine ⟨objects, checked, ?_⟩
+  unfold PhysicalObjectMap
+  have columns : ∀ (before : List Format.Allocation) (after : List (Fin initial.objects.size)),
+      ListProjection (fun a object => object.val = Format.logicalOrdinal a.objectId) before after →
+      after.map Fin.val = before.map (fun a => Format.logicalOrdinal a.objectId) := by
+    intro before after projection
+    induction projection with
+    | nil => rfl
+    | cons head _ ih => simp [head, ih]
+  simpa using columns _ _ projected
+
+/-- Every processed identity stores its corresponding input value. Uniqueness
+    ensures later writes cannot replace an earlier identity's record. -/
+private structure IndexedTable (key : α → Fin n) (value : α → β) (processed : List α)
+    (table : Vector (Option β) n) : Prop where
+  unique : (processed.map key).Nodup
+  stored : ∀ a ∈ processed, table.get (key a) = some (value a)
+
+private theorem IndexedTable.empty (key : α → Fin n) (value : α → β) (table : Vector (Option β) n) :
+    IndexedTable key value [] table := by
+  constructor <;> simp
+
+private theorem IndexedTable.insert {key : α → Fin n} {value : α → β} {processed : List α}
+    {table : Vector (Option β) n} (progress : IndexedTable key value processed table)
+    (a : α) (fresh : key a ∉ processed.map key) :
+    IndexedTable key value (processed ++ [a]) (table.set (key a).val (some (value a)) (key a).isLt) := by
+  constructor
+  · rw [List.map_append, List.map_singleton, List.nodup_append]
+    refine ⟨progress.unique, by simp, ?_⟩
+    intro old member last lastMember equal
+    simp only [List.mem_singleton] at lastMember
+    exact fresh (lastMember ▸ equal ▸ member)
+  · intro old member
+    rcases List.mem_append.mp member with prior | last
+    · have different : (key a).val ≠ (key old).val := by
+        intro equal
+        have same : key a = key old := Fin.ext equal
+        exact fresh (same ▸ List.mem_map.mpr ⟨old, prior, rfl⟩)
+      change (table.set (key a).val (some (value a)) (key a).isLt)[(key old).val] = some (value old)
+      simp only [Vector.getElem_set, different, ↓reduceIte]
+      exact progress.stored old prior
+    · simp only [List.mem_singleton] at last
+      subst old
+      change (table.set (key a).val (some (value a)) (key a).isLt)[(key a).val] = some (value a)
+      simp
+
+/-- The construction loop stores every uniquely named input at its own slot. -/
+private theorem buildIndexedTable_success (values : List α) (key : α → Fin n) (value : α → β)
+    (before : Vector (Option β) n) (processed : List α)
+    (progress : IndexedTable key value processed before)
+    (unique : ((processed ++ values).map key).Nodup) :
+    ∃ after, (forIn values before (fun a table =>
+      pure (.yield (table.set (key a).val (some (value a)) (key a).isLt))) : Except String (Vector (Option β) n)) = .ok after ∧
+      IndexedTable key value (processed ++ values) after := by
+  induction values generalizing before processed with
+  | nil => exact ⟨before, rfl, by simpa using progress⟩
+  | cons a rest ih =>
+      have absent : key a ∉ processed.map key := by
+        intro member
+        exact (List.nodup_append.mp (by simpa only [List.map_append] using unique)).2.2 _ member _ (by simp) rfl
+      obtain ⟨after, done, final⟩ := ih _ (processed ++ [a]) (progress.insert a absent)
+        (by simpa [List.append_assoc] using unique)
+      refine ⟨after, ?_, ?_⟩
+      · simpa only [List.forIn_cons, bind, Except.bind, pure, Except.pure] using done
+      · simpa [List.append_assoc] using final
+
+/-- Once all logical IDs are covered, no table lookup can fail. -/
+private theorem IndexedTable.complete {key : α → Fin n} {value : α → β} {processed : List α}
+    {table : Vector (Option β) n} (progress : IndexedTable key value processed table)
+    (covered : ∀ index, index ∈ processed.map key) :
+    ∀ index, ∃ record, table.get index = some record := by
+  intro index
+  obtain ⟨a, inside, same⟩ := List.mem_map.mp (covered index)
+  exact ⟨value a, same ▸ progress.stored a inside⟩
+
+/-- Complete identity coverage makes the executable option-table conversion total,
+    with each stored record at its declared logical index. -/
+private theorem IndexedTable.require_success {key : α → Fin n} {value : α → β} {processed : List α}
+    {table : Vector (Option β) n} (progress : IndexedTable key value processed table)
+    (covered : ∀ index, index ∈ processed.map key) (message : String) :
+    ∃ records, table.mapM (required message) = .ok records ∧
+      ∀ a ∈ processed, records.get (key a) = value a := by
+  classical
+  have filled := progress.complete covered
+  let records : Vector β n := Vector.ofFn (fun i => Classical.choose (filled i))
+  have lookup : ∀ i, table.get i = some (records.get i) := by
+    intro i
+    simpa [records, Vector.get] using Classical.choose_spec (filled i)
+  have stored : table = records.map some := by
+    apply Vector.ext
+    intro i inside
+    have slot := lookup ⟨i, inside⟩
+    change table[i] = some records[i] at slot
+    simpa using slot
+  have checked : table.mapM (required message) = .ok records := by
+    rw [stored, Vector.mapM_map]
+    have convert : (required message ∘ some) = (fun a : β => (pure a : Except String β)) := rfl
+    rw [convert, Vector.mapM_pure]
+    simp [pure, Except.pure]
+  refine ⟨records, checked, ?_⟩
+  intro a inside
+  exact (Option.some.inj ((progress.stored a inside).symm.trans (lookup (key a)))).symm
+
+
+/-- Indexing retains every physical record at the logical ID named by the map. -/
+theorem indexOriginals_succeeds (initial : Format.HeapSnapshot) (ids : Format.FreshIds initial)
+    (objects : Vector (Fin initial.objects.size) initial.objects.size) (mapped : PhysicalObjectMap initial objects) :
+    ∃ originals, indexOriginals initial.objects.toVector objects = .ok originals ∧
+      ∀ pair ∈ (initial.objects.toVector.zip objects).toArray.toList,
+        originals.get pair.2 = pair.1 := by
+  let pairs := (initial.objects.toVector.zip objects).toArray.toList
+  have keys : pairs.map Prod.snd = objects.toList := by
+    simp only [pairs, Vector.toList_toArray, Vector.toList_zip]
+    exact List.map_snd_zip (by simp)
+  have numbered : (objects.toList.map Fin.val).Perm (List.range initial.objects.size) := by
+    rw [mapped]
+    exact ids.objects
+  have unique : objects.toList.Nodup := by
+    have values := numbered.symm.nodup List.nodup_range
+    exact (List.pairwise_map.mp values).imp (fun different same => different (congrArg Fin.val same))
+  have covered : ∀ index, index ∈ pairs.map Prod.snd := by
+    intro index
+    rw [keys]
+    have member := numbered.mem_iff.mpr (List.mem_range.mpr index.isLt)
+    obtain ⟨object, inside, same⟩ := List.mem_map.mp member
+    have equal : object = index := Fin.ext same
+    exact equal ▸ inside
+  obtain ⟨table, built, progress⟩ := buildIndexedTable_success pairs Prod.snd Prod.fst
+    (Vector.replicate initial.objects.size none) [] (IndexedTable.empty _ _ _)
+    (by simpa [keys] using unique)
+  obtain ⟨originals, checked, contents⟩ := progress.require_success covered "heap conversion: missing original"
+  refine ⟨originals, ?_, ?_⟩
+  · unfold indexOriginals
+    dsimp only
+    rw [← Array.forIn_toList]
+    dsimp only [pairs] at built
+    rw [built]
+    exact checked
+  · simpa only [List.nil_append] using contents
+
+
 
 end CloverGC.Differential
