@@ -77,6 +77,37 @@ theorem collection_unregistered_unchanged (input : Input n k) (id : Fin k)
   rw [lateVisits_unmentioned input before before.pending id not_pending]
   exact (beforeFinish_units input).outside id outside
 
+/-- Every registered active unit preserves its retained guards and payload,
+    using graph liveness and old-object retention rather than the resolver as its specification. -/
+theorem collection_retained_unit (input : Input n k) (id : Fin k)
+    (registered : id ∈ (collectWeak input).1.registered)
+    (active : (input.heap.data.units.templates id).active = true)
+    (all_retained : ∀ object, some object ∈ (input.heap.data.units.templates id).targets →
+      Retained input.strongInput object) :
+    (collectWeak input).1.units id = (input.heap.data.units.templates id).map
+      (canonical (Generational.evacuate input.strongInput).1.copying) := by
+  rw [collection_units_correct input id registered]
+  exact congrArg Prod.fst (repair_retained_template input.strongInput _ active all_retained)
+
+/-- A selected dead guard or referenced payload clears the registered unit. -/
+theorem collection_dead_unit (input : Input n k) (id : Fin k)
+    (registered : id ∈ (collectWeak input).1.registered) (object : Fin n)
+    (member : some object ∈ (input.heap.data.units.templates id).targets)
+    (inside : input.strongInput.selected object = true) (dead : ¬ Live input.strongInput object) :
+    (collectWeak input).1.units id = Copying.Weak.clear (input.heap.data.units.templates id).initial := by
+  rw [collection_units_correct input id registered]
+  exact congrArg Prod.fst (repair_dead_template input.strongInput _ object member inside dead)
+
+/-- Registered inactive entries clear even when their remaining targets survive.
+    Unregistered storage is governed by collection_unregistered_unchanged. -/
+theorem collection_inactive_unit (input : Input n k) (id : Fin k)
+    (registered : id ∈ (collectWeak input).1.registered)
+    (inactive : (input.heap.data.units.templates id).active = false) :
+    (collectWeak input).1.units id = Copying.Weak.clear (input.heap.data.units.templates id).initial := by
+  rw [collection_units_correct input id registered]
+  exact congrArg Prod.fst (Copying.Weak.repair_inactive _ _
+    (by simpa [Copying.Weak.Template.initial] using inactive))
+
 theorem collection_weak_queue_empty (input : Input n k) : (collectWeak input).1.pending = [] := rfl
 
 end CloverGC.Generational.Weak

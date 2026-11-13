@@ -23,6 +23,40 @@ theorem full_resolve (input : CollectionInput n) (full : input.collection = .ful
     resolve input copying phase reference = Copying.Weak.resolve input.copyInput copying phase reference := by
   cases reference <;> simp [resolve, CollectionInput.selected, full, Copying.Weak.resolve]
 
+/-- Graph-live selected objects resolve to their canonical final strong reference
+    in either collection mode, including young objects reached through remembered owners. -/
+theorem resolve_final_live (input : CollectionInput n) (object : Fin n) (live : Live input object) :
+    resolve input (Generational.evacuate input).1.copying .late (.source object) =
+      .resolved (canonical (Generational.evacuate input).1.copying object) := by
+  have inside := live_selected input object live
+  cases movable : input.copyInput.movable object with
+  | false =>
+      have forward := nonmoving_unforwarded input.copyInput _ object
+        (evacuate_invariant input).tracking.copying movable
+      have marked := (evacuate_reachable input object).mpr live
+      simp only [canonical, forward] at marked
+      simp [resolve, inside, Copying.Weak.resolve, movable, marked, canonical, forward]
+  | true =>
+      obtain ⟨index, forward⟩ := (evacuate_forwarded_iff input object).mpr ⟨live, movable⟩
+      simp [resolve, inside, Copying.Weak.resolve, movable, forward, canonical]
+
+/-- A selected object outside the strong graph closure is dead. Unselected old
+    objects remain covered by resolve_unselected rather than this dead-target rule. -/
+theorem resolve_final_dead (input : CollectionInput n) (object : Fin n)
+    (inside : input.selected object = true) (dead : ¬ Live input object) :
+    resolve input (Generational.evacuate input).1.copying .late (.source object) = .dead := by
+  have forward : (Generational.evacuate input).1.copying.forwarding object = none := by
+    cases h : (Generational.evacuate input).1.copying.forwarding object with
+    | none => rfl
+    | some index => exact False.elim (dead ((evacuate_forwarded_iff input object).mp ⟨index, h⟩).1)
+  have unmarked : Reference.source object ∉ (Generational.evacuate input).1.copying.marked := by
+    intro marked
+    apply dead
+    apply (evacuate_reachable input object).mp
+    simpa [canonical, forward] using marked
+  cases movable : input.copyInput.movable object <;>
+    simp [resolve, inside, Copying.Weak.resolve, movable, forward, unmarked, unresolved]
+
 theorem resolve_early_not_dead (input : CollectionInput n) (copying : CopyState n)
     (reference : Reference n) : resolve input copying .early reference ≠ .dead := by
   cases reference with

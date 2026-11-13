@@ -133,9 +133,7 @@ theorem ready_scan (input : CollectionInput n) (done scanned : List (Fin n))
   let logicalPopped : MarkState n := ⟨logical.marked, rest⟩
   have ht : Tracking input popped logicalPopped := {
     copying := pop_preserves input.copyInput state.copying ref _ ready.tracking.copying physical
-    selected := ready.tracking.selected
     schedule := ⟨ready.tracking.schedule.marked, rfl, ready.tracking.schedule.known⟩
-    included := fun o ho => ready.tracking.included o (queue.symm ▸ List.mem_cons_of_mem object ho)
     marked_selected := ready.tracking.marked_selected }
   let children := input.heap.data.graph.strongChildren object
   let result := repair input popped (children.map Reference.source)

@@ -10,6 +10,12 @@ import CloverGC.GenerationalWeakProofs
 /-- info: 'CloverGC.Generational.Weak.full_resolve' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms CloverGC.Generational.Weak.full_resolve
+/-- info: 'CloverGC.Generational.Weak.resolve_final_live' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Generational.Weak.resolve_final_live
+/-- info: 'CloverGC.Generational.Weak.resolve_final_dead' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms CloverGC.Generational.Weak.resolve_final_dead
 /-- info: 'CloverGC.Generational.Weak.resolve_early_not_dead' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms CloverGC.Generational.Weak.resolve_early_not_dead

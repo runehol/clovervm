@@ -76,5 +76,65 @@ theorem early_complete_correct (input : CollectionInput n) (before after : CopyS
   Repair.early_complete_correct (resolve input before .early) (resolve input after .late)
     (resolve_early_not_dead input before) (resolve_stable input before after progress) unit complete
 
+private theorem resolve_final_retained (input : CollectionInput n) (object : Fin n)
+    (retained : Retained input object) :
+    resolve input (Generational.evacuate input).1.copying .late (.source object) =
+      .resolved (canonical (Generational.evacuate input).1.copying object) := by
+  rcases retained with outside | live
+  · have forward := (evacuate_unselected input object outside).1
+    simpa only [canonical, forward] using resolve_unselected input _ .late object outside
+  · exact resolve_final_live input object live
+
+/-- Active units preserve all retained targets, including unselected old objects,
+    and retain immediate/null payload positions. -/
+theorem repair_retained_template (input : CollectionInput n) (template : Template n)
+    (active : template.active = true)
+    (all_retained : ∀ object, some object ∈ template.targets → Retained input object) :
+    repairUnit (resolve input (Generational.evacuate input).1.copying .late) template.initial =
+      (template.map (canonical (Generational.evacuate input).1.copying), .complete) := by
+  let resolver := resolve input (Generational.evacuate input).1.copying .late
+  have field (original : Option (Fin n)) (member : original ∈ template.targets) :
+      repairField resolver (original.map Reference.source) =
+        ⟨original.map (canonical (Generational.evacuate input).1.copying), false, false⟩ := by
+    cases original with
+    | none => rfl
+    | some object => simp [resolver, repairField, resolve_final_retained input object (all_retained object member)]
+  dsimp [resolver] at field
+  apply Prod.ext
+  · cases template with
+    | field cell =>
+        cases cell with
+        | immediate value => rfl
+        | reference target =>
+            have fact := field target (by simp [RepairUnit.targets, Cell.target])
+            simp [Template.initial, RepairUnit.map, Cell.map, repairUnit, repairCell, fact]
+    | entry record =>
+        cases record with
+        | mk first second payload =>
+            cases first with
+            | none => simp [RepairUnit.active] at active
+            | some first =>
+                cases second with
+                | none => simp [RepairUnit.active] at active
+                | some second =>
+                    have f := field (some first) (by simp [RepairUnit.targets])
+                    have g := field (some second) (by simp [RepairUnit.targets])
+                    have p := field payload.target (by simp [RepairUnit.targets])
+                    cases payload <;>
+                      simp_all [Template.initial, RepairUnit.map, Cell.map, Cell.target,
+                        repairUnit, repairCell, finishEntry]
+  · exact repair_late_complete input _ _
+
+/-- Any selected graph-dead target, including a referenced payload, clears the
+    entire unit. Unselected old targets are preserved by the retained rule. -/
+theorem repair_dead_template (input : CollectionInput n) (template : Template n)
+    (object : Fin n) (member : some object ∈ template.targets)
+    (inside : input.selected object = true) (dead : ¬ Live input object) :
+    repairUnit (resolve input (Generational.evacuate input).1.copying .late) template.initial =
+      (clear template.initial, .complete) := by
+  apply Copying.Weak.repair_dead_dominates _ template.initial (.source object)
+  · rw [Template.initial, targets_map]
+    exact List.mem_map.mpr ⟨some object, member, rfl⟩
+  · exact resolve_final_dead input object inside dead
 
 end CloverGC.Generational.Weak

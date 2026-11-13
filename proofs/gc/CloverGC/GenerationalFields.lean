@@ -9,31 +9,47 @@ def advance (input : CollectionInput n) (logical : MarkState n) (object : Fin n)
 
 structure Tracking (input : CollectionInput n) (state : CopyState n) (logical : MarkState n) : Prop where
   copying : CopyInvariant input.copyInput state
-  selected : CopiesSelected input state
   schedule : Schedule input.copyInput state logical
-  included : ∀ x ∈ logical.pending, x ∈ logical.marked
   marked_selected : ∀ x ∈ logical.marked, input.selected x = true
 
+/-- Logical pending inclusion follows from the physical queue invariant and
+    the exact schedule correspondence. -/
+theorem Tracking.included (track : Tracking input state logical) :
+    ∀ object ∈ logical.pending, object ∈ logical.marked := by
+  intro object pending
+  have physical : canonical state object ∈ state.pending := by
+    rw [track.schedule.pending]
+    exact List.mem_map.mpr ⟨object, pending, rfl⟩
+  have marked := track.copying.pending_marked _ physical
+  rw [track.schedule.marked] at marked
+  obtain ⟨other, member, same⟩ := List.mem_map.mp marked
+  exact canonical_injective input.copyInput state track.copying other object same ▸ member
+
+/-- Every allocated copy represents a logically marked, selected object. -/
+theorem Tracking.selected (track : Tracking input state logical) : CopiesSelected input state := by
+  intro index record present
+  have represents : Represents input.copyInput state record.origin (.copied index) :=
+    track.copying.ledger.copies_forwarded index record present
+  exact track.marked_selected record.origin
+    ((schedule_member input.copyInput state logical track.copying track.schedule record.origin (.copied index) represents).mp
+      (track.copying.copies_marked index record present))
+
 theorem tracking_empty (input : CollectionInput n) : Tracking input .empty .empty :=
-  ⟨empty_invariant input.copyInput, by simp [CopiesSelected, CopyState.empty],
-    schedule_empty input.copyInput, by simp [MarkState.empty], by simp [MarkState.empty]⟩
+  ⟨empty_invariant input.copyInput, schedule_empty input.copyInput, by simp [MarkState.empty]⟩
 
 theorem tracking_discover (input : CollectionInput n) (state : CopyState n) (logical : MarkState n)
     (object : Fin n) (track : Tracking input state logical) :
     Tracking input (discover input state (.source object)).1 (advance input logical object) := by
-  obtain ⟨hc, hs⟩ := discover_invariant input state object track.copying track.selected
-  refine ⟨hc, hs, discover_schedule input state logical object track.copying track.schedule track.included, ?_, ?_⟩
-  · cases inside : input.selected object with
-    | false => simpa [advance, inside] using track.included
-    | true => simpa [advance, inside] using discover_included logical object track.included
-  · intro x member
-    cases inside : input.selected object with
-    | false => exact track.marked_selected x (by simpa [advance, inside] using member)
-    | true =>
-        have cases := (discover_marked object x logical).mp (by simpa [advance, inside] using member)
-        rcases cases with rfl | old
-        · exact inside
-        · exact track.marked_selected x old
+  obtain ⟨hc, _⟩ := discover_invariant input state object track.copying track.selected
+  refine ⟨hc, discover_schedule input state logical object track.copying track.schedule track.included, ?_⟩
+  intro x member
+  cases inside : input.selected object with
+  | false => exact track.marked_selected x (by simpa [advance, inside] using member)
+  | true =>
+      have cases := (discover_marked object x logical).mp (by simpa [advance, inside] using member)
+      rcases cases with rfl | old
+      · exact inside
+      · exact track.marked_selected x old
 
 theorem advance_mono (input : CollectionInput n) (logical : MarkState n) (object target : Fin n)
     (member : target ∈ logical.marked) : target ∈ (advance input logical object).marked := by
@@ -184,13 +200,9 @@ theorem fields_repair (input : CollectionInput n) (state : EvacuationState n)
 theorem tracking_write (input : CollectionInput n) (state : EvacuationState n)
     (logical : MarkState n) (ref : Reference n) (values : List (Reference n))
     (track : Tracking input state.copying logical) :
-    Tracking input (writeFields state ref values).copying logical := by
-  refine ⟨write_preserves input.copyInput state ref values track.copying, ?_,
-    write_schedule input.copyInput state ref values logical track.schedule, track.included, track.marked_selected⟩
-  intro index record get
-  rw [write_get, Option.map_eq_some_iff] at get
-  obtain ⟨old, oldget, rfl⟩ := get
-  simpa using track.selected index old oldget
+    Tracking input (writeFields state ref values).copying logical :=
+  ⟨write_preserves input.copyInput state ref values track.copying,
+    write_schedule input.copyInput state ref values logical track.schedule, track.marked_selected⟩
 
 theorem fields_write (input : CollectionInput n) (state : EvacuationState n)
     (done scanned : List (Fin n)) (parent : Fin n) (ref : Reference n)
