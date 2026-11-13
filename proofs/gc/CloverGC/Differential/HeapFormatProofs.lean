@@ -1,6 +1,7 @@
 import CloverGC.Differential.HeapFormat
 import Init.Data.Array.Sort.Lemmas
 import Init.Data.SInt.Lemmas
+import Std.Data.HashSet.Lemmas
 
 namespace CloverGC.Differential.Format
 
@@ -21,6 +22,15 @@ private theorem validateAndOrder_value (input : HeapSnapshot)
         cases accepted
         rfl
       · contradiction
+
+private theorem validateAndOrder_structure (input : HeapSnapshot)
+    (checked : { heap : HeapSnapshot // WeakRememberedCovered heap })
+    (accepted : validateAndOrder input = .ok checked) : validateStructure checked.val = .ok () := by
+  rw [validateAndOrder_value input checked accepted]
+  unfold validateAndOrder at accepted
+  cases structureCheck : validateStructure (orderedHeap input) with
+  | error message => simp [structureCheck, bind, Except.bind] at accepted
+  | ok value => cases value; rfl
 
 /-- Successful public validation certifies coverage of the supplied snapshot. -/
 theorem validateHeap_weak_covered (heap : HeapSnapshot)
@@ -114,13 +124,13 @@ theorem checkFreshHeap_correct (heap : HeapSnapshot) :
 def logicalOrdinal (id : ObjectId) : Nat :=
   (String.ofList (id.value.toList.drop 4)).toNat?.getD 0
 
-/-- Canonical decimal syntax; the ordinal itself is unrelated to the allocation ID. -/
+/-- Canonical obj-N wire identity; its ordinal is unrelated to the allocation ID. -/
 def CanonicalObjectId (id : ObjectId) : Prop :=
   let digits := String.ofList (id.value.toList.drop 4)
   id.value.startsWith "obj-" = true ∧ digits.isEmpty = false ∧
     digits.toList.all (fun c => '0' ≤ c && c ≤ '9') = true ∧
     ¬(digits.length > 1 ∧ digits.startsWith "0" = true) ∧
-    digits.toNat? = some (logicalOrdinal id)
+    digits.toNat? = some (logicalOrdinal id) ∧ logicalOrdinal id ≤ 18446744073709551615
 
 structure FreshIds (heap : HeapSnapshot) : Prop where
   allocations : heap.objects.toList.map (fun a => a.allocationId.value) = List.range heap.objects.size
@@ -142,10 +152,11 @@ private theorem objectNumber_correct (id : ObjectId) (path : String) (number : N
     repeat' first | contradiction | split at accepted
     all_goals
       cases accepted
+      have bounded : ¬ number > 18446744073709551615 := by assumption
       simp only [CanonicalObjectId, logicalOrdinal, prefixEq, suffix, parsed, Option.getD_some]
       grind
 
-private theorem FreshState.not_destination (fresh : FreshState state) : isDestination state = false := by
+theorem FreshState.not_destination (fresh : FreshState state) : isDestination state = false := by
   cases state with
   | youngOriginal policy header | oldOriginal policy header => rfl
   | nonmovingOriginal marked => rfl
@@ -173,7 +184,7 @@ private theorem validateAllocation_fresh (count originalCount : Nat) (before aft
       simpa only [Bool.not_eq_true] using
         (show ¬(before.origins[logicalOrdinal a.objectId]'(by assumption)).isSome = true from by assumption)
 
-private structure IdentityProgress (bound : Nat) (processed : List (Allocation × Nat))
+structure IdentityProgress (bound : Nat) (processed : List (Allocation × Nat))
     (tables : AllocationTables) : Prop where
   size : tables.origins.size = bound
   allocations : ∀ pair ∈ processed, pair.1.allocationId.value = pair.2
@@ -183,7 +194,7 @@ private structure IdentityProgress (bound : Nat) (processed : List (Allocation �
   occupied : ∀ i (valid : i < tables.origins.size),
     tables.origins[i].isSome = true ↔ i ∈ processed.map (fun pair => logicalOrdinal pair.1.objectId)
 
-private theorem IdentityProgress.step (progress : IdentityProgress bound processed before)
+theorem IdentityProgress.step (progress : IdentityProgress bound processed before)
     (fresh : FreshState a.state)
     (accepted : validateAllocation count originalCount before (a, index) = .ok after) :
     IdentityProgress bound (processed ++ [(a, index)]) after := by
@@ -244,7 +255,7 @@ private theorem validateAllocations_progress (pairs : List (Allocation × Nat))
           have progressed := IdentityProgress.step progress (fresh pair (by simp)) step
           simpa [List.append_assoc] using ih progressed (fun pair h => fresh pair (by simp [h])) accepted
 
-private theorem fresh_originalCount (objects : List Allocation)
+theorem fresh_originalCount (objects : List Allocation)
     (fresh : ∀ a ∈ objects, FreshState a.state) (start : Nat) :
     objects.foldl (fun n a => if isDestination a.state then n else n + 1) start = start + objects.length := by
   induction objects generalizing start with
@@ -275,7 +286,7 @@ private theorem nodup_perm_range (numbers : List Nat) (nodup : numbers.Nodup)
     have positive := List.mem_range.mp member
     omega
 
-private theorem IdentityProgress.empty (bound : Nat) (copies : Array (Option Allocation)) (seen : Std.HashSet Nat) :
+theorem IdentityProgress.empty (bound : Nat) (copies : Array (Option Allocation)) (seen : Std.HashSet Nat) :
     IdentityProgress bound [] ⟨Array.replicate bound none, copies, seen⟩ := by
   constructor <;> simp
 
@@ -323,27 +334,25 @@ theorem validateStructure_fresh_ids (heap : HeapSnapshot)
     apply IdentityProgress.fresh_ids heap
     simpa using progress
 
+/-- Preparation returns only normal, unmarked original states. -/
+theorem prepareFreshHeap_states (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : FreshStates heap := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  unfold prepareFreshHeap at accepted
+  simp only [validated, bind, Except.bind] at accepted
+  cases stateCheck : checkFreshHeap checked.val with
+  | error message => simp [stateCheck] at accepted
+  | ok value => cases value; rw [← same]; exact (checkFreshHeap_correct _).mp stateCheck
+
 /-- Fresh preparation returns ordered dense allocations and canonical dense logical identities. -/
 theorem prepareFreshHeap_ids (input heap : HeapSnapshot)
     (accepted : prepareFreshHeap input = .ok heap) : FreshIds heap := by
   obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
-  have ordered := validateAndOrder_value input checked validated
-  have fresh : FreshStates heap := by
-    unfold prepareFreshHeap at accepted
-    simp only [validated, bind, Except.bind] at accepted
-    cases stateCheck : checkFreshHeap checked.val with
-    | error message => simp [stateCheck] at accepted
-    | ok value =>
-        cases value
-        rw [← same]
-        exact (checkFreshHeap_correct _).mp stateCheck
+  have fresh := prepareFreshHeap_states input heap accepted
   apply validateStructure_fresh_ids heap ?_ fresh
-  unfold validateAndOrder at validated
-  cases structureCheck : validateStructure (orderedHeap input) with
-  | error message => simp [structureCheck, bind, Except.bind] at validated
-  | ok value =>
-      cases value
-      simpa [← same, ordered] using structureCheck
+  rw [← same]
+  exact validateAndOrder_structure input checked validated
+
 /-- The placeholder codec preserves the exact signed integer and accepts every Int64. -/
 theorem decodeImmediate_correct (value : Int) (path : String) (encoded : Int64) :
     decodeImmediate value path = .ok encoded ↔ value = encoded.toInt := by

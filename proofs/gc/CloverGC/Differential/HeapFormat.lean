@@ -88,7 +88,7 @@ instance (heap : HeapSnapshot) : Decidable (WeakRememberedCovered heap) := by
 
 private def failAt (path message : String) : Except String α :=
   .error s!"{path}: {message}"
-private def indexPath (path : String) (index : Nat) : String := s!"{path}[{index}]"
+def indexPath (path : String) (index : Nat) : String := s!"{path}[{index}]"
 private def uint64Max : Nat := 18446744073709551615
 private def int64Min : Int := -9223372036854775808
 private def int64Max : Int := 9223372036854775807
@@ -178,7 +178,7 @@ def objectNumber (id : ObjectId) (path : String) : Except String Nat := do
 def isDestination : ObjectState → Bool
   | .ordinaryDestination | .nonmovingDestination => true
   | _ => false
-private def movable : ObjectState → Option (CopyTo × Header)
+def movable : ObjectState → Option (CopyTo × Header)
   | .youngOriginal copyTo h | .oldOriginal copyTo h => some (copyTo, h)
   | _ => none
 def checkReference (ref : Reference) (count : Nat) (path : String) : Except String Unit := do
@@ -188,28 +188,32 @@ def checkCell (value : Cell) (count : Nat) (path : String) : Except String Unit 
   match value with
   | .immediate _ => pure ()
   | .reference ref => checkReference ref count (path ++ ".ref")
-private inductive UnitStorage where
+inductive UnitStorage where
   | original | destination | external
-  deriving BEq
-private def checkUnits (values : Array WeakUnit) (path : String) (storage : UnitStorage)
+  deriving BEq, DecidableEq, ReflBEq, LawfulBEq
+def checkUnit (path : String) (storage : UnitStorage) (count : Nat)
+    (state : Std.HashSet Nat × Bool) (pair : WeakUnit × Nat) : Except String (Std.HashSet Nat × Bool) := do
+  let (unit, i) := pair
+  let mut seen := state.1
+  let mut seenEntry := state.2
+  let p := indexPath path i
+  if storage != .destination then
+    if seen.contains unit.unitId.value then failAt p "duplicate logical weak unit"
+    seen := seen.insert unit.unitId.value
+  match unit.contents with
+  | .field value =>
+    if storage != .external && seenEntry then failAt p "owner fields must precede entries"
+    checkCell value count (p ++ ".value")
+  | .entry entry =>
+    seenEntry := true
+    checkReference entry.firstGuard count (p ++ ".guards[0]")
+    checkReference entry.secondGuard count (p ++ ".guards[1]")
+    checkCell entry.payload count (p ++ ".payload")
+  return (seen, seenEntry)
+
+def checkUnits (values : Array WeakUnit) (path : String) (storage : UnitStorage)
     (count : Nat) (seen : Std.HashSet Nat) : Except String (Std.HashSet Nat) := do
-  let mut seen := seen
-  let mut seenEntry := false
-  for (unit, i) in values.toList.zipIdx do
-    let p := indexPath path i
-    if storage != .destination then
-      if seen.contains unit.unitId.value then failAt p "duplicate logical weak unit"
-      seen := seen.insert unit.unitId.value
-    match unit.contents with
-    | .field value =>
-      if storage != .external && seenEntry then failAt p "owner fields must precede entries"
-      checkCell value count (p ++ ".value")
-    | .entry entry =>
-      seenEntry := true
-      checkReference entry.firstGuard count (p ++ ".guards[0]")
-      checkReference entry.secondGuard count (p ++ ".guards[1]")
-      checkCell entry.payload count (p ++ ".payload")
-  return seen
+  return (← values.toList.zipIdx.foldlM (checkUnit path storage count) (seen, false)).1
 
 /-- Tables carried through the per-allocation structural checks. -/
 structure AllocationTables where
@@ -242,6 +246,50 @@ def validateAllocation (count originalCount : Nat) (tables : AllocationTables)
   seen ← checkUnits a.weak (p ++ ".weak") (if isDestination a.state then .destination else .original) count seen
   return ⟨origins, copies, seen⟩
 
+def checkRememberedOwner (heap : HeapSnapshot) (remembered : Std.HashSet Nat)
+    (id : AllocationId) : Except String (Std.HashSet Nat) := do
+  let some owner := heap.objects[id.value]? | failAt "$.remembered" "unknown owner"
+  match owner.state with
+  | .oldOriginal _ _ | .nonmovingOriginal _ => pure ()
+  | _ => failAt "$.remembered" "remembered owners must be old originals"
+  if remembered.contains id.value then failAt "$.remembered" "duplicate remembered owner"
+  return remembered.insert id.value
+
+def checkStrongOwner (heap : HeapSnapshot) (remembered : Std.HashSet Nat)
+    (a : Allocation) : Except String Unit := do
+  if !(match a.state with | .youngOriginal _ _ => true | _ => false) then
+    for value in a.strong do
+      if let .reference (some id) := value then
+        if let some (.youngOriginal _ _) := heap.objects[id.value]?.map Allocation.state then
+          unless remembered.contains a.allocationId.value do
+            failAt "$.objects.strong" "unremembered old-to-young strong edge"
+
+def checkDenseUnitIds (seen : Std.HashSet Nat) : Except String Unit := do
+  for id in seen.toList do
+    unless id < seen.size do failAt "$.weak" "logical unit IDs must be dense"
+
+/-- Validate reciprocal forwarding, placement and weak layout for one object. -/
+def checkObjectPair (origin destination : Option Allocation) : Except String Unit := do
+  let some original := origin | failAt "$.objects" "missing original identity"
+  let forwarded := (movable original.state).bind fun (_, h) =>
+    match h with | .forwarded id => some id | _ => none
+  match forwarded, destination with
+  | none, none => pure ()
+  | some target, some copy =>
+    unless target == copy.allocationId do failAt "$.objects" "forwarding must name the same object's destination"
+    let some (placement, _) := movable original.state | failAt "$.objects" "nonmoving original has destination"
+    let expected := match placement with
+      | .ordinary => ObjectState.ordinaryDestination
+      | .nonmoving => ObjectState.nonmovingDestination
+    unless copy.state == expected do failAt "$.objects" "destination disagrees with copy_to"
+    unless original.weak.size == copy.weak.size do failAt "$.objects" "destination weak layout size differs"
+    for (a, b) in original.weak.toList.zip copy.weak.toList do
+      let sameKind := match a.contents, b.contents with
+        | .field _, .field _ | .entry _, .entry _ => true
+        | _, _ => false
+      unless a.unitId == b.unitId && sameKind do failAt "$.objects" "destination weak layout differs"
+  | _, _ => failAt "$.objects" "destination and original require reciprocal forwarding"
+
 /-- Validate structural preconditions of an allocation-ordered snapshot. -/
 def validateStructure (heap : HeapSnapshot) : Except String Unit := do
   let count := heap.objects.size
@@ -254,43 +302,11 @@ def validateStructure (heap : HeapSnapshot) : Except String Unit := do
   let origins := tables.origins
   let copies := tables.copies
   let seen := tables.seen
-  for id in seen.toList do
-    unless id < seen.size do failAt "$.weak" "logical unit IDs must be dense"
-  let mut remembered : Std.HashSet Nat := {}
-  for id in heap.remembered do
-    let some owner := heap.objects[id.value]? | failAt "$.remembered" "unknown owner"
-    match owner.state with
-    | .oldOriginal _ _ | .nonmovingOriginal _ => pure ()
-    | _ => failAt "$.remembered" "remembered owners must be old originals"
-    if remembered.contains id.value then failAt "$.remembered" "duplicate remembered owner"
-    remembered := remembered.insert id.value
-  for a in heap.objects do
-    if !(match a.state with | .youngOriginal _ _ => true | _ => false) then
-      for value in a.strong do
-        if let .reference (some id) := value then
-          if let some (.youngOriginal _ _) := heap.objects[id.value]?.map Allocation.state then
-            unless remembered.contains a.allocationId.value do
-              failAt "$.objects.strong" "unremembered old-to-young strong edge"
+  checkDenseUnitIds seen
+  let remembered ← heap.remembered.toList.foldlM (checkRememberedOwner heap) {}
+  for a in heap.objects do checkStrongOwner heap remembered a
   for i in [:originalCount] do
-    let some original := origins[i]! | failAt "$.objects" "missing original identity"
-    let forwarded := (movable original.state).bind fun (_, h) =>
-      match h with | .forwarded id => some id | _ => none
-    match forwarded, copies[i]! with
-    | none, none => pure ()
-    | some target, some copy =>
-      unless target == copy.allocationId do failAt "$.objects" "forwarding must name the same object's destination"
-      let some (placement, _) := movable original.state | failAt "$.objects" "nonmoving original has destination"
-      let expected := match placement with
-        | .ordinary => ObjectState.ordinaryDestination
-        | .nonmoving => ObjectState.nonmovingDestination
-      unless copy.state == expected do failAt "$.objects" "destination disagrees with copy_to"
-      unless original.weak.size == copy.weak.size do failAt "$.objects" "destination weak layout size differs"
-      for (a, b) in original.weak.toList.zip copy.weak.toList do
-        let sameKind := match a.contents, b.contents with
-          | .field _, .field _ | .entry _, .entry _ => true
-          | _, _ => false
-        unless a.unitId == b.unitId && sameKind do failAt "$.objects" "destination weak layout differs"
-    | _, _ => failAt "$.objects" "destination and original require reciprocal forwarding"
+    checkObjectPair origins[i]! copies[i]!
 
 def orderedHeap (input : HeapSnapshot) : HeapSnapshot :=
   { input with objects := input.objects.mergeSort (fun a b => a.allocationId.value ≤ b.allocationId.value) }
