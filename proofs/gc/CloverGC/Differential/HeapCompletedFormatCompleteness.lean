@@ -264,5 +264,134 @@ theorem orderedHeap_eq_of_dense (heap : HeapSnapshot)
   have unchanged := Array.mergeSort_of_pairwise paired
   simp only [orderedHeap, unchanged]
 
+/-- All structural checks accept an independently valid completed snapshot. -/
+theorem validateStructure_completed_complete (heap : HeapSnapshot) (originals copies : List Allocation)
+    (valid : CompletedWellFormed heap originals copies) : validateStructure heap = .ok () := by
+  let sourcePairs := originals.zipIdx
+  let copyPairs := copies.zipIdx originals.length
+  have partition : heap.objects.toList.zipIdx = sourcePairs ++ copyPairs := by
+    simp only [valid.records, List.zipIdx_append, Nat.zero_add, sourcePairs, copyPairs]
+  have memberSource (a : Allocation) (member : a ∈ originals) : a ∈ heap.objects.toList := by
+    rw [valid.records]
+    exact List.mem_append_left _ member
+  have memberCopy (a : Allocation) (member : a ∈ copies) : a ∈ heap.objects.toList := by
+    rw [valid.records]
+    exact List.mem_append_right _ member
+  have count : heap.objects.foldl (fun n a => if isDestination a.state then n else n + 1) 0 = originals.length := by
+    rw [← Array.foldl_toList, valid.records, List.foldl_append,
+      countOriginals originals valid.originalStates 0, countDestinations copies valid.destinationStates]
+    simp
+  have roots := checkCells_success heap.roots heap.objects.size (indexPath "$.roots") valid.references.roots
+  simp only [bind, Except.bind, pure, Except.pure] at roots
+  have unitKeys : heap.externalWeak.toList.map (fun u => u.unitId.value) ++
+      sourcePairs.flatMap (fun pair => pair.1.weak.toList.map (fun u => u.unitId.value)) = originalUnitIds heap originals := by
+    have keys := congrArg (List.flatMap (fun a : Allocation => a.weak.toList.map (fun u => u.unitId.value)))
+      (List.zipIdx_map_fst 0 originals)
+    have flattened : sourcePairs.flatMap (fun pair => pair.1.weak.toList.map (fun u => u.unitId.value)) =
+        originals.flatMap (fun a => a.weak.toList.map (fun u => u.unitId.value)) := by
+      simpa only [sourcePairs, List.flatMap_map, Function.comp_def] using keys
+    simpa only [originalUnitIds, List.map_append, List.map_flatMap] using congrArg
+      (fun ids => heap.externalWeak.toList.map (fun u => u.unitId.value) ++ ids) flattened
+  have uniqueUnits := valid.units.symm.nodup List.nodup_range
+  have externalUnique : (heap.externalWeak.toList.map (fun u => u.unitId.value)).Nodup := by
+    rw [← unitKeys] at uniqueUnits
+    exact (List.nodup_append.mp uniqueUnits).1
+  obtain ⟨seen, externals, externalLedger⟩ := checkUnits_success heap.externalWeak "$.external_weak" .external
+    heap.objects.size {} [] IdLedger.empty (by decide) valid.references.externalWeak (Or.inl rfl)
+    (by simpa using externalUnique)
+  have sourceRecords : ∀ pair ∈ sourcePairs,
+      isDestination pair.1.state = false ∧ pair.1.allocationId.value = pair.2 ∧ pair.2 < originals.length ∧
+      CanonicalObjectId pair.1.objectId ∧ logicalOrdinal pair.1.objectId < originals.length ∧
+      AllocationCellReferencesValid heap.objects.size pair.1 ∧ FieldsBeforeEntries pair.1.weak.toList := by
+    intro pair member
+    have inside := List.fst_mem_of_mem_zipIdx member
+    have present := memberSource pair.1 inside
+    exact ⟨valid.originalStates _ inside,
+      denseAllocation_position heap valid.allocations pair (by rw [partition]; exact List.mem_append_left _ member),
+      (List.mem_zipIdx' member).1, valid.canonical _ present,
+      List.mem_range.mp (valid.originalIds.mem_iff.mp (List.mem_map.mpr ⟨pair.1, inside, rfl⟩)),
+      valid.references.objects _ present, valid.ownerLayout _ present⟩
+  obtain ⟨sourceTable, sourcesChecked, indexedSources, unchangedCopies, sourceLedger⟩ :=
+    validateOriginalRecords_success sourcePairs
+      ⟨Array.replicate originals.length none, Array.replicate originals.length none, seen⟩ [] _
+      (AllocationSlots.empty _) (by simpa using externalLedger) sourceRecords
+      (by simpa [sourcePairs, List.zipIdx_map_fst] using valid.originalIds.symm.nodup List.nodup_range)
+      (by rw [unitKeys]; exact uniqueUnits)
+  have sourceIndex : AllocationSlots originals.length originals sourceTable.origins := by
+    simpa [sourcePairs, List.zipIdx_map_fst] using indexedSources
+  have copyRecords : ∀ pair ∈ copyPairs,
+      isDestination pair.1.state = true ∧ pair.1.allocationId.value = pair.2 ∧ originals.length ≤ pair.2 ∧
+      CanonicalObjectId pair.1.objectId ∧ logicalOrdinal pair.1.objectId < originals.length ∧
+      AllocationCellReferencesValid heap.objects.size pair.1 ∧ FieldsBeforeEntries pair.1.weak.toList := by
+    intro pair member
+    have inside := List.fst_mem_of_mem_zipIdx member
+    have present := memberCopy pair.1 inside
+    exact ⟨valid.destinationStates _ inside,
+      denseAllocation_position heap valid.allocations pair (by rw [partition]; exact List.mem_append_right _ member),
+      (List.mem_zipIdx member).1, valid.canonical _ present, valid.copyBounds _ inside,
+      valid.references.objects _ present, valid.ownerLayout _ present⟩
+  have emptyCopies : AllocationSlots originals.length [] sourceTable.copies := by
+    rw [unchangedCopies]
+    exact AllocationSlots.empty _
+  obtain ⟨tables, copiesChecked, indexedCopies, unchangedSources, unchangedUnits⟩ :=
+    validateDestinationRecords_success copyPairs sourceTable [] emptyCopies copyRecords
+      (by simpa [copyPairs, List.zipIdx_map_fst] using valid.copyIds)
+  have copyIndex : AllocationSlots originals.length copies tables.copies := by
+    simpa [copyPairs, List.zipIdx_map_fst] using indexedCopies
+  have originIndex : AllocationSlots originals.length originals tables.origins := unchangedSources ▸ sourceIndex
+  have unitLedger : IdLedger (originalUnitIds heap originals) tables.seen := by
+    rw [unchangedUnits]
+    simpa only [unitKeys] using sourceLedger
+  have allocations : heap.objects.toList.zipIdx.foldlM (validateAllocation heap.objects.size originals.length)
+      ⟨Array.replicate originals.length none, Array.replicate originals.length none, seen⟩ = .ok tables := by
+    simp [partition, List.foldlM_append, sourcesChecked, copiesChecked, bind, Except.bind]
+  have dense := checkDenseUnitIds_complete tables.seen _ unitLedger valid.units
+  obtain ⟨remembered, owners, ownerLedger⟩ := checkRememberedOwners_success heap valid.remembered.owners valid.remembered.unique
+  have strong := checkStrongOwners_success heap remembered ownerLedger valid.remembered.strong
+  simp only [bind, Except.bind, pure, Except.pure] at strong
+  unfold validateStructure
+  simp only [count, roots, externals, allocations, dense, owners, strong, bind, Except.bind, pure, Except.pure]
+  rw [Std.Legacy.Range.forIn_eq_forIn_range']
+  apply Eq.trans (congrArg (fun result : Except String PUnit =>
+    Except.bind result (fun _ => Except.ok ())) (a₂ := .ok PUnit.unit) ?_) rfl
+  apply forIn_yields_success
+  intro i member cursor
+  cases cursor
+  have bounded : i < originals.length := by simpa [Std.Legacy.Range.size, List.mem_range'] using member
+  have sourceSlot : i < tables.origins.size := by simpa [originIndex.size] using bounded
+  have copySlot : i < tables.copies.size := by simpa [copyIndex.size] using bounded
+  have sourceLookup := (getElem!_pos tables.origins i sourceSlot).trans (originIndex.lookup i sourceSlot)
+  have copyLookup := (getElem!_pos tables.copies i copySlot).trans (copyIndex.lookup i copySlot)
+  cases found : originals.find? (fun a => logicalOrdinal a.objectId == i) with
+  | none =>
+      have missing := List.find?_eq_none.mp found
+      have key := valid.originalIds.mem_iff.mpr (List.mem_range.mpr bounded)
+      obtain ⟨a, inside, same⟩ := List.mem_map.mp key
+      exact False.elim (missing a inside (by simpa using same))
+  | some a =>
+      have inside := List.mem_of_find?_eq_some found
+      have same : logicalOrdinal a.objectId = i := by simpa using List.find?_some found
+      have compatible : AllocationPairValid a (copies.find? (fun b => logicalOrdinal b.objectId == i)) := by
+        simpa only [same] using valid.pairs a inside
+      have accepted := checkObjectPair_complete a _ compatible
+      simp [sourceLookup, copyLookup, found, accepted]
+
+/-- Public validation succeeds as well; sorting is the identity on dense records. -/
+theorem validateHeap_completed_complete (heap : HeapSnapshot) (originals copies : List Allocation)
+    (valid : CompletedWellFormed heap originals copies) : validateHeap heap = .ok () := by
+  have structural := validateStructure_completed_complete heap originals copies valid
+  have ordered := orderedHeap_eq_of_dense heap valid.allocations
+  simp [validateHeap, validateAndOrder, ordered, structural, valid.remembered.weak,
+    bind, Except.bind, pure, Except.pure]
+
+/-- Serialization has no remaining failure path for a completed well-formed heap. -/
+theorem writeHeap_completed_complete (heap : HeapSnapshot) (originals copies : List Allocation)
+    (valid : CompletedWellFormed heap originals copies) : ∃ bytes, writeHeap heap = .ok bytes := by
+  have structural := validateStructure_completed_complete heap originals copies valid
+  have ordered := orderedHeap_eq_of_dense heap valid.allocations
+  have checked : validateAndOrder heap = .ok ⟨heap, valid.remembered.weak⟩ := by
+    simp [validateAndOrder, ordered, structural, valid.remembered.weak, bind, Except.bind, pure, Except.pure]
+  simp only [writeHeap, checked, bind, Except.bind, pure, Except.pure]
+  exact ⟨_, rfl⟩
 
 end CloverGC.Differential.Format
