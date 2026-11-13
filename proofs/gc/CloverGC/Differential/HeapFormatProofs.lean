@@ -557,5 +557,237 @@ theorem prepareFreshHeap_cell_references (input heap : HeapSnapshot)
   rw [← same]
   exact validateStructure_cell_references checked.val (validateAndOrder_structure input checked validated)
 
+/-- Remembered entries identify owners, independently of object reachability. -/
+def OldOriginal : ObjectState → Prop
+  | .oldOriginal _ _ | .nonmovingOriginal _ => True
+  | _ => False
+
+def RememberedOwnersValid (heap : HeapSnapshot) : Prop :=
+  ∀ id ∈ heap.remembered.toList, ∃ owner,
+    heap.objects[id.value]? = some owner ∧ OldOriginal owner.state
+
+def StrongRememberedCovered (heap : HeapSnapshot) : Prop :=
+  ∀ owner ∈ heap.objects.toList, owner.state.isYoung = false →
+    ∀ id, .reference (some id) ∈ owner.strong.toList →
+      ∀ target, heap.objects[id.value]? = some target → target.state.isYoung = true →
+        owner.allocationId.value ∈ heap.remembered.toList.map AllocationId.value
+
+structure RememberedValid (heap : HeapSnapshot) : Prop where
+  unique : heap.remembered.toList.Nodup
+  owners : RememberedOwnersValid heap
+  strong : StrongRememberedCovered heap
+  weak : WeakRememberedCovered heap
+
+private theorem checkRememberedOwner_correct (heap : HeapSnapshot) (before after : Std.HashSet Nat)
+    (id : AllocationId) (accepted : checkRememberedOwner heap before id = .ok after) :
+    (∃ owner, heap.objects[id.value]? = some owner ∧ OldOriginal owner.state) ∧
+    before.contains id.value = false ∧ after = before.insert id.value := by
+  unfold checkRememberedOwner at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    refine ⟨⟨_, by assumption, ?_⟩, ?_, rfl⟩
+    · simp only [OldOriginal, *]
+    · simpa only [Bool.not_eq_true] using (show ¬ before.contains id.value = true from by assumption)
+
+private structure RememberedProgress (heap : HeapSnapshot) (ids : List AllocationId) (seen : Std.HashSet Nat) : Prop where
+  unique : (ids.map AllocationId.value).Nodup
+  owners : ∀ id ∈ ids, ∃ owner, heap.objects[id.value]? = some owner ∧ OldOriginal owner.state
+  members : ∀ value, seen.contains value = true ↔ value ∈ ids.map AllocationId.value
+
+private theorem RememberedProgress.step (id : AllocationId) (progress : RememberedProgress heap ids before)
+    (accepted : checkRememberedOwner heap before id = .ok after) :
+    RememberedProgress heap (ids ++ [id]) after := by
+  obtain ⟨owner, absent, rfl⟩ := checkRememberedOwner_correct _ _ _ _ accepted
+  have fresh : id.value ∉ ids.map AllocationId.value := by
+    intro present
+    have yes := (progress.members id.value).mpr present
+    simp [absent] at yes
+  constructor
+  · rw [List.map_append, List.map_singleton, List.nodup_append]
+    refine ⟨progress.unique, by simp, ?_⟩
+    intro value inside other member
+    simp only [List.mem_singleton] at member
+    subst other
+    intro same
+    exact fresh (same ▸ inside)
+  · intro value member
+    rcases List.mem_append.mp member with old | new
+    · exact progress.owners value old
+    · simp only [List.mem_singleton] at new
+      subst value
+      exact owner
+  · intro value
+    simp only [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq, progress.members,
+      List.map_append, List.map_singleton, List.mem_append, List.mem_singleton]
+    grind
+
+private theorem checkRemembered_progress (ids : List AllocationId)
+    (progress : RememberedProgress heap processed before)
+    (accepted : ids.foldlM (checkRememberedOwner heap) before = .ok after) :
+    RememberedProgress heap (processed ++ ids) after := by
+  induction ids generalizing processed before with
+  | nil =>
+      simp [List.foldlM_nil, pure, Except.pure] at accepted
+      subst after
+      simpa using progress
+  | cons id rest ih =>
+      cases step : checkRememberedOwner heap before id with
+      | error message => simp [List.foldlM_cons, step, bind, Except.bind] at accepted
+      | ok next =>
+          simp only [List.foldlM_cons, step, bind, Except.bind] at accepted
+          simpa [List.append_assoc] using ih (progress.step id step) accepted
+
+private theorem RememberedProgress.empty (heap : HeapSnapshot) : RememberedProgress heap [] {} := by
+  constructor <;> simp
+
+private def StrongCoveredBy (heap : HeapSnapshot) (seen : Std.HashSet Nat) (owner : Allocation) : Prop :=
+  owner.state.isYoung = false → ∀ id, .reference (some id) ∈ owner.strong.toList →
+    ∀ target, heap.objects[id.value]? = some target → target.state.isYoung = true →
+      seen.contains owner.allocationId.value = true
+
+private theorem checkStrongOwner_correct (heap : HeapSnapshot) (seen : Std.HashSet Nat) (owner : Allocation)
+    (accepted : checkStrongOwner heap seen owner = .ok ()) : StrongCoveredBy heap seen owner := by
+  intro old id inside target lookup young
+  cases ownerState : owner.state <;> simp only [ownerState, ObjectState.isYoung, Bool.true_eq_false] at old
+  all_goals
+    unfold checkStrongOwner at accepted
+    simp only [ownerState, Bool.not_false, ↓reduceIte, bind, Except.bind, pure, Except.pure] at accepted
+    rw [← Array.forIn_toList] at accepted
+    repeat' first | contradiction | split at accepted
+  all_goals
+    have checked := forIn_all_checked owner.strong.toList _ _ _
+      (fun value => value = .reference (some id) → seen.contains owner.allocationId.value = true) ?_ (by assumption)
+    · exact checked _ inside rfl
+    · intro value before result succeeds
+      repeat' first | contradiction | split at succeeds
+      all_goals
+        cases succeeds
+        refine ⟨_, rfl, ?_⟩
+        intro same
+        cases same
+        cases state : target.state <;> simp_all [ObjectState.isYoung]
+
+private theorem checkStrongOwners_correct (heap : HeapSnapshot) (seen : Std.HashSet Nat) (final : PUnit)
+    (accepted : forIn heap.objects PUnit.unit (fun a _ => do
+      checkStrongOwner heap seen a
+      pure (.yield PUnit.unit)) = .ok final) :
+    ∀ owner ∈ heap.objects.toList, StrongCoveredBy heap seen owner := by
+  apply forIn_all_checked heap.objects.toList _ _ _ (StrongCoveredBy heap seen) ?_
+    (by rw [Array.forIn_toList]; exact accepted)
+  intro a before result succeeds
+  simp only [bind, Except.bind, pure, Except.pure] at succeeds
+  repeat' first | contradiction | split at succeeds
+  all_goals
+    cases succeeds
+    exact ⟨_, rfl, checkStrongOwner_correct _ _ _ (by assumption)⟩
+
+/-- Successful fresh preparation certifies ownership and both kinds of edge coverage
+    using the one remembered owner set. -/
+theorem prepareFreshHeap_remembered (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : RememberedValid heap := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  have structureCheck := validateAndOrder_structure input checked validated
+  rw [same] at structureCheck
+  have covered := prepareFreshHeap_weak_covered input heap accepted
+  unfold validateStructure at structureCheck
+  simp only [bind, Except.bind, pure, Except.pure] at structureCheck
+  repeat' first | contradiction | split at structureCheck
+  all_goals
+    have progress := checkRemembered_progress heap.remembered.toList (RememberedProgress.empty heap) (by assumption)
+    simp only [List.nil_append] at progress
+    refine ⟨List.Pairwise.of_map AllocationId.value (fun a b different equal => different (congrArg AllocationId.value equal)) progress.unique, progress.owners, ?_, covered⟩
+    intro owner member old id inside target lookup young
+    have owners := checkStrongOwners_correct heap _ _ (by assumption)
+    exact (progress.members owner.allocationId.value).mp (owners owner member old id inside target lookup young)
+
+/-- Owner weak fields occupy the prefix before any entries; external units need no ordering. -/
+def FieldsBeforeEntries (units : List WeakUnit) : Prop :=
+  units.Pairwise (fun a b => b.contents.isField = true → a.contents.isField = true)
+
+private structure UnitOrderProgress (units : List WeakUnit) (state : Std.HashSet Nat × Bool) : Prop where
+  fields : FieldsBeforeEntries units
+  flag : state.2 = units.any (fun unit => !unit.contents.isField)
+
+private theorem UnitOrderProgress.step (progress : UnitOrderProgress units before)
+    (owner : storage ≠ .external)
+    (accepted : checkUnit path storage count before (unit, index) = .ok after) :
+    UnitOrderProgress (units ++ [unit]) after := by
+  obtain ⟨_, _, layout, updated⟩ := (checkUnit_correct _ _ _ _ _ _).mp accepted
+  have flag := congrArg Prod.snd updated
+  have mustBeClear (field : unit.contents.isField = true) : before.2 = false :=
+    (layout field).resolve_left owner
+  constructor
+  · rw [FieldsBeforeEntries, List.pairwise_append]
+    refine ⟨progress.fields, by simp, ?_⟩
+    intro first member last lastMember field
+    simp only [List.mem_singleton] at lastMember
+    subst last
+    have clear := mustBeClear field
+    have noEntries : units.any (fun u => !u.contents.isField) = false := progress.flag.symm.trans clear
+    have noEntry := (List.any_eq_false.mp noEntries) first member
+    simpa using noEntry
+  · simp [flag, progress.flag]
+
+private theorem checkUnits_order_progress (pairs : List (WeakUnit × Nat))
+    (progress : UnitOrderProgress processed before) (owner : storage ≠ .external)
+    (accepted : pairs.foldlM (checkUnit path storage count) before = .ok after) :
+    UnitOrderProgress (processed ++ pairs.map Prod.fst) after := by
+  induction pairs generalizing processed before with
+  | nil =>
+      simp [List.foldlM_nil, pure, Except.pure] at accepted
+      subst after
+      simpa using progress
+  | cons pair rest ih =>
+      cases step : checkUnit path storage count before pair with
+      | error message => simp [List.foldlM_cons, step, bind, Except.bind] at accepted
+      | ok next =>
+          simp only [List.foldlM_cons, step, bind, Except.bind] at accepted
+          simpa [List.append_assoc] using ih (progress.step owner step) accepted
+
+/-- Successful owner-unit validation proves the actual stored ordering. -/
+theorem checkUnits_fields_first (values : Array WeakUnit) (path : String) (storage : UnitStorage)
+    (count : Nat) (seen result : Std.HashSet Nat) (owner : storage ≠ .external)
+    (accepted : checkUnits values path storage count seen = .ok result) : FieldsBeforeEntries values.toList := by
+  unfold checkUnits at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    have initial : UnitOrderProgress [] (seen, false) := by constructor <;> simp [FieldsBeforeEntries]
+    have progress := checkUnits_order_progress values.toList.zipIdx initial owner (by assumption)
+    simpa only [List.zipIdx_map_fst, List.nil_append] using progress.fields
+
+private theorem validateAllocation_fields_first (count originalCount : Nat) (before : AllocationTables)
+    (pair : Allocation × Nat) (after : AllocationTables)
+    (accepted : validateAllocation count originalCount before pair = .ok after) :
+    FieldsBeforeEntries pair.1.weak.toList := by
+  unfold validateAllocation at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    first
+    | exact checkUnits_fields_first _ _ .original _ _ _ (by decide) (by assumption)
+    | exact checkUnits_fields_first _ _ .destination _ _ _ (by decide) (by assumption)
+
+/-- Both original and destination owners have fields before entries. -/
+theorem validateStructure_fields_first (heap : HeapSnapshot)
+    (accepted : validateStructure heap = .ok ()) :
+    ∀ owner ∈ heap.objects.toList, FieldsBeforeEntries owner.weak.toList := by
+  unfold validateStructure at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    apply zipIdx_all heap.objects.toList (fun owner => FieldsBeforeEntries owner.weak.toList)
+    exact foldlM_all_checked _ _ _ _ _ (validateAllocation_fields_first _ _) (by assumption)
+
+theorem prepareFreshHeap_fields_first (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) :
+    ∀ owner ∈ heap.objects.toList, FieldsBeforeEntries owner.weak.toList := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  rw [← same]
+  exact validateStructure_fields_first checked.val (validateAndOrder_structure input checked validated)
+
 
 end CloverGC.Differential.Format
