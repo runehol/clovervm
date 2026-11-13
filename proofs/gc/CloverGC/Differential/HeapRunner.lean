@@ -31,25 +31,23 @@ def checkedFin (value limit : Nat) : Except String (Fin limit) := do
 def originalReference (objects : Vector (Fin n) n) (id : Format.AllocationId) :
     Except String (Fin n) := do
   return objects.get (← checkedFin id.value n)
-private def modelReference (objects : Vector (Fin n) n) (ref : Format.Reference) :
+def modelReference (objects : Vector (Fin n) n) (ref : Format.Reference) :
     Except String (Option (Fin n)) := ref.mapM (originalReference objects)
-private def modelCell (objects : Vector (Fin n) n) :
+def modelCell (objects : Vector (Fin n) n) :
     Format.Cell → Except String (Copying.Weak.Cell (Fin n))
   | .immediate value => pure (.immediate value)
   | .reference ref => return .reference (← modelReference objects ref)
-private def modelUnit (objects : Vector (Fin n) n) :
+def modelUnit (objects : Vector (Fin n) n) :
     Format.WeakContents → Except String (Copying.Weak.Template n)
   | .field value => return .field (← modelCell objects value)
   | .entry entry => return .entry ⟨← modelReference objects entry.firstGuard,
       ← modelReference objects entry.secondGuard, ← modelCell objects entry.payload⟩
-private def strongReferences (objects : Vector (Fin n) n) (cells : Array Format.Cell) :
-    Except String (List (Fin n)) := do
-  let mut references := []
-  for cell in cells do
-    if let .reference (some id) := cell then
-      references := (← originalReference objects id) :: references
-  return references.reverse
-private def originalKind : Format.ObjectState → Except String Generational.OriginalKind
+def strongReferences (objects : Vector (Fin n) n) (cells : Array Format.Cell) :
+    Except String (List (Fin n)) :=
+  cells.toList.filterMapM fun
+    | .reference (some id) => some <$> originalReference objects id
+    | _ => pure none
+def originalKind : Format.ObjectState → Except String Generational.OriginalKind
   | .youngOriginal policy _ => pure (.youngMovable (destination policy))
   | .oldOriginal policy _ => pure (.oldMovable (destination policy))
   | .nonmovingOriginal _ => pure .nonmovingOld
@@ -59,33 +57,46 @@ where
     | .ordinary => .ordinary
     | .nonmoving => .nonMoving
 
+def modelObjectId (count : Nat) (id : Format.ObjectId) : Except String (Fin count) := do
+  let digits := String.ofList (id.value.toList.drop 4)
+  let index ← required "heap conversion: invalid object identity" digits.toNat?
+  checkedFin index count
+
+def indexOriginals (physical : Vector Format.Allocation n) (objects : Vector (Fin n) n) :
+    Except String (Vector Format.Allocation n) := do
+  let mut byObject : Vector (Option Format.Allocation) n := Vector.replicate n none
+  for (a, object) in (physical.zip objects).toArray do
+    byObject := byObject.set object.val (some a) object.isLt
+  byObject.mapM (required "heap conversion: missing original")
+
+def indexTemplates (objects : Vector (Fin n) n) (units : List Format.WeakUnit) :
+    Except String (Vector (Copying.Weak.Template n) units.length) := do
+  let k := units.length
+  let mut table : Vector (Option (Copying.Weak.Template n)) k := Vector.replicate k none
+  for unit in units do
+    let id ← checkedFin unit.unitId.value k
+    table := table.set id.val (some (← modelUnit objects unit.contents)) id.isLt
+  table.mapM (required "heap conversion: missing weak unit")
+
+def modelUnitIds (count : Nat) (units : List Format.WeakUnit) : Except String (List (Fin count)) :=
+  units.mapM fun unit => checkedFin unit.unitId.value count
+
 /-- Conversion retains its exact input snapshot; the proof is erased at runtime. -/
 def prepareModel (initial : Format.HeapSnapshot) :
     Except String (Σ k, { heap : PreparedHeap initial.objects.size k // heap.initial = initial }) := do
   let n := initial.objects.size
   let physical := initial.objects.toVector
-  let objects ← physical.mapM fun a => do
-    let digits := String.ofList (a.objectId.value.toList.drop 4)
-    let index ← required "heap conversion: invalid object identity" digits.toNat?
-    checkedFin index n
-  let mut byObject : Vector (Option Format.Allocation) n := Vector.replicate n none
-  for (a, object) in (physical.zip objects).toArray do
-    byObject := byObject.set object.val (some a) object.isLt
-  let originals ← byObject.mapM (required "heap conversion: missing original")
+  let objects ← physical.mapM fun a => modelObjectId n a.objectId
+  let originals ← indexOriginals physical objects
   let allUnits := (initial.objects.toList.flatMap (fun a => a.weak.toList)) ++ initial.externalWeak.toList
   let k := allUnits.length
-  let unitId := fun (unit : Format.WeakUnit) => checkedFin unit.unitId.value k
-  let mut unitTable : Vector (Option (Copying.Weak.Template n)) k := Vector.replicate k none
-  for unit in allUnits do
-    let id ← unitId unit
-    unitTable := unitTable.set id.val (some (← modelUnit objects unit.contents)) id.isLt
-  let templates ← unitTable.mapM (required "heap conversion: missing weak unit")
+  let templates ← indexTemplates objects allUnits
   let children ← originals.mapM fun a => strongReferences objects a.strong
   let kinds ← originals.mapM fun a => originalKind a.state
   let remembered ← initial.remembered.toList.mapM (originalReference objects)
   let generational ← (Generational.RawGenerationalHeap.mk ⟨children.get⟩ kinds.get remembered).validate
-  let ownerUnits ← originals.mapM fun a => a.weak.toList.mapM unitId
-  let external ← initial.externalWeak.toList.mapM unitId
+  let ownerUnits ← originals.mapM fun a => modelUnitIds k a.weak.toList
+  let external ← modelUnitIds k initial.externalWeak.toList
   let roots ← strongReferences objects initial.roots
   let weak : Copying.Weak.Input n k := ⟨templates.get, ownerUnits.get, external⟩
   return ⟨k, ⟨⟨initial, originals, objects, generational, weak, roots⟩, rfl⟩⟩
@@ -191,7 +202,7 @@ def captureCopy (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
   let objectState := match record.destination with
     | .ordinary => Format.ObjectState.ordinaryDestination
     | .nonMoving => Format.ObjectState.nonmovingDestination
-  return ⟨⟨s!"obj-{record.origin.val}"⟩, ⟨n + index⟩, objectState, strong.toArray, weak⟩
+  return ⟨initial.objectId, ⟨n + index⟩, objectState, strong.toArray, weak⟩
 
 /-- Project the completed model and retained slot layouts into physical records. -/
 def captureStrong (heap : PreparedHeap n k) (state : Copying.EvacuationState n)

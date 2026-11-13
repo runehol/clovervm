@@ -3,6 +3,115 @@ import CloverGC.Differential.HeapFormatProofs
 
 namespace CloverGC.Differential
 
+/-- An ordered, length-preserving relation; no allocation can be dropped or duplicated. -/
+inductive ListProjection (relation : α → β → Prop) : List α → List β → Prop where
+  | nil : ListProjection relation [] []
+  | cons : relation a b → ListProjection relation rest output →
+      ListProjection relation (a :: rest) (b :: output)
+
+theorem ListProjection.before_exists (projected : ListProjection relation before after)
+    (member : a ∈ before) : ∃ b ∈ after, relation a b := by
+  induction projected generalizing a with
+  | nil => cases member
+  | cons head tail ih =>
+      rcases List.mem_cons.mp member with same | inside
+      · subst a; exact ⟨_, by simp, head⟩
+      · obtain ⟨b, inside, related⟩ := ih inside
+        exact ⟨b, by simp [inside], related⟩
+
+theorem ListProjection.after_exists (projected : ListProjection relation before after)
+    (member : b ∈ after) : ∃ a ∈ before, relation a b := by
+  induction projected generalizing b with
+  | nil => cases member
+  | cons head tail ih =>
+      rcases List.mem_cons.mp member with same | inside
+      · subst b; exact ⟨_, by simp, head⟩
+      · obtain ⟨a, inside, related⟩ := ih inside
+        exact ⟨a, by simp [inside], related⟩
+
+/-- Ordered projection preserves cardinality. -/
+theorem ListProjection.length (projected : ListProjection relation before after) : after.length = before.length := by
+  induction projected <;> simp_all
+
+/-- Any pointwise preserved property remains equal in array order. -/
+theorem ListProjection.map_eq {relation : α → β → Prop} {before : List α} {after : List β} (projected : ListProjection relation before after)
+    (left : α → γ) (right : β → γ) (same : ∀ a b, relation a b → right b = left a) :
+    after.map right = before.map left := by
+  induction projected with
+  | nil => rfl
+  | cons head tail ih => simp [same _ _ head, ih]
+
+/-- Ordered projection preserves a concatenated pointwise property. -/
+theorem ListProjection.flatMap_eq {relation : α → β → Prop} {before : List α} {after : List β}
+    (projected : ListProjection relation before after) (left : α → List γ) (right : β → List γ)
+    (same : ∀ a b, relation a b → right b = left a) : after.flatMap right = before.flatMap left := by
+  induction projected with
+  | nil => rfl
+  | cons head tail ih => simp [same _ _ head, ih]
+
+theorem ListProjection.append (left : ListProjection relation beforeLeft afterLeft)
+    (right : ListProjection relation beforeRight afterRight) :
+    ListProjection relation (beforeLeft ++ beforeRight) (afterLeft ++ afterRight) := by
+  induction left with
+  | nil => exact right
+  | cons head _ ih => exact .cons head ih
+
+/-- Ordered projection relates corresponding positions, not only memberships. -/
+theorem ListProjection.getElem (projected : ListProjection relation before after) (i : Nat)
+    (insideBefore : i < before.length) (insideAfter : i < after.length) :
+    relation before[i] after[i] := by
+  induction projected generalizing i with
+  | nil => simp at insideBefore
+  | cons head _ ih =>
+      cases i with
+      | zero => exact head
+      | succ i => exact ih i (by simpa using insideBefore) (by simpa using insideAfter)
+
+private theorem mapM_projects (f : α → Except String β) (relation : α → β → Prop)
+    (projects : ∀ a b, f a = .ok b → relation a b)
+    (xs : List α) (ys : List β) (accepted : xs.mapM f = .ok ys) :
+    ListProjection relation xs ys := by
+  induction xs generalizing ys with
+  | nil =>
+      simp [pure, Except.pure] at accepted
+      subst ys
+      exact .nil
+  | cons x xs ih =>
+      cases first : f x with
+      | error message => simp [List.mapM_cons, first, bind, Except.bind] at accepted
+      | ok y =>
+          cases rest : xs.mapM f with
+          | error message => simp [List.mapM_cons, first, rest, bind, Except.bind] at accepted
+          | ok tail =>
+              simp [List.mapM_cons, first, rest, bind, Except.bind, pure, Except.pure] at accepted
+              subst ys
+              exact .cons (projects x y first) (ih tail rest)
+
+private theorem mapM_complete (f : α → Except String β) (relation : α → β → Prop)
+    (complete : ∀ a b, relation a b → f a = .ok b)
+    (projected : ListProjection relation xs ys) : xs.mapM f = .ok ys := by
+  induction projected with
+  | nil => rfl
+  | cons head tail ih =>
+      simp [List.mapM_cons, complete _ _ head, ih, bind, Except.bind, pure, Except.pure]
+
+private theorem mapM_correct (f : α → Except String β) (relation : α → β → Prop)
+    (correct : ∀ a b, f a = .ok b ↔ relation a b) (xs : List α) (ys : List β) :
+    xs.mapM f = .ok ys ↔ ListProjection relation xs ys :=
+  ⟨mapM_projects f relation (fun a b => (correct a b).mp) xs ys,
+    mapM_complete f relation (fun a b => (correct a b).mpr)⟩
+
+theorem mapM_success (values : List α) (f : α → Except String β) (relation : α → β → Prop)
+    (each : ∀ a ∈ values, ∃ b, f a = .ok b ∧ relation a b) :
+    ∃ output, values.mapM f = .ok output ∧ ListProjection relation values output := by
+  induction values with
+  | nil => exact ⟨[], rfl, .nil⟩
+  | cons a rest ih =>
+      obtain ⟨b, checked, projects⟩ := each a (by simp)
+      obtain ⟨tail, tailChecked, tailProjects⟩ := ih (fun a member => each a (by simp [member]))
+      exact ⟨b :: tail, by simp [List.mapM_cons, checked, tailChecked, bind, Except.bind, pure, Except.pure],
+        .cons projects tailProjects⟩
+
 /-- The immutable part of an allocation's state: storage, generation and placement. -/
 def Format.ObjectState.withoutHeader : Format.ObjectState → Format.ObjectState
   | .youngOriginal policy _ => .youngOriginal policy (.normal false)
@@ -197,9 +306,9 @@ private theorem captureOriginal_identity (heap : PreparedHeap n k) (state : Copy
     apply originalState_identity
     assumption
 
-private def copyIdentity (n : Nat) (record : Copying.CopyRecord n × Nat) :
+private def copyIdentity (heap : PreparedHeap n k) (record : Copying.CopyRecord n × Nat) :
     Format.ObjectId × Format.AllocationId × Format.ObjectState :=
-  (⟨s!"obj-{record.1.origin.val}"⟩, ⟨n + record.2⟩,
+  ((heap.originals.get record.1.origin).objectId, ⟨n + record.2⟩,
     match record.1.destination with
     | .ordinary => .ordinaryDestination
     | .nonMoving => .nonmovingDestination)
@@ -208,7 +317,7 @@ private theorem captureCopy_identity (heap : PreparedHeap n k) (state : Copying.
     (units : Fin k → Copying.Weak.Unit n) (collection : Generational.CollectionKind)
     (record : Copying.CopyRecord n) (index : Nat) (result : Format.Allocation)
     (accepted : captureCopy heap state units collection record index = .ok result) :
-    result.identity = copyIdentity n (record, index) := by
+    result.identity = copyIdentity heap (record, index) := by
   unfold captureCopy at accepted
   simp only [bind, Except.bind, pure, Except.pure] at accepted
   repeat' first | contradiction | split at accepted
@@ -222,7 +331,7 @@ private theorem captureStrong_identities (heap : PreparedHeap n k) (state : Copy
     (accepted : captureStrong heap state units collection = .ok output) :
     output.objects.toList.map Format.Allocation.identity =
       heap.initial.objects.toList.map Format.Allocation.identity ++
-        state.copying.copies.zipIdx.map (copyIdentity n) := by
+        state.copying.copies.zipIdx.map (copyIdentity heap) := by
   unfold captureStrong at accepted
   simp only [bind, Except.bind, pure, Except.pure] at accepted
   repeat' first | contradiction | split at accepted
@@ -232,7 +341,7 @@ private theorem captureStrong_identities (heap : PreparedHeap n k) (state : Copy
     congr 1
     · exact mapM_observe _ Format.Allocation.identity Format.Allocation.identity
         (captureOriginal_identity heap state units collection) heap.initial.objects.toList _ (by assumption)
-    · exact mapM_observe _ (copyIdentity n) Format.Allocation.identity
+    · exact mapM_observe _ (copyIdentity heap) Format.Allocation.identity
         (fun pair result h => captureCopy_identity heap state units collection pair.1 pair.2 result h)
         state.copying.copies.zipIdx _ (by assumption)
 
@@ -263,7 +372,7 @@ theorem captureEvacuated_identities (heap : PreparedHeap n k) (state : Copying.W
     (output : Format.HeapSnapshot) (accepted : captureEvacuated heap state = .ok output) :
     output.objects.toList.map Format.Allocation.identity =
       heap.initial.objects.toList.map Format.Allocation.identity ++
-        state.strong.copying.copies.zipIdx.map (copyIdentity n) := by
+        state.strong.copying.copies.zipIdx.map (copyIdentity heap) := by
   unfold captureEvacuated at accepted
   simp only [bind, Except.bind] at accepted
   split at accepted
@@ -442,16 +551,9 @@ def UnitProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n)
   ∃ id : Fin k, id.val = layout.unitId.value ∧ UnitKindMatches layout.contents (units id) ∧
     UnitReferencesValid copying (units id) ∧ output = ⟨layout.unitId, encodeUnit heap (units id)⟩
 
-inductive UnitListProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n)
-    (units : Fin k → Copying.Weak.Unit n) : List Format.WeakUnit → List Format.WeakUnit → Prop where
-  | nil : UnitListProjection heap copying units [] []
-  | cons (unit : UnitProjection heap copying units before after)
-      (tail : UnitListProjection heap copying units rest output) :
-      UnitListProjection heap copying units (before :: rest) (after :: output)
-
 def UnitsProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n)
     (units : Fin k → Copying.Weak.Unit n) (layout output : Array Format.WeakUnit) : Prop :=
-  UnitListProjection heap copying units layout.toList output.toList
+  ListProjection (UnitProjection heap copying units) layout.toList output.toList
 
 private theorem checkedFin_correct (value limit : Nat) (id : Fin limit) :
     checkedFin value limit = .ok id ↔ id.val = value := by
@@ -523,68 +625,26 @@ theorem captureUnit_correct (heap : PreparedHeap n k) (copying : Copying.CopySta
     captureUnit heap copying units layout = .ok output ↔ UnitProjection heap copying units layout output :=
   ⟨captureUnit_sound heap copying units layout output, captureUnit_complete heap copying units layout output⟩
 
-private theorem captureUnitList_sound (heap : PreparedHeap n k) (copying : Copying.CopyState n)
-    (units : Fin k → Copying.Weak.Unit n) (layout output : List Format.WeakUnit)
-    (accepted : layout.mapM (captureUnit heap copying units) = .ok output) :
-    UnitListProjection heap copying units layout output := by
-  induction layout generalizing output with
-  | nil =>
-      simp [pure, Except.pure] at accepted
-      subst output
-      exact .nil
-  | cons unit rest ih =>
-      cases first : captureUnit heap copying units unit with
-      | error message => simp [List.mapM_cons, first, bind, Except.bind] at accepted
-      | ok captured =>
-          cases tail : rest.mapM (captureUnit heap copying units) with
-          | error message => simp [List.mapM_cons, first, tail, bind, Except.bind] at accepted
-          | ok remaining =>
-              simp [List.mapM_cons, first, tail, bind, Except.bind, pure, Except.pure] at accepted
-              subst output
-              exact .cons ((captureUnit_correct heap copying units unit captured).mp first) (ih remaining tail)
-
-private theorem captureUnitList_complete (heap : PreparedHeap n k) (copying : Copying.CopyState n)
-    (units : Fin k → Copying.Weak.Unit n) (projected : UnitListProjection heap copying units layout output) :
-    layout.mapM (captureUnit heap copying units) = .ok output := by
-  induction projected with
-  | nil => rfl
-  | cons unit tail ih =>
-      simp [List.mapM_cons, (captureUnit_correct heap copying units _ _).mpr unit,
-        ih, bind, Except.bind, pure, Except.pure]
-
 /-- Capture preserves unit order, IDs, kinds, and every observed guard and payload. -/
 theorem captureUnits_correct (heap : PreparedHeap n k) (copying : Copying.CopyState n)
     (units : Fin k → Copying.Weak.Unit n) (layout output : Array Format.WeakUnit) :
     captureUnits heap copying units layout = .ok output ↔ UnitsProjection heap copying units layout output := by
-  have relation : UnitListProjection heap copying units layout.toList output.toList ↔
-      layout.toList.mapM (captureUnit heap copying units) = .ok output.toList :=
-    ⟨captureUnitList_complete heap copying units, captureUnitList_sound heap copying units _ _⟩
+  have relation := mapM_correct (captureUnit heap copying units) (UnitProjection heap copying units)
+    (captureUnit_correct heap copying units) layout.toList output.toList
   unfold captureUnits UnitsProjection
-  rw [Array.mapM_eq_mapM_toList, relation]
+  rw [Array.mapM_eq_mapM_toList, ← relation]
   cases layout.toList.mapM (captureUnit heap copying units) <;>
     simp [Functor.map, Except.map, Array.toArray_eq]
 
-private theorem UnitListProjection.length (projected : UnitListProjection heap copying units layout output) :
-    output.length = layout.length := by
-  induction projected with
-  | nil => rfl
-  | cons unit tail ih => simpa using congrArg Nat.succ ih
-
 theorem UnitsProjection.size (projected : UnitsProjection heap copying units layout output) :
     output.size = layout.size := by
-  simpa using UnitListProjection.length projected
-
-private theorem UnitListProjection.ids (projected : UnitListProjection heap copying units layout output) :
-    output.map Format.WeakUnit.unitId = layout.map Format.WeakUnit.unitId := by
-  induction projected with
-  | nil => rfl
-  | cons unit tail ih =>
-      obtain ⟨_, _, _, _, rfl⟩ := unit
-      simp [ih]
+  simpa using ListProjection.length projected
 
 theorem UnitsProjection.ids (projected : UnitsProjection heap copying units layout output) :
-    output.toList.map Format.WeakUnit.unitId = layout.toList.map Format.WeakUnit.unitId :=
-  UnitListProjection.ids projected
+    output.toList.map Format.WeakUnit.unitId = layout.toList.map Format.WeakUnit.unitId := by
+  apply ListProjection.map_eq projected
+  rintro _ _ ⟨_, _, _, _, rfl⟩
+  rfl
 
 /-- Headers encode the observed forwarding table, or the source mark when unforwarded. -/
 def encodeHeader (heap : PreparedHeap n k) (copying : Copying.CopyState n)
@@ -617,16 +677,10 @@ structure OriginalProjection (heap : PreparedHeap n k) (state : Copying.Evacuati
 structure CopyProjection (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
     (units : Fin k → Copying.Weak.Unit n) (pair : Copying.CopyRecord n × Nat)
     (output : Format.Allocation) : Prop where
-  identity : output.identity = copyIdentity n pair
+  identity : output.identity = copyIdentity heap pair
   strong : CellsProjection heap state.copying (heap.originals.get pair.1.origin).strong.toList
     pair.1.strongChildren output.strong.toList
   weak : UnitsProjection heap state.copying units (heap.originals.get pair.1.origin).weak output.weak
-
-/-- An ordered, length-preserving relation; no allocation can be dropped or duplicated. -/
-inductive ListProjection (relation : α → β → Prop) : List α → List β → Prop where
-  | nil : ListProjection relation [] []
-  | cons : relation a b → ListProjection relation rest output →
-      ListProjection relation (a :: rest) (b :: output)
 
 /-- Complete physical evacuation output, independently specified from capture control flow. -/
 structure SnapshotProjection (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
@@ -687,26 +741,6 @@ private theorem captureCopy_projects (heap : PreparedHeap n k) (state : Copying.
   all_goals
     cases accepted
     exact (captureUnits_correct _ _ _ _ _).mp (by assumption)
-
-private theorem mapM_projects (f : α → Except String β) (relation : α → β → Prop)
-    (projects : ∀ a b, f a = .ok b → relation a b)
-    (xs : List α) (ys : List β) (accepted : xs.mapM f = .ok ys) :
-    ListProjection relation xs ys := by
-  induction xs generalizing ys with
-  | nil =>
-      simp [pure, Except.pure] at accepted
-      subst ys
-      exact .nil
-  | cons x xs ih =>
-      cases first : f x with
-      | error message => simp [List.mapM_cons, first, bind, Except.bind] at accepted
-      | ok y =>
-          cases rest : xs.mapM f with
-          | error message => simp [List.mapM_cons, first, rest, bind, Except.bind] at accepted
-          | ok tail =>
-              simp [List.mapM_cons, first, rest, bind, Except.bind, pure, Except.pure] at accepted
-              subst ys
-              exact .cons (projects x y first) (ih tail rest)
 
 /-- Every successful full or young evacuation snapshot has the complete projection. -/
 theorem captureStrong_projects (heap : PreparedHeap n k) (state : Copying.EvacuationState n)
