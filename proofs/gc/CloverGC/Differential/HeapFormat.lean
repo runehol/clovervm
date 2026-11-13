@@ -17,7 +17,7 @@ structure UnitId where
 
 abbrev Reference := Option AllocationId
 inductive Cell where
-  | immediate (value : Int)
+  | immediate (value : Int64)
   | reference (target : Reference)
   deriving Repr, BEq, DecidableEq
 structure Entry where
@@ -111,10 +111,15 @@ private def natural (json : Lean.Json) (path : String) : Except String Nat := do
 private def reference (json : Lean.Json) (path : String) : Except String Reference := do
   if json.isNull then return none
   return some ⟨← natural json path⟩
+/-- Decode the placeholder wire integer without truncation or wrapping. -/
+def decodeImmediate (value : Int) (path : String) : Except String Int64 := do
+  unless value ≥ int64Min && value ≤ int64Max do failAt path "expected signed 64-bit integer"
+  return Int64.ofInt value
+
 private def cell (json : Lean.Json) (path : String) : Except String Cell := do
   if (json.getObjVal? "imm").isOk then
     let value ← integer (← get json path "imm") (path ++ ".imm")
-    return .immediate value
+    return .immediate (← decodeImmediate value path)
   return .reference (← reference (← get json path "ref") (path ++ ".ref"))
 private def cells (json : Lean.Json) (path : String) : Except String (Array Cell) := do
   let mut result := #[]
@@ -179,10 +184,9 @@ private def movable : ObjectState → Option (CopyTo × Header)
 def checkReference (ref : Reference) (count : Nat) (path : String) : Except String Unit := do
   if let some id := ref then
     unless id.value < count do failAt path "reference names no allocation"
-private def checkCell (value : Cell) (count : Nat) (path : String) : Except String Unit := do
+def checkCell (value : Cell) (count : Nat) (path : String) : Except String Unit := do
   match value with
-  | .immediate i =>
-    unless i ≥ int64Min && i ≤ int64Max do failAt path "expected signed 64-bit integer"
+  | .immediate _ => pure ()
   | .reference ref => checkReference ref count (path ++ ".ref")
 private inductive UnitStorage where
   | original | destination | external
@@ -346,7 +350,7 @@ private def refJson : Reference → Lean.Json
   | none => .null
   | some id => natJson id.value
 private def cellJson : Cell → Lean.Json
-  | .immediate value => .mkObj [("imm", .num (.fromInt value))]
+  | .immediate value => .mkObj [("imm", .num (.fromInt value.toInt))]
   | .reference ref => .mkObj [("ref", refJson ref)]
 private def unitsJson (units : Array WeakUnit) : Lean.Json := .arr (units.map fun unit =>
   match unit.contents with

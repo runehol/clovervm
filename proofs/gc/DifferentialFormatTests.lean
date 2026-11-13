@@ -132,10 +132,13 @@ def main : IO Unit := do
       ("wrong weak layout size", changeObject after 3 (fun a => { a with weak := #[] })),
       ("wrong weak unit identity", changeObject after 3 (fun a => { a with weak := #[⟨⟨1⟩, .field (.immediate 0)⟩] })),
       ("wrong weak kind", changeObject after 3 (fun a => { a with weak := #[⟨⟨0⟩, .entry ⟨none, none, .immediate 0⟩⟩] })),
-      ("nonmoving original with copy", changeObject after 1 (fun a => { a with state := .nonmovingOriginal false })),
-      ("typed immediate overflow", { empty with roots := #[.immediate 9223372036854775808] }),
-      ("typed negative overflow", { empty with roots := #[.immediate (-9223372036854775809)] })] do
+      ("nonmoving original with copy", changeObject after 1 (fun a => { a with state := .nonmovingOriginal false }))] do
     rejectHeap label bad
+
+  for value in [Int64.minValue, Int64.maxValue, -1, 0] do
+    let typed := { empty with roots := #[.immediate value] }
+    check "typed signed immediate roundtrip" ((← ok "typed immediate parser" (parseHeap
+      (← ok "typed immediate writer" (writeHeap typed)).toUTF8)) == typed)
 
   let beforeText := String.fromUTF8! (← fixture "before")
   for (old, replacement) in [

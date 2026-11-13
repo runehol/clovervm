@@ -209,7 +209,7 @@ theorem early_complete_correct (input : CopyInput n) (before after : CopyState n
 /-- Active entries preserve immediate payloads during early repair; inactive
     entries are intentionally covered by repair_inactive instead. -/
 theorem repair_early_immediate (input : CopyInput n) (copying : CopyState n)
-    (first second : Reference n) (value : Int) :
+    (first second : Reference n) (value : Int64) :
     (repairUnit (resolve input copying .early)
       (.entry ⟨some first, some second, .immediate value⟩)).1 =
       .entry ⟨(repairField (resolve input copying .early) (some first)).target,

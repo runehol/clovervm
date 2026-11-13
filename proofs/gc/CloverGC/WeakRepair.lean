@@ -38,7 +38,7 @@ def resolve (input : CopyInput n) (copying : CopyState n) (phase : Phase) :
 
 /-- A tagged cell. Null reference cells and immediate zero remain distinct. -/
 inductive Cell (α : Type) where
-  | immediate : Int → Cell α
+  | immediate : Int64 → Cell α
   | reference : Option α → Cell α
   deriving DecidableEq, Repr
 

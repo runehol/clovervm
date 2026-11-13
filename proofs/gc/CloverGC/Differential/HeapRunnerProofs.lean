@@ -37,7 +37,7 @@ def CellReferencesValid (copying : Copying.CopyState n) :
 inductive CellsProjection (heap : PreparedHeap n k) (copying : Copying.CopyState n) :
     List Format.Cell → List (Copying.Reference n) → List Format.Cell → Prop where
   | nil : CellsProjection heap copying [] [] []
-  | immediate (value : Int) (tail : CellsProjection heap copying layout refs output) :
+  | immediate (value : Int64) (tail : CellsProjection heap copying layout refs output) :
       CellsProjection heap copying (.immediate value :: layout) refs (.immediate value :: output)
   | null (tail : CellsProjection heap copying layout refs output) :
       CellsProjection heap copying (.reference none :: layout) refs (.reference none :: output)

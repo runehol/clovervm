@@ -1,5 +1,6 @@
 import CloverGC.Differential.HeapFormat
 import Init.Data.Array.Sort.Lemmas
+import Init.Data.SInt.Lemmas
 
 namespace CloverGC.Differential.Format
 
@@ -343,5 +344,38 @@ theorem prepareFreshHeap_ids (input heap : HeapSnapshot)
   | ok value =>
       cases value
       simpa [← same, ordered] using structureCheck
+/-- The placeholder codec preserves the exact signed integer and accepts every Int64. -/
+theorem decodeImmediate_correct (value : Int) (path : String) (encoded : Int64) :
+    decodeImmediate value path = .ok encoded ↔ value = encoded.toInt := by
+  constructor
+  · intro accepted
+    unfold decodeImmediate at accepted
+    simp only [bind, Except.bind, pure, Except.pure] at accepted
+    repeat' first | contradiction | split at accepted
+    all_goals
+      cases accepted
+      have limits : value ≥ (-9223372036854775808 : Int) ∧ value ≤ (9223372036854775807 : Int) := by
+        simpa only [Bool.and_eq_true, decide_eq_true_eq] using
+          (show (value ≥ (-9223372036854775808 : Int) && value ≤ (9223372036854775807 : Int)) = true from by assumption)
+      have lower : -2^63 ≤ value := by change (-9223372036854775808 : Int) ≤ value; omega
+      have upper : value < 2^63 := by change value < (9223372036854775808 : Int); omega
+      exact (Int64.toInt_ofInt_of_le lower upper).symm
+  · intro same
+    subst value
+    have lower : encoded.toInt ≥ (-9223372036854775808 : Int) := encoded.le_toInt
+    have upper : encoded.toInt ≤ (9223372036854775807 : Int) := by
+      have bound := encoded.toInt_lt
+      change encoded.toInt < (9223372036854775808 : Int) at bound
+      omega
+    unfold decodeImmediate
+    simp only [bind, Except.bind, pure, Except.pure]
+    split
+    · simp only [Int64.ofInt_toInt]
+    · rename_i invalid
+      exfalso
+      apply invalid
+      change (encoded.toInt ≥ (-9223372036854775808 : Int) && encoded.toInt ≤ (9223372036854775807 : Int)) = true
+      simp [lower, upper]
+
 
 end CloverGC.Differential.Format
