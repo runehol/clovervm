@@ -353,6 +353,27 @@ theorem prepareFreshHeap_ids (input heap : HeapSnapshot)
   rw [← same]
   exact validateAndOrder_structure input checked validated
 
+/-- Scalar values are opaque; only non-null reference targets impose a bound. -/
+def CellReferencesValid (count : Nat) : Cell → Prop
+  | .immediate _ => True
+  | .reference target => ReferenceValid count target
+
+def WeakContentsReferencesValid (count : Nat) : WeakContents → Prop
+  | .field value => CellReferencesValid count value
+  | .entry entry => ReferenceValid count entry.firstGuard ∧
+      ReferenceValid count entry.secondGuard ∧ CellReferencesValid count entry.payload
+
+def AllocationCellReferencesValid (count : Nat) (allocation : Allocation) : Prop :=
+  (∀ cell ∈ allocation.strong.toList, CellReferencesValid count cell) ∧
+  (∀ unit ∈ allocation.weak.toList, WeakContentsReferencesValid count unit.contents)
+
+/-- Every stored cell/guard target names an allocation, including inactive entries.
+    Forwarding headers and remembered-owner IDs have separate validation contracts. -/
+structure HeapCellReferencesValid (heap : HeapSnapshot) : Prop where
+  roots : ∀ cell ∈ heap.roots.toList, CellReferencesValid heap.objects.size cell
+  objects : ∀ allocation ∈ heap.objects.toList, AllocationCellReferencesValid heap.objects.size allocation
+  externalWeak : ∀ unit ∈ heap.externalWeak.toList, WeakContentsReferencesValid heap.objects.size unit.contents
+
 /-- The placeholder codec preserves the exact signed integer and accepts every Int64. -/
 theorem decodeImmediate_correct (value : Int) (path : String) (encoded : Int64) :
     decodeImmediate value path = .ok encoded ↔ value = encoded.toInt := by
@@ -385,6 +406,156 @@ theorem decodeImmediate_correct (value : Int) (path : String) (encoded : Int64) 
       apply invalid
       change (encoded.toInt ≥ (-9223372036854775808 : Int) && encoded.toInt ≤ (9223372036854775807 : Int)) = true
       simp [lower, upper]
+
+/-- Cell checking is exactly reference validation; every immediate is representable by type. -/
+theorem checkCell_correct (value : Cell) (count : Nat) (path : String) :
+    checkCell value count path = .ok () ↔ CellReferencesValid count value := by
+  cases value with
+  | immediate value => simp [checkCell, CellReferencesValid, pure, Except.pure]
+  | reference target => exact checkReference_correct _ _ _
+
+/-- Successful cell checking certifies reference bounds without constraining scalar values. -/
+theorem checkCell_references (value : Cell) (count : Nat) (path : String)
+    (accepted : checkCell value count path = .ok ()) : CellReferencesValid count value := by
+  exact (checkCell_correct _ _ _).mp accepted
+
+/-- A successful loop certifies every element when successful steps always continue. -/
+private theorem forIn_all_checked (xs : List α) (state final : β)
+    (step : α → β → Except String (ForInStep β)) (property : α → Prop)
+    (checked : ∀ a before result, step a before = .ok result →
+      ∃ after, result = .yield after ∧ property a)
+    (accepted : forIn xs state step = .ok final) : ∀ a ∈ xs, property a := by
+  induction xs generalizing state with
+  | nil => simp
+  | cons a rest ih =>
+      cases first : step a state with
+      | error message => simp [List.forIn_cons, first, bind, Except.bind] at accepted
+      | ok result =>
+          obtain ⟨after, rfl, valid⟩ := checked a state result first
+          simp only [List.forIn_cons, first, bind, Except.bind] at accepted
+          intro value member
+          rcases List.mem_cons.mp member with same | inside
+          · exact same ▸ valid
+          · exact ih after accepted value inside
+
+private theorem foldlM_all_checked (xs : List α) (state final : β)
+    (step : β → α → Except String β) (property : α → Prop)
+    (checked : ∀ before a after, step before a = .ok after → property a)
+    (accepted : xs.foldlM step state = .ok final) : ∀ a ∈ xs, property a := by
+  induction xs generalizing state with
+  | nil => simp
+  | cons a rest ih =>
+      cases first : step state a with
+      | error message => simp [List.foldlM_cons, first, bind, Except.bind] at accepted
+      | ok after =>
+          simp only [List.foldlM_cons, first, bind, Except.bind] at accepted
+          intro value member
+          rcases List.mem_cons.mp member with same | inside
+          · exact same ▸ checked state a after first
+          · exact ih after accepted value inside
+
+private theorem zipIdx_all (xs : List α) (property : α → Prop)
+    (checked : ∀ pair ∈ xs.zipIdx, property pair.1) : ∀ a ∈ xs, property a := by
+  intro a member
+  rw [← List.zipIdx_map_fst 0 xs] at member
+  obtain ⟨pair, inside, rfl⟩ := List.mem_map.mp member
+  exact checked pair inside
+
+private theorem checkCells_references (cells : Array Cell) (count : Nat) (path : Nat → String)
+    (final : PUnit)
+    (accepted : forIn cells.toList.zipIdx PUnit.unit (fun (pair : Cell × Nat) (_ : PUnit) => do
+      checkCell pair.1 count (path pair.2)
+      pure (.yield PUnit.unit)) = .ok final) :
+    ∀ cell ∈ cells.toList, CellReferencesValid count cell := by
+  apply zipIdx_all cells.toList (CellReferencesValid count)
+  apply forIn_all_checked _ _ _ _ (fun pair : Cell × Nat => CellReferencesValid count pair.1) ?_ accepted
+  intro pair before output succeeded
+  simp only [bind, Except.bind, pure, Except.pure] at succeeded
+  repeat' first | contradiction | split at succeeded
+  all_goals
+    cases succeeded
+    exact ⟨_, rfl, checkCell_references _ _ _ (by assumption)⟩
+
+def WeakContents.isField : WeakContents → Bool
+  | .field _ => true
+  | .entry _ => false
+
+private theorem unit_bind_ok (action : Except String Unit) (next : Except String α) (value : α) :
+    (action >>= fun _ => next) = .ok value ↔ action = .ok () ∧ next = .ok value := by
+  cases action with
+  | error message => simp [bind, Except.bind]
+  | ok result => cases result; simp [bind, Except.bind]
+
+private theorem unit_map_ok (action : Except String Unit) (next value : α) :
+    (fun _ => next) <$> action = .ok value ↔ action = .ok () ∧ next = value := by
+  cases action with
+  | error message => simp [Functor.map, Except.map]
+  | ok result => cases result; simp [Functor.map, Except.map]
+
+/-- Exact per-unit contract: all cells are valid, owned fields precede entries,
+    and only original/external storage inserts a fresh logical weak ID. -/
+theorem checkUnit_correct (path : String) (storage : UnitStorage) (count : Nat)
+    (before after : Std.HashSet Nat × Bool) (pair : WeakUnit × Nat) :
+    checkUnit path storage count before pair = .ok after ↔
+      WeakContentsReferencesValid count pair.1.contents ∧
+      (storage ≠ .destination → before.1.contains pair.1.unitId.value = false) ∧
+      (pair.1.contents.isField = true → storage = .external ∨ before.2 = false) ∧
+      after = (if storage = .destination then before.1 else before.1.insert pair.1.unitId.value,
+        before.2 || !pair.1.contents.isField) := by
+  cases duplicate : before.1.contains pair.1.unitId.value <;> cases flag : before.2 <;>
+    cases storage <;> cases contents : pair.1.contents <;>
+      simp [checkUnit, contents, duplicate, flag, WeakContentsReferencesValid, WeakContents.isField,
+        unit_bind_ok, unit_map_ok, checkCell_correct, checkReference_correct] <;>
+        first
+        | (intro impossible
+           change (Except.error _ : Except String Unit) = .ok () at impossible
+           cases impossible)
+        | simp [and_assoc, eq_comm]
+
+/-- All unit contents are checked, even guards or payloads of inactive entries. -/
+theorem checkUnits_references (values : Array WeakUnit) (path : String) (storage : UnitStorage)
+    (count : Nat) (seen result : Std.HashSet Nat)
+    (accepted : checkUnits values path storage count seen = .ok result) :
+    ∀ unit ∈ values.toList, WeakContentsReferencesValid count unit.contents := by
+  unfold checkUnits at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    apply zipIdx_all values.toList (fun unit => WeakContentsReferencesValid count unit.contents)
+    exact foldlM_all_checked _ _ _ _ _
+      (fun before pair after checked => ((checkUnit_correct _ _ _ before after pair).mp checked).1) (by assumption)
+
+private theorem validateAllocation_cell_references (count originalCount : Nat) (before : AllocationTables)
+    (pair : Allocation × Nat) (after : AllocationTables)
+    (accepted : validateAllocation count originalCount before pair = .ok after) :
+    AllocationCellReferencesValid count pair.1 := by
+  unfold validateAllocation at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    cases accepted
+    exact ⟨checkCells_references _ _ _ _ (by assumption), checkUnits_references _ _ _ _ _ _ (by assumption)⟩
+
+/-- Successful structure validation bounds all cell and guard references, for
+    both fresh heaps and completed snapshots. -/
+theorem validateStructure_cell_references (heap : HeapSnapshot)
+    (accepted : validateStructure heap = .ok ()) : HeapCellReferencesValid heap := by
+  unfold validateStructure at accepted
+  simp only [bind, Except.bind, pure, Except.pure] at accepted
+  repeat' first | contradiction | split at accepted
+  all_goals
+    refine ⟨checkCells_references _ _ _ _ (by assumption), ?_,
+      checkUnits_references _ _ _ _ _ _ (by assumption)⟩
+    apply zipIdx_all heap.objects.toList (AllocationCellReferencesValid heap.objects.size)
+    exact foldlM_all_checked _ _ _ _ _
+      (validateAllocation_cell_references _ _) (by assumption)
+
+/-- Fresh preparation certifies all stored cell/guard targets in its returned heap. -/
+theorem prepareFreshHeap_cell_references (input heap : HeapSnapshot)
+    (accepted : prepareFreshHeap input = .ok heap) : HeapCellReferencesValid heap := by
+  obtain ⟨checked, validated, same⟩ := prepareFreshHeap_checked input heap accepted
+  rw [← same]
+  exact validateStructure_cell_references checked.val (validateAndOrder_structure input checked validated)
 
 
 end CloverGC.Differential.Format
