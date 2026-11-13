@@ -403,5 +403,182 @@ theorem indexOriginals_succeeds (initial : Format.HeapSnapshot) (ids : Format.Fr
   · simpa only [List.nil_append] using contents
 
 
+/-- Every wire unit's logical ID selects its corresponding model template. -/
+def TemplatesIndexed (objects : Vector (Fin n) n) (units : List Format.WeakUnit)
+    (templates : Fin k → Copying.Weak.Template n) : Prop :=
+  ∀ unit ∈ units, ∃ index : Fin k, index.val = unit.unitId.value ∧
+    ModelTemplate objects unit.contents (templates index)
+
+/-- Vector specialization used by template-table construction. -/
+def TemplateTable (objects : Vector (Fin n) n) (units : List Format.WeakUnit)
+    (templates : Vector (Copying.Weak.Template n) units.length) : Prop :=
+  TemplatesIndexed objects units templates.get
+
+/-- Globally dense, unique unit IDs and safe contents fill every template slot. -/
+theorem indexTemplates_succeeds (objects : Vector (Fin n) n) (units : List Format.WeakUnit)
+    (dense : (units.map (fun unit => unit.unitId.value)).Perm (List.range units.length))
+    (safe : ∀ unit ∈ units, Format.WeakContentsReferencesValid n unit.contents) :
+    ∃ templates, indexTemplates objects units = .ok templates ∧ TemplateTable objects units templates := by
+  classical
+  let key (unit : { unit // unit ∈ units }) : Fin units.length :=
+    ⟨unit.val.unitId.value, List.mem_range.mp
+      (dense.mem_iff.mp (List.mem_map.mpr ⟨unit.val, unit.property, rfl⟩))⟩
+  let data (unit : { unit // unit ∈ units }) : Copying.Weak.Template n :=
+    Classical.choose (modelUnit_succeeds objects unit.val.contents (safe unit.val unit.property))
+  have converts (unit : { unit // unit ∈ units }) :
+      modelUnit objects unit.val.contents = .ok (data unit) ∧ ModelTemplate objects unit.val.contents (data unit) :=
+    Classical.choose_spec (modelUnit_succeeds objects unit.val.contents (safe unit.val unit.property))
+  have keyValues : units.attach.map (fun unit => (key unit).val) = units.map (fun unit => unit.unitId.value) := by
+    simpa only [key] using (List.attach_map_val (l := units) (f := fun unit : Format.WeakUnit => unit.unitId.value))
+  have unique : (units.attach.map key).Nodup := by
+    have numbered : ((units.attach.map key).map Fin.val).Nodup := by
+      simpa only [List.map_map, Function.comp_def, keyValues] using dense.symm.nodup List.nodup_range
+    exact (List.pairwise_map.mp numbered).imp (fun different same => different (congrArg Fin.val same))
+  have covered : ∀ index, index ∈ units.attach.map key := by
+    intro index
+    have member := dense.mem_iff.mpr (List.mem_range.mpr index.isLt)
+    rw [← keyValues] at member
+    obtain ⟨unit, inside, same⟩ := List.mem_map.mp member
+    exact List.mem_map.mpr ⟨unit, inside, Fin.ext same⟩
+  let before : Vector (Option (Copying.Weak.Template n)) units.length := Vector.replicate units.length none
+  obtain ⟨table, built, progress⟩ := buildIndexedTable_success units.attach key data before []
+    (IndexedTable.empty _ _ _) (by simpa using unique)
+  obtain ⟨templates, checked, contents⟩ := progress.require_success covered "heap conversion: missing weak unit"
+  let body (unit : Format.WeakUnit) (table : Vector (Option (Copying.Weak.Template n)) units.length) :
+      Except String (ForInStep (Vector (Option (Copying.Weak.Template n)) units.length)) := do
+    let id ← checkedFin unit.unitId.value units.length
+    return .yield (table.set id.val (some (← modelUnit objects unit.contents)) id.isLt)
+  have attached : units.attach.map Subtype.val = units := by
+    simp
+  have loop : forIn units before body = forIn units.attach before (fun unit table => body unit.val table) := by
+    simpa only [attached] using (List.forIn_map (l := units.attach) (g := Subtype.val) (f := body) (init := before))
+  have bodies : (fun (unit : { unit // unit ∈ units }) table => body unit.val table) =
+      (fun unit table => (pure (.yield (table.set (key unit).val (some (data unit)) (key unit).isLt)) :
+        Except String (ForInStep (Vector (Option (Copying.Weak.Template n)) units.length)))) := by
+    funext unit table
+    have idChecked : checkedFin unit.val.unitId.value units.length = .ok (key unit) :=
+      (checkedFin_correct _ _ (key unit)).mpr rfl
+    simp [body, idChecked, (converts unit).1, bind, Except.bind, pure, Except.pure]
+  refine ⟨templates, ?_, ?_⟩
+  · unfold indexTemplates
+    dsimp only
+    change (do let table ← forIn units before body
+               table.mapM (required "heap conversion: missing weak unit")) = .ok templates
+    rw [loop, bodies, built]
+    exact checked
+  · intro unit member
+    let attachedUnit : { unit // unit ∈ units } := ⟨unit, member⟩
+    refine ⟨key attachedUnit, rfl, ?_⟩
+    rw [contents attachedUnit (List.mem_attach units attachedUnit)]
+    exact (converts attachedUnit).2
+
+/-- The format's owner/external unit domain satisfies template-table preconditions,
+    independently of the concatenation order used to assemble the table. -/
+theorem indexHeapTemplates_succeeds (initial : Format.HeapSnapshot) (valid : Format.FreshWellFormed initial)
+    (objects : Vector (Fin initial.objects.size) initial.objects.size) :
+    ∃ templates,
+      indexTemplates objects (initial.objects.toList.flatMap (fun owner => owner.weak.toList) ++ initial.externalWeak.toList) = .ok templates ∧
+      TemplateTable objects (initial.objects.toList.flatMap (fun owner => owner.weak.toList) ++ initial.externalWeak.toList) templates := by
+  let units := initial.objects.toList.flatMap (fun owner => owner.weak.toList) ++ initial.externalWeak.toList
+  have keys : (units.map (fun unit => unit.unitId.value)).Perm (Format.freshUnitIds initial) := by
+    exact List.perm_append_comm.map _
+  have length : (Format.freshUnitIds initial).length = units.length := by
+    simpa only [List.length_map] using keys.length_eq.symm
+  have dense : (units.map (fun unit => unit.unitId.value)).Perm (List.range units.length) := by
+    simpa only [length] using keys.trans valid.units
+  have safe : ∀ unit ∈ units, Format.WeakContentsReferencesValid initial.objects.size unit.contents := by
+    intro unit member
+    rcases List.mem_append.mp member with owned | external
+    · obtain ⟨owner, inside, member⟩ := List.mem_flatMap.mp owned
+      exact (valid.references.objects owner inside).2 unit member
+    · exact valid.references.externalWeak unit external
+  exact indexTemplates_succeeds objects units dense safe
+
+
+/-- Unit-ID conversion preserves the complete list, including order and duplicates. -/
+def ModelUnitIds (units : List Format.WeakUnit) (ids : List (Fin k)) : Prop :=
+  ids.map Fin.val = units.map (fun unit => unit.unitId.value)
+
+theorem modelUnitIds_correct (count : Nat) (units : List Format.WeakUnit) (ids : List (Fin count)) :
+    modelUnitIds count units = .ok ids ↔ ModelUnitIds units ids := by
+  unfold modelUnitIds ModelUnitIds
+  induction units generalizing ids with
+  | nil => cases ids <;> simp [pure, Except.pure]
+  | cons unit rest ih =>
+      cases ids with
+      | nil => simp [List.mapM_cons, bind_ok, pure, Except.pure]
+      | cons id tail =>
+          simp [List.mapM_cons, bind_ok, pure, Except.pure, checkedFin_correct, ih]
+
+/-- Every in-range unit list converts without deleting or reordering a location. -/
+theorem modelUnitIds_succeeds (count : Nat) (units : List Format.WeakUnit)
+    (bounded : ∀ unit ∈ units, unit.unitId.value < count) :
+    ∃ ids, modelUnitIds count units = .ok ids ∧ ModelUnitIds units ids := by
+  let ids := units.attach.map (fun unit : { unit // unit ∈ units } =>
+    (⟨unit.val.unitId.value, bounded unit.val unit.property⟩ : Fin count))
+  have projected : ModelUnitIds units ids := by simp [ModelUnitIds, ids]
+  exact ⟨ids, (modelUnitIds_correct _ _ _).mpr projected, projected⟩
+
+/-- Remembered-owner conversion preserves physical identity through the retained
+    pairing and retains the input list order. -/
+def ModelRememberedOwners (objects : Vector (Fin n) n)
+    (owners : List Format.AllocationId) (output : List (Fin n)) : Prop :=
+  ListProjection (fun id object => ModelReference objects (some id) (some object)) owners output
+
+theorem modelRememberedOwners_succeeds (initial : Format.HeapSnapshot)
+    (objects : Vector (Fin initial.objects.size) initial.objects.size)
+    (valid : Format.RememberedOwnersValid initial) :
+    ∃ owners, initial.remembered.toList.mapM (originalReference objects) = .ok owners ∧
+      ModelRememberedOwners objects initial.remembered.toList owners := by
+  apply mapM_success
+  intro id member
+  obtain ⟨owner, lookup, _⟩ := valid id member
+  have bounded : id.value < initial.objects.size := by
+    obtain ⟨inside, _⟩ := Array.getElem?_eq_some_iff.mp lookup
+    exact inside
+  let index : Fin initial.objects.size := ⟨id.value, bounded⟩
+  have projects : ModelReference objects (some id) (some (objects.get index)) := ⟨index, rfl, rfl⟩
+  exact ⟨objects.get index, (originalReference_projects _ _ _).mpr projects, projects⟩
+
+
+private theorem vector_mapM_at (values : Vector α n) (f : α → Except String β) (relation : α → β → Prop)
+    (each : ∀ a ∈ values.toList, ∃ b, f a = .ok b ∧ relation a b) :
+    ∃ output, values.mapM f = .ok output ∧ ∀ index, relation (values.get index) (output.get index) := by
+  obtain ⟨output, checked, projected⟩ := vector_mapM_success values f relation each
+  refine ⟨output, checked, ?_⟩
+  intro index
+  have atIndex := projected.getElem index.val (by simp) (by simp)
+  change relation values[index.val] output[index.val]
+  simpa only [Vector.getElem_toList] using atIndex
+
+/-- Every logical original's strong fields convert at the same vector index. -/
+theorem modelChildren_succeeds (objects : Vector (Fin n) n) (originals : Vector Format.Allocation n)
+    (safe : ∀ a ∈ originals.toList, ∀ cell ∈ a.strong.toList, Format.CellReferencesValid n cell) :
+    ∃ children, originals.mapM (fun a => strongReferences objects a.strong) = .ok children ∧
+      ∀ owner, ModelStrongReferences objects (originals.get owner).strong.toList (children.get owner) := by
+  apply vector_mapM_at originals (fun a => strongReferences objects a.strong)
+    (fun a children => ModelStrongReferences objects a.strong.toList children)
+  intro a member
+  exact strongReferences_succeeds objects a.strong (safe a member)
+
+/-- Every fresh original's generation and placement convert at the same vector index. -/
+theorem modelKinds_succeeds (originals : Vector Format.Allocation n)
+    (fresh : ∀ a ∈ originals.toList, Format.FreshState a.state) :
+    ∃ kinds, originals.mapM (fun a => originalKind a.state) = .ok kinds ∧
+      ∀ owner, ModelOriginalKind (originals.get owner).state (kinds.get owner) := by
+  apply vector_mapM_at originals (fun a => originalKind a.state)
+    (fun a kind => ModelOriginalKind a.state kind)
+  intro a member
+  exact originalKind_succeeds a.state (fresh a member)
+
+/-- Owner location lists convert in place, retaining both owner and unit order. -/
+theorem modelOwnerUnits_succeeds (count : Nat) (originals : Vector Format.Allocation n)
+    (bounded : ∀ a ∈ originals.toList, ∀ unit ∈ a.weak.toList, unit.unitId.value < count) :
+    ∃ ownerUnits, originals.mapM (fun a => modelUnitIds count a.weak.toList) = .ok ownerUnits ∧
+      ∀ owner, ModelUnitIds (originals.get owner).weak.toList (ownerUnits.get owner) := by
+  apply vector_mapM_at originals (fun a => modelUnitIds count a.weak.toList)
+    (fun a ids => ModelUnitIds a.weak.toList ids)
+  intro a member
+  exact modelUnitIds_succeeds count a.weak.toList (bounded a member)
 
 end CloverGC.Differential
