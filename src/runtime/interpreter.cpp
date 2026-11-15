@@ -3772,10 +3772,6 @@ namespace cl
             dispatch_cached_membership_operator(
                 thread, fp, pc, dispatch, code_object, accumulator, cache_idx,
                 container, needle, pc + instr_len);
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
-        }
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 

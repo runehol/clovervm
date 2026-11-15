@@ -225,6 +225,11 @@ namespace cl::jit
                     function(function_name), args...);
             }
 
+            CodeObject *code_object(const wchar_t *function_name) const
+            {
+                return function(function_name).extract()->code_object.extract();
+            }
+
             bool is_jit_compiled(const wchar_t *function_name) const
             {
                 return function(function_name)
@@ -1616,6 +1621,135 @@ def run(): return reduce(subtract, [10, 2, 3])
         EXPECT_EQ(target.raw_value(), result);
         EXPECT_TRUE(observation.observed);
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(target_address));
+    }
+
+    namespace
+    {
+        enum class MembershipTraceMode
+        {
+            Disabled,
+            Enabled
+        };
+
+        enum class MembershipCalleeMode
+        {
+            Compiled,
+            Interpreted
+        };
+
+        void check_membership_jit_entry(MembershipTraceMode trace_mode,
+                                        MembershipCalleeMode callee_mode)
+        {
+            struct Observation
+            {
+                CodeObject *caller;
+                Value target = Value::not_present();
+                bool observed = false;
+            };
+            PythonJitExecutionFixture fixture;
+            fixture.execute_module(LR"(
+def contains_impl(self, needle):
+    return needle == 7
+class Container:
+    __contains__ = contains_impl
+container = Container()
+def probe(needle):
+    return needle in container
+contains_impl(container, 7)
+)");
+            ASSERT_FALSE(fixture.thread()->has_pending_exception());
+            if(callee_mode == MembershipCalleeMode::Compiled)
+            {
+                ASSERT_TRUE(fixture.jit_compile(L"contains_impl"));
+            }
+            ASSERT_EQ(callee_mode == MembershipCalleeMode::Compiled,
+                      fixture.is_jit_compiled(L"contains_impl"));
+            // The fixture module owns the function and its code throughout.
+            Observation observation{fixture.code_object(L"probe")};
+            ASSERT_FALSE(fixture.is_jit_compiled(L"probe"));
+            fixture.thread()
+                ->get_machine()
+                ->set_fire_every_safepoint_for_testing(true);
+            fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+                [](void *opaque, ThreadState *, Value accumulator, Value *,
+                   CodeObject *code, uint32_t pc_offset,
+                   const SafepointScanRecord &record) {
+                    auto *state = static_cast<Observation *>(opaque);
+                    // Returns restore the caller before polling. Observe the
+                    // exact Contains continuation, not a later safepoint which
+                    // happens to hold the same Boolean value.
+                    uint32_t contains_length =
+                        bytecode_length(Bytecode::Contains);
+                    if(code != state->caller || pc_offset < contains_length ||
+                       code->code[pc_offset - contains_length] !=
+                           static_cast<uint8_t>(Bytecode::Contains))
+                    {
+                        return;
+                    }
+                    if(accumulator == state->target)
+                    {
+                        state->observed = true;
+                        EXPECT_EQ(state->target,
+                                  record.accumulator_or_not_present);
+                    }
+                },
+                &observation);
+            fixture.thread()->set_trace_interpreter_instructions(
+                trace_mode == MembershipTraceMode::Enabled);
+            if(trace_mode == MembershipTraceMode::Enabled)
+            {
+                testing::internal::CaptureStderr();
+            }
+
+            // The first call resolves a cold membership cache; the second
+            // reuses it. Entry polls re-arm the request before Contains.
+            for(int needle: {7, 8})
+            {
+                observation.target =
+                    needle == 7 ? Value::True() : Value::False();
+                observation.observed = false;
+                fixture.request_safepoint();
+                EXPECT_EQ(observation.target,
+                          fixture.call(L"probe", Value::from_smi(needle)));
+                EXPECT_FALSE(fixture.thread()->has_pending_exception());
+                EXPECT_TRUE(observation.observed);
+            }
+            if(trace_mode == MembershipTraceMode::Enabled)
+            {
+                std::string trace = testing::internal::GetCapturedStderr();
+                size_t first_contains = trace.find("Contains");
+                EXPECT_NE(std::string::npos, trace.find(">>> enter probe\n"));
+                EXPECT_NE(std::string::npos, first_contains);
+                EXPECT_NE(first_contains, trace.rfind("Contains"));
+                EXPECT_NE(std::string::npos,
+                          trace.find("Return", trace.rfind("Contains")));
+            }
+            fixture.thread()->set_trace_interpreter_instructions(false);
+            fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+                nullptr, nullptr);
+            fixture.thread()
+                ->get_machine()
+                ->set_fire_every_safepoint_for_testing(false);
+            EXPECT_FALSE(fixture.is_jit_compiled(L"probe"));
+        }
+    }  // namespace
+
+    TEST(AArch64Execution, MembershipJitEntryPreservesPendingSafepoints)
+    {
+        check_membership_jit_entry(MembershipTraceMode::Disabled,
+                                   MembershipCalleeMode::Compiled);
+    }
+
+    TEST(AArch64Execution, MembershipJitEntryPreservesTracingDispatch)
+    {
+        check_membership_jit_entry(MembershipTraceMode::Enabled,
+                                   MembershipCalleeMode::Compiled);
+    }
+
+    TEST(AArch64Execution, MembershipTracingPreservesInterpreterReturnSafepoint)
+    {
+        check_membership_jit_entry(MembershipTraceMode::Enabled,
+                                   MembershipCalleeMode::Interpreted);
     }
 
     TEST(AArch64Execution, AutomaticTieringHandlesEmptyUnaryCaches)
