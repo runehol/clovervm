@@ -1,8 +1,7 @@
 #include "compiler/codegen_scope_analysis.h"
 
 #include "builtin_types/str.h"
-#include "bytecode/code_object_builder.h"
-#include "compiler/scope.h"
+#include "bytecode/code_object.h"
 #include "object_model/typed_value.h"
 #include <cassert>
 #include <optional>
@@ -76,12 +75,10 @@ namespace cl
 
         struct AnalysisState
         {
-            explicit AnalysisState(CodegenMode mode, size_t n_nodes)
-                : result(mode, n_nodes)
-            {
-            }
+            explicit AnalysisState(CodegenMode mode) { result.mode = mode; }
 
             ScopeAnalysis result;
+            std::vector<bool> expression_assigned_bindings;
             std::unordered_map<TValue<String>, int32_t, StringNameHash,
                                StringNameEq>
                 binding_indices;
@@ -107,15 +104,26 @@ namespace cl
         class ScopeAnalyzer
         {
         public:
-            ScopeAnalyzer(const AstVector &_av, CodeObjectBuilder *_code_obj)
-                : av(_av), code_obj(_code_obj)
+            explicit ScopeAnalyzer(const AstVector &_av)
+                : av(_av), compilation(_av.size())
             {
             }
 
-            Expected<ScopeAnalysis> run(int32_t body_idx, CodegenMode mode,
-                                        AstChildren param_children)
+            Expected<CompilationScopeAnalysis> run()
             {
-                AnalysisState analysis(mode, av.size());
+                CL_TRY(analyze_scope(av.root_node, CodegenMode::Module, {}));
+                return Expected<CompilationScopeAnalysis>::ok(
+                    std::move(compilation));
+            }
+
+        private:
+            const AstVector &av;
+            CompilationScopeAnalysis compilation;
+
+            Expected<void> analyze_scope(int32_t body_idx, CodegenMode mode,
+                                         const AstChildren &param_children)
+            {
+                AnalysisState analysis(mode);
                 CL_TRY(validate_global_declarations(mode, body_idx,
                                                     param_children));
                 collect_global_declarations(analysis, body_idx);
@@ -127,20 +135,85 @@ namespace cl
                                              Presence::Present);
                     }
                 }
+                size_t parameter_binding_end = analysis.result.bindings.size();
                 collect_code_object_bindings(analysis, body_idx);
-                if(mode != CodegenMode::Module)
-                {
-                    analysis.result.expression_assigned_locals.resize(
-                        code_obj->get_local_scope_ptr()->size(), false);
-                }
+                assign_slots(analysis, parameter_binding_end,
+                             uint32_t(param_children.size()));
                 FlowState state = initial_flow_state(analysis.result);
                 analyze_flow_node(analysis, body_idx, state);
-                return Expected<ScopeAnalysis>::ok(std::move(analysis.result));
+                auto result = compilation.scopes_by_body.emplace(
+                    body_idx, std::move(analysis.result));
+                assert(result.second);
+                // Map elements remain valid when analyzing a child inserts
+                // another scope and causes the map to rehash.
+                for(int32_t definition_idx:
+                    result.first->second.child_definitions)
+                {
+                    const auto &children = av.children[definition_idx];
+                    if(av.kinds[definition_idx].node_kind ==
+                       AstNodeKind::STATEMENT_FUNCTION_DEF)
+                    {
+                        CL_TRY(analyze_scope(
+                            children[1], CodegenMode::Function,
+                            signature_parameter_nodes(av, children[0])));
+                    }
+                    else
+                    {
+                        CL_TRY(
+                            analyze_scope(children[1], CodegenMode::Class, {}));
+                    }
+                }
+                return Expected<void>::ok();
             }
 
-        private:
-            const AstVector &av;
-            CodeObjectBuilder *code_obj;
+            static void assign_slots(AnalysisState &analysis,
+                                     size_t parameter_binding_end,
+                                     uint32_t n_parameters)
+            {
+                ScopeAnalysis &scope = analysis.result;
+                if(scope.mode == CodegenMode::Module)
+                {
+                    return;
+                }
+
+                uint32_t next_slot = 0;
+                for(size_t idx = 0; idx < parameter_binding_end; ++idx)
+                {
+                    BindingInfo &binding = scope.bindings[idx];
+                    if(binding.scope == BindingScope::Local)
+                    {
+                        binding.local_slot_idx = next_slot++;
+                    }
+                }
+                if(scope.mode == CodegenMode::Class)
+                {
+                    n_parameters = ClassBodyParameterCount;
+                    next_slot = n_parameters;
+                }
+                next_slot += round_up_to_abi_alignment(n_parameters) -
+                             n_parameters + FrameHeaderSize;
+                for(size_t idx = parameter_binding_end;
+                    idx < scope.bindings.size(); ++idx)
+                {
+                    BindingInfo &binding = scope.bindings[idx];
+                    if(binding.scope == BindingScope::Local)
+                    {
+                        binding.local_slot_idx = next_slot++;
+                    }
+                }
+                scope.n_slots = next_slot;
+                scope.expression_assigned_locals.resize(next_slot, false);
+                for(size_t idx = 0;
+                    idx < analysis.expression_assigned_bindings.size(); ++idx)
+                {
+                    if(analysis.expression_assigned_bindings[idx])
+                    {
+                        scope.expression_assigned_locals[scope.bindings[idx]
+                                                             .local_slot_idx] =
+                            true;
+                    }
+                }
+            }
 
             static bool handler_has_type(AstChildren handler_children)
             {
@@ -257,13 +330,9 @@ namespace cl
                     return *binding;
                 }
 
-                uint32_t slot_idx = code_obj->get_local_scope_ptr()
-                                        ->register_slot_index_for_write(
-                                            ast_string_constant(name));
                 int32_t binding_idx = int32_t(analysis.result.bindings.size());
-                analysis.result.bindings.push_back(
-                    BindingInfo{name, BindingScope::Local, slot_idx,
-                                initial_presence, false});
+                analysis.result.bindings.push_back(BindingInfo{
+                    name, BindingScope::Local, 0, initial_presence, false});
                 analysis.binding_indices[ast_string_constant(name)] =
                     binding_idx;
                 return analysis.result.bindings.back();
@@ -779,11 +848,13 @@ namespace cl
                             }
                         }
                         ensure_binding(analysis, av.constants[node_idx]);
+                        analysis.result.child_definitions.push_back(node_idx);
                         return;
 
                     case AstNodeKind::STATEMENT_CLASS_DEF:
                         collect_code_object_bindings(analysis, children[0]);
                         ensure_binding(analysis, av.constants[node_idx]);
+                        analysis.result.child_definitions.push_back(node_idx);
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT:
@@ -826,14 +897,15 @@ namespace cl
                                    binding->scope == BindingScope::Local)
                                 {
                                     auto &assigned =
-                                        analysis.result
-                                            .expression_assigned_locals;
-                                    uint32_t slot_idx = binding->local_slot_idx;
-                                    if(assigned.size() <= slot_idx)
+                                        analysis.expression_assigned_bindings;
+                                    size_t binding_idx =
+                                        binding -
+                                        analysis.result.bindings.data();
+                                    if(assigned.size() <= binding_idx)
                                     {
-                                        assigned.resize(slot_idx + 1, false);
+                                        assigned.resize(binding_idx + 1, false);
                                     }
-                                    assigned[slot_idx] = true;
+                                    assigned[binding_idx] = true;
                                 }
                             }
                             break;
@@ -1340,7 +1412,7 @@ namespace cl
                 if(av.kinds[target_idx].node_kind ==
                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                 {
-                    analysis.result.stores[target_idx] = make_access(
+                    compilation.stores[target_idx] = make_access(
                         analysis, av.constants[target_idx], state, false);
                     mark_local_presence(analysis, state,
                                         av.constants[target_idx],
@@ -1777,25 +1849,25 @@ namespace cl
                 AstChildren children = av.children[node_idx];
 
                 auto annotate_read = [&](int32_t read_idx) {
-                    analysis.result.loads[read_idx] = make_access(
+                    compilation.loads[read_idx] = make_access(
                         analysis, av.constants[read_idx], state, true);
                 };
                 auto annotate_write = [&](int32_t write_idx) {
-                    analysis.result.stores[write_idx] = make_access(
+                    compilation.stores[write_idx] = make_access(
                         analysis, av.constants[write_idx], state, false);
                     mark_local_presence(analysis, state,
                                         av.constants[write_idx],
                                         Presence::Present);
                 };
                 auto annotate_delete = [&](int32_t delete_idx) {
-                    analysis.result.deletes[delete_idx] = make_access(
+                    compilation.deletes[delete_idx] = make_access(
                         analysis, av.constants[delete_idx], state, true);
                     mark_local_presence(analysis, state,
                                         av.constants[delete_idx],
                                         Presence::Missing);
                 };
                 auto annotate_named_definition = [&](int32_t definition_idx) {
-                    analysis.result.stores[definition_idx] = make_access(
+                    compilation.stores[definition_idx] = make_access(
                         analysis, av.constants[definition_idx], state, false);
                     mark_local_presence(analysis, state,
                                         av.constants[definition_idx],
@@ -2086,12 +2158,10 @@ namespace cl
         };
     }  // namespace
 
-    Expected<ScopeAnalysis> analyze_code_object_scope(
-        const AstVector &av, CodeObjectBuilder *target_code_obj,
-        int32_t body_idx, CodegenMode mode, AstChildren param_children)
+    Expected<CompilationScopeAnalysis>
+    analyze_compilation_scopes(const AstVector &av)
     {
-        ScopeAnalyzer analyzer(av, target_code_obj);
-        return analyzer.run(body_idx, mode, param_children);
+        return ScopeAnalyzer(av).run();
     }
 
 }  // namespace cl
