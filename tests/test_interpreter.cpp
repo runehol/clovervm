@@ -10044,6 +10044,149 @@ TEST(Interpreter, closure_creation_opcodes_share_code_and_keep_distinct_cells)
     }
 }
 
+TEST(Interpreter, constructor_thunks_load_only_closure_backed_targets)
+{
+    for(bool is_init: {true, false})
+    {
+        SCOPED_TRACE(is_init ? "__init__" : "__new__");
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        CodeObject *module = context.compile_file(
+            is_init ? L"class Target:\n"
+                      L"    def __init__(self, value=71): pass\n"
+                      L"def invoke(): return Target()\n"
+                    : L"class Target:\n"
+                      L"    def __new__(cls, value=71): return cls, value\n"
+                      L"def invoke(): return Target()\n");
+        ASSERT_FALSE(
+            thread->run_clovervm_code_object(module).is_exception_marker());
+        Value cls_value = load_global_from_module_for_test(
+            module, interned_string(L"Target"));
+        auto invoke = TValue<Function>::from_value_assumed(
+            load_global_from_module_for_test(module,
+                                             interned_string(L"invoke")));
+        auto *cls = native_cast<ClassObject>(cls_value);
+        ASSERT_FALSE(
+            thread->call_clovervm_function(invoke).is_exception_marker());
+        ASSERT_NE(nullptr, cls->current_constructor_thunk());
+        CodeObject *plain_thunk =
+            cls->current_constructor_thunk()->code_object.extract();
+
+        // Exact instruction bytes for the two existing two-parameter thunks.
+        std::vector<uint8_t> expected =
+            is_init
+                ? std::vector<uint8_t>{uint8_t(Bytecode::Enter),
+                                       4,
+                                       0,
+                                       uint8_t(
+                                           Bytecode::CreateInstanceKnownClass),
+                                       0,
+                                       uint8_t(Bytecode::Star0),
+                                       uint8_t(Bytecode::Mov),
+                                       uint8_t(-3),
+                                       uint8_t(-1),
+                                       uint8_t(Bytecode::Mov),
+                                       uint8_t(-4),
+                                       5,
+                                       uint8_t(Bytecode::CallCodeObject),
+                                       1,
+                                       uint8_t(-3),
+                                       2,
+                                       uint8_t(Bytecode::CheckInitReturnedNone),
+                                       uint8_t(Bytecode::Ldar0),
+                                       uint8_t(Bytecode::Return)}
+                : std::vector<uint8_t>{uint8_t(Bytecode::Enter),
+                                       2,
+                                       0,
+                                       uint8_t(Bytecode::LdaConstant),
+                                       0,
+                                       uint8_t(Bytecode::Star0),
+                                       uint8_t(Bytecode::Mov),
+                                       uint8_t(-2),
+                                       5,
+                                       uint8_t(Bytecode::CallCodeObject),
+                                       1,
+                                       uint8_t(-1),
+                                       2,
+                                       uint8_t(Bytecode::Return)};
+        EXPECT_EQ(expected, plain_thunk->code);
+        EXPECT_EQ(2u, plain_thunk->constant_table.size());
+
+        auto method = interned_string(is_init ? L"__init__" : L"__new__");
+        auto captured_name = interned_string(L"captured");
+        auto *scope = thread->make_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder builder(&context.vm(), nullptr,
+                                  module->get_defining_module(), scope, method);
+        builder.configure_positional_function(2);
+        builder.function_signature().first_default_slot = 1;
+        builder.function_signature().default_presence_mask = 1;
+        uint32_t captured_slot =
+            scope->register_slot_index_for_write(captured_name);
+        builder.set_n_freevars(1);
+        builder.emit_copy_free_vars(0).value();
+        {
+            CodeObjectBuilder::TemporaryReg fields(builder, is_init ? 2 : 3);
+            builder.emit_load_cell_checked(0, captured_slot).value();
+            builder.emit_star(0, fields).value();
+            builder.emit_mov(0, fields + 1, 1).value();
+            if(!is_init)
+            {
+                builder.emit_mov(0, fields + 2, 0).value();
+            }
+            builder.emit_create_tuple(0, fields, is_init ? 2 : 3).value();
+        }
+        if(is_init)
+        {
+            uint8_t name =
+                builder.allocate_constant(captured_name.raw_value()).value();
+            builder.emit_store_attr(0, 0, name).value();
+            builder.emit_lda_none(0).value();
+        }
+        builder.emit_return(0).value();
+        CodeObject *target_code = builder.finalize().value();
+        Owned<TValue<Tuple>> closure(thread->make_object_value<Tuple>(1));
+        auto cell = thread->make_object_value<Cell>(Value::from_smi(37));
+        closure.extract()->initialize_item_unchecked(0, cell.raw_value());
+        Owned<TValue<Tuple>> defaults(thread->make_object_value<Tuple>(1));
+        defaults.extract()->initialize_item_unchecked(0, Value::from_smi(73));
+        Owned<TValue<Function>> target(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(target_code),
+            Optional<TValue<String>>::none(),
+            Optional<TValue<Tuple>>::some(defaults.value()),
+            Optional<TValue<Tuple>>::some(closure.value())));
+        ASSERT_TRUE(store_attr(cls_value, method, target.raw_value()).value());
+
+        Value result = thread->call_clovervm_function(invoke);
+        ASSERT_FALSE(result.is_exception_marker());
+        if(is_init)
+        {
+            ASSERT_EQ(cls, thread->class_of_value(result));
+            result = load_attr(result, captured_name);
+        }
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        const Tuple *fields = native_cast<Tuple>(result);
+        ASSERT_EQ(is_init ? 2u : 3u, fields->size());
+        EXPECT_EQ(Value::from_smi(37), fields->item_unchecked(0));
+        EXPECT_EQ(Value::from_smi(73), fields->item_unchecked(1));
+        if(!is_init)
+        {
+            EXPECT_EQ(cls_value, fields->item_unchecked(2));
+        }
+
+        ASSERT_NE(nullptr, cls->current_constructor_thunk());
+        CodeObject *closure_thunk =
+            cls->current_constructor_thunk()->code_object.extract();
+        expected.insert(expected.begin() + (is_init ? 12 : 9),
+                        {uint8_t(Bytecode::LdaConstant), 2});
+        EXPECT_EQ(expected, closure_thunk->code);
+        ASSERT_EQ(3u, closure_thunk->constant_table.size());
+        EXPECT_EQ(Value::from_oop(target_code),
+                  closure_thunk->constant_table[1].value());
+        EXPECT_EQ(target.raw_value(), closure_thunk->constant_table[2].value());
+    }
+}
+
 TEST(Interpreter, enter_clears_only_padded_slots_and_resume_preserves_them)
 {
     test::VmTestContext context;

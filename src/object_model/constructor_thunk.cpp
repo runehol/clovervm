@@ -147,6 +147,25 @@ namespace cl
         }
     }
 
+    static Expected<void> emit_bound_constructor_call(CodeObjectBuilder &code,
+                                                      TValue<Function> target,
+                                                      uint32_t first_arg)
+    {
+        CodeObject *target_code = target.extract()->code_object.extract();
+        uint8_t code_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(target_code)));
+        if(target_code->n_freevars != 0)
+        {
+            uint8_t function_idx =
+                CL_TRY(code.allocate_constant(target.raw_value()));
+            CL_TRY(code.emit_lda_constant(0, function_idx));
+        }
+        CL_TRY(code.emit_call_code_object(
+            0, code_idx, first_arg,
+            target_code->function_signature.n_parameters));
+        return Expected<void>::ok();
+    }
+
     static Expected<CodeObject *>
     make_init_only_constructor_thunk_code(ClassObject *cls,
                                           Optional<TValue<Function>> init)
@@ -206,8 +225,6 @@ namespace cl
         {
             CodeObjectBuilder::TemporaryReg instance_reg(code);
 
-            uint32_t init_code_const_idx =
-                CL_TRY(code.allocate_constant(Value::from_oop(init_code)));
             CL_TRY(code.emit_star(0, instance_reg));
 
             {
@@ -221,8 +238,8 @@ namespace cl
                         code.emit_mov(0, call_args + param_idx + 1, param_idx));
                 }
 
-                CL_TRY(code.emit_call_code_object(
-                    0, init_code_const_idx, call_args, init_n_parameters));
+                CL_TRY(
+                    emit_bound_constructor_call(code, init.value(), call_args));
             }
             CL_TRY(code.emit_check_init_returned_none(0));
             CL_TRY(code.emit_ldar(0, instance_reg));
@@ -582,8 +599,6 @@ namespace cl
 
         uint32_t class_const_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(cls)));
-        uint32_t new_code_const_idx =
-            CL_TRY(code.allocate_constant(Value::from_oop(new_code)));
         CL_TRY(code.emit_lda_constant(0, class_const_idx));
         {
             CodeObjectBuilder::TemporaryReg call_args(
@@ -595,8 +610,7 @@ namespace cl
                 CL_TRY(code.emit_mov(0, call_args + param_idx + 1, param_idx));
             }
 
-            CL_TRY(code.emit_call_code_object(0, new_code_const_idx, call_args,
-                                              new_n_parameters));
+            CL_TRY(emit_bound_constructor_call(code, new_, call_args));
         }
         CL_TRY(code.emit_return(0));
         return code.finalize();
