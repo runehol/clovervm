@@ -244,6 +244,7 @@ namespace cl
 
             case Bytecode::Ldar:
             case Bytecode::LoadLocalChecked:
+            case Bytecode::LoadCellChecked:
                 effects.source_register(0);
                 effects.destination_accumulator();
                 break;
@@ -315,8 +316,13 @@ namespace cl
                 break;
 
             case Bytecode::DelLocal:
+            case Bytecode::MakeCell:
                 effects.source_register(0);
                 effects.destination_register(0);
+                break;
+
+            case Bytecode::DelCell:
+                effects.source_register(0);
                 break;
 
             case Bytecode::LoadAttr:
@@ -325,6 +331,7 @@ namespace cl
                 break;
 
             case Bytecode::StoreAttr:
+            case Bytecode::StoreCell:
                 effects.source_register(0);
                 effects.source_accumulator();
                 break;

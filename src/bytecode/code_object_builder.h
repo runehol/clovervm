@@ -303,6 +303,12 @@ namespace cl
         Expected<uint32_t> emit_sta_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_del_local(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_make_cell(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_load_cell_checked(uint32_t source_offset,
+                                                  uint32_t reg);
+        Expected<uint32_t> emit_store_cell(uint32_t source_offset,
+                                           uint32_t reg);
+        Expected<uint32_t> emit_del_cell(uint32_t source_offset, uint32_t reg);
         Expected<uint32_t> emit_del_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_lda_none(uint32_t source_offset);

@@ -20,6 +20,7 @@
 #include "import_system/module_global.h"
 #include "memory/heap_reclamation.h"
 #include "object_model/attr.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -9788,6 +9789,157 @@ except StopIteration as caught:
     context.vm().request_safepoint();
     ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+static CodeObjectBuilder make_cell_test_builder(test::VmTestContext &context)
+{
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<cell-test>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr, context.vm().global_builtins_module(),
+        context.thread()->make_internal_raw<Scope>(nullptr), name);
+    builder.configure_positional_function(1);
+    return builder;
+}
+
+TEST(Interpreter, cell_opcodes_box_and_update_slots)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    auto builder = make_cell_test_builder(context);
+    uint32_t local =
+        builder.get_local_scope_ptr()->register_slot_index_for_write(
+            context.vm().get_or_create_interned_string_value(L"local"));
+    {
+        CodeObjectBuilder::TemporaryReg alias(builder);
+        CodeObjectBuilder::TemporaryReg results(builder, 6);
+
+        builder.emit_lda_smi(0, 71).value();
+        builder.emit_make_cell(0, 0).value();
+        builder.emit_star(0, results).value();
+        builder.emit_load_cell_checked(0, 0).value();
+        builder.emit_star(0, results + 1).value();
+
+        builder.emit_make_cell(0, local).value();
+        builder.emit_mov(0, alias, local).value();
+        builder.emit_lda_smi(0, 42).value();
+        builder.emit_store_cell(0, local).value();
+        builder.emit_star(0, results + 2).value();
+        builder.emit_load_cell_checked(0, alias).value();
+        builder.emit_star(0, results + 3).value();
+
+        builder.emit_lda_smi(0, 91).value();
+        builder.emit_del_cell(0, local).value();
+        builder.emit_star(0, results + 4).value();
+        builder.emit_ldar(0, alias).value();
+        builder.emit_star(0, results + 5).value();
+        builder.emit_create_tuple(0, results, 6).value();
+    }
+    builder.emit_return(0).value();
+    auto code = TValue<CodeObject>::from_oop(builder.finalize().value());
+    Owned<TValue<Function>> function(thread->make_object_value<Function>(
+        code, Optional<TValue<String>>::none()));
+
+    Value result =
+        thread->call_clovervm_function(function.value(), Value::from_smi(13));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
+    Tuple *tuple = native_cast<Tuple>(result);
+    ASSERT_EQ(6u, tuple->size());
+    EXPECT_EQ(Value::from_smi(71), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(13), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(42), tuple->item_unchecked(2));
+    EXPECT_EQ(Value::from_smi(42), tuple->item_unchecked(3));
+    EXPECT_EQ(Value::from_smi(91), tuple->item_unchecked(4));
+    ASSERT_TRUE(has_native_layout<Cell>(tuple->item_unchecked(5)));
+    EXPECT_EQ(Value::not_present(),
+              native_cast<Cell>(tuple->item_unchecked(5))->value());
+}
+
+TEST(Interpreter, checked_cell_opcodes_report_the_binding_scope)
+{
+    enum class Binding
+    {
+        OwnLocal,
+        FreeVar,
+        OwnLocalAfterFreeVar,
+    };
+    for(Bytecode opcode: {Bytecode::LoadCellChecked, Bytecode::DelCell})
+    {
+        SCOPED_TRACE(bytecode_name(opcode));
+        for(Binding binding: {Binding::OwnLocal, Binding::FreeVar,
+                              Binding::OwnLocalAfterFreeVar})
+        {
+            SCOPED_TRACE(static_cast<int>(binding));
+            test::VmTestContext context;
+            ThreadState *thread = context.thread();
+            ThreadState::ActivationScope activation(thread);
+            auto builder = make_cell_test_builder(context);
+            Scope *scope = builder.get_local_scope_ptr();
+            if(binding == Binding::OwnLocalAfterFreeVar)
+            {
+                scope->register_slot_index_for_write(
+                    context.vm().get_or_create_interned_string_value(
+                        L"unused_free"));
+            }
+            uint32_t slot = scope->register_slot_index_for_write(
+                context.vm().get_or_create_interned_string_value(L"x"));
+            Owned<TValue<Cell>> cell(
+                thread->make_object_value<Cell>(Value::not_present()));
+            Owned<Optional<TValue<Tuple>>> closure(
+                Optional<TValue<Tuple>>::none());
+            if(binding != Binding::OwnLocal)
+            {
+                builder.set_n_freevars(1);
+                Owned<TValue<Tuple>> cells(thread->make_object_value<Tuple>(1));
+                cells.extract()->initialize_item_unchecked(0, cell.raw_value());
+                closure = Optional<TValue<Tuple>>::some(cells.value());
+            }
+            if(binding == Binding::FreeVar)
+            {
+                // Seed the slot explicitly until CopyFreeVars is available.
+                builder.emit_ldar(0, 0).value();
+                builder.emit_star(0, slot).value();
+            }
+            else
+            {
+                builder.emit_make_cell(0, slot).value();
+            }
+            if(opcode == Bytecode::LoadCellChecked)
+            {
+                builder.emit_load_cell_checked(0, slot).value();
+            }
+            else
+            {
+                builder.emit_del_cell(0, slot).value();
+            }
+            builder.emit_return(0).value();
+            auto code =
+                TValue<CodeObject>::from_oop(builder.finalize().value());
+            Owned<TValue<Function>> function(
+                thread->make_object_value<Function>(
+                    code, Optional<TValue<String>>::none(),
+                    Optional<TValue<Tuple>>::none(), closure.value()));
+
+            EXPECT_EQ(Value::exception_marker(),
+                      thread->call_clovervm_function(function.value(),
+                                                     cell.raw_value()));
+            if(binding == Binding::FreeVar)
+            {
+                expect_thread_python_error(
+                    thread, L"NameError",
+                    L"cannot access free variable 'x' where it is not "
+                    L"associated with a value in enclosing scope");
+            }
+            else
+            {
+                expect_thread_python_error(
+                    thread, L"UnboundLocalError",
+                    L"cannot access local variable 'x' where it is not "
+                    L"associated with a value");
+            }
+        }
+    }
 }
 
 TEST(Interpreter, enter_clears_only_padded_slots_and_resume_preserves_them)

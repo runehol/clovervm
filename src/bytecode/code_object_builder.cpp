@@ -381,6 +381,31 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::DelLocal, reg);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_make_cell(uint32_t source_offset,
+                                                         uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::MakeCell, reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_load_cell_checked(uint32_t source_offset,
+                                              uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::LoadCellChecked, reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_store_cell(uint32_t source_offset, uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::StoreCell, reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_del_cell(uint32_t source_offset,
+                                                        uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::DelCell, reg);
+    }
+
     Expected<uint32_t>
     CodeObjectBuilder::emit_del_global(uint32_t source_offset, uint8_t name_idx)
     {

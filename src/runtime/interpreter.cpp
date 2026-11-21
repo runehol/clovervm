@@ -20,6 +20,7 @@
 #include "jit/jit_compiler.h"
 #include "jit/jit_config.h"
 #include "object_model/attr.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -300,6 +301,36 @@ namespace cl
                 set_builtin_exception_and_resolve_frame_exit(
                     thread, fp, pc, code_object, L"UnboundLocalError",
                     message.c_str());
+            fp = target.fp;
+            code_object = target.code_object;
+            pc = target.interpreted_pc;
+        }
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value empty_cell_error(PARAMS)
+    {
+        uint32_t slot_idx = code_object->decode_reg(int8_t(pc[1]));
+        uint32_t first_local =
+            code_object->get_padded_n_parameters() + FrameHeaderSize;
+        if(slot_idx < first_local ||
+           slot_idx - first_local >= code_object->n_freevars)
+        {
+            MUSTTAIL return unbound_local_error(ARGS);
+        }
+        {
+            TValue<String> name =
+                code_object->get_local_scope_ptr()->get_name_by_slot_index(
+                    slot_idx);
+            std::wstring message = L"cannot access free variable '";
+            message.append(name.extract()->data,
+                           size_t(name.extract()->count.extract()));
+            message +=
+                L"' where it is not associated with a value in enclosing scope";
+            ExceptionalTarget target =
+                set_builtin_exception_and_resolve_frame_exit(
+                    thread, fp, pc, code_object, L"NameError", message.c_str());
             fp = target.fp;
             code_object = target.code_object;
             pc = target.interpreted_pc;
@@ -2978,6 +3009,47 @@ namespace cl
         {
             MUSTTAIL return unbound_local_error(ARGS);
         }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_make_cell(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        fp[reg] = thread->make_object_value<Cell>(fp[reg]).raw_value();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_load_cell_checked(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        accumulator = native_cast<Cell>(fp[reg])->value();
+        if(unlikely(accumulator.is_not_present()))
+        {
+            MUSTTAIL return empty_cell_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_store_cell(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        native_cast<Cell>(fp[reg])->set_value(accumulator);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_del_cell(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        Cell *cell = native_cast<Cell>(fp[reg]);
+        if(unlikely(cell->value().is_not_present()))
+        {
+            MUSTTAIL return empty_cell_error(ARGS);
+        }
+        cell->set_value(Value::not_present());
         COMPLETE();
     }
 
@@ -6849,6 +6921,10 @@ namespace cl
 #define SET_TABLE_ENTRY(bytecode, fun) tbl.table[size_t(bytecode)] = fun
         SET_TABLE_ENTRY(Bytecode::Ldar, op_ldar);
         SET_TABLE_ENTRY(Bytecode::LoadLocalChecked, op_load_local_checked);
+        SET_TABLE_ENTRY(Bytecode::MakeCell, op_make_cell);
+        SET_TABLE_ENTRY(Bytecode::LoadCellChecked, op_load_cell_checked);
+        SET_TABLE_ENTRY(Bytecode::StoreCell, op_store_cell);
+        SET_TABLE_ENTRY(Bytecode::DelCell, op_del_cell);
         SET_TABLE_ENTRY(Bytecode::Enter, op_enter);
         SET_TABLE_ENTRY(Bytecode::ClearLocal, op_clear_local);
         SET_TABLE_ENTRY(Bytecode::Star, op_star);

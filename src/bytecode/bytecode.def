@@ -301,5 +301,9 @@ CL_BYTECODE(FinishJumpIfFalse, RelativeJump, ConditionalJump,
 CL_BYTECODE(JumpIfEqualSmi, Smi8RelativeJump, ConditionalJump, None)
 
 CL_BYTECODE(Enter, SlotCountU16, Sequential, None)
+CL_BYTECODE(MakeCell, Register, Sequential, None)
+CL_BYTECODE(LoadCellChecked, Register, Sequential, None)
+CL_BYTECODE(StoreCell, Register, Sequential, None)
+CL_BYTECODE(DelCell, Register, Sequential, None)
 
 CL_BYTECODE(Invalid, Invalid, Invalid, None)

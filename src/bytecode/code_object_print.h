@@ -347,6 +347,10 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::ClearLocal:
             case cl::Bytecode::Star:
             case cl::Bytecode::DelLocal:
+            case cl::Bytecode::MakeCell:
+            case cl::Bytecode::LoadCellChecked:
+            case cl::Bytecode::StoreCell:
+            case cl::Bytecode::DelCell:
             case cl::Bytecode::ListAppend:
             case cl::Bytecode::ListExtend:
             case cl::Bytecode::ListToTuple:
