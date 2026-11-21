@@ -570,6 +570,8 @@ namespace cl
         FunctionSignature function_signature;
         FunctionKeywordRemap function_keyword_remap;
         uint32_t n_locals = 0;
+        // Free variables occupy the first named local slots after the header.
+        uint32_t n_freevars = 0;
         uint32_t n_temporaries = 0;
         int8_t first_free_arg_encoded_reg = 0;
 

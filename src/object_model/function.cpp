@@ -1,13 +1,33 @@
 #include "object_model/function.h"
 #include "builtin_types/str.h"
 #include "object_model/attribute_descriptor.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/shape.h"
+#include "runtime/fatal.h"
 #include "runtime/virtual_machine.h"
 #include <iterator>
 
 namespace cl
 {
+    void Function::validate_closure(uint32_t n_freevars,
+                                    Optional<TValue<Tuple>> closure)
+    {
+        if(n_freevars == 0 || !closure.has_value() ||
+           closure.value().extract()->size() != n_freevars)
+        {
+            fatal("Function closure does not match the free-variable count");
+        }
+        const Tuple *cells = closure.value().extract();
+        for(size_t index = 0; index < cells->size(); ++index)
+        {
+            if(!has_native_layout<Cell>(cells->item_unchecked(index)))
+            {
+                fatal("Function closure contains a non-cell value");
+            }
+        }
+    }
+
     static void install_function_instance_root_shape(ClassObject *cls)
     {
         BuiltinInstanceShapeBuilder(
@@ -18,6 +38,7 @@ namespace cl
                           descriptor_flag(DescriptorFlag::StableSlot))
             .reserve_slot(Function::kDefaultParametersSlot)
             .add_slot(L"__doc__", Function::kDocstringSlot)
+            .reserve_slot(Function::kClosureSlot)
             .install(shape_flag(ShapeFlag::DisallowAttributeAddDelete));
     }
 

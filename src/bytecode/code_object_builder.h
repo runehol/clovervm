@@ -220,6 +220,12 @@ namespace cl
             code_obj->docstring = docstring;
         }
 
+        void set_n_freevars(uint32_t n_freevars)
+        {
+            assert_not_finalized();
+            code_obj->n_freevars = n_freevars;
+        }
+
         uint32_t &n_parameters()
         {
             assert_not_finalized();

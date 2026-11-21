@@ -1349,6 +1349,7 @@ namespace cl
             assert(named_local_and_header_slots >= FrameHeaderSize);
             code_obj->n_locals = named_local_and_header_slots - FrameHeaderSize;
         }
+        assert(code_obj->n_freevars <= code_obj->n_locals);
         sync_temporary_reg_base();
         assert(temporary_reg == local_scope_size);
         assert(max_temporary_reg >= local_scope_size);
