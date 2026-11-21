@@ -572,6 +572,7 @@ namespace cl
                 break;
 
             case Bytecode::CallCodeObject:
+                effects.source_accumulator();
                 if(effects.operand(2) != 0)
                 {
                     effects.source_register(1, effects.operand(2));

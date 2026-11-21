@@ -1776,7 +1776,7 @@ namespace cl::jit
 
         ControlFlowGraph *graph = fixture.translate();
         Block *entry = graph->normal_entry_block();
-        ASSERT_EQ(1u + FrameHeaderSize, entry->parameters().size());
+        ASSERT_EQ(2u + FrameHeaderSize, entry->parameters().size());
         Instruction parameter = entry->parameter_at(0);
         EXPECT_EQ(InstructionKind::Parameter, parameter.kind());
         EXPECT_EQ(InstructionKind::ParameterPointer,
@@ -1786,6 +1786,8 @@ namespace cl::jit
         EXPECT_EQ(InstructionKind::Parameter, entry->parameter_at(3).kind());
         EXPECT_EQ(InstructionKind::ParameterPointer,
                   entry->parameter_at(4).kind());
+        EXPECT_EQ(InstructionKind::Parameter,
+                  entry->parameter_at(1 + FrameHeaderSize).kind());
         std::vector<Instruction> snapshots =
             instructions_of_kind(entry, InstructionKind::Snapshot);
         ASSERT_EQ(1u, snapshots.size());
