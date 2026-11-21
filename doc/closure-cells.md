@@ -16,10 +16,10 @@ function is represented by a heap cell, and all closures that capture the same
 binding share that cell. Stable identity does not require a fixed address under
 moving GC.
 
-The unified scope analysis, storage, interpreter-entry design, and opcode plan
-below are agreed. Implementation is not authorized yet. Compiled entry and
-recovery must preserve the same closure state, but their concrete transport
-remains to be designed.
+The unified scope analysis, storage, interpreter/JIT entry and recovery design,
+and opcode plan below are agreed. Implementation is not authorized yet. Native
+compiled lowering of the cell operations is not required by the entry plan;
+unsupported operations can use the existing interpreter side-exit mechanism.
 
 ## Properties
 
@@ -243,9 +243,26 @@ presence analysis must not eliminate `LoadCellChecked` checks.
 
 Module and class scopes remain explicit nodes with their own binding rules.
 Module bindings are not closure cells, and class namespace bindings must not
-be treated as ordinary enclosing function bindings for methods. Concrete
-class-capture support and special `__class__` handling remain a separate scope
-decision; this plan does not authorize a class-semantics redesign.
+be treated as ordinary enclosing function bindings for methods.
+
+### Captures Across Class Bodies
+
+The first closure slice supports captures between function scopes without an
+intervening class body. During lexical resolution, class namespace bindings
+are skipped when looking for an enclosing function binding for a method.
+If the resolved binding would require a cell to enter or pass through a class
+body, reject the capture at compile time with an explicit unsupported-feature
+diagnostic. This covers both a class body accessing an enclosing function's
+binding and a method capturing that binding through the class body. Preserve
+ordinary global lookup for names that resolve as globals. A nested function
+inside a method can still capture the method's own locals.
+
+Defer this transport and class-body free-variable lookup to the live class
+namespace work described in the
+[module-global namespace design](module-global-namespace-design.md#remaining-design-boundaries).
+That work must keep namespace entries separate from forwarded cells, including
+when both have the same name. Special `__class__` cells and zero-argument
+`super()` remain separate design work.
 
 ## Runtime Model
 
@@ -288,14 +305,17 @@ Normal local access remains a direct `Ldar` / `Star` frame-slot operation, with
 
 ## Cell Object
 
-A cell is a heap object with one GC-visible value field. It may outlive the frame
-that created it, so the contained value must be stored with ordinary heap-member
-ownership semantics rather than as a borrowed frame value.
+A cell is a Python object deriving from `Object`, with one GC-visible value
+field. Use the existing builtin class, native-layout, allocation, and ownership
+patterns for `Object` subclasses rather than an internal-only `HeapObject`
+record. It may outlive the frame that created it, so the contained value must
+be stored with ordinary heap-member ownership semantics rather than as a
+borrowed frame value.
 
 Conceptual shape:
 
 ```cpp
-class Cell : public HeapObject {
+class Cell : public Object {
  public:
   Value value() const;
   void set_value(Value value);
@@ -308,6 +328,26 @@ class Cell : public HeapObject {
 The concrete implementation should use clovervm's existing heap layout and
 ownership wrappers. The important contract is that `value_` is visible to the
 runtime scanner and retains/releases like other heap object fields.
+
+A recursive nested function can form a cycle through its closure tuple and
+the cell for its own name. The function, tuple, and cell hold ordinary strong
+references. Reclaiming unreachable cycles is part of the full tracing
+collection in the [moving GC design](generational-copying-gc.md).
+
+The Python object representation supports CPython-compatible introspection:
+`Function.__closure__` exposes a read-only tuple of the actual shared cells
+(or `None` without a closure), while a cell's `cell_contents` can be read,
+assigned, or deleted. Assigning contents changes the binding observed by all
+closures sharing the cell; deletion empties it. Reading an empty cell through
+`cell_contents` raises `ValueError`, distinct from the binding-access errors
+described below. The function's immutable closure association does not make
+the cell contents immutable.
+
+The first slice uses the `Object` representation and defers Python-visible
+introspection. A follow-up can expose `function.__closure__`,
+`cell.cell_contents`, `types.CellType`, and code-object attributes such as
+`co_cellvars` and `co_freevars`. Keep the internal binding names needed for
+error reporting in the first slice.
 
 An empty cell contains `Value::not_present()`. Cell creation is unconditional at
 function entry for each of the activation's captured bindings, even when the
@@ -406,16 +446,19 @@ callee:
   execute the body
 ```
 
-The call-boundary safepoint occurs after adaptation and switching to the callee,
-before `Enter`. It must publish the accumulator as a live root and restore its
-possibly relocated value. Safepoints during adaptation have their own existing
-rooting requirements; the entry accumulator contract begins after adaptation.
+The existing interpreter call-entry poll runs after argument binding and the
+switch to the callee, before `Enter`. Use the accumulator-preserving safepoint
+path so it publishes the selected `Function` as a live root and reloads its
+possibly relocated value before dispatching `Enter`. The entry accumulator
+contract starts after call adaptation.
 
 The closure-reference copy must precede any operation that overwrites the entry
 accumulator. It performs no allocation. Once copied, the cells are rooted in
-their frame slots and the accumulator can be reused; a permanent reference to
-the `Function` is not required by this design. Captured-binding cell allocation
-must preserve initialized frame roots across any safepoint.
+their frame slots and the accumulator can be reused. `Enter`, `CopyFreeVars`,
+and `MakeCell` run without polling. `MakeCell` leaves the initial value in its
+slot through construction, then writes the new cell reference to the slot
+before dispatching the next instruction. The allocator can request a later
+safepoint.
 
 All fresh `Function` entry paths, including positional, keyword, expanded,
 method, and native-to-managed calls, must honor this contract. The accumulator
@@ -423,6 +466,79 @@ contains the selected function, which need not be the original callable when
 resolution chooses an adapter. Internal direct code-object entry has no
 function instance and must not silently enter code requiring closure context.
 Resuming an existing frame skips this entry initialization.
+
+## JIT Entry Accumulator And Side Exits
+
+Model the incoming bytecode accumulator as a real tagged SSA entry parameter,
+rather than initializing its state-tracker position to the unavailable value.
+For fresh function calls, that input carries the selected `Function` under the
+same entry contract as the interpreter. It is per-invocation state, not a
+function constant associated with the compiled code object.
+
+The current AArch64 interpreter-to-JIT entry thunks already receive the
+accumulator in `x20` and leave it intact when calling generated code. Preserve
+that transport and connect it to the compiler's entry model:
+
+1. In `CoreBytecodeTranslator::make_entry_state`, create an ordinary tagged
+   `ParameterInstruction` for the incoming accumulator alongside the Python
+   parameter and frame-header inputs.
+2. Pass this SSA value explicitly to `BytecodeStateTracker::make_entry_state`
+   and assign it to `BytecodeStateOrder::AccumulatorPosition`. Keep the existing
+   initialization of locals and temporaries.
+3. Extend AArch64 entry-parameter allocation constraints to recognize this
+   input and give it the fixed incoming location `x20`. It is not an extra
+   Python argument and does not shift Python argument locations `x0` through
+   `x7` or alter signature arity.
+
+Conceptually, the tracker initialization becomes:
+
+```cpp
+make_entry_state(parameters, frame_header, incoming_accumulator,
+                 uninitialized_local, unavailable);
+
+// Within the tracker:
+values[BytecodeStateOrder::AccumulatorPosition] = incoming_accumulator;
+```
+
+The fixed location applies only at entry. `x20` remains allocatable during
+compiled execution: the allocator can move or preserve the SSA value using its
+normal location and liveness machinery. The function reference is not a new
+persistent machine-context register or frame-header field.
+
+Side exits use the existing accumulator recovery path:
+
+```text
+entry x20 contains Function
+  -> tagged entry SSA parameter
+  -> state.accumulator
+  -> Snapshot captures the current accumulator value
+  -> transition program materializes InterpreterResumeState.accumulator
+  -> side-exit thunk restores the recovered value into x20
+  -> interpreter resumes at the snapshot's bytecode PC
+```
+
+The transition emitter already materializes the snapshot accumulator, and the
+side-exit thunk already restores it. No closure-specific recovery field or
+separate function-recovery mechanism is needed. After an instruction overwrites
+the accumulator, later snapshots must capture that newer value rather than the
+entry function.
+
+This permits the first closure implementation to leave `CopyFreeVars`
+unsupported in native compiled lowering. The JIT's existing logical `Enter`
+initialization leaves the modeled accumulator unchanged; an ordinary side exit
+at `CopyFreeVars` then restores the function and cleared local state and resumes
+at that instruction. The interpreter copies the cells without rerunning
+`Enter`. Keeping all closure-bearing functions interpreted is therefore not
+required merely to preserve the entry function.
+
+Future compiled-to-compiled call lowering must supply the same entry input in
+the agreed machine location. This plan does not add general managed JIT calls
+or safepoint-capable cell lowering.
+
+Verification must cover an immediate fallback at `CopyFreeVars`, an exit after
+the accumulator has been overwritten, and separate function instances sharing
+one code object but carrying different closures. Entry constraints and recovery
+must work without reserving `x20` throughout the compiled body.
 
 ## Function Creation
 
