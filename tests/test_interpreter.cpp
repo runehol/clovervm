@@ -4511,6 +4511,137 @@ TEST(Interpreter, global_statement_rejects_prior_parenthesized_annotation_store)
                         L"name is assigned to before global declaration");
 }
 
+TEST(Interpreter, nonlocal_updates_and_deletes_forwarded_cells)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def outer(x, y):
+    def read():
+        return x, y
+    def middle():
+        def write(value):
+            (x): UnresolvedAnnotation
+            nonlocal x, y
+            (x): UnresolvedAnnotation = value
+            y = value + 1
+        def remove():
+            nonlocal x
+            del x
+        return write, remove
+    methods = middle()
+    return read, methods[0], methods[1]
+
+first = outer(1, 2)
+second = outer(3, 4)
+first[1](37)
+assert first[0]() == (37, 38)
+assert second[0]() == (3, 4)
+first[2]()
+try:
+    first[0]()
+    assert False
+except NameError:
+    pass
+first[1](71)
+assert first[0]() == (71, 72)
+True
+)"));
+}
+
+TEST(Interpreter, nonlocal_declaration_alone_captures_a_cell)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Value outer = make_test_function(context, L"outer", LR"(
+def outer(x):
+    def middle():
+        def leaf():
+            nonlocal x
+            pass
+        return leaf
+    return middle
+)");
+    Owned<Value> middle(thread->call_clovervm_function(
+        TValue<Function>::from_value_assumed(outer), Value::from_smi(37)));
+    ASSERT_TRUE(has_native_layout<Function>(middle.value()));
+    Owned<Value> leaf(thread->call_clovervm_function(
+        TValue<Function>::from_value_assumed(middle.value())));
+    ASSERT_TRUE(has_native_layout<Function>(leaf.value()));
+    auto middle_closure = native_cast<Function>(middle.value())->closure();
+    auto leaf_closure = native_cast<Function>(leaf.value())->closure();
+    ASSERT_TRUE(middle_closure.has_value());
+    ASSERT_TRUE(leaf_closure.has_value());
+    Value cell = leaf_closure.value().extract()->item_unchecked(0);
+    EXPECT_EQ(middle_closure.value().extract()->item_unchecked(0), cell);
+    ASSERT_TRUE(has_native_layout<Cell>(cell));
+    EXPECT_EQ(Value::from_smi(37), native_cast<Cell>(cell)->value());
+}
+
+TEST(Interpreter, nonlocal_validates_declarations_in_source_order)
+{
+    struct Case
+    {
+        const wchar_t *body;
+        const wchar_t *message;
+    };
+    for(const auto &[body, message]:
+        {Case{L"        x\n        nonlocal x\n",
+              L"name 'x' is used prior to nonlocal declaration"},
+         Case{L"        x = x\n        nonlocal x\n",
+              L"name 'x' is used prior to nonlocal declaration"},
+         Case{L"        x += 1\n        nonlocal x\n",
+              L"name 'x' is assigned to before nonlocal declaration"},
+         Case{L"        del x\n        nonlocal x\n",
+              L"name 'x' is assigned to before nonlocal declaration"},
+         Case{L"        (x): int = 1\n        nonlocal x\n",
+              L"name 'x' is assigned to before nonlocal declaration"},
+         Case{L"        x: int\n        nonlocal x\n",
+              L"annotated name 'x' can't be nonlocal"},
+         Case{L"        nonlocal x\n        x: int\n",
+              L"annotated name 'x' can't be nonlocal"},
+         Case{L"        global x\n        nonlocal x\n",
+              L"name 'x' is nonlocal and global"},
+         Case{L"        nonlocal x\n        global x\n",
+              L"name 'x' is nonlocal and global"}})
+    {
+        std::wstring source = L"def outer(x):\n    def inner():\n";
+        source += body;
+        expect_python_error(source.c_str(), L"SyntaxError", message);
+    }
+    expect_python_error(L"def outer(x):\n"
+                        L"    def inner(x):\n"
+                        L"        nonlocal x\n",
+                        L"SyntaxError", L"name 'x' is parameter and nonlocal");
+}
+
+TEST(Interpreter, nonlocal_requires_an_enclosing_function_binding)
+{
+    expect_python_error(L"nonlocal x\n", L"SyntaxError",
+                        L"nonlocal declaration not allowed at module level");
+    expect_python_error(L"x = 1\n"
+                        L"def inner():\n"
+                        L"    nonlocal x\n",
+                        L"SyntaxError", L"no binding for nonlocal 'x' found");
+    expect_python_error(L"def outer(x):\n"
+                        L"    def middle():\n"
+                        L"        global x\n"
+                        L"        def inner():\n"
+                        L"            nonlocal x\n",
+                        L"SyntaxError", L"no binding for nonlocal 'x' found");
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        nonlocal x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        def method(self):\n"
+                        L"            nonlocal x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+}
+
 TEST(Interpreter, name_error)
 {
     expect_python_error(L"missing_name\n", L"NameError",
