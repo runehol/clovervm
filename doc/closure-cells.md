@@ -1,13 +1,13 @@
-# Closure Cells Design Sketch
+# Closure Cells Design
 
 | Field | Value |
 |---|---|
 | Document type | Design |
 | Status | Accepted |
-| Implementation | Not started |
+| Implementation | Implemented |
 | Scope | Unified lexical scope analysis, closure cell representation, lowering, and runtime access |
 | Owning layers | Parser, scope analysis, codegen, managed frames, and runtime objects |
-| Validated against | N/A |
+| Validated against | `ac7eada9` (Debug and Release suites, AArch64 side exits, and Release opcode-frame checks) |
 | Supersedes | N/A |
 
 This note captures a CPython-style closure-cell representation for Python
@@ -16,10 +16,9 @@ function is represented by a heap cell, and all closures that capture the same
 binding share that cell. Stable identity does not require a fixed address under
 moving GC.
 
-The unified scope analysis, storage, interpreter/JIT entry and recovery design,
-and opcode plan below are agreed. Implementation is not authorized yet. Native
-compiled lowering of the cell operations is not required by the entry plan;
-unsupported operations can use the existing interpreter side-exit mechanism.
+CloverVM supports lexical captures between functions, including forwarding and
+`nonlocal`. Cell operations execute in the interpreter. The AArch64 JIT
+uses its existing interpreter side exits for closure bytecodes.
 
 ## Properties
 
@@ -28,10 +27,8 @@ unsupported operations can use the existing interpreter side-exit mechanism.
 - Gives captured bindings stable identity for the lifetime of all closures that
   reference them.
 - Avoids open/closed upvalue transitions and frame-exit closing operations.
-- Keeps closure state directly compatible with Python-visible cell
-  introspection.
-- Provides a simple representation for interpreter execution, future JIT
-  materialization, frame scanning, and deoptimization.
+- Uses ordinary traced object references for cell contents and closure tuples.
+- Uses the existing JIT accumulator snapshot and interpreter recovery path.
 
 ## Scope Classification
 
@@ -66,38 +63,21 @@ visible through `get`.
 
 ## Unified Scope Analysis
 
-Extend the existing analyzer in
-[`codegen_scope_analysis.cpp`](../src/compiler/codegen_scope_analysis.cpp) and
-its `ScopeAnalysis` results. Do not introduce a parallel lexical analysis system
-or a competing symbol table. The analyzer owns one scope tree for the
-compilation, with one result per eventual code object. Code objects do not need
-to exist while lexical bindings are resolved.
-
-The current per-code-object analysis starts when codegen enters each body.
-Closure classification instead needs the complete nested scope information
-before any body is lowered: a nested function may require an earlier access in
-its parent to use a cell. The unified sequence is:
-
-```text
-existing ScopeAnalyzer:
-  collect the scope tree and declaration/binding facts
-  resolve Local / Cell / Free / Global throughout the tree
-  assign each scope's named slots
-  run existing flow/presence analysis separately for each body
-
-codegen:
-  recursively emit code objects using their completed scope results
-```
-
-`AstCodegen::make` receives the corresponding completed scope result and the
-compilation-wide annotations. Recursive code-object emission uses those results
-for lexical bindings and name accesses.
+[`ScopeAnalyzer`](../src/compiler/codegen_scope_analysis.cpp) collects each
+body's declarations, parameters, bindings, referenced names, and child
+definitions. It resolves references against enclosing function scopes as it
+descends. A child can promote an enclosing binding to `Cell` and add `Free`
+bindings to intervening functions. Each scope assigns slots and runs flow
+analysis after visiting its children. Codegen starts after this analysis
+has finished for the whole compilation.
 
 ### Scope Results And Lifetime
 
-Extend each existing `ScopeAnalysis` result with its scope AST node and mode,
-child scopes, binding classifications, named-slot layout, and ordered
-free-variable bindings.
+`CompilationScopeAnalysis` indexes each `ScopeAnalysis` by its body AST node.
+The result contains the binding classifications, named bindings in frame-slot
+order, and an ordered list of free bindings. Each free binding records its
+own binding index and the binding index of the supplying cell in the immediate
+parent.
 
 The compilation owns one set of load, store, and delete annotations indexed by
 AST node ID. Each body's flow analysis fills the entries for accesses it
@@ -107,7 +87,7 @@ enclosing scope, where the defaults execute. With one array per access kind,
 annotation storage scales with the size of the AST regardless of how many
 scope results are retained.
 
-Conceptually, `BindingScope` becomes:
+The analyzer uses four binding classifications:
 
 ```cpp
 enum class BindingScope {
@@ -118,42 +98,29 @@ enum class BindingScope {
 };
 ```
 
-For each child's free variable, record which binding in the immediate parent
-supplies the cell. This is the closure-construction mapping, including names
-forwarded through intermediate functions. Resolve binding identities before
-assigning their slots; all children capturing one own binding identify the
-same binding and therefore the same cell for an activation.
-
-These are compiler records owned for the duration of compilation, not runtime
-scope environments. Code objects receive only the runtime metadata they need,
-including `n_freevars` and relevant names. No runtime parent-frame search is
-introduced.
+The compiler uses these records to build closure tuples in free-variable
+order. Code objects retain the free-variable count and relevant names.
 
 ### Collection And Resolution
 
-Reuse and extend binding collection and declaration validation to collect each
-scope's parameters, own bindings, references, `global` / `nonlocal`
-declarations, and child scopes. Scan the whole body regardless of reachability
-or conditional assignment. A nested function's body belongs to the child;
-default-value expressions are analyzed in the enclosing scope, where they
-execute. The function definition's name is a binding in the enclosing scope.
+Binding collection scans the whole body, including unreachable statements and
+conditional assignments. A nested function's body belongs to the child.
+Its default expressions execute in the enclosing scope, where the definition
+binds the function's name.
 
 A simple bare annotation such as `x: int` in a function declares a local
-without assigning a value. Use the parser's simple-annotation flag to collect
-this binding even without an initializer. Flow analysis records no write, and
-codegen emits no store for the annotation. If a nested function captures the
+without assigning a value. The parser distinguishes simple and non-simple
+annotated assignments with separate AST node kinds. A bare annotation records
+no write in flow analysis and emits no store. If a nested function captures the
 binding, its cell starts empty with `Value::not_present()`. A bare parenthesized
 annotation such as `(x): int` does not declare a local.
 
-Collection does not assign slots. In particular, decouple
-`ensure_local_binding()` from its current immediate slot allocation through
-`CodeObjectBuilder`.
+Collection and capture resolution work with binding indices. Slot assignment
+follows resolution.
 
-Resolve each scope with its enclosing binding environment:
-
-1. Apply explicit declarations and establish own bindings. `global` selects
-   global lookup; `nonlocal` requires an enclosing function binding and selects
-   `Free`. Other bindings in this function start as `Local`.
+1. Install explicit globals and bind parameters. Resolve explicit
+   `nonlocal` declarations as `Free` before collecting assignments, then
+   collect the function's own bindings as `Local`.
 2. Resolve remaining referenced names to enclosing function bindings (`Free`)
    or global lookup (`Global`). Own bindings shadow enclosing bindings
    throughout the function, including accesses before the assignment.
@@ -162,11 +129,8 @@ Resolve each scope with its enclosing binding environment:
    becomes `Cell`. A binding from farther out becomes `Free` here as well, so
    this function forwards its cell even if it does not itself access the name.
 
-The downward environment identifies the binding; the upward requirements
-identify which bindings need shared storage. Declaration validation must retain
-syntax errors for unresolved `nonlocal`, conflicting declarations, parameter
-conflicts, and invalid declaration ordering. An explicit `global` in an
-intermediate function blocks capture of the outer binding through that scope.
+An explicit `global` in an intermediate function blocks capture of the outer
+binding through that scope.
 
 For example:
 
@@ -187,11 +151,9 @@ def outer(x):
 
 ### Shared `global` And `nonlocal` Declaration Handling
 
-The existing analyzer already validates `global` declarations in source order
-and collects them before classifying own bindings. Extend that same machinery
-to handle `nonlocal`; do not add a separate declaration analysis. Generalize
-the existing `GlobalDeclarationState` and its validation/collection helpers to
-shared declaration handling, with a per-name declaration kind:
+A single declaration pass validates `global` and `nonlocal` in source order
+and records directives and referenced names. `DeclarationState` records one
+declaration kind per name:
 
 ```cpp
 enum class DeclarationKind {
@@ -201,14 +163,13 @@ enum class DeclarationKind {
 };
 ```
 
-Retain the existing per-name parameter, use, assignment, and annotation facts.
-Use them to validate both declaration kinds, including parameter conflicts,
-use or assignment before a declaration, annotation conflicts, and a name
-declared both `global` and `nonlocal`. Validation remains source ordered even
+The validator uses parameter, use, assignment, and annotation facts to detect
+parameter conflicts, use or assignment before a declaration, annotation
+conflicts, and names declared both `global` and `nonlocal`. Validation remains source ordered even
 though valid declarations affect binding classification throughout the scope.
 
-Use the parser's simple-annotation flag when recording declaration facts for
-name targets. A simple annotation such as `x: int` counts as a name annotation
+The declaration pass uses the annotated-assignment node kind. A simple
+annotation such as `x: int` counts as a name annotation
 for conflict checks. Bare `(x): int` contributes neither an annotation conflict
 nor a name use or assignment. `(x): int = value` counts as an ordinary
 assignment to `x`. For example, this assignment may follow `nonlocal x`, but
@@ -240,18 +201,17 @@ def outer():
 `outer.x` is `Cell` and `inner.x` is `Free`, despite the absence of a read in
 `inner`. Its assignment lowers to `StoreCell` for the captured cell slot.
 
-The parser's currently unimplemented `nonlocal_stmt()` should produce the
-existing `STATEMENT_NONLOCAL` AST kind with the same name-list shape as
-`global`. Both statement kinds emit no runtime instructions: their effects are
-resolved by analysis, which selects global or cell operations for accesses.
+The parser uses a shared name-list routine for `global` and `nonlocal`.
+These declarations emit no runtime instructions. Name accesses use the global
+or cell operations selected by scope analysis.
 
 ### Layout And Flow
 
-After resolution, assign named slots using the existing parameter, padding,
-and frame-header layout. Put free variables first in the below-FP locals area,
-followed by own locals, as described below. The builder consumes this named
-layout rather than independently allocating or rediscovering bindings.
-Temporary register allocation remains codegen's responsibility.
+After resolution, the analyzer assigns named slots using the existing
+parameter, padding, and frame-header layout. Free variables come first in the
+below-FP locals area, followed by own locals. Codegen installs names in frame
+slot order and allocates temporary registers. Frame layouts with cells that
+exceed the signed bytecode register range raise `SyntaxError`.
 
 Run the existing flow analysis separately for each body after classification
 and layout. Evaluating a nested definition's defaults and binding its name
@@ -270,17 +230,17 @@ be treated as ordinary enclosing function bindings for methods.
 
 ### Captures Across Class Bodies
 
-The first closure slice supports captures between function scopes without an
-intervening class body. During lexical resolution, class namespace bindings
+CloverVM supports captures between function scopes without an intervening
+class body. During lexical resolution, class namespace bindings
 are skipped when looking for an enclosing function binding for a method.
 If the resolved binding would require a cell to enter or pass through a class
-body, reject the capture at compile time with an explicit unsupported-feature
-diagnostic. This covers both a class body accessing an enclosing function's
-binding and a method capturing that binding through the class body. Preserve
-ordinary global lookup for names that resolve as globals. A nested function
+body, compilation raises `SyntaxError` with the message
+`closures across class bodies are not supported`. This covers a class body
+accessing an enclosing function's binding and a method capturing that binding
+through the class body. Names that resolve as globals use global lookup. A nested function
 inside a method can still capture the method's own locals.
 
-Defer this transport and class-body free-variable lookup to the live class
+Class-body free-variable transport and lookup are deferred to the live class
 namespace work described in the
 [module-global namespace design](module-global-namespace-design.md#remaining-design-boundaries).
 That work must keep namespace entries separate from forwarded cells, including
@@ -329,11 +289,9 @@ Normal local access remains a direct `Ldar` / `Star` frame-slot operation, with
 ## Cell Object
 
 A cell is a Python object deriving from `Object`, with one GC-visible value
-field. Use the existing builtin class, native-layout, allocation, and ownership
-patterns for `Object` subclasses rather than an internal-only `HeapObject`
-record. It may outlive the frame that created it, so the contained value must
-be stored with ordinary heap-member ownership semantics rather than as a
-borrowed frame value.
+field. [`Cell`](../src/object_model/cell.h) uses the internal builtin class
+and native-layout registration. Its `Member<Value>` owns the contained value
+when the cell outlives the defining frame.
 
 Conceptual shape:
 
@@ -348,29 +306,18 @@ class Cell : public Object {
 };
 ```
 
-The concrete implementation should use clovervm's existing heap layout and
-ownership wrappers. The important contract is that `value_` is visible to the
-runtime scanner and retains/releases like other heap object fields.
+The native layout includes `value_` in the traced value span. Stores and
+deletes use ordinary heap-member retain and release semantics.
 
 A recursive nested function can form a cycle through its closure tuple and
 the cell for its own name. The function, tuple, and cell hold ordinary strong
 references. Reclaiming unreachable cycles is part of the full tracing
 collection in the [moving GC design](generational-copying-gc.md).
 
-The Python object representation supports CPython-compatible introspection:
-`Function.__closure__` exposes a read-only tuple of the actual shared cells
-(or `None` without a closure), while a cell's `cell_contents` can be read,
-assigned, or deleted. Assigning contents changes the binding observed by all
-closures sharing the cell; deletion empties it. Reading an empty cell through
-`cell_contents` raises `ValueError`, distinct from the binding-access errors
-described below. The function's immutable closure association does not make
-the cell contents immutable.
-
-The first slice uses the `Object` representation and defers Python-visible
-introspection. A follow-up can expose `function.__closure__`,
-`cell.cell_contents`, `types.CellType`, and code-object attributes such as
-`co_cellvars` and `co_freevars`. Keep the internal binding names needed for
-error reporting in the first slice.
+Python-visible introspection remains deferred, including
+`function.__closure__`, `cell.cell_contents`, `types.CellType`, and
+`co_cellvars` and `co_freevars`. The runtime scope table retains binding names
+for empty-cell errors.
 
 An empty cell contains `Value::not_present()`. Cell creation is unconditional at
 function entry for each of the activation's captured bindings, even when the
@@ -400,24 +347,11 @@ raises `UnboundLocalError`. Capturing an empty cell is valid, and a later
 
 ## Function And Frame State
 
-Each code object carries the expected free-variable count, `n_freevars`, and
-enough name and slot metadata to map deref accesses to cell/free variables:
-
-```text
-cellvars: names bound in this code object and captured by nested functions
-freevars: names captured from enclosing code objects
-n_freevars: expected number of cells in the function's closure
-```
-
-Each function object created with a closure stores the cells for its free
-variables:
-
-```text
-Function:
-  code object
-  defaults
-  closure cells for code.freevars
-```
+A `CodeObject` stores `n_freevars` and uses its existing `Scope` slot table
+for parameter and local names. A `Function` owns its optional closure tuple
+in a reserved, traced inline slot alongside its code object, defaults, and
+docstring. Construction checks that a closure has exactly `n_freevars` entries
+and that every entry is a `Cell`. A closure-free function has no tuple.
 
 Closure cells belong to the function instance, not the code object. Separate
 activations of an enclosing function can produce functions sharing one code
@@ -458,8 +392,8 @@ permanent function field to the frame header. The sequence is:
 ```text
 caller:
   finish call adaptation and argument binding
-  set accumulator to the selected Function
-  initialize the callee header and switch fp, code_object, and pc
+  initialize the callee header
+  set accumulator to the selected Function and switch fp, code_object, and pc
   honor a requested entry safepoint, preserving the accumulator
 
 callee:
@@ -470,9 +404,9 @@ callee:
 ```
 
 The existing interpreter call-entry poll runs after argument binding and the
-switch to the callee, before `Enter`. Use the accumulator-preserving safepoint
-path so it publishes the selected `Function` as a live root and reloads its
-possibly relocated value before dispatching `Enter`. The entry accumulator
+switch to the callee, before `Enter`. The accumulator-preserving safepoint
+path publishes the selected `Function` as a live root and reloads it before
+dispatching `Enter`. The entry accumulator
 contract starts after call adaptation.
 
 The closure-reference copy must precede any operation that overwrites the entry
@@ -483,8 +417,8 @@ slot through construction, then writes the new cell reference to the slot
 before dispatching the next instruction. The allocator can request a later
 safepoint.
 
-All fresh `Function` entry paths, including positional, keyword, expanded,
-method, and native-to-managed calls, must honor this contract. The accumulator
+Positional, keyword, expanded, method, and native-to-managed calls use this
+entry contract. The accumulator
 contains the selected function, which may be an adapter chosen during call
 resolution. Resuming an existing frame skips this entry initialization.
 
@@ -497,9 +431,9 @@ return and safepoint behavior.
 ### Direct Code-Object Calls From Constructor Thunks
 
 `CallCodeObject` enters the target with already-bound arguments and preserves
-the accumulator. When generating an `__init__` or `__new__` constructor thunk
-whose target code has free variables, keep the exact target `Function` in the
-thunk's constant table. After preparing the arguments, emit
+the accumulator. The `__init__`-only and `__new__`-only thunk builders keep
+the exact target `Function` in the thunk's constant table when the target
+has free variables. After preparing the arguments, the builders emit
 `LdaConstant target_function` immediately before `CallCodeObject`. The target
 function owns its closure tuple, and the callee's `CopyFreeVars` reads it
 through the accumulator after `Enter`.
@@ -510,35 +444,30 @@ existing bytecode sequence. `CallCodeObject` uses the existing operand format
 and handler for both cases. Every direct call to code with free variables must
 supply the matching function instance through this entry contract.
 
-In the bytecode effects model, declare the accumulator as an unconditional
-input to `CallCodeObject` and retain it as the destination for the call result.
+The bytecode effects model declares the accumulator as an unconditional
+input to `CallCodeObject` and as the destination for its result.
 This conservatively models the incoming value for JIT analysis. The callee
 uses it as a function only when it has free variables.
 
 ## JIT Entry Accumulator And Side Exits
 
-Model the incoming bytecode accumulator as a real tagged SSA entry parameter,
-rather than initializing its state-tracker position to the unavailable value.
+The JIT models the incoming bytecode accumulator as a tagged SSA entry
+parameter.
 For fresh function calls, that input carries the selected `Function` under the
 same entry contract as the interpreter. It is per-invocation state, not a
 function constant associated with the compiled code object.
 
-The current AArch64 interpreter-to-JIT entry thunks already receive the
-accumulator in `x20` and leave it intact when calling generated code. Preserve
-that transport and connect it to the compiler's entry model:
+The AArch64 interpreter-to-JIT entry thunks carry the accumulator in `x20`
+into generated code. The compiler connects it to entry state as follows.
 
-1. In `CoreBytecodeTranslator::make_entry_state`, create an ordinary tagged
-   `ParameterInstruction` for the incoming accumulator alongside the Python
-   parameter and frame-header inputs.
-2. Pass this SSA value explicitly to `BytecodeStateTracker::make_entry_state`
-   and assign it to `BytecodeStateOrder::AccumulatorPosition`. Keep the existing
-   initialization of locals and temporaries.
-3. Extend AArch64 entry-parameter allocation constraints to recognize this
-   input and give it the fixed incoming location `x20`. It is not an extra
-   Python argument and does not shift Python argument locations `x0` through
-   `x7` or alter signature arity.
+1. `CoreBytecodeTranslator::make_entry_state` adds a tagged
+   `ParameterInstruction` after the Python parameter and frame-header inputs.
+2. `BytecodeStateTracker::make_entry_state` puts that SSA value at
+   `BytecodeStateOrder::AccumulatorPosition`.
+3. The AArch64 entry constraints assign the input to `x20`. Python arguments
+   retain their existing locations and signature arity.
 
-Conceptually, the tracker initialization becomes:
+The tracker initializes the accumulator when it builds entry state.
 
 ```cpp
 make_entry_state(parameters, frame_header, incoming_accumulator,
@@ -565,28 +494,13 @@ entry x20 contains Function
   -> interpreter resumes at the snapshot's bytecode PC
 ```
 
-The transition emitter already materializes the snapshot accumulator, and the
-side-exit thunk already restores it. No closure-specific recovery field or
-separate function-recovery mechanism is needed. After an instruction overwrites
-the accumulator, later snapshots must capture that newer value rather than the
-entry function.
+After an instruction overwrites the accumulator, subsequent snapshots capture
+the new value. The JIT's logical `Enter` initializes locals and preserves
+the accumulator. A side exit at `CopyFreeVars` restores the selected function
+and cleared locals before the interpreter resumes the copy.
 
-This permits the first closure implementation to leave `CopyFreeVars`
-unsupported in native compiled lowering. The JIT's existing logical `Enter`
-initialization leaves the modeled accumulator unchanged; an ordinary side exit
-at `CopyFreeVars` then restores the function and cleared local state and resumes
-at that instruction. The interpreter copies the cells without rerunning
-`Enter`. Keeping all closure-bearing functions interpreted is therefore not
-required merely to preserve the entry function.
-
-Future compiled-to-compiled call lowering must supply the same entry input in
-the agreed machine location. This plan does not add general managed JIT calls
-or safepoint-capable cell lowering.
-
-Verification must cover an immediate fallback at `CopyFreeVars`, an exit after
-the accumulator has been overwritten, and separate function instances sharing
-one code object but carrying different closures. Entry constraints and recovery
-must work without reserving `x20` throughout the compiled body.
+Tests cover immediate fallback at `CopyFreeVars`, recovery after overwriting
+the accumulator, and separate functions sharing code with distinct closures.
 
 ## Function Creation
 
@@ -611,15 +525,15 @@ This preserves the invariant:
 one source-level binding -> one Cell object shared by all closures
 ```
 
-## Opcode Plan
+## Closure Opcodes
 
-Add seven opcodes. Register operands use the existing encoded register format
-and can address parameter or local slots. Constant operands identify code
-objects in the current code object's constant table.
+The interpreter implements seven closure opcodes. Register operands can
+address parameter or local slots. Constant operands identify code objects in
+the current code object's constant table.
 
 | Opcode | Operands | Instruction bytes | Effect |
 |---|---|---|---|
-| `CopyFreeVars` | None | 1 | Copy `code.n_freevars` cell references from the entry accumulator's `Function.closure` into the locals prefix. |
+| `CopyFreeVars` | None | 1 | Copy `code.n_freevars` cell references from the entry accumulator's `Function` closure tuple into the locals prefix, preserving the accumulator. |
 | `MakeCell` | Register | 2 | Replace the slot with a new cell containing its previous value; preserve the accumulator. |
 | `LoadCellChecked` | Register | 2 | Load the cell contents into the accumulator; raise the appropriate empty-cell error. |
 | `StoreCell` | Register | 2 | Store the accumulator into the cell contents with heap-member ownership semantics; preserve the accumulator. |
@@ -628,17 +542,16 @@ objects in the current code object's constant table.
 | `CreateFunctionWithDefaultsAndClosure` | Code constant, defaults register, closure register | 4 | Construct a complete function with defaults and closure tuples and put it in the accumulator. |
 
 `CopyFreeVars` takes its count from the code object rather than duplicating it
-in a bytecode operand. It performs no allocation. Emit it immediately after
-`Enter` when free variables exist, before any accumulator overwrite.
+in a bytecode operand. It performs no allocation. Codegen emits it immediately
+after `Enter` for functions with free variables.
 
 `MakeCell` allocates one cell and wraps the slot's existing value. The same
 operation handles a bound parameter and an own local cleared to `not_present`
 by `Enter`. It neither reads the entry function from the accumulator nor writes
 its result there.
 
-Initially every `LoadCellChecked` checks for empty contents. No unchecked load variant
-is planned: shared cell contents can change during calls, so ordinary local
-presence reasoning alone is insufficient to eliminate the check. `DelCell`
+Every `LoadCellChecked` checks for empty contents. Shared cell contents can
+change during calls, so local presence analysis leaves these checks in place. `DelCell`
 uses the same own-binding versus free-variable error classification. Neither
 stores nor deletion replace the cell reference in the frame slot.
 
@@ -647,8 +560,7 @@ then deletion pattern, using `LdaNone; StoreCell binding; DelCell binding`.
 This succeeds even if the handler already deleted the binding. A separate
 `ClearCell` opcode is not needed initially.
 
-Keep the existing `CreateFunction` and `CreateFunctionWithDefaults` operations
-for functions without closures. The four construction forms are:
+Closure-free functions use `CreateFunction` or `CreateFunctionWithDefaults`. The four construction forms are:
 
 | Defaults | Closure | Opcode |
 |---|---|---|
@@ -685,11 +597,10 @@ outer:
   LdaSmi          10
   StoreCell       x
 
-  Ldar            x              # cell reference, not contents
-  Star            capture0
+  Mov             capture0, x    # copy the cell reference
   CreateTuple     capture0, 1
-  Star            closure_tuple
-  CreateFunctionWithClosure <inner code constant>, closure_tuple
+  Star            capture0
+  CreateFunctionWithClosure <inner code constant>, capture0
   Star            inner
 
   Ldar            inner
