@@ -3210,7 +3210,6 @@ namespace cl
                             CL_TRY(codegen_node(lhs_children[1]));
                             break;
                         }
-                        CL_TRY(codegen_node(lhs_idx));
                     }
                     break;
 

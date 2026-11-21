@@ -10,6 +10,42 @@ assert 1 == 1
 value: int = 7
 assert value == 7
 
+
+def annotate_parameter(value):
+    value: int
+    return value
+
+
+def bare_parenthesized_annotation():
+    (missing_name): int
+
+
+def assign_annotated_global():
+    (annotation_global): int
+    global annotation_global
+    (annotation_global): int = 9
+
+
+assert annotate_parameter(5) == 5
+assert bare_parenthesized_annotation() is None
+assign_annotated_global()
+assert annotation_global == 9
+
+(module_annotation_name): UndefinedAnnotation
+global module_annotation_name
+(module_annotation_name): UndefinedAnnotation = 10
+assert module_annotation_name == 10
+
+
+class ParenthesizedAnnotation:
+    (class_annotation_name): UndefinedAnnotation
+    global class_annotation_name
+    (class_annotation_name): UndefinedAnnotation = 11
+
+
+assert class_annotation_name == 11
+
+
 marker = 0
 
 class AnnotationReceiver:

@@ -596,8 +596,16 @@ namespace cl
                         if(av.kinds[children[0]].node_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            CL_TRY(mark_global_validation_annotation(
-                                state, av.constants[children[0]]));
+                            Value name = av.constants[children[0]];
+                            if(ann_assign_is_simple(node_idx))
+                            {
+                                CL_TRY(mark_global_validation_annotation(state,
+                                                                         name));
+                            }
+                            else if(children.size() == 3)
+                            {
+                                mark_global_validation_assignment(state, name);
+                            }
                         }
                         else
                         {
@@ -830,7 +838,9 @@ namespace cl
                         }
 
                     case AstNodeKind::STATEMENT_ANN_ASSIGN:
-                        if(children.size() == 3 &&
+                        if((children.size() == 3 ||
+                            (analysis.result.mode == CodegenMode::Function &&
+                             ann_assign_is_simple(node_idx))) &&
                            av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
@@ -840,7 +850,8 @@ namespace cl
                         {
                             collect_code_object_bindings(analysis, children[2]);
                         }
-                        if(!ann_assign_is_simple(node_idx))
+                        if(av.kinds[children[0]].node_kind !=
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
                             collect_code_object_bindings(analysis, children[0]);
                         }
@@ -1047,7 +1058,8 @@ namespace cl
                             collect_local_touches_into(analysis, children[2],
                                                        touches);
                         }
-                        if(!ann_assign_is_simple(node_idx))
+                        if(av.kinds[children[0]].node_kind !=
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
                             collect_local_touches_into(analysis, children[0],
                                                        touches);
@@ -1895,7 +1907,8 @@ namespace cl
                             analyze_child_as_expression(analysis, children[0],
                                                         state);
                         }
-                        else if(!ann_assign_is_simple(node_idx))
+                        else if(av.kinds[children[0]].node_kind !=
+                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
                             analyze_child_as_expression(analysis, children[0],
                                                         state);

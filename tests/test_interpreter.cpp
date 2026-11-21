@@ -4297,6 +4297,36 @@ TEST(Interpreter, global_statement_rejects_annotated_name)
                         L"SyntaxError", L"annotated name can't be global");
 }
 
+TEST(Interpreter, bare_function_annotation_binds_an_unassigned_local)
+{
+    expect_python_error(L"value = 4\n"
+                        L"def f():\n"
+                        L"    value: int\n"
+                        L"    return value\n"
+                        L"f()\n",
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'value' where it is not "
+                        L"associated with a value");
+}
+
+TEST(Interpreter, global_statement_rejects_prior_parenthesized_annotation_store)
+{
+    expect_python_error(L"def f():\n"
+                        L"    (value): int = 7\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
+    expect_python_error(L"(value): int = 7\n"
+                        L"global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
+    expect_python_error(L"class C:\n"
+                        L"    (value): int = 7\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
+}
+
 TEST(Interpreter, name_error)
 {
     expect_python_error(L"missing_name\n", L"NameError",
