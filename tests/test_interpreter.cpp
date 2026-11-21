@@ -8921,6 +8921,62 @@ True
     }
 }
 
+TEST(Interpreter, managed_call_entry_safepoint_roots_target_function)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *module_code = context.compile_file(LR"(
+def target(x):
+    return x
+
+class Receiver:
+    method = target
+
+receiver = Receiver()
+
+def run():
+    assert target(1) == 1
+    assert target(x=2) == 2
+    assert target(*(3,), **{}) == 3
+    assert receiver.method() is receiver
+
+for repeat in range(2):
+    run()
+True
+)");
+    struct Observation
+    {
+        size_t calls = 0;
+    } observation;
+    context.vm().set_safepoint_callback_for_testing(
+        [](void *opaque, ThreadState *, Value accumulator, Value *,
+           CodeObject *code, uint32_t pc_offset,
+           const SafepointScanRecord &record) {
+            if(pc_offset != 0)
+            {
+                return;
+            }
+            Value target =
+                code->get_defining_module().extract()->get_own_property(
+                    interned_string(L"target"));
+            if(!has_native_layout<Function>(target) ||
+               target.get_ptr<Function>()->code_object.extract() != code)
+            {
+                return;
+            }
+            EXPECT_EQ(target, accumulator);
+            EXPECT_EQ(target, record.accumulator_or_not_present);
+            ++static_cast<Observation *>(opaque)->calls;
+        },
+        &observation);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_EQ(Value::True(),
+              context.thread()->run_clovervm_code_object(module_code));
+    context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+    EXPECT_EQ(8u, observation.calls);
+}
+
 struct TruthinessSafepointCheck
 {
     CodeObject *callback;

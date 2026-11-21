@@ -28,7 +28,6 @@ namespace
     {
         Float *replacement;
         bool rewrote = false;
-        bool saw_dead_accumulator = false;
     };
 
     void rewrite_at_safepoint(void *opaque, ThreadState *thread, Value,
@@ -41,11 +40,6 @@ namespace
         EXPECT_EQ(fp, record.frame_pointer);
         EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
         Value accumulator = record.accumulator_or_not_present;
-        if(accumulator == Value::not_present())
-        {
-            state.saw_dead_accumulator = true;
-            return;
-        }
         if(!has_native_layout<Float>(accumulator) ||
            accumulator.get_ptr<Float>()->value() != 37.25)
         {
@@ -223,6 +217,5 @@ TEST(PublishedRoots, InterpreterResumesWithRewrittenAccumulator)
     context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
 
     EXPECT_TRUE(state.rewrote);
-    EXPECT_TRUE(state.saw_dead_accumulator);
     EXPECT_EQ(replacement.raw_value(), result);
 }

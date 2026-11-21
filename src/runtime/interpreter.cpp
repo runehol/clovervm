@@ -520,17 +520,6 @@ namespace cl
             lowest_live_stack_slot_for_current_frame(fp, code_object));
     }
 
-    NOINLINE static INTERP_CC Value op_committed_safepoint_slow(PARAMS)
-    {
-        thread->publish_safepoint_scan_record(SafepointScanRecord::interpreter(
-            lowest_live_stack_slot_for_safepoint(fp, pc, code_object), fp, pc,
-            *code_object, Value::not_present()));
-        thread->handle_safepoint(accumulator, fp, pc, code_object);
-
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE static INTERP_CC Value
     op_committed_safepoint_with_accumulator_slow(PARAMS)
     {
@@ -1118,14 +1107,16 @@ namespace cl
     }
 
     static ALWAYSINLINE DispatchTableEntry invoke_function_at_new_fp(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, CodeObject *target_code_object, Value *new_fp,
-        uint32_t instr_len)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object, TValue<Function> function,
+        CodeObject *target_code_object, Value *new_fp, uint32_t instr_len)
     {
         assert(is_stack_frame_aligned(new_fp));
         const uint8_t *return_pc = pc + instr_len;
 
         initialize_frame_header(new_fp, fp, code_object, return_pc);
+
+        accumulator = function.raw_value();
 
         jit::JitCodeObject *jit_code =
             select_jit_code(thread, target_code_object);
@@ -1548,25 +1539,26 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_function_frame_from_positional_args(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, TValue<Function> fun, int32_t first_arg_reg,
-        uint32_t n_args, uint32_t instr_len, FunctionCallAdaptation adaptation)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object, TValue<Function> fun,
+        int32_t first_arg_reg, uint32_t n_args, uint32_t instr_len,
+        FunctionCallAdaptation adaptation)
     {
         Value *new_fp =
             new_frame_pointer_from_first_arg(fp, fun, first_arg_reg);
         CodeObject *target_code_object = fun.extract()->code_object.extract();
         if(likely(adaptation == FunctionCallAdaptation::FixedArity))
         {
-            return invoke_function_at_new_fp(thread, fp, pc, dispatch,
-                                             code_object, target_code_object,
-                                             new_fp, instr_len);
+            return invoke_function_at_new_fp(
+                accumulator, thread, fp, pc, dispatch, code_object, fun,
+                target_code_object, new_fp, instr_len);
         }
         if(adaptation == FunctionCallAdaptation::Defaultable)
         {
             initialize_missing_default_arguments(new_fp, fun, n_args);
-            return invoke_function_at_new_fp(thread, fp, pc, dispatch,
-                                             code_object, target_code_object,
-                                             new_fp, instr_len);
+            return invoke_function_at_new_fp(
+                accumulator, thread, fp, pc, dispatch, code_object, fun,
+                target_code_object, new_fp, instr_len);
         }
 
         assert(adaptation == FunctionCallAdaptation::Full);
@@ -1590,12 +1582,14 @@ namespace cl
         {
             (void)make_and_store_kwargs_argument(thread, new_fp, fun);
         }
-        return invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,
-                                         target_code_object, new_fp, instr_len);
+        return invoke_function_at_new_fp(accumulator, thread, fp, pc, dispatch,
+                                         code_object, fun, target_code_object,
+                                         new_fp, instr_len);
     }
 
     static ALWAYSINLINE DispatchTableEntry
-    enter_fixed_positional_call_from_cache(ThreadState *thread, Value *&fp,
+    enter_fixed_positional_call_from_cache(Value &accumulator,
+                                           ThreadState *thread, Value *&fp,
                                            const uint8_t *&pc, void *&dispatch,
                                            CodeObject *&code_object,
                                            FunctionCallInlineCache &cache,
@@ -1611,26 +1605,28 @@ namespace cl
             int32_t(target_code_object->get_padded_n_parameters()) + 1 -
             FrameHeaderSizeAboveFp;
         Value *new_fp = fp + new_fp_reg;
-        return invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,
+        return invoke_function_at_new_fp(accumulator, thread, fp, pc, dispatch,
+                                         code_object, function,
                                          target_code_object, new_fp, instr_len);
     }
 
     static ALWAYSINLINE DispatchTableEntry enter_positional_call_from_cache(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, FunctionCallInlineCache &cache,
-        int32_t first_arg_reg, uint32_t n_args, uint32_t instr_len)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        FunctionCallInlineCache &cache, int32_t first_arg_reg, uint32_t n_args,
+        uint32_t instr_len)
     {
         TValue<Function> function = TValue<Function>::from_oop(cache.function);
         if(likely(cache.adaptation == FunctionCallAdaptation::FixedArity))
         {
             return enter_fixed_positional_call_from_cache(
-                thread, fp, pc, dispatch, code_object, cache, first_arg_reg,
-                instr_len);
+                accumulator, thread, fp, pc, dispatch, code_object, cache,
+                first_arg_reg, instr_len);
         }
 
         return enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, first_arg_reg,
-            n_args, instr_len, cache.adaptation);
+            accumulator, thread, fp, pc, dispatch, code_object, function,
+            first_arg_reg, n_args, instr_len, cache.adaptation);
     }
 
     [[maybe_unused]] NOINLINE static Expected<DispatchTableEntry>
@@ -1645,16 +1641,16 @@ namespace cl
         CL_TRY(populate_positional_call_cache_from_callable(callable, n_args,
                                                             local_cache));
         DispatchTableEntry jit_entry = enter_positional_call_from_cache(
-            thread, fp, pc, dispatch, code_object, local_cache, first_arg_reg,
-            n_args, instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, local_cache,
+            first_arg_reg, n_args, instr_len);
         return Expected<DispatchTableEntry>::ok(jit_entry);
     }
 
     static ALWAYSINLINE bool try_enter_cached_positional_call(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, Value callable, int32_t first_arg_reg,
-        uint32_t n_args, uint32_t instr_len, FunctionCallInlineCache &cache,
-        DispatchTableEntry &jit_entry)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object, Value callable,
+        int32_t first_arg_reg, uint32_t n_args, uint32_t instr_len,
+        FunctionCallInlineCache &cache, DispatchTableEntry &jit_entry)
     {
         if(unlikely(!function_call_cache_matches(cache, callable, n_args)))
         {
@@ -1662,17 +1658,18 @@ namespace cl
         }
 
         jit_entry = enter_positional_call_from_cache(
-            thread, fp, pc, dispatch, code_object, cache, first_arg_reg, n_args,
-            instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, n_args, instr_len);
         return true;
     }
 
     static ALWAYSINLINE DispatchTableEntry
     enter_function_frame_from_keyword_args(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, KeywordCallInlineCache &cache,
-        int32_t first_arg_reg, uint32_t n_pos_args, int32_t first_kw_value_reg,
-        uint32_t n_kw_args, uint8_t keyword_names_idx, uint32_t instr_len)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        KeywordCallInlineCache &cache, int32_t first_arg_reg,
+        uint32_t n_pos_args, int32_t first_kw_value_reg, uint32_t n_kw_args,
+        uint8_t keyword_names_idx, uint32_t instr_len)
     {
         TValue<Function> fun = TValue<Function>::from_oop(cache.function);
         Value *new_fp = new_frame_pointer_from_first_arg(fp, cache.code_object,
@@ -1749,15 +1746,17 @@ namespace cl
             }
         }
 
-        return invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,
-                                         cache.code_object, new_fp, instr_len);
+        return invoke_function_at_new_fp(accumulator, thread, fp, pc, dispatch,
+                                         code_object, fun, cache.code_object,
+                                         new_fp, instr_len);
     }
 
     static Expected<void> enter_function_frame_from_expanded_args(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, ExpandedCallInlineCache &cache,
-        Value callable, ExpandedCallPositionalArguments positional,
-        TValue<Dict> keywords, int32_t first_arg_reg, uint32_t instr_len,
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        ExpandedCallInlineCache &cache, Value callable,
+        ExpandedCallPositionalArguments positional, TValue<Dict> keywords,
+        int32_t first_arg_reg, uint32_t instr_len,
         DispatchTableEntry &jit_entry)
     {
         if(cache.guard_value != callable || cache.function == nullptr ||
@@ -1816,9 +1815,9 @@ namespace cl
                 cache.binding_plan = std::move(cached);
             }
         }
-        jit_entry =
-            invoke_function_at_new_fp(thread, fp, pc, dispatch, code_object,
-                                      target_code, new_fp, instr_len);
+        jit_entry = invoke_function_at_new_fp(
+            accumulator, thread, fp, pc, dispatch, code_object,
+            function.value(), target_code, new_fp, instr_len);
         return Expected<void>::ok();
     }
 
@@ -1859,8 +1858,9 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_binary_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorWalkDescriptor &descriptor,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
         const uint8_t *continuation_pc)
     {
@@ -1900,7 +1900,7 @@ namespace cl
         uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, continuation_instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -1909,10 +1909,10 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_cached_binary_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorInlineCache &entry,
-        OperatorDispatchTableId table_id, Value operand0, Value operand1,
-        const uint8_t *continuation_pc)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorInlineCache &entry, OperatorDispatchTableId table_id,
+        Value operand0, Value operand1, const uint8_t *continuation_pc)
     {
         assert(entry.function != nullptr);
         assert(entry.n_args == 1 || entry.n_args == 2);
@@ -1948,7 +1948,7 @@ namespace cl
         uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, continuation_instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -1957,9 +1957,10 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_membership_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorInlineCache &entry,
-        Value container, Value needle, const uint8_t *next_pc)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorInlineCache &entry, Value container, Value needle,
+        const uint8_t *next_pc)
     {
         assert(entry.function != nullptr);
         assert(entry.n_args == 2);
@@ -1972,7 +1973,7 @@ namespace cl
         uint32_t instr_len = uint32_t(next_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -1981,8 +1982,9 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_ternary_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorWalkDescriptor &descriptor,
         OperatorDispatchTableId table_id, Value operand0, Value operand1,
         Value operand2, const uint8_t *continuation_pc)
     {
@@ -2024,7 +2026,7 @@ namespace cl
         uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, continuation_instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -2033,10 +2035,11 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_cached_ternary_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorInlineCache &entry,
-        OperatorDispatchTableId table_id, Value operand0, Value operand1,
-        Value operand2, const uint8_t *continuation_pc)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorInlineCache &entry, OperatorDispatchTableId table_id,
+        Value operand0, Value operand1, Value operand2,
+        const uint8_t *continuation_pc)
     {
         assert(entry.function != nullptr);
         assert(entry.n_args == 2 || entry.n_args == 3);
@@ -2075,7 +2078,7 @@ namespace cl
         uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, continuation_instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -2122,8 +2125,8 @@ namespace cl
             case OperatorWalkStatus::CallUntrustedFunction:
                 install_operator_cache_if_cacheable(cache, descriptor);
                 return enter_binary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, descriptor, table_id,
-                    operand0, operand1, continuation_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object,
+                    descriptor, table_id, operand0, operand1, continuation_pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
                 {
@@ -2170,8 +2173,9 @@ namespace cl
             case OperatorWalkStatus::CallUntrustedFunction:
                 install_operator_cache_if_cacheable(cache, descriptor);
                 return enter_ternary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, descriptor, table_id,
-                    operand0, operand1, operand2, continuation_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object,
+                    descriptor, table_id, operand0, operand1, operand2,
+                    continuation_pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
                 {
@@ -2207,9 +2211,10 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_unary_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
-        Value operand0, const uint8_t *next_pc)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorWalkDescriptor &descriptor, Value operand0,
+        const uint8_t *next_pc)
     {
         const OperatorInlineCache &entry = descriptor.cache_entry;
         assert(entry.function != nullptr);
@@ -2228,7 +2233,7 @@ namespace cl
         uint32_t instr_len = uint32_t(next_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -2237,9 +2242,10 @@ namespace cl
 
     static ALWAYSINLINE DispatchTableEntry
     enter_cached_unary_operator_untrusted_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorInlineCache &entry,
-        Value operand0, const uint8_t *next_pc)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorInlineCache &entry, Value operand0,
+        const uint8_t *next_pc)
     {
         assert(entry.function != nullptr);
         assert(entry.n_args == 0 || entry.n_args == 1);
@@ -2257,7 +2263,7 @@ namespace cl
         uint32_t instr_len = uint32_t(next_pc - pc);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(entry.function), first_arg_reg,
                 entry.n_args, instr_len, entry.adaptation);
         return jit_entry != nullptr ? jit_entry
@@ -2275,8 +2281,8 @@ namespace cl
             case OperatorWalkStatus::CallUntrustedFunction:
                 install_operator_cache_if_cacheable(cache, descriptor);
                 return enter_unary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, descriptor, operand0,
-                    next_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object,
+                    descriptor, operand0, next_pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
                 {
@@ -2318,7 +2324,7 @@ namespace cl
             case OperatorWalkStatus::CallUntrustedFunction:
                 install_membership_cache_if_cacheable(cache, descriptor);
                 return enter_membership_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object,
+                    accumulator, thread, fp, pc, dispatch, code_object,
                     descriptor.cache_entry, container, needle, next_pc);
 
             case OperatorWalkStatus::CallTrustedHandler:
@@ -2390,8 +2396,8 @@ namespace cl
             if(likely(cache.function != nullptr))
             {
                 return enter_cached_binary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, cache, table_id,
-                    operand0, operand1, continuation_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object, cache,
+                    table_id, operand0, operand1, continuation_pc);
             }
         }
 
@@ -2434,8 +2440,8 @@ namespace cl
             if(likely(cache.function != nullptr))
             {
                 return enter_cached_ternary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, cache, table_id,
-                    operand0, operand1, operand2, continuation_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object, cache,
+                    table_id, operand0, operand1, operand2, continuation_pc);
             }
         }
 
@@ -2475,8 +2481,8 @@ namespace cl
             if(likely(cache.function != nullptr))
             {
                 return enter_cached_binary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, cache, table_id,
-                    operand0, operand1, next_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object, cache,
+                    table_id, operand0, operand1, next_pc);
             }
         }
 
@@ -2517,8 +2523,8 @@ namespace cl
             if(likely(cache.function != nullptr))
             {
                 return enter_cached_ternary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, cache, table_id,
-                    operand0, operand1, operand2, next_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object, cache,
+                    table_id, operand0, operand1, operand2, next_pc);
             }
         }
 
@@ -2555,8 +2561,8 @@ namespace cl
             if(likely(cache.function != nullptr))
             {
                 return enter_cached_unary_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, cache, operand0,
-                    next_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object, cache,
+                    operand0, next_pc);
             }
         }
 
@@ -2593,8 +2599,8 @@ namespace cl
             if(likely(cache.function != nullptr))
             {
                 return enter_membership_operator_untrusted_function(
-                    thread, fp, pc, dispatch, code_object, cache, container,
-                    needle, next_pc);
+                    accumulator, thread, fp, pc, dispatch, code_object, cache,
+                    container, needle, next_pc);
             }
         }
 
@@ -4399,9 +4405,9 @@ namespace cl
     }
 
     static NOINLINE DispatchTableEntry enter_truthiness_function(
-        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *&dispatch,
-        CodeObject *&code_object, const OperatorInlineCache &entry,
-        Value receiver)
+        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        void *&dispatch, CodeObject *&code_object,
+        const OperatorInlineCache &entry, Value receiver)
     {
         int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
         // Four slots preserve the existing aligned operator-prefix convention.
@@ -4414,7 +4420,7 @@ namespace cl
         first_arg_reg =
             prepare_method_call_argument_slots(fp, first_arg_reg, 0, self);
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object,
+            accumulator, thread, fp, pc, dispatch, code_object,
             TValue<Function>::from_oop(entry.function), first_arg_reg,
             entry.n_args, 2, entry.adaptation);
         return target != nullptr ? target : dispatch_entry_for_pc(dispatch, pc);
@@ -4498,8 +4504,9 @@ namespace cl
             START(0);
             COMPLETE();
         }
-        DispatchTableEntry target = enter_truthiness_function(
-            thread, fp, pc, dispatch, code_object, entry, receiver);
+        DispatchTableEntry target =
+            enter_truthiness_function(accumulator, thread, fp, pc, dispatch,
+                                      code_object, entry, receiver);
         MUSTTAIL return target(ARGS);
     }
 
@@ -4806,15 +4813,15 @@ namespace cl
         TValue<Function> function =
             thread->get_machine()->call_keyword_mapping_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, args, 3, 3,
-            FunctionCallAdaptation::FixedArity);
+            accumulator, thread, fp, pc, dispatch, code_object, function, args,
+            3, 3, FunctionCallAdaptation::FixedArity);
         if(target != nullptr)
         {
             MUSTTAIL return target(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -4855,15 +4862,15 @@ namespace cl
                 ? thread->get_machine()->call_keyword_merge_function()
                 : thread->get_machine()->call_keyword_mapping_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, args, 3, 3,
-            FunctionCallAdaptation::FixedArity);
+            accumulator, thread, fp, pc, dispatch, code_object, function, args,
+            3, 3, FunctionCallAdaptation::FixedArity);
         if(target != nullptr)
         {
             MUSTTAIL return target(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -4898,15 +4905,15 @@ namespace cl
         TValue<Function> function =
             thread->get_machine()->call_keyword_add_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, args, 4, 5,
-            FunctionCallAdaptation::FixedArity);
+            accumulator, thread, fp, pc, dispatch, code_object, function, args,
+            4, 5, FunctionCallAdaptation::FixedArity);
         if(target != nullptr)
         {
             MUSTTAIL return target(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -4942,15 +4949,15 @@ namespace cl
         TValue<Function> function =
             thread->get_machine()->list_extend_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 2,
-            2, FunctionCallAdaptation::FixedArity);
+            accumulator, thread, fp, pc, dispatch, code_object, function,
+            first_arg_reg, 2, 2, FunctionCallAdaptation::FixedArity);
         if(target != nullptr)
         {
             MUSTTAIL return target(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -4976,15 +4983,15 @@ namespace cl
         TValue<Function> function =
             thread->get_machine()->iterable_to_exact_tuple_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 1,
-            2, FunctionCallAdaptation::FixedArity);
+            accumulator, thread, fp, pc, dispatch, code_object, function,
+            first_arg_reg, 1, 2, FunctionCallAdaptation::FixedArity);
         if(target != nullptr)
         {
             MUSTTAIL return target(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -4998,15 +5005,15 @@ namespace cl
         TValue<Function> function =
             thread->get_machine()->iterable_to_exact_list_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
-            thread, fp, pc, dispatch, code_object, function, first_arg_reg, 1,
-            2, FunctionCallAdaptation::FixedArity);
+            accumulator, thread, fp, pc, dispatch, code_object, function,
+            first_arg_reg, 1, 2, FunctionCallAdaptation::FixedArity);
         if(target != nullptr)
         {
             MUSTTAIL return target(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -5269,15 +5276,15 @@ namespace cl
                 callable, n_args, call_cache));
         }
         DispatchTableEntry jit_entry = enter_positional_call_from_cache(
-            thread, fp, pc, dispatch, code_object, call_cache, first_arg_reg,
-            n_args, call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
+            first_arg_reg, n_args, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5322,15 +5329,15 @@ namespace cl
             MUSTTAIL return op_call_positional_slow(ARGS);
         }
         DispatchTableEntry jit_entry = enter_fixed_positional_call_from_cache(
-            thread, fp, pc, dispatch, code_object, cache, first_arg_reg,
-            call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5358,7 +5365,7 @@ namespace cl
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         DispatchTableEntry jit_entry = nullptr;
         INTERP_TRY(enter_function_frame_from_expanded_args(
-            thread, fp, pc, dispatch, code_object, cache, callable,
+            accumulator, thread, fp, pc, dispatch, code_object, cache, callable,
             ExpandedCallPositionalArguments{positional}, keywords,
             first_arg_reg, call_instr_len, jit_entry));
         if(jit_entry != nullptr)
@@ -5367,7 +5374,7 @@ namespace cl
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -5395,16 +5402,16 @@ namespace cl
         }
 
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
-            thread, fp, pc, dispatch, code_object, cache, first_arg_reg,
-            n_pos_args, first_kw_value_reg, n_kw_args, keyword_names_idx,
-            call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
+            keyword_names_idx, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5431,16 +5438,16 @@ namespace cl
         }
 
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
-            thread, fp, pc, dispatch, code_object, cache, first_arg_reg,
-            n_pos_args, first_kw_value_reg, n_kw_args, keyword_names_idx,
-            call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
+            keyword_names_idx, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5500,7 +5507,7 @@ namespace cl
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
         DispatchTableEntry jit_entry = nullptr;
         INTERP_TRY(enter_function_frame_from_expanded_args(
-            thread, fp, pc, dispatch, code_object, cache, callable,
+            accumulator, thread, fp, pc, dispatch, code_object, cache, callable,
             ExpandedCallPositionalArguments{positional, self}, keywords,
             int8_t(pc[6]), call_instr_len, jit_entry));
         if(jit_entry != nullptr)
@@ -5509,7 +5516,7 @@ namespace cl
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
         START(0);
         COMPLETE();
@@ -5567,13 +5574,13 @@ namespace cl
             fp, receiver_reg, n_user_args, self);
         DispatchTableEntry jit_entry = nullptr;
         if(unlikely(!try_enter_cached_positional_call(
-               thread, fp, pc, dispatch, code_object, callable, first_arg_reg,
-               n_args, call_instr_len, call_cache, jit_entry)))
+               accumulator, thread, fp, pc, dispatch, code_object, callable,
+               first_arg_reg, n_args, call_instr_len, call_cache, jit_entry)))
         {
             INTERP_TRY(populate_positional_call_cache_from_callable(
                 callable, n_args, call_cache));
             jit_entry = enter_positional_call_from_cache(
-                thread, fp, pc, dispatch, code_object, call_cache,
+                accumulator, thread, fp, pc, dispatch, code_object, call_cache,
                 first_arg_reg, n_args, call_instr_len);
         }
         if(jit_entry != nullptr)
@@ -5582,7 +5589,7 @@ namespace cl
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5634,15 +5641,16 @@ namespace cl
             TValue<Function>::from_oop(call_cache.function);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object, function, first_arg_reg,
-                n_args, call_instr_len, FunctionCallAdaptation::FixedArity);
+                accumulator, thread, fp, pc, dispatch, code_object, function,
+                first_arg_reg, n_args, call_instr_len,
+                FunctionCallAdaptation::FixedArity);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5712,16 +5720,16 @@ namespace cl
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_pos_args, self);
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
-            thread, fp, pc, dispatch, code_object, call_cache, first_arg_reg,
-            n_pos_args, first_kw_value_reg, n_kw_args, keyword_names_idx,
-            call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
+            first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
+            keyword_names_idx, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5769,16 +5777,16 @@ namespace cl
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_pos_args, self);
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
-            thread, fp, pc, dispatch, code_object, call_cache, first_arg_reg,
-            n_pos_args, first_kw_value_reg, n_kw_args, keyword_names_idx,
-            call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
+            first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
+            keyword_names_idx, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -5991,15 +5999,15 @@ namespace cl
             fp, receiver_reg, NUserArgs, self);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object, function, first_arg_reg,
-                n_args, call_instr_len, adaptation);
+                accumulator, thread, fp, pc, dispatch, code_object, function,
+                first_arg_reg, n_args, call_instr_len, adaptation);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         {
@@ -6057,7 +6065,7 @@ namespace cl
             fp, receiver_reg, NUserArgs, self);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(cache.function), first_arg_reg,
                 cache.n_args, call_instr_len, cache.adaptation);
         if(jit_entry != nullptr)
@@ -6066,7 +6074,7 @@ namespace cl
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
@@ -6108,7 +6116,7 @@ namespace cl
             fp, receiver_reg, NUserArgs, self);                                \
         DispatchTableEntry jit_entry =                                         \
             enter_function_frame_from_positional_args(                         \
-                thread, fp, pc, dispatch, code_object,                         \
+                accumulator, thread, fp, pc, dispatch, code_object,            \
                 TValue<Function>::from_oop(cache.function), first_arg_reg,     \
                 cache.n_args, call_instr_len,                                  \
                 FunctionCallAdaptation::FixedArity);                           \
@@ -6118,7 +6126,8 @@ namespace cl
         }                                                                      \
         if(unlikely(thread->safepoint_requested()))                            \
         {                                                                      \
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);                 \
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(      \
+                ARGS);                                                         \
         }                                                                      \
                                                                                \
         START(0);                                                              \
@@ -6157,7 +6166,7 @@ namespace cl
             prepare_method_call_argument_slots(fp, receiver_reg, 3, self);
         DispatchTableEntry jit_entry =
             enter_function_frame_from_positional_args(
-                thread, fp, pc, dispatch, code_object,
+                accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_oop(cache.function), first_arg_reg,
                 cache.n_args, call_instr_len,
                 FunctionCallAdaptation::FixedArity);
@@ -6167,7 +6176,7 @@ namespace cl
         }
         if(unlikely(thread->safepoint_requested()))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
         START(0);
