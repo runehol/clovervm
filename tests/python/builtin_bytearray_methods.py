@@ -152,15 +152,18 @@ def check_errors():
 def check_integer_subclasses():
     events = []
     a = bytearray(b'abc')
+    def index(self):
+        events.append('index')
+        a.clear()
+        raise RuntimeError
+    def equal(self, other):
+        events.append('eq')
+        a.clear()
+        raise RuntimeError
     class Integer(int):
-        def __index__(self):
-            events.append('index')
-            a.clear()
-            raise RuntimeError
-        def __eq__(self, other):
-            events.append('eq')
-            a.clear()
-            raise RuntimeError
+        pass
+    Integer.__index__ = index
+    Integer.__eq__ = equal
     assert a.insert(Integer(-1), Integer(98)) is None and a == b'abbc'
     assert a.pop(Integer(0)) == 97 and a == b'bbc'
     assert a.remove(Integer(98)) is None and a == b'bc'

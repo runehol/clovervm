@@ -75,8 +75,13 @@ namespace cl
 
         struct AnalysisState
         {
-            explicit AnalysisState(CodegenMode mode) { result.mode = mode; }
+            AnalysisState(CodegenMode mode, AnalysisState *parent)
+                : parent(parent)
+            {
+                result.mode = mode;
+            }
 
+            AnalysisState *parent;
             ScopeAnalysis result;
             std::vector<bool> expression_assigned_bindings;
             std::unordered_map<TValue<String>, int32_t, StringNameHash,
@@ -99,6 +104,7 @@ namespace cl
             std::unordered_map<TValue<String>, NameState, StringNameHash,
                                StringNameEq>
                 names;
+            std::vector<Value> referenced_names;
         };
 
         class ScopeAnalyzer
@@ -111,7 +117,8 @@ namespace cl
 
             Expected<CompilationScopeAnalysis> run()
             {
-                CL_TRY(analyze_scope(av.root_node, CodegenMode::Module, {}));
+                CL_TRY(analyze_scope(av.root_node, CodegenMode::Module, {},
+                                     nullptr));
                 return Expected<CompilationScopeAnalysis>::ok(
                     std::move(compilation));
             }
@@ -121,11 +128,12 @@ namespace cl
             CompilationScopeAnalysis compilation;
 
             Expected<void> analyze_scope(int32_t body_idx, CodegenMode mode,
-                                         const AstChildren &param_children)
+                                         const AstChildren &param_children,
+                                         AnalysisState *parent)
             {
-                AnalysisState analysis(mode);
-                CL_TRY(validate_global_declarations(mode, body_idx,
-                                                    param_children));
+                AnalysisState analysis(mode, parent);
+                auto references = CL_TRY(validate_global_declarations(
+                    mode, body_idx, param_children));
                 collect_global_declarations(analysis, body_idx);
                 if(mode == CodegenMode::Function)
                 {
@@ -137,17 +145,11 @@ namespace cl
                 }
                 size_t parameter_binding_end = analysis.result.bindings.size();
                 collect_code_object_bindings(analysis, body_idx);
-                assign_slots(analysis, parameter_binding_end,
-                             uint32_t(param_children.size()));
-                FlowState state = initial_flow_state(analysis.result);
-                analyze_flow_node(analysis, body_idx, state);
-                auto result = compilation.scopes_by_body.emplace(
-                    body_idx, std::move(analysis.result));
-                assert(result.second);
-                // Map elements remain valid when analyzing a child inserts
-                // another scope and causes the map to rehash.
-                for(int32_t definition_idx:
-                    result.first->second.child_definitions)
+                for(Value name: references)
+                {
+                    CL_TRY(resolve_capture(analysis, name));
+                }
+                for(int32_t definition_idx: analysis.result.child_definitions)
                 {
                     const auto &children = av.children[definition_idx];
                     if(av.kinds[definition_idx].node_kind ==
@@ -155,13 +157,86 @@ namespace cl
                     {
                         CL_TRY(analyze_scope(
                             children[1], CodegenMode::Function,
-                            signature_parameter_nodes(av, children[0])));
+                            signature_parameter_nodes(av, children[0]),
+                            &analysis));
                     }
                     else
                     {
-                        CL_TRY(
-                            analyze_scope(children[1], CodegenMode::Class, {}));
+                        CL_TRY(analyze_scope(children[1], CodegenMode::Class,
+                                             {}, &analysis));
                     }
+                }
+                assign_slots(analysis, parameter_binding_end,
+                             uint32_t(param_children.size()));
+                FlowState state = initial_flow_state(analysis.result);
+                analyze_flow_node(analysis, body_idx, state);
+                [[maybe_unused]] auto result =
+                    compilation.scopes_by_body.emplace(
+                        body_idx, std::move(analysis.result));
+                assert(result.second);
+                return Expected<void>::ok();
+            }
+
+            uint32_t forward_capture(AnalysisState &analysis,
+                                     AnalysisState &owner, Value name,
+                                     uint32_t owner_index)
+            {
+                if(&analysis == &owner)
+                {
+                    return owner_index;
+                }
+                uint32_t parent_index =
+                    forward_capture(*analysis.parent, owner, name, owner_index);
+                uint32_t index = uint32_t(analysis.result.bindings.size());
+                analysis.result.bindings.push_back(
+                    BindingInfo{name, BindingScope::Free, 0, Presence::Maybe});
+                analysis.binding_indices.emplace(ast_string_constant(name),
+                                                 int32_t(index));
+                analysis.result.free_bindings.push_back({index, parent_index});
+                return index;
+            }
+
+            Expected<void> resolve_capture(AnalysisState &analysis, Value name)
+            {
+                if(find_binding_idx(analysis, name) >= 0)
+                {
+                    return Expected<void>::ok();
+                }
+                bool crosses_class = analysis.result.mode == CodegenMode::Class;
+                for(AnalysisState *owner = analysis.parent; owner != nullptr;
+                    owner = owner->parent)
+                {
+                    if(owner->result.mode == CodegenMode::Class)
+                    {
+                        crosses_class = true;
+                        continue;
+                    }
+                    if(owner->result.mode != CodegenMode::Function)
+                    {
+                        break;
+                    }
+                    int32_t index = find_binding_idx(*owner, name);
+                    if(index < 0)
+                    {
+                        continue;
+                    }
+                    BindingInfo &binding = owner->result.bindings[index];
+                    if(binding.scope == BindingScope::Global)
+                    {
+                        break;
+                    }
+                    if(crosses_class)
+                    {
+                        return Expected<void>::raise_exception(
+                            L"SyntaxError",
+                            L"closures across class bodies are not supported");
+                    }
+                    if(binding.scope == BindingScope::Local)
+                    {
+                        binding.scope = BindingScope::Cell;
+                    }
+                    forward_capture(analysis, *owner, name, uint32_t(index));
+                    break;
                 }
                 return Expected<void>::ok();
             }
@@ -177,12 +252,17 @@ namespace cl
                 }
 
                 uint32_t next_slot = 0;
+                auto assign = [&](uint32_t index) {
+                    scope.bindings[index].local_slot_idx = next_slot++;
+                    scope.named_bindings_in_slot_order.push_back(index);
+                };
                 for(size_t idx = 0; idx < parameter_binding_end; ++idx)
                 {
-                    BindingInfo &binding = scope.bindings[idx];
-                    if(binding.scope == BindingScope::Local)
+                    BindingScope kind = scope.bindings[idx].scope;
+                    if(kind == BindingScope::Local ||
+                       kind == BindingScope::Cell)
                     {
-                        binding.local_slot_idx = next_slot++;
+                        assign(uint32_t(idx));
                     }
                 }
                 if(scope.mode == CodegenMode::Class)
@@ -192,13 +272,18 @@ namespace cl
                 }
                 next_slot += round_up_to_abi_alignment(n_parameters) -
                              n_parameters + FrameHeaderSize;
+                for(const auto &free: scope.free_bindings)
+                {
+                    assign(free.binding_index);
+                }
                 for(size_t idx = parameter_binding_end;
                     idx < scope.bindings.size(); ++idx)
                 {
-                    BindingInfo &binding = scope.bindings[idx];
-                    if(binding.scope == BindingScope::Local)
+                    BindingScope kind = scope.bindings[idx].scope;
+                    if(kind == BindingScope::Local ||
+                       kind == BindingScope::Cell)
                     {
-                        binding.local_slot_idx = next_slot++;
+                        assign(uint32_t(idx));
                     }
                 }
                 scope.n_slots = next_slot;
@@ -384,6 +469,12 @@ namespace cl
                                            bool checks_presence)
             {
                 BindingInfo binding = binding_for_name(analysis, name);
+                if(binding.scope == BindingScope::Cell ||
+                   binding.scope == BindingScope::Free)
+                {
+                    return NameAccessAnalysis{binding.scope, Presence::Maybe,
+                                              binding.local_slot_idx};
+                }
                 if(binding.scope == BindingScope::Local)
                 {
                     int32_t binding_idx = find_binding_idx(analysis, name);
@@ -432,7 +523,12 @@ namespace cl
             void mark_global_validation_use(GlobalDeclarationState &state,
                                             Value name)
             {
-                global_name_state(state, name).used = true;
+                auto &entry = global_name_state(state, name);
+                if(!entry.used)
+                {
+                    entry.used = true;
+                    state.referenced_names.push_back(name);
+                }
             }
 
             void
@@ -777,11 +873,11 @@ namespace cl
                 }
             }
 
-            Expected<void>
+            Expected<std::vector<Value>>
             validate_global_declarations(CodegenMode mode, int32_t body_idx,
                                          AstChildren param_children)
             {
-                GlobalDeclarationState state{mode, {}};
+                GlobalDeclarationState state{mode, {}, {}};
                 if(mode == CodegenMode::Function)
                 {
                     for(int32_t param_idx: param_children)
@@ -791,7 +887,9 @@ namespace cl
                     }
                 }
 
-                return validate_global_declarations_in_node(state, body_idx);
+                CL_TRY(validate_global_declarations_in_node(state, body_idx));
+                return Expected<std::vector<Value>>::ok(
+                    std::move(state.referenced_names));
             }
 
             void collect_global_declarations(AnalysisState &analysis,

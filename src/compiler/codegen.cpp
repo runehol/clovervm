@@ -142,12 +142,9 @@ namespace cl
     static void install_scope_layout(Scope &scope,
                                      const ScopeAnalysis &analysis)
     {
-        for(const BindingInfo &binding: analysis.bindings)
+        for(uint32_t index: analysis.named_bindings_in_slot_order)
         {
-            if(binding.scope != BindingScope::Local)
-            {
-                continue;
-            }
+            const BindingInfo &binding = analysis.bindings[index];
             assert(scope.size() <= binding.local_slot_idx);
             scope.reserve_empty_slots(binding.local_slot_idx - scope.size());
             [[maybe_unused]] int32_t slot = scope.register_slot_index_for_write(
@@ -413,6 +410,11 @@ namespace cl
                             source_offset, access.slot_idx));
                     }
                     break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_load_cell_checked(source_offset,
+                                                            access.slot_idx));
+                    break;
                 case BindingScope::Global:
                     {
                         uint8_t name_idx = CL_TRY(code_obj->allocate_constant(
@@ -433,6 +435,11 @@ namespace cl
             {
                 case BindingScope::Local:
                     CL_TRY(code_obj->emit_star(source_offset, access.slot_idx));
+                    break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_store_cell(source_offset,
+                                                     access.slot_idx));
                     break;
                 case BindingScope::Global:
                     {
@@ -455,6 +462,11 @@ namespace cl
                 case BindingScope::Local:
                     CL_TRY(code_obj->emit_del_local(source_offset,
                                                     access.slot_idx));
+                    break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_del_cell(source_offset,
+                                                   access.slot_idx));
                     break;
                 case BindingScope::Global:
                     {
@@ -665,6 +677,58 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        emit_create_nested_function(uint32_t source_offset, uint8_t code_idx,
+                                    const ScopeAnalysis &child,
+                                    std::optional<RegisterIndex> defaults_reg)
+        {
+            const auto &free_bindings = child.free_bindings;
+            if(free_bindings.empty())
+            {
+                if(defaults_reg.has_value())
+                {
+                    CL_TRY(code_obj->emit_create_function_with_defaults(
+                        source_offset, code_idx, *defaults_reg));
+                }
+                else
+                {
+                    CL_TRY(code_obj->emit_create_function(source_offset,
+                                                          code_idx));
+                }
+                return Expected<void>::ok();
+            }
+            if(free_bindings.size() > UINT8_MAX)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError", L"too many free variables");
+            }
+            TemporaryReg cells(*code_obj, free_bindings.size());
+            for(size_t index = 0; index < free_bindings.size(); ++index)
+            {
+                const BindingInfo &source =
+                    analysis
+                        .bindings[free_bindings[index].parent_binding_index];
+                assert(source.scope == BindingScope::Cell ||
+                       source.scope == BindingScope::Free);
+                CL_TRY(code_obj->emit_mov(source_offset, cells + index,
+                                          source.local_slot_idx));
+            }
+            CL_TRY(code_obj->emit_create_tuple(source_offset, cells,
+                                               uint8_t(free_bindings.size())));
+            CL_TRY(code_obj->emit_star(source_offset, cells));
+            if(defaults_reg.has_value())
+            {
+                CL_TRY(code_obj->emit_create_function_with_defaults_and_closure(
+                    source_offset, code_idx, *defaults_reg, cells));
+            }
+            else
+            {
+                CL_TRY(code_obj->emit_create_function_with_closure(
+                    source_offset, code_idx, cells));
+            }
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_function_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -675,16 +739,15 @@ namespace cl
                 av, scopes, code_obj->defining_module().extract(), code_obj,
                 node_idx, language_mode));
 
-            // stick this code object into the constant table, load it, and call
-            // the
-            uint32_t constant_idx =
+            const ScopeAnalysis &child = scopes.scopes_by_body.at(children[1]);
+            uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(Value::from_oop(fun_obj)));
             size_t first_default_idx =
                 first_default_parameter_index(param_children);
             if(first_default_idx == param_children.size())
             {
-                CL_TRY(code_obj->emit_create_function(source_offset,
-                                                      constant_idx));
+                CL_TRY(emit_create_nested_function(source_offset, constant_idx,
+                                                   child, std::nullopt));
             }
             else
             {
@@ -728,8 +791,9 @@ namespace cl
 
                 TemporaryReg default_tuple(*code_obj);
                 CL_TRY(code_obj->emit_star(source_offset, default_tuple));
-                CL_TRY(code_obj->emit_create_function_with_defaults(
-                    source_offset, constant_idx, default_tuple));
+                CL_TRY(emit_create_nested_function(
+                    source_offset, constant_idx, child,
+                    RegisterIndex(default_tuple)));
             }
 
             CL_TRY(emit_variable_store(source_offset, node_idx));
@@ -2264,6 +2328,11 @@ namespace cl
                 case BindingScope::Local:
                     CL_TRY(code_obj->emit_del_local(source_offset,
                                                     access.slot_idx));
+                    break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_del_cell(source_offset,
+                                                   access.slot_idx));
                     break;
                 case BindingScope::Global:
                     {
@@ -3943,12 +4012,37 @@ namespace cl
     Expected<CodeObject *> AstCodegen::run_function_body(uint32_t source_offset,
                                                          int32_t body_idx)
     {
+        bool has_cells = !analysis.free_bindings.empty();
+        if(has_cells)
+        {
+            code_obj->set_n_freevars(uint32_t(analysis.free_bindings.size()));
+            CL_TRY(code_obj->emit_copy_free_vars(source_offset));
+        }
+        for(const BindingInfo &binding: analysis.bindings)
+        {
+            if(binding.scope == BindingScope::Cell)
+            {
+                has_cells = true;
+                CL_TRY(code_obj->emit_make_cell(source_offset,
+                                                binding.local_slot_idx));
+            }
+        }
         CL_TRY(codegen_node(body_idx));
         // finally, emit return None just in case. as a future optimisation, we
         // could check that all return paths already have a return statement
         CL_TRY(code_obj->emit_lda_none(source_offset));
         CL_TRY(code_obj->emit_return(source_offset));
-        return code_obj->finalize();
+        CodeObject *code = CL_TRY(code_obj->finalize());
+        if(has_cells && (code->get_highest_occupied_frame_offset() > INT8_MAX ||
+                         code->get_padded_n_ordinary_below_frame_slots() >
+                             uint32_t(-INT8_MIN - FrameHeaderSizeBelowFp) ||
+                         code->get_first_free_arg_encoded_reg() >= 0))
+        {
+            return Expected<CodeObject *>::raise_exception(
+                L"SyntaxError",
+                L"closure frame exceeds bytecode register range");
+        }
+        return Expected<CodeObject *>::ok(code);
     }
 
     Expected<CodeObject *> AstCodegen::run_class_body(uint32_t source_offset,

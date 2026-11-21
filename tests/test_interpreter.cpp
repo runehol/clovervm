@@ -987,6 +987,188 @@ TEST(Interpreter, class_constructor_custom_new_with_init_has_no_thunk_yet)
                         L"TypeError", L"object is not callable");
 }
 
+TEST(Interpreter, lexical_captures_share_and_forward_cells)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def outer(seed):
+    def middle():
+        def read(default=seed):
+            return seed, value, default
+        return read
+    def sibling():
+        return value
+    value = seed
+    read = middle()
+    value += 1
+    return read, sibling
+
+first = outer(10)
+second = outer(20)
+assert first[0]() == (10, 11, 10)
+assert first[1]() == 11
+assert second[0]() == (20, 21, 20)
+assert second[1]() == 21
+
+def recursive():
+    def recurse(n):
+        if n == 0:
+            return recurse
+        return recurse(n - 1)
+    return recurse
+
+recurse = recursive()
+assert recurse(3) is recurse
+
+shadow = 19
+def global_barrier():
+    shadow = 72
+    def middle():
+        global shadow
+        def read():
+            return shadow
+        return read
+    return middle()
+assert global_barrier()() == 19
+True
+)"));
+}
+
+TEST(Interpreter, lexical_cell_targets_preserve_binding_semantics)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def locals_and_loops():
+    readers = []
+    for value in range(3):
+        def read():
+            return value
+        readers.append(read)
+    assert readers[0]() == 2
+    assert readers[2]() == 2
+    assert (value := 37) == 37
+    assert readers[1]() == 37
+    del value
+    return readers[0]
+
+def exception_target():
+    try:
+        raise ValueError("capture")
+    except ValueError as error:
+        def read():
+            return error
+        assert isinstance(read(), ValueError)
+        del error
+    return read
+
+def annotation_only():
+    def read():
+        return x
+    x: int
+    return read
+
+for reader in (locals_and_loops(), exception_target(), annotation_only()):
+    try:
+        reader()
+        assert False
+    except NameError:
+        pass
+
+def before_own_assignment():
+    def read():
+        return x
+    return x
+    x = 1
+try:
+    before_own_assignment()
+    assert False
+except UnboundLocalError:
+    pass
+True
+)"));
+}
+
+TEST(Interpreter, lexical_captures_in_operator_calls_and_methods)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def make_truth(flag):
+    def truth(self):
+        return flag
+    return truth
+
+class Receiver:
+    def make_reader(self):
+        value = 31
+        def read():
+            return value
+        return read
+
+Receiver.__bool__ = make_truth(False)
+receiver = Receiver()
+def probe():
+    return not receiver
+assert probe()
+assert probe()
+assert receiver.make_reader()() == 31
+True
+)"));
+}
+
+TEST(Interpreter, lexical_captures_across_class_bodies_are_rejected)
+{
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        value = x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        x = 1\n"
+                        L"        def read(self): return x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+}
+
+TEST(Interpreter, lexical_captures_respect_bytecode_register_range)
+{
+    std::wstring source = L"def outer():\n";
+    for(int index = 0; index < 130; ++index)
+    {
+        source += L"    v" + std::to_wstring(index) + L" = 1\n";
+    }
+    source += L"    def read(): return v129\n    return read\n";
+    expect_python_error(source.c_str(), L"SyntaxError",
+                        L"closure frame exceeds bytecode register range");
+}
+
+TEST(Interpreter, copy_free_vars_is_emitted_only_for_incoming_captures)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value outer_value = make_test_function(context, L"outer", LR"(
+def outer(x):
+    def leaf():
+        return x
+    return leaf
+)");
+    auto *outer = native_cast<Function>(outer_value);
+    CodeObject *outer_code = outer->code_object.extract();
+    auto prologue = bytecode_length(Bytecode::Enter);
+    EXPECT_EQ(0u, outer_code->n_freevars);
+    EXPECT_EQ(Bytecode::MakeCell,
+              decode_instruction(*outer_code, prologue).encoded_opcode());
+
+    Value leaf_value = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(outer_value), Value::from_smi(7));
+    ASSERT_TRUE(has_native_layout<Function>(leaf_value));
+    CodeObject *leaf_code =
+        native_cast<Function>(leaf_value)->code_object.extract();
+    EXPECT_EQ(1u, leaf_code->n_freevars);
+    EXPECT_EQ(Bytecode::CopyFreeVars,
+              decode_instruction(*leaf_code, prologue).encoded_opcode());
+}
+
 TEST(Interpreter, int_constructor_converts_large_string_to_bigint)
 {
     test::VmTestContext context;

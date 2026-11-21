@@ -22,6 +22,8 @@ namespace cl
     enum class BindingScope
     {
         Local,
+        Cell,
+        Free,
         Global
     };
 
@@ -51,9 +53,17 @@ namespace cl
 
     struct ScopeAnalysis
     {
+        struct FreeBinding
+        {
+            uint32_t binding_index;
+            uint32_t parent_binding_index;
+        };
+
         CodegenMode mode = CodegenMode::Module;
         uint32_t n_slots = 0;
         std::vector<BindingInfo> bindings;
+        std::vector<uint32_t> named_bindings_in_slot_order;
+        std::vector<FreeBinding> free_bindings;
         AstChildren child_definitions;
         // Indexed by local slot, including parameter slots. These locals must
         // be copied when an evaluated operand is retained in a register.
