@@ -207,6 +207,13 @@ use or assignment before a declaration, annotation conflicts, and a name
 declared both `global` and `nonlocal`. Validation remains source ordered even
 though valid declarations affect binding classification throughout the scope.
 
+Use the parser's simple-annotation flag when recording declaration facts for
+name targets. A simple annotation such as `x: int` counts as a name annotation
+for conflict checks. Bare `(x): int` contributes neither an annotation conflict
+nor a name use or assignment. `(x): int = value` counts as an ordinary
+assignment to `x`. For example, this assignment may follow `nonlocal x`, but
+placing it before `nonlocal x` triggers the prior-assignment error.
+
 | Declaration | Binding resolution |
 |---|---|
 | `global x` | Classify `x` as `Global`; reads, writes, and deletion use module lookup/storage rather than an enclosing function binding. |
@@ -496,6 +503,11 @@ The thunk builder decides whether to emit the load using
 existing bytecode sequence. `CallCodeObject` uses the existing operand format
 and handler for both cases. Every direct call to code with free variables must
 supply the matching function instance through this entry contract.
+
+In the bytecode effects model, declare the accumulator as an unconditional
+input to `CallCodeObject` and retain it as the destination for the call result.
+This conservatively models the incoming value for JIT analysis. The callee
+uses it as a function only when it has free variables.
 
 ## JIT Entry Accumulator And Side Exits
 
