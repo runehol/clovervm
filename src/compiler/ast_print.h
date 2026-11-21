@@ -161,18 +161,35 @@ template <> struct fmt::formatter<cl::AstVector>
                 render_node(av, out, children[1], indent, self_precedence);
                 fmt::format_to(out, "\n");
                 break;
-            case cl::AstNodeKind::STATEMENT_ANN_ASSIGN:
-                emit_indent(out, indent);
-                render_node(av, out, children[0], indent, self_precedence);
-                fmt::format_to(out, ": ");
-                render_node(av, out, children[1], indent, self_precedence);
-                if(children.size() == 3)
+            case cl::AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+            case cl::AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                 {
-                    fmt::format_to(out, " = ");
-                    render_node(av, out, children[2], indent, self_precedence);
+                    emit_indent(out, indent);
+                    bool parenthesized_name =
+                        kind.node_kind ==
+                            cl::AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE &&
+                        av.kinds[children[0]].node_kind ==
+                            cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE;
+                    if(parenthesized_name)
+                    {
+                        fmt::format_to(out, "(");
+                    }
+                    render_node(av, out, children[0], indent, self_precedence);
+                    if(parenthesized_name)
+                    {
+                        fmt::format_to(out, ")");
+                    }
+                    fmt::format_to(out, ": ");
+                    render_node(av, out, children[1], indent, self_precedence);
+                    if(children.size() == 3)
+                    {
+                        fmt::format_to(out, " = ");
+                        render_node(av, out, children[2], indent,
+                                    self_precedence);
+                    }
+                    fmt::format_to(out, "\n");
+                    break;
                 }
-                fmt::format_to(out, "\n");
-                break;
             case cl::AstNodeKind::EXPRESSION_ASSIGN:
                 render_node(av, out, children[0], indent, self_precedence);
                 assert(kind.operator_kind == cl::AstOperatorKind::NOP);

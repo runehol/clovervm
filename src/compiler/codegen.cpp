@@ -382,13 +382,6 @@ namespace cl
             return handler_children.back();
         }
 
-        bool ann_assign_is_simple(int32_t node_idx) const
-        {
-            assert(av.kinds[node_idx].node_kind ==
-                   AstNodeKind::STATEMENT_ANN_ASSIGN);
-            return av.constants[node_idx] == Value::True();
-        }
-
         const NameAccessAnalysis &load_access(int32_t node_idx) const
         {
             assert(analysis.loads[node_idx].has_value());
@@ -3170,7 +3163,8 @@ namespace cl
                         break;
                     }
 
-                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+                case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                     if(children.size() == 3)
                     {
                         int32_t lhs_idx = children[0];
@@ -3192,7 +3186,7 @@ namespace cl
                         CL_TRY(codegen_node(children[2]));
                         CL_TRY(emit_variable_store(source_offset, lhs_idx));
                     }
-                    else if(!ann_assign_is_simple(node_idx))
+                    else
                     {
                         int32_t lhs_idx = children[0];
                         AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;

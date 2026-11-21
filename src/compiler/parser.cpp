@@ -1545,15 +1545,14 @@ namespace cl
                 {
                     annotation_children.push_back(CL_TRY(annotated_rhs()));
                 }
-                Value simple =
+                AstNodeKind kind =
                     !lhs_parenthesized &&
                             ast.kinds[lhs].node_kind ==
                                 AstNodeKind::EXPRESSION_VARIABLE_REFERENCE
-                        ? Value::True()
-                        : Value::False();
+                        ? AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE
+                        : AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE;
                 return Expected<int32_t>::ok(
-                    ast.emplace_back(AstNodeKind::STATEMENT_ANN_ASSIGN,
-                                     source_pos, annotation_children, simple));
+                    ast.emplace_back(kind, source_pos, annotation_children));
             }
 
             AstOperatorKind op_kind = AstOperatorKind::FALSE;

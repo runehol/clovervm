@@ -42,9 +42,9 @@ namespace cl
         STATEMENT_NONLOCAL,
         STATEMENT_SEQUENCE,
         STATEMENT_ASSIGN,
-        // Matches CPython's AnnAssign(target, annotation, value?, simple).
-        // The simple bit is stored in AstVector::constants as True/False.
-        STATEMENT_ANN_ASSIGN,
+        // The node kind encodes CPython's AnnAssign.simple distinction.
+        STATEMENT_ANN_ASSIGN_SIMPLE,  // Target is an unparenthesized name.
+        STATEMENT_ANN_ASSIGN_NON_SIMPLE,
         STATEMENT_EXPRESSION,
         IMPORT_ALIAS,
         IMPORT_STAR,
@@ -74,7 +74,6 @@ namespace cl
         EXPRESSION_CALL,
         EXPRESSION_ATTRIBUTE,
         EXPRESSION_SLICE,
-
     };
 
     constexpr bool is_expression(AstNodeKind k)
@@ -105,7 +104,8 @@ namespace cl
             case AstNodeKind::STATEMENT_NONLOCAL:
             case AstNodeKind::STATEMENT_SEQUENCE:
             case AstNodeKind::STATEMENT_ASSIGN:
-            case AstNodeKind::STATEMENT_ANN_ASSIGN:
+            case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+            case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
             case AstNodeKind::STATEMENT_EXPRESSION:
             case AstNodeKind::IMPORT_ALIAS:
             case AstNodeKind::IMPORT_STAR:
@@ -185,7 +185,6 @@ namespace cl
         TRUE,
         FALSE,
         ELLIPSIS,
-
     };
     constexpr static size_t AstOperatorKindSize =
         size_t(AstOperatorKind::ELLIPSIS) + 1;

@@ -592,12 +592,14 @@ namespace cl
                             return Expected<void>::ok();
                         }
 
-                    case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                         if(av.kinds[children[0]].node_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
                             Value name = av.constants[children[0]];
-                            if(ann_assign_is_simple(node_idx))
+                            if(kind.node_kind ==
+                               AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE)
                             {
                                 CL_TRY(mark_global_validation_annotation(state,
                                                                          name));
@@ -837,10 +839,12 @@ namespace cl
                             break;
                         }
 
-                    case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                         if((children.size() == 3 ||
                             (analysis.result.mode == CodegenMode::Function &&
-                             ann_assign_is_simple(node_idx))) &&
+                             kind.node_kind ==
+                                 AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE)) &&
                            av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
@@ -1045,7 +1049,8 @@ namespace cl
                         }
                         break;
 
-                    case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                         if(children.size() == 3 &&
                            av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
@@ -1141,13 +1146,6 @@ namespace cl
                         binding.initial_presence != Presence::Present);
                 }
                 return state;
-            }
-
-            bool ann_assign_is_simple(int32_t node_idx) const
-            {
-                assert(av.kinds[node_idx].node_kind ==
-                       AstNodeKind::STATEMENT_ANN_ASSIGN);
-                return av.constants[node_idx] == Value::True();
             }
 
             FlowState merge_flow_states(const FlowState &left,
@@ -1891,7 +1889,8 @@ namespace cl
                         }
                         return fallthrough_summary(state);
 
-                    case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+                    case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                         if(children.size() == 3)
                         {
                             if(av.kinds[children[0]].node_kind ==
