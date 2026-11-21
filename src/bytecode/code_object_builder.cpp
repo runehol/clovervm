@@ -381,6 +381,31 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::DelLocal, reg);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_make_cell(uint32_t source_offset,
+                                                         uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::MakeCell, reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_load_cell_checked(uint32_t source_offset,
+                                              uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::LoadCellChecked, reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_store_cell(uint32_t source_offset, uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::StoreCell, reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_del_cell(uint32_t source_offset,
+                                                        uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::DelCell, reg);
+    }
+
     Expected<uint32_t>
     CodeObjectBuilder::emit_del_global(uint32_t source_offset, uint8_t name_idx)
     {
@@ -588,6 +613,35 @@ namespace cl
         return emit_opcode_constant_idx_reg(
             source_offset, Bytecode::CreateFunctionWithDefaults, code_idx,
             defaults_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_copy_free_vars(uint32_t source_offset)
+    {
+        return Expected<uint32_t>::ok(
+            emplace_back(source_offset, uint8_t(Bytecode::CopyFreeVars)));
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_create_function_with_closure(
+        uint32_t source_offset, uint8_t code_idx, uint32_t closure_reg)
+    {
+        return emit_opcode_constant_idx_reg(source_offset,
+                                            Bytecode::CreateFunctionWithClosure,
+                                            code_idx, closure_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_create_function_with_defaults_and_closure(
+        uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg,
+        uint32_t closure_reg)
+    {
+        uint32_t offset = emplace_back(
+            source_offset,
+            uint8_t(Bytecode::CreateFunctionWithDefaultsAndClosure));
+        emplace_back(source_offset, code_idx);
+        emplace_back(source_offset, encode_reg(defaults_reg));
+        emplace_back(source_offset, encode_reg(closure_reg));
+        return Expected<uint32_t>::ok(offset);
     }
 
     Expected<uint32_t>
@@ -1349,6 +1403,7 @@ namespace cl
             assert(named_local_and_header_slots >= FrameHeaderSize);
             code_obj->n_locals = named_local_and_header_slots - FrameHeaderSize;
         }
+        assert(code_obj->n_freevars <= code_obj->n_locals);
         sync_temporary_reg_base();
         assert(temporary_reg == local_scope_size);
         assert(max_temporary_reg >= local_scope_size);

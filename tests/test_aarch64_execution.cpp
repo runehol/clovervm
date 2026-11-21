@@ -1,5 +1,7 @@
 #include "builtin_types/float.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/code_object_builder.h"
+#include "compiler/scope.h"
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_backend.h"
@@ -16,6 +18,7 @@
 #include "jit/location_assignments.h"
 #include "jit/machine_address_internal.h"
 #include "jit/register_allocator.h"
+#include "object_model/cell.h"
 #include "object_model/function.h"
 #include "object_model/validity_cell.h"
 #include "runtime/runtime_helpers.h"
@@ -1564,37 +1567,177 @@ def run(): return reduce(subtract, [10, 2, 3])
         EXPECT_EQ(Value::from_smi(5), fixture.call(L"run"));
     }
 
-    TEST(AArch64Execution, RecoversUnavailableEntryAccumulatorAsNotPresent)
+    TEST(AArch64Execution, RecoversLiveAccumulatorAtEarlySideExit)
     {
+        struct Observation
+        {
+            CodeObject *code = nullptr;
+            Value expected = Value::not_present();
+            bool observed = false;
+        };
         PythonJitExecutionFixture fixture;
         fixture.execute_module(L"def value(): return 7\n"
-                               L"def run(): return value()\n");
-        ASSERT_TRUE(fixture.jit_compile(L"run"));
-        bool observed = false;
+                               L"def run(): return value()\n"
+                               L"def run_after_store():\n"
+                               L"    local = 9\n"
+                               L"    return value()\n");
+        Observation observation;
         fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
             [](void *opaque, ThreadState *, Value accumulator, Value *,
                CodeObject *code, uint32_t pc_offset,
                const SafepointScanRecord &record) {
-                if(!code->has_jit_code() ||
+                auto &state = *static_cast<Observation *>(opaque);
+                if(code != state.code ||
+                   code->code[pc_offset] !=
+                       static_cast<uint8_t>(Bytecode::LdaGlobal))
+                {
+                    return;
+                }
+                state.observed = true;
+                EXPECT_EQ(state.expected, accumulator);
+                EXPECT_EQ(state.expected, record.accumulator_or_not_present);
+            },
+            &observation);
+
+        for(const wchar_t *name: {L"run", L"run_after_store"})
+        {
+            ASSERT_TRUE(fixture.jit_compile(name));
+            CodeObject *code = fixture.code_object(name);
+            Value function =
+                code->get_defining_module().extract()->get_own_property(
+                    interned_string(name));
+            observation = {code, name == std::wstring_view(L"run")
+                                     ? function
+                                     : Value::from_smi(9)};
+            fixture.request_safepoint();
+            EXPECT_EQ(Value::from_smi(7), fixture.call(name));
+            EXPECT_TRUE(observation.observed);
+        }
+        fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+            nullptr, nullptr);
+    }
+
+    TEST(AArch64Execution, CopyFreeVarsSideExitRecoversEachFunction)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        auto name =
+            context.vm().get_or_create_interned_string_value(L"capture");
+        Scope *scope = thread->make_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder builder(&context.vm(), nullptr,
+                                  context.vm().global_builtins_module(), scope,
+                                  name);
+        builder.configure_positional_function(0);
+        uint32_t slot = scope->register_slot_index_for_write(name);
+        builder.set_n_freevars(1);
+        uint32_t copy_pc = builder.emit_copy_free_vars(0).value();
+        builder.emit_load_cell_checked(0, slot).value();
+        builder.emit_return(0).value();
+        CodeObject *code = builder.finalize().value();
+        auto compilation = compile_jit_code(*thread, *code);
+        ASSERT_TRUE(compilation);
+        code->publish_jit_code(std::move(compilation).value());
+
+        struct Observation
+        {
+            CodeObject *code;
+            uint32_t copy_pc;
+            Value expected;
+            bool observed = false;
+        };
+        Observation observation{code, copy_pc, Value::not_present()};
+        context.vm().set_safepoint_callback_for_testing(
+            [](void *opaque, ThreadState *, Value accumulator, Value *,
+               CodeObject *current, uint32_t pc_offset,
+               const SafepointScanRecord &record) {
+                auto &state = *static_cast<Observation *>(opaque);
+                if(current == state.code && pc_offset == state.copy_pc)
+                {
+                    state.observed = true;
+                    EXPECT_EQ(state.expected, accumulator);
+                    EXPECT_EQ(state.expected,
+                              record.accumulator_or_not_present);
+                }
+            },
+            &observation);
+
+        std::vector<Owned<TValue<Function>>> functions;
+        for(int64_t captured: {13, 73})
+        {
+            auto cell =
+                thread->make_object_value<Cell>(Value::from_smi(captured));
+            Owned<TValue<Tuple>> closure(thread->make_object_value<Tuple>(1));
+            closure.extract()->initialize_item_unchecked(0, cell.raw_value());
+            functions.emplace_back(thread->make_object_value<Function>(
+                TValue<CodeObject>::from_oop(code),
+                Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none(),
+                Optional<TValue<Tuple>>::some(closure.value())));
+        }
+        for(size_t index = 0; index < functions.size(); ++index)
+        {
+            observation.expected = functions[index].raw_value();
+            observation.observed = false;
+            context.vm().request_safepoint();
+            EXPECT_EQ(Value::from_smi(index == 0 ? 13 : 73),
+                      thread->call_clovervm_function(functions[index].value()));
+            EXPECT_TRUE(observation.observed);
+        }
+        context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+    }
+
+    TEST(AArch64Execution, RecoversOperatorFunctionAtEarlySideExit)
+    {
+        struct Observation
+        {
+            CodeObject *code;
+            Value target;
+            bool observed = false;
+        };
+        PythonJitExecutionFixture fixture;
+        fixture.execute_module(LR"(
+result = True
+def contains_impl(self, needle):
+    return result
+class Container:
+    __contains__ = contains_impl
+container = Container()
+def probe():
+    return 7 in container
+)");
+        ASSERT_TRUE(fixture.jit_compile(L"contains_impl"));
+        CodeObject *code = fixture.code_object(L"contains_impl");
+        Observation observation{
+            code, code->get_defining_module().extract()->get_own_property(
+                      interned_string(L"contains_impl"))};
+        fixture.thread()->get_machine()->set_fire_every_safepoint_for_testing(
+            true);
+        fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
+            [](void *opaque, ThreadState *, Value accumulator, Value *,
+               CodeObject *code, uint32_t pc_offset,
+               const SafepointScanRecord &record) {
+                auto &state = *static_cast<Observation *>(opaque);
+                if(code != state.code ||
                    pc_offset != bytecode_length(Bytecode::Enter))
                 {
                     return;
                 }
-                // The entry LoadGlobal exits before defining an accumulator.
-                // Check the actual recovered value, not whether arbitrary
-                // stale register bits happen to look like a legal tag.
-                *static_cast<bool *>(opaque) = true;
-                EXPECT_EQ(Value::not_present(), accumulator);
-                EXPECT_EQ(Value::not_present(),
-                          record.accumulator_or_not_present);
+                state.observed = true;
+                EXPECT_EQ(state.target, accumulator);
+                EXPECT_EQ(state.target, record.accumulator_or_not_present);
             },
-            &observed);
-        fixture.request_safepoint();
-        Value result = fixture.call(L"run");
+            &observation);
+
+        for(int attempt = 0; attempt < 2; ++attempt)
+        {
+            observation.observed = false;
+            fixture.request_safepoint();
+            EXPECT_EQ(Value::True(), fixture.call(L"probe"));
+            EXPECT_TRUE(observation.observed);
+        }
         fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
             nullptr, nullptr);
-        EXPECT_TRUE(observed);
-        EXPECT_EQ(Value::from_smi(7), result);
     }
 
     TEST(AArch64Execution, RootsJitReturnValueAtInterpreterReentrySafepoint)

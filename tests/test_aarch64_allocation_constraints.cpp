@@ -174,7 +174,7 @@ namespace cl::jit
     }
 
     TEST(AArch64AllocationConstraints,
-         FixesBytecodeFrameHeaderParametersToTheirStackLocations)
+         FixesBytecodeEntryAccumulatorAndFrameHeaderLocations)
     {
         test::VmTestContext context;
         CodeObject *code_object = context.compile_file(L"pass\n");
@@ -192,6 +192,8 @@ namespace cl::jit
             builder.emplace_parameter<ParameterInstruction>(entry),
             builder.emplace_parameter<ParameterPointerInstruction>(entry),
         };
+        ParameterInstruction accumulator =
+            builder.emplace_parameter<ParameterInstruction>(entry);
         ReturnInstruction return_instruction =
             builder.emplace_instruction<ReturnInstruction>(
                 entry, TaggedValueRef(argument), PointerRef(frame_header[0]),
@@ -208,6 +210,14 @@ namespace cl::jit
         EXPECT_EQ(x(0), argument_constraints->result_override()
                             ->requirement.fixed_location()
                             .reg());
+
+        const InstructionAllocationConstraints *accumulator_constraints =
+            find_override(constraints, accumulator);
+        ASSERT_NE(nullptr, accumulator_constraints);
+        ASSERT_TRUE(accumulator_constraints->result_override().has_value());
+        EXPECT_EQ(x(20), accumulator_constraints->result_override()
+                             ->requirement.fixed_location()
+                             .reg());
 
         for(size_t index = 0; index < frame_header.size(); ++index)
         {

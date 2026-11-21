@@ -60,6 +60,19 @@ namespace cl::jit
             {
                 size_t frame_header_index =
                     parameter_index - bytecode_state_order->n_parameters();
+                if(frame_header_index == FrameHeaderSize)
+                {
+                    if(parameter.kind() != InstructionKind::Parameter)
+                    {
+                        fatal("AArch64 bytecode entry accumulator must be "
+                              "tagged");
+                    }
+                    return InstructionAllocationConstraints(
+                        parameter, {},
+                        ResultConstraint{AccessTiming::Late,
+                                         LocationRequirement::fixed(
+                                             PhysicalLocation::reg(gpr(20)))});
+                }
                 if(frame_header_index >= FrameHeaderSize)
                 {
                     fatal("AArch64 bytecode entry has an unexpected "

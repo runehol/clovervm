@@ -129,27 +129,30 @@ namespace cl
         return t;
     }
 
-    Expected<CodeObject *> codegen_function(const AstVector &av,
-                                            ModuleObject *module,
-                                            CodeObjectBuilder *parent_code_obj,
-                                            int32_t node_idx,
-                                            LanguageMode language_mode);
-    Expected<CodeObject *> codegen_class(const AstVector &av,
-                                         ModuleObject *module,
-                                         CodeObjectBuilder *parent_code_obj,
-                                         int32_t node_idx,
-                                         LanguageMode language_mode);
+    Expected<CodeObject *>
+    codegen_function(const AstVector &av,
+                     const CompilationScopeAnalysis &scopes,
+                     ModuleObject *module, CodeObjectBuilder *parent_code_obj,
+                     int32_t node_idx, LanguageMode language_mode);
+    Expected<CodeObject *>
+    codegen_class(const AstVector &av, const CompilationScopeAnalysis &scopes,
+                  ModuleObject *module, CodeObjectBuilder *parent_code_obj,
+                  int32_t node_idx, LanguageMode language_mode);
 
-    void reserve_parameter_padding_and_frame_header(
-        CodeObjectBuilder *target_code_obj)
+    static void install_scope_layout(Scope &scope,
+                                     const ScopeAnalysis &analysis)
     {
-        uint32_t n_parameter_padding =
-            target_code_obj->get_padded_n_parameters() -
-            target_code_obj->n_parameters();
-        target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
-            n_parameter_padding);
-        target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
-            FrameHeaderSize);
+        for(uint32_t index: analysis.named_bindings_in_slot_order)
+        {
+            const BindingInfo &binding = analysis.bindings[index];
+            assert(scope.size() <= binding.local_slot_idx);
+            scope.reserve_empty_slots(binding.local_slot_idx - scope.size());
+            [[maybe_unused]] int32_t slot = scope.register_slot_index_for_write(
+                TValue<String>::from_value_assumed(binding.name));
+            assert(uint32_t(slot) == binding.local_slot_idx);
+        }
+        assert(scope.size() <= analysis.n_slots);
+        scope.reserve_empty_slots(analysis.n_slots - scope.size());
     }
 
     AstChildren parameter_signature_group(const AstVector &av,
@@ -202,17 +205,14 @@ namespace cl
     public:
         using RegisterIndex = int32_t;
 
-        static Expected<AstCodegen>
-        make(const AstVector &av, CodeObjectBuilder *code_obj, CodegenMode mode,
-             LanguageMode language_mode, int32_t body_idx,
-             AstChildren param_children,
-             ModuleResultMode result_mode = ModuleResultMode::File)
+        AstCodegen(const AstVector &_av, CodeObjectBuilder *_code_obj,
+                   const CompilationScopeAnalysis &_scopes, int32_t _body_idx,
+                   LanguageMode _language_mode,
+                   ModuleResultMode _result_mode = ModuleResultMode::File)
+            : av(_av), code_obj(_code_obj), body_idx(_body_idx),
+              scopes(_scopes), analysis(scopes.scopes_by_body.at(body_idx)),
+              language_mode(_language_mode), result_mode(_result_mode)
         {
-            ScopeAnalysis analysis = CL_TRY(analyze_code_object_scope(
-                av, code_obj, body_idx, mode, param_children));
-            return Expected<AstCodegen>::ok(
-                AstCodegen(av, code_obj, body_idx, std::move(analysis),
-                           language_mode, result_mode));
         }
 
         Expected<CodeObject *> run_module();
@@ -222,15 +222,6 @@ namespace cl
                                               int32_t body_idx);
 
     private:
-        AstCodegen(const AstVector &_av, CodeObjectBuilder *_code_obj,
-                   int32_t _body_idx, ScopeAnalysis _analysis,
-                   LanguageMode _language_mode, ModuleResultMode _result_mode)
-            : av(_av), code_obj(_code_obj), body_idx(_body_idx),
-              analysis(std::move(_analysis)), language_mode(_language_mode),
-              result_mode(_result_mode)
-        {
-        }
-
         struct LoopTargetSet
         {
             LoopTargetSet(JumpTarget *_break_target,
@@ -348,7 +339,8 @@ namespace cl
 
         CodeObjectBuilder *code_obj;
         int32_t body_idx;
-        ScopeAnalysis analysis;
+        const CompilationScopeAnalysis &scopes;
+        const ScopeAnalysis &analysis;
         LanguageMode language_mode;
         ModuleResultMode result_mode;
         std::vector<LoopTargetSet> loop_targets;
@@ -382,29 +374,22 @@ namespace cl
             return handler_children.back();
         }
 
-        bool ann_assign_is_simple(int32_t node_idx) const
-        {
-            assert(av.kinds[node_idx].node_kind ==
-                   AstNodeKind::STATEMENT_ANN_ASSIGN);
-            return av.constants[node_idx] == Value::True();
-        }
-
         const NameAccessAnalysis &load_access(int32_t node_idx) const
         {
-            assert(analysis.loads[node_idx].has_value());
-            return *analysis.loads[node_idx];
+            assert(scopes.loads[node_idx].has_value());
+            return *scopes.loads[node_idx];
         }
 
         const NameAccessAnalysis &store_access(int32_t node_idx) const
         {
-            assert(analysis.stores[node_idx].has_value());
-            return *analysis.stores[node_idx];
+            assert(scopes.stores[node_idx].has_value());
+            return *scopes.stores[node_idx];
         }
 
         const NameAccessAnalysis &delete_access(int32_t node_idx) const
         {
-            assert(analysis.deletes[node_idx].has_value());
-            return *analysis.deletes[node_idx];
+            assert(scopes.deletes[node_idx].has_value());
+            return *scopes.deletes[node_idx];
         }
 
         Expected<void> emit_variable_load(uint32_t source_offset,
@@ -424,6 +409,11 @@ namespace cl
                         CL_TRY(code_obj->emit_load_local_checked(
                             source_offset, access.slot_idx));
                     }
+                    break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_load_cell_checked(source_offset,
+                                                            access.slot_idx));
                     break;
                 case BindingScope::Global:
                     {
@@ -446,6 +436,11 @@ namespace cl
                 case BindingScope::Local:
                     CL_TRY(code_obj->emit_star(source_offset, access.slot_idx));
                     break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_store_cell(source_offset,
+                                                     access.slot_idx));
+                    break;
                 case BindingScope::Global:
                     {
                         uint8_t name_idx = CL_TRY(code_obj->allocate_constant(
@@ -467,6 +462,11 @@ namespace cl
                 case BindingScope::Local:
                     CL_TRY(code_obj->emit_del_local(source_offset,
                                                     access.slot_idx));
+                    break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_del_cell(source_offset,
+                                                   access.slot_idx));
                     break;
                 case BindingScope::Global:
                     {
@@ -677,26 +677,77 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void>
+        emit_create_nested_function(uint32_t source_offset, uint8_t code_idx,
+                                    const ScopeAnalysis &child,
+                                    std::optional<RegisterIndex> defaults_reg)
+        {
+            const auto &free_bindings = child.free_bindings;
+            if(free_bindings.empty())
+            {
+                if(defaults_reg.has_value())
+                {
+                    CL_TRY(code_obj->emit_create_function_with_defaults(
+                        source_offset, code_idx, *defaults_reg));
+                }
+                else
+                {
+                    CL_TRY(code_obj->emit_create_function(source_offset,
+                                                          code_idx));
+                }
+                return Expected<void>::ok();
+            }
+            if(free_bindings.size() > UINT8_MAX)
+            {
+                return Expected<void>::raise_exception(
+                    L"SyntaxError", L"too many free variables");
+            }
+            TemporaryReg cells(*code_obj, free_bindings.size());
+            for(size_t index = 0; index < free_bindings.size(); ++index)
+            {
+                const BindingInfo &source =
+                    analysis
+                        .bindings[free_bindings[index].parent_binding_index];
+                assert(source.scope == BindingScope::Cell ||
+                       source.scope == BindingScope::Free);
+                CL_TRY(code_obj->emit_mov(source_offset, cells + index,
+                                          source.local_slot_idx));
+            }
+            CL_TRY(code_obj->emit_create_tuple(source_offset, cells,
+                                               uint8_t(free_bindings.size())));
+            CL_TRY(code_obj->emit_star(source_offset, cells));
+            if(defaults_reg.has_value())
+            {
+                CL_TRY(code_obj->emit_create_function_with_defaults_and_closure(
+                    source_offset, code_idx, *defaults_reg, cells));
+            }
+            else
+            {
+                CL_TRY(code_obj->emit_create_function_with_closure(
+                    source_offset, code_idx, cells));
+            }
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_function_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren param_children =
                 CL_TRY(supported_runtime_parameter_order(av, children[0]));
-            CodeObject *fun_obj = CL_TRY(
-                codegen_function(av, code_obj->defining_module().extract(),
-                                 code_obj, node_idx, language_mode));
+            CodeObject *fun_obj = CL_TRY(codegen_function(
+                av, scopes, code_obj->defining_module().extract(), code_obj,
+                node_idx, language_mode));
 
-            // stick this code object into the constant table, load it, and call
-            // the
-            uint32_t constant_idx =
+            const ScopeAnalysis &child = scopes.scopes_by_body.at(children[1]);
+            uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(Value::from_oop(fun_obj)));
             size_t first_default_idx =
                 first_default_parameter_index(param_children);
             if(first_default_idx == param_children.size())
             {
-                CL_TRY(code_obj->emit_create_function(source_offset,
-                                                      constant_idx));
+                CL_TRY(emit_create_nested_function(source_offset, constant_idx,
+                                                   child, std::nullopt));
             }
             else
             {
@@ -740,8 +791,9 @@ namespace cl
 
                 TemporaryReg default_tuple(*code_obj);
                 CL_TRY(code_obj->emit_star(source_offset, default_tuple));
-                CL_TRY(code_obj->emit_create_function_with_defaults(
-                    source_offset, constant_idx, default_tuple));
+                CL_TRY(emit_create_nested_function(
+                    source_offset, constant_idx, child,
+                    RegisterIndex(default_tuple)));
             }
 
             CL_TRY(emit_variable_store(source_offset, node_idx));
@@ -783,9 +835,9 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t bases_idx = children[0];
-            CodeObject *class_obj =
-                CL_TRY(codegen_class(av, code_obj->defining_module().extract(),
-                                     code_obj, node_idx, language_mode));
+            CodeObject *class_obj = CL_TRY(
+                codegen_class(av, scopes, code_obj->defining_module().extract(),
+                              code_obj, node_idx, language_mode));
 
             uint32_t body_constant_idx =
                 CL_TRY(code_obj->allocate_constant(Value::from_oop(class_obj)));
@@ -2277,6 +2329,11 @@ namespace cl
                     CL_TRY(code_obj->emit_del_local(source_offset,
                                                     access.slot_idx));
                     break;
+                case BindingScope::Cell:
+                case BindingScope::Free:
+                    CL_TRY(code_obj->emit_del_cell(source_offset,
+                                                   access.slot_idx));
+                    break;
                 case BindingScope::Global:
                     {
                         uint8_t constant_idx =
@@ -3170,7 +3227,8 @@ namespace cl
                         break;
                     }
 
-                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                case AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE:
+                case AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE:
                     if(children.size() == 3)
                     {
                         int32_t lhs_idx = children[0];
@@ -3192,7 +3250,7 @@ namespace cl
                         CL_TRY(codegen_node(children[2]));
                         CL_TRY(emit_variable_store(source_offset, lhs_idx));
                     }
-                    else if(!ann_assign_is_simple(node_idx))
+                    else
                     {
                         int32_t lhs_idx = children[0];
                         AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
@@ -3210,7 +3268,6 @@ namespace cl
                             CL_TRY(codegen_node(lhs_children[1]));
                             break;
                         }
-                        CL_TRY(codegen_node(lhs_idx));
                     }
                     break;
 
@@ -3867,11 +3924,11 @@ namespace cl
             TValue<String>::from_value_assumed(av.constants[expression_idx]));
     }
 
-    Expected<CodeObject *> codegen_function(const AstVector &av,
-                                            ModuleObject *module,
-                                            CodeObjectBuilder *parent_code_obj,
-                                            int32_t node_idx,
-                                            LanguageMode language_mode)
+    Expected<CodeObject *>
+    codegen_function(const AstVector &av,
+                     const CompilationScopeAnalysis &scopes,
+                     ModuleObject *module, CodeObjectBuilder *parent_code_obj,
+                     int32_t node_idx, LanguageMode language_mode)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
@@ -3879,6 +3936,8 @@ namespace cl
             CL_TRY(supported_runtime_parameter_order(av, children[0]));
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
+        install_scope_layout(*local_scope,
+                             scopes.scopes_by_body.at(children[1]));
         TValue<String> function_name =
             TValue<String>::from_value_assumed(av.constants[node_idx]);
         CodeObjectBuilder fun_obj(av.compilation_unit,
@@ -3924,55 +3983,66 @@ namespace cl
         {
             fun_obj.parameter_flags() |= FunctionParameterFlags::HasKwArgs;
         }
-        for(int32_t ch: param_children)
-        {
-            assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
-                   av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS ||
-                   av.kinds[ch].node_kind == AstNodeKind::PARAMETER_KWARGS);
-            fun_obj.get_local_scope_ptr()->register_slot_index_for_write(
-                ast_string_constant(av, ch));
-        }
-        reserve_parameter_padding_and_frame_header(&fun_obj);
-
-        AstCodegen fun_builder = CL_TRY(
-            AstCodegen::make(av, &fun_obj, CodegenMode::Function, language_mode,
-                             children[1], param_children));
+        AstCodegen fun_builder(av, &fun_obj, scopes, children[1],
+                               language_mode);
         return fun_builder.run_function_body(source_offset, children[1]);
     }
 
-    Expected<CodeObject *> codegen_class(const AstVector &av,
-                                         ModuleObject *module,
-                                         CodeObjectBuilder *parent_code_obj,
-                                         int32_t node_idx,
-                                         LanguageMode language_mode)
+    Expected<CodeObject *>
+    codegen_class(const AstVector &av, const CompilationScopeAnalysis &scopes,
+                  ModuleObject *module, CodeObjectBuilder *parent_code_obj,
+                  int32_t node_idx, LanguageMode language_mode)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         int32_t body_idx = children[1];
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
+        install_scope_layout(*local_scope, scopes.scopes_by_body.at(body_idx));
         CodeObjectBuilder class_obj(av.compilation_unit,
                                     TValue<ModuleObject>::from_oop(module),
                                     local_scope, parent_code_obj->name());
 
-        class_obj.n_parameters() = 2;
-        class_obj.get_local_scope_ptr()->reserve_empty_slots(2);
-        reserve_parameter_padding_and_frame_header(&class_obj);
-
-        AstCodegen class_builder = CL_TRY(AstCodegen::make(
-            av, &class_obj, CodegenMode::Class, language_mode, body_idx, {}));
+        class_obj.n_parameters() = ClassBodyParameterCount;
+        AstCodegen class_builder(av, &class_obj, scopes, body_idx,
+                                 language_mode);
         return class_builder.run_class_body(source_offset, body_idx);
     }
 
     Expected<CodeObject *> AstCodegen::run_function_body(uint32_t source_offset,
                                                          int32_t body_idx)
     {
+        bool has_cells = !analysis.free_bindings.empty();
+        if(has_cells)
+        {
+            code_obj->set_n_freevars(uint32_t(analysis.free_bindings.size()));
+            CL_TRY(code_obj->emit_copy_free_vars(source_offset));
+        }
+        for(const BindingInfo &binding: analysis.bindings)
+        {
+            if(binding.scope == BindingScope::Cell)
+            {
+                has_cells = true;
+                CL_TRY(code_obj->emit_make_cell(source_offset,
+                                                binding.local_slot_idx));
+            }
+        }
         CL_TRY(codegen_node(body_idx));
         // finally, emit return None just in case. as a future optimisation, we
         // could check that all return paths already have a return statement
         CL_TRY(code_obj->emit_lda_none(source_offset));
         CL_TRY(code_obj->emit_return(source_offset));
-        return code_obj->finalize();
+        CodeObject *code = CL_TRY(code_obj->finalize());
+        if(has_cells && (code->get_highest_occupied_frame_offset() > INT8_MAX ||
+                         code->get_padded_n_ordinary_below_frame_slots() >
+                             uint32_t(-INT8_MIN - FrameHeaderSizeBelowFp) ||
+                         code->get_first_free_arg_encoded_reg() >= 0))
+        {
+            return Expected<CodeObject *>::raise_exception(
+                L"SyntaxError",
+                L"closure frame exceeds bytecode register range");
+        }
+        return Expected<CodeObject *>::ok(code);
     }
 
     Expected<CodeObject *> AstCodegen::run_class_body(uint32_t source_offset,
@@ -3988,14 +4058,15 @@ namespace cl
                              LanguageMode language_mode,
                              ModuleResultMode result_mode)
     {
+        CompilationScopeAnalysis scopes =
+            CL_TRY(analyze_compilation_scopes(av));
         TValue<ModuleObject> defining_module =
             TValue<ModuleObject>::from_oop(module);
         CodeObjectBuilder module_obj(
             av.compilation_unit, defining_module, nullptr,
             TValue<String>::from_value_assumed(module->get_name_binding()));
-        AstCodegen builder = CL_TRY(
-            AstCodegen::make(av, &module_obj, CodegenMode::Module,
-                             language_mode, av.root_node, {}, result_mode));
+        AstCodegen builder(av, &module_obj, scopes, av.root_node, language_mode,
+                           result_mode);
         return builder.run_module();
     }
 

@@ -7,6 +7,7 @@
 #include "bytecode/code_object_builder.h"
 #include "bytecode/code_object_print.h"
 #include "compiler/codegen.h"
+#include "compiler/codegen_scope_analysis.h"
 #include "compiler/parser.h"
 #include "object_model/function.h"
 #include "runtime/thread_state.h"
@@ -2736,6 +2737,40 @@ TEST(Codegen, walrus_skipped_paths_require_checked_local_loads)
     {
         std::string actual = bytecode_str_from_file(source);
         EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
+    }
+}
+
+TEST(Codegen, sibling_scopes_share_ast_indexed_access_annotations)
+{
+    constexpr size_t sibling_count = 512;
+    std::wstring source;
+    for(size_t i = 0; i < sibling_count; ++i)
+    {
+        source += L"def f" + std::to_wstring(i) +
+                  L"(arg=seed):\n    local = arg\n    return local\n";
+    }
+    test::ParsedFile parsed(source.c_str());
+    auto analysis = analyze_compilation_scopes(parsed.ast);
+    ASSERT_TRUE(analysis.has_value());
+    const CompilationScopeAnalysis &result = analysis.value();
+    EXPECT_EQ(sibling_count + 1, result.scopes_by_body.size());
+    EXPECT_EQ(parsed.ast.size(), result.loads.size());
+    EXPECT_EQ(parsed.ast.size(), result.stores.size());
+    EXPECT_EQ(parsed.ast.size(), result.deletes.size());
+    const AstChildren &siblings = parsed.ast.children[parsed.ast.root_node];
+    for(int32_t definition_idx: siblings)
+    {
+        const AstChildren &definition = parsed.ast.children[definition_idx];
+        int32_t parameter_group = parsed.ast.children[definition[0]][1];
+        int32_t parameter_idx = parsed.ast.children[parameter_group][0];
+        int32_t default_idx = parsed.ast.children[parameter_idx][0];
+        ASSERT_TRUE(result.loads[default_idx].has_value());
+        EXPECT_TRUE(result.loads[default_idx]->scope == BindingScope::Global);
+
+        int32_t return_stmt = parsed.ast.children[definition[1]][1];
+        int32_t return_read = parsed.ast.children[return_stmt][0];
+        ASSERT_TRUE(result.loads[return_read].has_value());
+        EXPECT_TRUE(result.loads[return_read]->scope == BindingScope::Local);
     }
 }
 

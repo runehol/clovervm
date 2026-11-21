@@ -143,6 +143,7 @@ namespace cl::jit
 
         BytecodeState<Ref> make_entry_state(std::span<const Ref> parameters,
                                             std::span<const Ref> frame_header,
+                                            Ref incoming_accumulator,
                                             Ref uninitialized_local,
                                             Ref unavailable) const
         {
@@ -158,6 +159,8 @@ namespace cl::jit
             }
 
             std::vector<Ref> values(order_.size(), unavailable);
+            values[BytecodeStateOrder::AccumulatorPosition] =
+                incoming_accumulator;
             for(uint32_t index = 0; index < order_.n_parameters(); ++index)
             {
                 values[BytecodeStateOrder::FirstFramePosition + index] =

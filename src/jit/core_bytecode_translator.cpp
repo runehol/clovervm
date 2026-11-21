@@ -56,13 +56,15 @@ namespace cl::jit
                            frame_offset)));
         }
 
+        ProgramValueRef incoming_accumulator = emplace_state_parameter(
+            block, BytecodeStateOrder::AccumulatorPosition);
         ProgramValueRef uninitialized_local(
             builder_.emplace_instruction<UninitializedInstruction>(block));
         ProgramValueRef uninitialized_temporary(
             builder_.emplace_instruction<UninitializedInstruction>(block));
-        return state_tracker_.make_entry_state(parameters, frame_header,
-                                               uninitialized_local,
-                                               uninitialized_temporary);
+        return state_tracker_.make_entry_state(
+            parameters, frame_header, incoming_accumulator, uninitialized_local,
+            uninitialized_temporary);
     }
 
     CoreBytecodeTranslator::State

@@ -25,6 +25,7 @@
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
 #include "jit/jit_code_object.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -62,6 +63,7 @@
     V(StopIterationObject);                                                    \
     V(OSErrorObject);                                                          \
     V(Float);                                                                  \
+    V(Cell);                                                                   \
     V(Function);                                                               \
     V(Dict);                                                                   \
     V(SlotDict);                                                               \

@@ -220,6 +220,12 @@ namespace cl
             code_obj->docstring = docstring;
         }
 
+        void set_n_freevars(uint32_t n_freevars)
+        {
+            assert_not_finalized();
+            code_obj->n_freevars = n_freevars;
+        }
+
         uint32_t &n_parameters()
         {
             assert_not_finalized();
@@ -297,6 +303,12 @@ namespace cl
         Expected<uint32_t> emit_sta_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_del_local(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_make_cell(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_load_cell_checked(uint32_t source_offset,
+                                                  uint32_t reg);
+        Expected<uint32_t> emit_store_cell(uint32_t source_offset,
+                                           uint32_t reg);
+        Expected<uint32_t> emit_del_cell(uint32_t source_offset, uint32_t reg);
         Expected<uint32_t> emit_del_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_lda_none(uint32_t source_offset);
@@ -351,6 +363,12 @@ namespace cl
                                                 uint8_t code_idx);
         Expected<uint32_t> emit_create_function_with_defaults(
             uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg);
+        Expected<uint32_t> emit_copy_free_vars(uint32_t source_offset);
+        Expected<uint32_t> emit_create_function_with_closure(
+            uint32_t source_offset, uint8_t code_idx, uint32_t closure_reg);
+        Expected<uint32_t> emit_create_function_with_defaults_and_closure(
+            uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg,
+            uint32_t closure_reg);
         Expected<uint32_t> emit_create_tuple(uint32_t source_offset,
                                              uint32_t first_reg,
                                              uint8_t n_regs);

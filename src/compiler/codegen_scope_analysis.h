@@ -7,12 +7,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace cl
 {
-    class CodeObjectBuilder;
-
     enum class CodegenMode
     {
         Module,
@@ -23,6 +22,8 @@ namespace cl
     enum class BindingScope
     {
         Local,
+        Cell,
+        Free,
         Global
     };
 
@@ -52,24 +53,38 @@ namespace cl
 
     struct ScopeAnalysis
     {
+        struct FreeBinding
+        {
+            uint32_t binding_index;
+            uint32_t parent_binding_index;
+        };
+
         CodegenMode mode = CodegenMode::Module;
+        uint32_t n_slots = 0;
         std::vector<BindingInfo> bindings;
+        std::vector<uint32_t> named_bindings_in_slot_order;
+        std::vector<FreeBinding> free_bindings;
+        AstChildren child_definitions;
         // Indexed by local slot, including parameter slots. These locals must
         // be copied when an evaluated operand is retained in a register.
         std::vector<bool> expression_assigned_locals;
+    };
+
+    struct CompilationScopeAnalysis
+    {
+        std::unordered_map<int32_t, ScopeAnalysis> scopes_by_body;
         std::vector<std::optional<NameAccessAnalysis>> loads;
         std::vector<std::optional<NameAccessAnalysis>> stores;
         std::vector<std::optional<NameAccessAnalysis>> deletes;
 
-        ScopeAnalysis(CodegenMode _mode, size_t n_nodes)
-            : mode(_mode), loads(n_nodes), stores(n_nodes), deletes(n_nodes)
+        explicit CompilationScopeAnalysis(size_t n_nodes)
+            : loads(n_nodes), stores(n_nodes), deletes(n_nodes)
         {
         }
     };
 
-    Expected<ScopeAnalysis> analyze_code_object_scope(
-        const AstVector &av, CodeObjectBuilder *target_code_obj,
-        int32_t body_idx, CodegenMode mode, AstChildren param_children = {});
+    Expected<CompilationScopeAnalysis>
+    analyze_compilation_scopes(const AstVector &av);
 
 }  // namespace cl
 

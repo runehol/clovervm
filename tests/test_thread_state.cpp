@@ -7,6 +7,7 @@
 #include "builtin_types/tuple.h"
 #include "import_system/module_global.h"
 #include "object_model/class_object.h"
+#include "object_model/function.h"
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
 #include "object_model/shape.h"
@@ -254,18 +255,22 @@ namespace cl
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
         CodeObject *code = make_return_42_test_code(context);
+        Owned<TValue<Function>> function(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(code),
+            Optional<TValue<String>>::none()));
         TargetSafepointRecorder recorder;
         begin_recording_target_safepoints(context, &recorder, code);
         context.vm().request_safepoint();
 
-        Value result = thread->run_clovervm_code_object(code);
+        Value result = thread->call_clovervm_function(function.value());
 
         EXPECT_EQ(Value::from_smi(42), result);
         EXPECT_EQ(0u, recorder.pc_offset);
         EXPECT_NE(nullptr, recorder.record.lowest_live_stack_slot);
-        EXPECT_TRUE(
-            recorder.record.accumulator_or_not_present.is_not_present());
+        EXPECT_EQ(function.raw_value(),
+                  recorder.record.accumulator_or_not_present);
     }
 
     TEST(ThreadState, ReturnSafepointPublishesAccumulatorInCallerFrame)

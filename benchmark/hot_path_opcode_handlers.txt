@@ -57,6 +57,7 @@ op_lshift
 op_lshift_smi
 op_load_attr
 op_load_local_checked
+op_load_cell_checked
 op_mul
 op_mul_smi
 op_negate
@@ -104,3 +105,4 @@ op_to_exact_tuple
 op_to_exact_list
 
 op_enter
+op_copy_free_vars

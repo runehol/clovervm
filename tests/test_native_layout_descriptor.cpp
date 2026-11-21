@@ -9,9 +9,11 @@
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
+#include "bytecode/code_object_builder.h"
 #include "compiler/scope.h"
 #include "memory/global_heap.h"
 #include "memory/native_layout_descriptor.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -569,12 +571,152 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<RangeIterator>();
     expect_static_native_layout_descriptor<TupleIterator>();
     expect_static_native_layout_descriptor<ListIterator>();
+    expect_static_native_layout_descriptor<Cell>();
     expect_static_native_layout_descriptor<ExceptionObject>();
     expect_static_native_layout_descriptor<StopIterationObject>();
     expect_static_native_layout_descriptor<Function>();
     expect_static_native_layout_descriptor<Dict>();
     expect_static_native_layout_descriptor<SlotDict>();
     expect_static_native_layout_descriptor<ClassObject>();
+}
+
+TEST(NativeLayoutDescriptor, CellOwnsAndTracesItsCurrentValue)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Owned<TValue<List>> first(thread->make_object_value<List>());
+    Owned<TValue<List>> second(thread->make_object_value<List>());
+    const auto first_refcount = first.extract()->refcount();
+    const auto second_refcount = second.extract()->refcount();
+
+    Owned<TValue<Cell>> cell(
+        thread->make_object_value<Cell>(Value::not_present()));
+    EXPECT_EQ(Value::not_present(), cell.extract()->value());
+
+    cell.extract()->set_value(first.raw_value());
+    EXPECT_EQ(first.raw_value(), cell.extract()->value());
+    EXPECT_EQ(first_refcount + 1, first.extract()->refcount());
+
+    cell.extract()->set_value(second.raw_value());
+    EXPECT_EQ(second.raw_value(), cell.extract()->value());
+    EXPECT_EQ(first_refcount, first.extract()->refcount());
+    EXPECT_EQ(second_refcount + 1, second.extract()->refcount());
+
+    size_t value_slots = 0;
+    visit_strong_reference_slots(cell.extract(), [&](HeapReferenceSlot slot) {
+        EXPECT_NE(first.extract(), slot.load_pointer());
+        if(slot.load_pointer() == second.extract())
+        {
+            ++value_slots;
+        }
+    });
+    EXPECT_EQ(1u, value_slots);
+
+    cell.extract()->set_value(Value::not_present());
+    EXPECT_EQ(Value::not_present(), cell.extract()->value());
+    EXPECT_EQ(second_refcount, second.extract()->refcount());
+}
+
+static Owned<TValue<CodeObject>>
+make_one_freevar_code(test::VmTestContext &context)
+{
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"closure_fixture");
+    OwnedHeapPtr<Scope> scope(
+        context.thread()->make_internal_raw<Scope>(nullptr));
+    CodeObjectBuilder builder(&context.vm(), nullptr,
+                              context.vm().global_builtins_module(),
+                              scope.extract(), name);
+    builder.configure_positional_function(1);
+    scope.extract()->register_slot_index_for_write(
+        context.vm().get_or_create_interned_string_value(L"captured"));
+    builder.set_n_freevars(1);
+    builder.emit_lda_none(0).value();
+    builder.emit_return(0).value();
+    return Owned<TValue<CodeObject>>(
+        TValue<CodeObject>::from_oop(builder.finalize().value()));
+}
+
+TEST(NativeLayoutDescriptor, FunctionsTraceTheirOwnClosureTuples)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    auto code = make_one_freevar_code(context);
+    ASSERT_EQ(1u, code.extract()->n_freevars);
+    uint32_t first_local_slot =
+        code.extract()->get_padded_n_parameters() + FrameHeaderSize;
+    EXPECT_EQ(context.vm().get_or_create_interned_string_value(L"captured"),
+              code.extract()->get_local_scope_ptr()->get_name_by_slot_index(
+                  first_local_slot));
+
+    auto make_function = [&](Value contents) {
+        Owned<TValue<Cell>> cell(thread->make_object_value<Cell>(contents));
+        Owned<TValue<Tuple>> tuple(thread->make_object_value<Tuple>(1));
+        tuple.extract()->initialize_item_unchecked(0, cell.raw_value());
+        return Owned<TValue<Function>>(thread->make_object_value<Function>(
+            code.value(), Optional<TValue<String>>::none(),
+            Optional<TValue<Tuple>>::none(),
+            Optional<TValue<Tuple>>::some(tuple.value())));
+    };
+    auto first = make_function(Value::not_present());
+    auto second = make_function(Value::from_smi(42));
+    EXPECT_EQ(first.extract()->code_object.value(),
+              second.extract()->code_object.value());
+    ASSERT_TRUE(first.extract()->closure().has_value());
+    ASSERT_TRUE(second.extract()->closure().has_value());
+    Tuple *first_tuple = first.extract()->closure().value().extract();
+    Tuple *second_tuple = second.extract()->closure().value().extract();
+    EXPECT_NE(first_tuple, second_tuple);
+    EXPECT_NE(first_tuple->item_unchecked(0), second_tuple->item_unchecked(0));
+
+    size_t closure_slots = 0;
+    visit_strong_reference_slots(first.extract(), [&](HeapReferenceSlot slot) {
+        HeapObject *target = slot.load_pointer();
+        EXPECT_NE(second_tuple, target);
+        if(target == first_tuple)
+        {
+            ++closure_slots;
+        }
+    });
+    EXPECT_EQ(1u, closure_slots);
+}
+
+TEST(NativeLayoutDescriptor, FunctionConstructionRejectsInvalidClosures)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    auto code = make_one_freevar_code(context);
+    Owned<TValue<CodeObject>> closure_free_code(
+        TValue<CodeObject>::from_oop(context.compile_file(L"pass\n")));
+    auto no_docstring = Optional<TValue<String>>::none();
+    auto no_defaults = Optional<TValue<Tuple>>::none();
+    Owned<TValue<Function>> closure_free(thread->make_object_value<Function>(
+        closure_free_code.value(), no_docstring));
+    EXPECT_EQ(0u, closure_free_code.extract()->n_freevars);
+    EXPECT_FALSE(closure_free.extract()->closure().has_value());
+
+    Owned<TValue<Tuple>> empty(thread->make_object_value<Tuple>(0));
+    Owned<TValue<Tuple>> non_cell(thread->make_object_value<Tuple>(1));
+    non_cell.extract()->initialize_item_unchecked(0, Value::from_smi(1));
+    auto empty_closure = Optional<TValue<Tuple>>::some(empty.value());
+    auto non_cell_closure = Optional<TValue<Tuple>>::some(non_cell.value());
+
+    EXPECT_DEATH(
+        (void)thread->make_object_value<Function>(code.value(), no_docstring),
+        "does not match the free-variable count");
+    EXPECT_DEATH((void)thread->make_object_value<Function>(
+                     code.value(), no_docstring, no_defaults, empty_closure),
+                 "does not match the free-variable count");
+    EXPECT_DEATH((void)thread->make_object_value<Function>(
+                     closure_free_code.value(), no_docstring, no_defaults,
+                     empty_closure),
+                 "does not match the free-variable count");
+    EXPECT_DEATH((void)thread->make_object_value<Function>(
+                     code.value(), no_docstring, no_defaults, non_cell_closure),
+                 "contains a non-cell value");
 }
 
 TEST(NativeLayoutDescriptor, BigIntUsesInheritedObjectReleaseDescriptor)

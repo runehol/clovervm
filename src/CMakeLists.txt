@@ -117,6 +117,8 @@ add_library(libclovervm_objects OBJECT
     builtin_types/num_parse_unicode.inc
     builtin_types/hash.cpp
     builtin_types/hash.h
+    object_model/cell.cpp
+    object_model/cell.h
     object_model/function.cpp
     object_model/function.h
     memory/global_heap.cpp

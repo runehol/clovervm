@@ -1545,15 +1545,14 @@ namespace cl
                 {
                     annotation_children.push_back(CL_TRY(annotated_rhs()));
                 }
-                Value simple =
+                AstNodeKind kind =
                     !lhs_parenthesized &&
                             ast.kinds[lhs].node_kind ==
                                 AstNodeKind::EXPRESSION_VARIABLE_REFERENCE
-                        ? Value::True()
-                        : Value::False();
+                        ? AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE
+                        : AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE;
                 return Expected<int32_t>::ok(
-                    ast.emplace_back(AstNodeKind::STATEMENT_ANN_ASSIGN,
-                                     source_pos, annotation_children, simple));
+                    ast.emplace_back(kind, source_pos, annotation_children));
             }
 
             AstOperatorKind op_kind = AstOperatorKind::FALSE;
@@ -1906,10 +1905,10 @@ namespace cl
                 AstNodeKind::STATEMENT_PASS, source_pos, AstChildren{}));
         }
 
-        Expected<int32_t> global_stmt()
+        Expected<int32_t> scope_declaration(Token keyword, AstNodeKind kind)
         {
             int32_t source_pos = source_pos_for_token();
-            CL_TRY(consume(Token::GLOBAL));
+            CL_TRY(consume(keyword));
 
             AstChildren ch;
             do
@@ -1925,13 +1924,8 @@ namespace cl
             }
             while(match(Token::COMMA));
 
-            return Expected<int32_t>::ok(ast.emplace_back(
-                AstNodeKind::STATEMENT_GLOBAL, source_pos, ch));
-        }
-
-        Expected<int32_t> nonlocal_stmt()
-        {
-            return not_implemented(L"nonlocal statement");
+            return Expected<int32_t>::ok(
+                ast.emplace_back(kind, source_pos, ch));
         }
 
         Expected<int32_t> simple_stmt()
@@ -1959,9 +1953,11 @@ namespace cl
                 case Token::PASS:
                     return pass_stmt();
                 case Token::GLOBAL:
-                    return global_stmt();
+                    return scope_declaration(Token::GLOBAL,
+                                             AstNodeKind::STATEMENT_GLOBAL);
                 case Token::NONLOCAL:
-                    return nonlocal_stmt();
+                    return scope_declaration(Token::NONLOCAL,
+                                             AstNodeKind::STATEMENT_NONLOCAL);
 
                 default:
                     return assignment();

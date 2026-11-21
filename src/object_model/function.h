@@ -17,7 +17,6 @@ namespace cl
     class ClassObject;
     class VirtualMachine;
 
-    // may need closures and stuff later. TBD
     class Function : public InlineSlotObject
     {
     public:
@@ -27,17 +26,25 @@ namespace cl
         static constexpr uint32_t kCodeObjectSlot = 0;
         static constexpr uint32_t kDefaultParametersSlot = 1;
         static constexpr uint32_t kDocstringSlot = 2;
-        static constexpr uint32_t kPredefinedInlineSlotCount =
-            kDocstringSlot + 1;
-        static constexpr uint32_t kInlineSlotCount = 3;
+        static constexpr uint32_t kClosureSlot = 3;
+        static constexpr uint32_t kPredefinedInlineSlotCount = kClosureSlot + 1;
+        static constexpr uint32_t kInlineSlotCount = kPredefinedInlineSlotCount;
 
-        Function(ClassObject *cls, TValue<CodeObject> _code_object,
-                 Optional<TValue<String>> _docstring,
-                 Optional<TValue<Tuple>> _default_parameters =
-                     Optional<TValue<Tuple>>::none())
+        Function(
+            ClassObject *cls, TValue<CodeObject> _code_object,
+            Optional<TValue<String>> _docstring,
+            Optional<TValue<Tuple>> _default_parameters =
+                Optional<TValue<Tuple>>::none(),
+            Optional<TValue<Tuple>> closure = Optional<TValue<Tuple>>::none())
             : InlineSlotObject(cls, native_layout), code_object(_code_object),
-              default_parameters(_default_parameters), docstring(_docstring)
+              default_parameters(_default_parameters), docstring(_docstring),
+              closure_(closure)
         {
+            uint32_t n_freevars = _code_object.extract()->n_freevars;
+            if(n_freevars != 0 || closure.has_value())
+            {
+                validate_closure(n_freevars, closure);
+            }
             refresh_signature_from_code_object();
             assert_parameter_layout(_code_object);
             if(_default_parameters.has_value())
@@ -122,12 +129,23 @@ namespace cl
         Member<TValue<CodeObject>> code_object;
         Member<Optional<TValue<Tuple>>> default_parameters;
         Member<Optional<TValue<String>>> docstring;
+
+    private:
+        Member<Optional<TValue<Tuple>>> closure_;
+
+    public:
+        Optional<TValue<Tuple>> closure() const { return closure_.value(); }
+
         FunctionCallSignature call_signature;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, InlineSlotObject, 3);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, InlineSlotObject,
+                                             kPredefinedInlineSlotCount);
         CL_DECLARE_STATIC_OBJECT_SIZE(Function);
 
     private:
+        static void validate_closure(uint32_t n_freevars,
+                                     Optional<TValue<Tuple>> closure);
+
         static uint32_t
         min_arity_for_code(TValue<CodeObject> code_object,
                            Optional<TValue<Tuple>> default_parameters)

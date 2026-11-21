@@ -20,6 +20,7 @@
 #include "import_system/module_global.h"
 #include "memory/heap_reclamation.h"
 #include "object_model/attr.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -44,6 +45,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace cl;
 
@@ -983,6 +985,188 @@ TEST(Interpreter, class_constructor_custom_new_with_init_has_no_thunk_yet)
                         L"        pass\n"
                         L"C()\n",
                         L"TypeError", L"object is not callable");
+}
+
+TEST(Interpreter, lexical_captures_share_and_forward_cells)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def outer(seed):
+    def middle():
+        def read(default=seed):
+            return seed, value, default
+        return read
+    def sibling():
+        return value
+    value = seed
+    read = middle()
+    value += 1
+    return read, sibling
+
+first = outer(10)
+second = outer(20)
+assert first[0]() == (10, 11, 10)
+assert first[1]() == 11
+assert second[0]() == (20, 21, 20)
+assert second[1]() == 21
+
+def recursive():
+    def recurse(n):
+        if n == 0:
+            return recurse
+        return recurse(n - 1)
+    return recurse
+
+recurse = recursive()
+assert recurse(3) is recurse
+
+shadow = 19
+def global_barrier():
+    shadow = 72
+    def middle():
+        global shadow
+        def read():
+            return shadow
+        return read
+    return middle()
+assert global_barrier()() == 19
+True
+)"));
+}
+
+TEST(Interpreter, lexical_cell_targets_preserve_binding_semantics)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def locals_and_loops():
+    readers = []
+    for value in range(3):
+        def read():
+            return value
+        readers.append(read)
+    assert readers[0]() == 2
+    assert readers[2]() == 2
+    assert (value := 37) == 37
+    assert readers[1]() == 37
+    del value
+    return readers[0]
+
+def exception_target():
+    try:
+        raise ValueError("capture")
+    except ValueError as error:
+        def read():
+            return error
+        assert isinstance(read(), ValueError)
+        del error
+    return read
+
+def annotation_only():
+    def read():
+        return x
+    x: int
+    return read
+
+for reader in (locals_and_loops(), exception_target(), annotation_only()):
+    try:
+        reader()
+        assert False
+    except NameError:
+        pass
+
+def before_own_assignment():
+    def read():
+        return x
+    return x
+    x = 1
+try:
+    before_own_assignment()
+    assert False
+except UnboundLocalError:
+    pass
+True
+)"));
+}
+
+TEST(Interpreter, lexical_captures_in_operator_calls_and_methods)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def make_truth(flag):
+    def truth(self):
+        return flag
+    return truth
+
+class Receiver:
+    def make_reader(self):
+        value = 31
+        def read():
+            return value
+        return read
+
+Receiver.__bool__ = make_truth(False)
+receiver = Receiver()
+def probe():
+    return not receiver
+assert probe()
+assert probe()
+assert receiver.make_reader()() == 31
+True
+)"));
+}
+
+TEST(Interpreter, lexical_captures_across_class_bodies_are_rejected)
+{
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        value = x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        x = 1\n"
+                        L"        def read(self): return x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+}
+
+TEST(Interpreter, lexical_captures_respect_bytecode_register_range)
+{
+    std::wstring source = L"def outer():\n";
+    for(int index = 0; index < 130; ++index)
+    {
+        source += L"    v" + std::to_wstring(index) + L" = 1\n";
+    }
+    source += L"    def read(): return v129\n    return read\n";
+    expect_python_error(source.c_str(), L"SyntaxError",
+                        L"closure frame exceeds bytecode register range");
+}
+
+TEST(Interpreter, copy_free_vars_is_emitted_only_for_incoming_captures)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Value outer_value = make_test_function(context, L"outer", LR"(
+def outer(x):
+    def leaf():
+        return x
+    return leaf
+)");
+    auto *outer = native_cast<Function>(outer_value);
+    CodeObject *outer_code = outer->code_object.extract();
+    auto prologue = bytecode_length(Bytecode::Enter);
+    EXPECT_EQ(0u, outer_code->n_freevars);
+    EXPECT_EQ(Bytecode::MakeCell,
+              decode_instruction(*outer_code, prologue).encoded_opcode());
+
+    Value leaf_value = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(outer_value), Value::from_smi(7));
+    ASSERT_TRUE(has_native_layout<Function>(leaf_value));
+    CodeObject *leaf_code =
+        native_cast<Function>(leaf_value)->code_object.extract();
+    EXPECT_EQ(1u, leaf_code->n_freevars);
+    EXPECT_EQ(Bytecode::CopyFreeVars,
+              decode_instruction(*leaf_code, prologue).encoded_opcode());
 }
 
 TEST(Interpreter, int_constructor_converts_large_string_to_bigint)
@@ -4295,6 +4479,167 @@ TEST(Interpreter, global_statement_rejects_annotated_name)
                         L"    global value\n"
                         L"    value: int\n",
                         L"SyntaxError", L"annotated name can't be global");
+}
+
+TEST(Interpreter, bare_function_annotation_binds_an_unassigned_local)
+{
+    expect_python_error(L"value = 4\n"
+                        L"def f():\n"
+                        L"    value: int\n"
+                        L"    return value\n"
+                        L"f()\n",
+                        L"UnboundLocalError",
+                        L"cannot access local variable 'value' where it is not "
+                        L"associated with a value");
+}
+
+TEST(Interpreter, global_statement_rejects_prior_parenthesized_annotation_store)
+{
+    expect_python_error(L"def f():\n"
+                        L"    (value): int = 7\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
+    expect_python_error(L"(value): int = 7\n"
+                        L"global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
+    expect_python_error(L"class C:\n"
+                        L"    (value): int = 7\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
+}
+
+TEST(Interpreter, nonlocal_updates_and_deletes_forwarded_cells)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+def outer(x, y):
+    def read():
+        return x, y
+    def middle():
+        def write(value):
+            (x): UnresolvedAnnotation
+            nonlocal x, y
+            (x): UnresolvedAnnotation = value
+            y = value + 1
+        def remove():
+            nonlocal x
+            del x
+        return write, remove
+    methods = middle()
+    return read, methods[0], methods[1]
+
+first = outer(1, 2)
+second = outer(3, 4)
+first[1](37)
+assert first[0]() == (37, 38)
+assert second[0]() == (3, 4)
+first[2]()
+try:
+    first[0]()
+    assert False
+except NameError:
+    pass
+first[1](71)
+assert first[0]() == (71, 72)
+True
+)"));
+}
+
+TEST(Interpreter, nonlocal_declaration_alone_captures_a_cell)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Value outer = make_test_function(context, L"outer", LR"(
+def outer(x):
+    def middle():
+        def leaf():
+            nonlocal x
+            pass
+        return leaf
+    return middle
+)");
+    Owned<Value> middle(thread->call_clovervm_function(
+        TValue<Function>::from_value_assumed(outer), Value::from_smi(37)));
+    ASSERT_TRUE(has_native_layout<Function>(middle.value()));
+    Owned<Value> leaf(thread->call_clovervm_function(
+        TValue<Function>::from_value_assumed(middle.value())));
+    ASSERT_TRUE(has_native_layout<Function>(leaf.value()));
+    auto middle_closure = native_cast<Function>(middle.value())->closure();
+    auto leaf_closure = native_cast<Function>(leaf.value())->closure();
+    ASSERT_TRUE(middle_closure.has_value());
+    ASSERT_TRUE(leaf_closure.has_value());
+    Value cell = leaf_closure.value().extract()->item_unchecked(0);
+    EXPECT_EQ(middle_closure.value().extract()->item_unchecked(0), cell);
+    ASSERT_TRUE(has_native_layout<Cell>(cell));
+    EXPECT_EQ(Value::from_smi(37), native_cast<Cell>(cell)->value());
+}
+
+TEST(Interpreter, nonlocal_validates_declarations_in_source_order)
+{
+    struct Case
+    {
+        const wchar_t *body;
+        const wchar_t *message;
+    };
+    for(const auto &[body, message]:
+        {Case{L"        x\n        nonlocal x\n",
+              L"name 'x' is used prior to nonlocal declaration"},
+         Case{L"        x = x\n        nonlocal x\n",
+              L"name 'x' is used prior to nonlocal declaration"},
+         Case{L"        x += 1\n        nonlocal x\n",
+              L"name 'x' is assigned to before nonlocal declaration"},
+         Case{L"        del x\n        nonlocal x\n",
+              L"name 'x' is assigned to before nonlocal declaration"},
+         Case{L"        (x): int = 1\n        nonlocal x\n",
+              L"name 'x' is assigned to before nonlocal declaration"},
+         Case{L"        x: int\n        nonlocal x\n",
+              L"annotated name 'x' can't be nonlocal"},
+         Case{L"        nonlocal x\n        x: int\n",
+              L"annotated name 'x' can't be nonlocal"},
+         Case{L"        global x\n        nonlocal x\n",
+              L"name 'x' is nonlocal and global"},
+         Case{L"        nonlocal x\n        global x\n",
+              L"name 'x' is nonlocal and global"}})
+    {
+        std::wstring source = L"def outer(x):\n    def inner():\n";
+        source += body;
+        expect_python_error(source.c_str(), L"SyntaxError", message);
+    }
+    expect_python_error(L"def outer(x):\n"
+                        L"    def inner(x):\n"
+                        L"        nonlocal x\n",
+                        L"SyntaxError", L"name 'x' is parameter and nonlocal");
+}
+
+TEST(Interpreter, nonlocal_requires_an_enclosing_function_binding)
+{
+    expect_python_error(L"nonlocal x\n", L"SyntaxError",
+                        L"nonlocal declaration not allowed at module level");
+    expect_python_error(L"x = 1\n"
+                        L"def inner():\n"
+                        L"    nonlocal x\n",
+                        L"SyntaxError", L"no binding for nonlocal 'x' found");
+    expect_python_error(L"def outer(x):\n"
+                        L"    def middle():\n"
+                        L"        global x\n"
+                        L"        def inner():\n"
+                        L"            nonlocal x\n",
+                        L"SyntaxError", L"no binding for nonlocal 'x' found");
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        nonlocal x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
+    expect_python_error(L"def outer(x):\n"
+                        L"    class C:\n"
+                        L"        def method(self):\n"
+                        L"            nonlocal x\n",
+                        L"SyntaxError",
+                        L"closures across class bodies are not supported");
 }
 
 TEST(Interpreter, name_error)
@@ -8891,6 +9236,62 @@ True
     }
 }
 
+TEST(Interpreter, managed_call_entry_safepoint_roots_target_function)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *module_code = context.compile_file(LR"(
+def target(x):
+    return x
+
+class Receiver:
+    method = target
+
+receiver = Receiver()
+
+def run():
+    assert target(1) == 1
+    assert target(x=2) == 2
+    assert target(*(3,), **{}) == 3
+    assert receiver.method() is receiver
+
+for repeat in range(2):
+    run()
+True
+)");
+    struct Observation
+    {
+        size_t calls = 0;
+    } observation;
+    context.vm().set_safepoint_callback_for_testing(
+        [](void *opaque, ThreadState *, Value accumulator, Value *,
+           CodeObject *code, uint32_t pc_offset,
+           const SafepointScanRecord &record) {
+            if(pc_offset != 0)
+            {
+                return;
+            }
+            Value target =
+                code->get_defining_module().extract()->get_own_property(
+                    interned_string(L"target"));
+            if(!has_native_layout<Function>(target) ||
+               target.get_ptr<Function>()->code_object.extract() != code)
+            {
+                return;
+            }
+            EXPECT_EQ(target, accumulator);
+            EXPECT_EQ(target, record.accumulator_or_not_present);
+            ++static_cast<Observation *>(opaque)->calls;
+        },
+        &observation);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_EQ(Value::True(),
+              context.thread()->run_clovervm_code_object(module_code));
+    context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+    EXPECT_EQ(8u, observation.calls);
+}
+
 struct TruthinessSafepointCheck
 {
     CodeObject *callback;
@@ -9702,6 +10103,401 @@ except StopIteration as caught:
     context.vm().request_safepoint();
     ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+static CodeObjectBuilder make_cell_test_builder(test::VmTestContext &context)
+{
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<cell-test>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr, context.vm().global_builtins_module(),
+        context.thread()->make_internal_raw<Scope>(nullptr), name);
+    builder.configure_positional_function(1);
+    return builder;
+}
+
+TEST(Interpreter, cell_opcodes_box_and_update_slots)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    auto builder = make_cell_test_builder(context);
+    uint32_t local =
+        builder.get_local_scope_ptr()->register_slot_index_for_write(
+            context.vm().get_or_create_interned_string_value(L"local"));
+    {
+        CodeObjectBuilder::TemporaryReg alias(builder);
+        CodeObjectBuilder::TemporaryReg results(builder, 6);
+
+        builder.emit_lda_smi(0, 71).value();
+        builder.emit_make_cell(0, 0).value();
+        builder.emit_star(0, results).value();
+        builder.emit_load_cell_checked(0, 0).value();
+        builder.emit_star(0, results + 1).value();
+
+        builder.emit_make_cell(0, local).value();
+        builder.emit_mov(0, alias, local).value();
+        builder.emit_lda_smi(0, 42).value();
+        builder.emit_store_cell(0, local).value();
+        builder.emit_star(0, results + 2).value();
+        builder.emit_load_cell_checked(0, alias).value();
+        builder.emit_star(0, results + 3).value();
+
+        builder.emit_lda_smi(0, 91).value();
+        builder.emit_del_cell(0, local).value();
+        builder.emit_star(0, results + 4).value();
+        builder.emit_ldar(0, alias).value();
+        builder.emit_star(0, results + 5).value();
+        builder.emit_create_tuple(0, results, 6).value();
+    }
+    builder.emit_return(0).value();
+    auto code = TValue<CodeObject>::from_oop(builder.finalize().value());
+    Owned<TValue<Function>> function(thread->make_object_value<Function>(
+        code, Optional<TValue<String>>::none()));
+
+    Value result =
+        thread->call_clovervm_function(function.value(), Value::from_smi(13));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
+    Tuple *tuple = native_cast<Tuple>(result);
+    ASSERT_EQ(6u, tuple->size());
+    EXPECT_EQ(Value::from_smi(71), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(13), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(42), tuple->item_unchecked(2));
+    EXPECT_EQ(Value::from_smi(42), tuple->item_unchecked(3));
+    EXPECT_EQ(Value::from_smi(91), tuple->item_unchecked(4));
+    ASSERT_TRUE(has_native_layout<Cell>(tuple->item_unchecked(5)));
+    EXPECT_EQ(Value::not_present(),
+              native_cast<Cell>(tuple->item_unchecked(5))->value());
+}
+
+TEST(Interpreter, checked_cell_opcodes_report_the_binding_scope)
+{
+    enum class Binding
+    {
+        OwnLocal,
+        FreeVar,
+        OwnLocalAfterFreeVar,
+    };
+    for(Bytecode opcode: {Bytecode::LoadCellChecked, Bytecode::DelCell})
+    {
+        SCOPED_TRACE(bytecode_name(opcode));
+        for(Binding binding: {Binding::OwnLocal, Binding::FreeVar,
+                              Binding::OwnLocalAfterFreeVar})
+        {
+            SCOPED_TRACE(static_cast<int>(binding));
+            test::VmTestContext context;
+            ThreadState *thread = context.thread();
+            ThreadState::ActivationScope activation(thread);
+            auto builder = make_cell_test_builder(context);
+            Scope *scope = builder.get_local_scope_ptr();
+            if(binding == Binding::OwnLocalAfterFreeVar)
+            {
+                scope->register_slot_index_for_write(
+                    context.vm().get_or_create_interned_string_value(
+                        L"unused_free"));
+            }
+            uint32_t slot = scope->register_slot_index_for_write(
+                context.vm().get_or_create_interned_string_value(L"x"));
+            Owned<TValue<Cell>> cell(
+                thread->make_object_value<Cell>(Value::not_present()));
+            Owned<Optional<TValue<Tuple>>> closure(
+                Optional<TValue<Tuple>>::none());
+            if(binding != Binding::OwnLocal)
+            {
+                builder.set_n_freevars(1);
+                Owned<TValue<Tuple>> cells(thread->make_object_value<Tuple>(1));
+                cells.extract()->initialize_item_unchecked(0, cell.raw_value());
+                closure = Optional<TValue<Tuple>>::some(cells.value());
+            }
+            if(binding == Binding::FreeVar)
+            {
+                // Seed the slot explicitly until CopyFreeVars is available.
+                builder.emit_ldar(0, 0).value();
+                builder.emit_star(0, slot).value();
+            }
+            else
+            {
+                builder.emit_make_cell(0, slot).value();
+            }
+            if(opcode == Bytecode::LoadCellChecked)
+            {
+                builder.emit_load_cell_checked(0, slot).value();
+            }
+            else
+            {
+                builder.emit_del_cell(0, slot).value();
+            }
+            builder.emit_return(0).value();
+            auto code =
+                TValue<CodeObject>::from_oop(builder.finalize().value());
+            Owned<TValue<Function>> function(
+                thread->make_object_value<Function>(
+                    code, Optional<TValue<String>>::none(),
+                    Optional<TValue<Tuple>>::none(), closure.value()));
+
+            EXPECT_EQ(Value::exception_marker(),
+                      thread->call_clovervm_function(function.value(),
+                                                     cell.raw_value()));
+            if(binding == Binding::FreeVar)
+            {
+                expect_thread_python_error(
+                    thread, L"NameError",
+                    L"cannot access free variable 'x' where it is not "
+                    L"associated with a value in enclosing scope");
+            }
+            else
+            {
+                expect_thread_python_error(
+                    thread, L"UnboundLocalError",
+                    L"cannot access local variable 'x' where it is not "
+                    L"associated with a value");
+            }
+        }
+    }
+}
+
+TEST(Interpreter, closure_creation_opcodes_share_code_and_keep_distinct_cells)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    auto builder = make_cell_test_builder(context);
+    Scope *scope = builder.get_local_scope_ptr();
+    uint32_t first_free = scope->register_slot_index_for_write(
+        context.vm().get_or_create_interned_string_value(L"first"));
+    uint32_t second_free = scope->register_slot_index_for_write(
+        context.vm().get_or_create_interned_string_value(L"second"));
+    builder.set_n_freevars(2);
+    builder.function_signature().first_default_slot = 0;
+    builder.function_signature().default_presence_mask = 1;
+    builder.emit_copy_free_vars(0).value();
+    {
+        CodeObjectBuilder::TemporaryReg results(builder, 4);
+        builder.emit_star(0, results + 3).value();
+        builder.emit_load_cell_checked(0, first_free).value();
+        builder.emit_star(0, results).value();
+        builder.emit_load_cell_checked(0, second_free).value();
+        builder.emit_star(0, results + 1).value();
+        builder.emit_mov(0, results + 2, 0).value();
+        builder.emit_create_tuple(0, results, 4).value();
+    }
+    builder.emit_return(0).value();
+    CodeObject *code = builder.finalize().value();
+    Owned<TValue<Tuple>> defaults(thread->make_object_value<Tuple>(1));
+    defaults.extract()->initialize_item_unchecked(0, Value::from_smi(91));
+
+    std::vector<Owned<TValue<Function>>> functions;
+    for(int32_t index = 0; index < 2; ++index)
+    {
+        Owned<TValue<Tuple>> closure(thread->make_object_value<Tuple>(2));
+        for(int32_t cell_index = 0; cell_index < 2; ++cell_index)
+        {
+            auto cell = thread->make_object_value<Cell>(
+                Value::from_smi(10 * index + cell_index));
+            closure.extract()->initialize_item_unchecked(cell_index,
+                                                         cell.raw_value());
+        }
+
+        CodeObjectBuilder factory(&context.vm(), nullptr,
+                                  code->get_defining_module(), nullptr,
+                                  code->name.value());
+        uint8_t target =
+            factory.allocate_constant(Value::from_oop(code)).value();
+        uint8_t capture =
+            factory.allocate_constant(closure.raw_value()).value();
+        {
+            CodeObjectBuilder::TemporaryReg closure_reg(factory);
+            factory.emit_lda_constant(0, capture).value();
+            factory.emit_star(0, closure_reg).value();
+            if(index == 0)
+            {
+                factory
+                    .emit_create_function_with_closure(0, target, closure_reg)
+                    .value();
+            }
+            else
+            {
+                CodeObjectBuilder::TemporaryReg defaults_reg(factory);
+                uint8_t values =
+                    factory.allocate_constant(defaults.raw_value()).value();
+                factory.emit_lda_constant(0, values).value();
+                factory.emit_star(0, defaults_reg).value();
+                factory
+                    .emit_create_function_with_defaults_and_closure(
+                        0, target, defaults_reg, closure_reg)
+                    .value();
+            }
+        }
+        factory.emit_return(0).value();
+        Value created =
+            thread->run_clovervm_code_object(factory.finalize().value());
+        ASSERT_TRUE(has_native_layout<Function>(created));
+        functions.emplace_back(TValue<Function>::from_value_assumed(created));
+        EXPECT_EQ(code, functions[index].extract()->code_object.extract());
+        ASSERT_TRUE(functions[index].extract()->closure().has_value());
+        EXPECT_EQ(closure.value(),
+                  functions[index].extract()->closure().value());
+    }
+
+    for(int32_t index = 0; index < 2; ++index)
+    {
+        Value result =
+            index == 0
+                ? thread->call_clovervm_function(functions[index].value(),
+                                                 Value::from_smi(73))
+                : thread->call_clovervm_function(functions[index].value());
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        const Tuple *tuple = native_cast<Tuple>(result);
+        ASSERT_EQ(4u, tuple->size());
+        EXPECT_EQ(Value::from_smi(10 * index), tuple->item_unchecked(0));
+        EXPECT_EQ(Value::from_smi(10 * index + 1), tuple->item_unchecked(1));
+        EXPECT_EQ(Value::from_smi(index == 0 ? 73 : 91),
+                  tuple->item_unchecked(2));
+        EXPECT_EQ(functions[index].raw_value(), tuple->item_unchecked(3));
+    }
+}
+
+TEST(Interpreter, constructor_thunks_load_only_closure_backed_targets)
+{
+    for(bool is_init: {true, false})
+    {
+        SCOPED_TRACE(is_init ? "__init__" : "__new__");
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        CodeObject *module = context.compile_file(
+            is_init ? L"class Target:\n"
+                      L"    def __init__(self, value=71): pass\n"
+                      L"def invoke(): return Target()\n"
+                    : L"class Target:\n"
+                      L"    def __new__(cls, value=71): return cls, value\n"
+                      L"def invoke(): return Target()\n");
+        ASSERT_FALSE(
+            thread->run_clovervm_code_object(module).is_exception_marker());
+        Value cls_value = load_global_from_module_for_test(
+            module, interned_string(L"Target"));
+        auto invoke = TValue<Function>::from_value_assumed(
+            load_global_from_module_for_test(module,
+                                             interned_string(L"invoke")));
+        auto *cls = native_cast<ClassObject>(cls_value);
+        ASSERT_FALSE(
+            thread->call_clovervm_function(invoke).is_exception_marker());
+        ASSERT_NE(nullptr, cls->current_constructor_thunk());
+        CodeObject *plain_thunk =
+            cls->current_constructor_thunk()->code_object.extract();
+
+        // Exact instruction bytes for the two existing two-parameter thunks.
+        std::vector<uint8_t> expected =
+            is_init
+                ? std::vector<uint8_t>{uint8_t(Bytecode::Enter),
+                                       4,
+                                       0,
+                                       uint8_t(
+                                           Bytecode::CreateInstanceKnownClass),
+                                       0,
+                                       uint8_t(Bytecode::Star0),
+                                       uint8_t(Bytecode::Mov),
+                                       uint8_t(-3),
+                                       uint8_t(-1),
+                                       uint8_t(Bytecode::Mov),
+                                       uint8_t(-4),
+                                       5,
+                                       uint8_t(Bytecode::CallCodeObject),
+                                       1,
+                                       uint8_t(-3),
+                                       2,
+                                       uint8_t(Bytecode::CheckInitReturnedNone),
+                                       uint8_t(Bytecode::Ldar0),
+                                       uint8_t(Bytecode::Return)}
+                : std::vector<uint8_t>{uint8_t(Bytecode::Enter),
+                                       2,
+                                       0,
+                                       uint8_t(Bytecode::LdaConstant),
+                                       0,
+                                       uint8_t(Bytecode::Star0),
+                                       uint8_t(Bytecode::Mov),
+                                       uint8_t(-2),
+                                       5,
+                                       uint8_t(Bytecode::CallCodeObject),
+                                       1,
+                                       uint8_t(-1),
+                                       2,
+                                       uint8_t(Bytecode::Return)};
+        EXPECT_EQ(expected, plain_thunk->code);
+        EXPECT_EQ(2u, plain_thunk->constant_table.size());
+
+        auto method = interned_string(is_init ? L"__init__" : L"__new__");
+        auto captured_name = interned_string(L"captured");
+        auto *scope = thread->make_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder builder(&context.vm(), nullptr,
+                                  module->get_defining_module(), scope, method);
+        builder.configure_positional_function(2);
+        builder.function_signature().first_default_slot = 1;
+        builder.function_signature().default_presence_mask = 1;
+        uint32_t captured_slot =
+            scope->register_slot_index_for_write(captured_name);
+        builder.set_n_freevars(1);
+        builder.emit_copy_free_vars(0).value();
+        {
+            CodeObjectBuilder::TemporaryReg fields(builder, is_init ? 2 : 3);
+            builder.emit_load_cell_checked(0, captured_slot).value();
+            builder.emit_star(0, fields).value();
+            builder.emit_mov(0, fields + 1, 1).value();
+            if(!is_init)
+            {
+                builder.emit_mov(0, fields + 2, 0).value();
+            }
+            builder.emit_create_tuple(0, fields, is_init ? 2 : 3).value();
+        }
+        if(is_init)
+        {
+            uint8_t name =
+                builder.allocate_constant(captured_name.raw_value()).value();
+            builder.emit_store_attr(0, 0, name).value();
+            builder.emit_lda_none(0).value();
+        }
+        builder.emit_return(0).value();
+        CodeObject *target_code = builder.finalize().value();
+        Owned<TValue<Tuple>> closure(thread->make_object_value<Tuple>(1));
+        auto cell = thread->make_object_value<Cell>(Value::from_smi(37));
+        closure.extract()->initialize_item_unchecked(0, cell.raw_value());
+        Owned<TValue<Tuple>> defaults(thread->make_object_value<Tuple>(1));
+        defaults.extract()->initialize_item_unchecked(0, Value::from_smi(73));
+        Owned<TValue<Function>> target(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(target_code),
+            Optional<TValue<String>>::none(),
+            Optional<TValue<Tuple>>::some(defaults.value()),
+            Optional<TValue<Tuple>>::some(closure.value())));
+        ASSERT_TRUE(store_attr(cls_value, method, target.raw_value()).value());
+
+        Value result = thread->call_clovervm_function(invoke);
+        ASSERT_FALSE(result.is_exception_marker());
+        if(is_init)
+        {
+            ASSERT_EQ(cls, thread->class_of_value(result));
+            result = load_attr(result, captured_name);
+        }
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        const Tuple *fields = native_cast<Tuple>(result);
+        ASSERT_EQ(is_init ? 2u : 3u, fields->size());
+        EXPECT_EQ(Value::from_smi(37), fields->item_unchecked(0));
+        EXPECT_EQ(Value::from_smi(73), fields->item_unchecked(1));
+        if(!is_init)
+        {
+            EXPECT_EQ(cls_value, fields->item_unchecked(2));
+        }
+
+        ASSERT_NE(nullptr, cls->current_constructor_thunk());
+        CodeObject *closure_thunk =
+            cls->current_constructor_thunk()->code_object.extract();
+        expected.insert(expected.begin() + (is_init ? 12 : 9),
+                        {uint8_t(Bytecode::LdaConstant), 2});
+        EXPECT_EQ(expected, closure_thunk->code);
+        ASSERT_EQ(3u, closure_thunk->constant_table.size());
+        EXPECT_EQ(Value::from_oop(target_code),
+                  closure_thunk->constant_table[1].value());
+        EXPECT_EQ(target.raw_value(), closure_thunk->constant_table[2].value());
+    }
 }
 
 TEST(Interpreter, enter_clears_only_padded_slots_and_resume_preserves_them)

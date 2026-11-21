@@ -65,7 +65,7 @@ namespace cl::jit
                                                                  23};
             return tracker.make_entry_state(
                 std::span<const TestRef>(parameters),
-                std::span<const TestRef>(frame_header), 90, 99);
+                std::span<const TestRef>(frame_header), 80, 90, 99);
         }
     }  // namespace
 
@@ -76,7 +76,7 @@ namespace cl::jit
         BytecodeState<TestRef> state = make_entry_state(tracker);
 
         EXPECT_EQ(
-            99u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
+            80u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
         EXPECT_EQ(10u,
                   tracker.value_at(state, parameter(*fixture.code_object, 0)));
         EXPECT_EQ(12u,
@@ -89,6 +89,7 @@ namespace cl::jit
                   tracker.value_at(state, temporary(*fixture.code_object, 2)));
 
         std::span<const TestRef> values = tracker.values(state);
+        EXPECT_EQ(80u, values[BytecodeStateOrder::AccumulatorPosition]);
         EXPECT_EQ(99u, values[4]);
         EXPECT_EQ(23u, values[5]);
         EXPECT_EQ(20u, values[8]);
@@ -145,7 +146,7 @@ namespace cl::jit
             parameter(*fixture.code_object, 1), local(*fixture.code_object, 0)};
         std::vector<TestRef> inputs = tracker.read(
             state, std::span<const BytecodeValueLocation>(sources));
-        EXPECT_EQ((std::vector<TestRef>{99, 11, 90}), inputs);
+        EXPECT_EQ((std::vector<TestRef>{80, 11, 90}), inputs);
 
         std::array<BytecodeValueLocation, 3> destinations = {
             parameter(*fixture.code_object, 1), local(*fixture.code_object, 0),
@@ -192,7 +193,7 @@ namespace cl::jit
         tracker.replace_value(state, 99, 77);
 
         EXPECT_EQ(
-            77u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
+            80u, tracker.value_at(state, BytecodeValueLocation::accumulator()));
         EXPECT_EQ(77u,
                   tracker.value_at(state, temporary(*fixture.code_object, 0)));
         EXPECT_EQ(77u,
@@ -267,21 +268,21 @@ namespace cl::jit
                                                                      23};
                 (void)tracker.make_entry_state(
                     std::span<const TestRef>(parameters),
-                    std::span<const TestRef>(frame_header), 90, 99);
+                    std::span<const TestRef>(frame_header), 80, 90, 99);
             }()),
             "wrong parameter count");
 
-        EXPECT_DEATH(([] {
-                         StateFixture fixture;
-                         BytecodeStateTracker<TestRef> tracker(
-                             *fixture.code_object);
-                         std::array<TestRef, 3> parameters = {1, 2, 3};
-                         std::array<TestRef, 3> frame_header = {20, 21, 22};
-                         (void)tracker.make_entry_state(
-                             std::span<const TestRef>(parameters),
-                             std::span<const TestRef>(frame_header), 90, 99);
-                     }()),
-                     "wrong frame-header size");
+        EXPECT_DEATH(
+            ([] {
+                StateFixture fixture;
+                BytecodeStateTracker<TestRef> tracker(*fixture.code_object);
+                std::array<TestRef, 3> parameters = {1, 2, 3};
+                std::array<TestRef, 3> frame_header = {20, 21, 22};
+                (void)tracker.make_entry_state(
+                    std::span<const TestRef>(parameters),
+                    std::span<const TestRef>(frame_header), 80, 90, 99);
+            }()),
+            "wrong frame-header size");
 
         EXPECT_DEATH(
             ([] {

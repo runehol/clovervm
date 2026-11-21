@@ -814,6 +814,30 @@ TEST(Parser, variable_annotations_parse_and_are_ignored)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, distinguishes_simple_and_non_simple_annotation_targets)
+{
+    test::ParsedFile parsed(L"x: int\n"
+                            L"(x): int = 1\n"
+                            L"obj.x: int\n"
+                            L"obj[0]: int\n");
+    const AstVector &ast = parsed.ast;
+    const AstChildren &statements = ast.children[ast.root_node];
+    ASSERT_EQ(4u, statements.size());
+    EXPECT_TRUE(ast.kinds[statements[0]].node_kind ==
+                AstNodeKind::STATEMENT_ANN_ASSIGN_SIMPLE);
+    for(size_t i = 1; i < statements.size(); ++i)
+    {
+        EXPECT_TRUE(ast.kinds[statements[i]].node_kind ==
+                    AstNodeKind::STATEMENT_ANN_ASSIGN_NON_SIMPLE);
+    }
+    for(int32_t stmt_idx: statements)
+    {
+        EXPECT_EQ(Value::None(), ast.constants[stmt_idx].value());
+    }
+    EXPECT_EQ("x: int\n(x): int = 1\nobj.x: int\nobj[0]: int\n",
+              fmt::to_string(ast));
+}
+
 TEST(Parser, attribute_expression_and_assignment)
 {
     std::string expected = ("obj.value\n"
