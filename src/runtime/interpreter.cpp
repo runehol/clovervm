@@ -3081,6 +3081,22 @@ namespace cl
 #endif
 #pragma clang attribute pop
 
+    static INTERP_CC Value op_copy_free_vars(PARAMS)
+    {
+        START(1);
+        Function *function = native_cast<Function>(accumulator);
+        assert(function->code_object.extract() == code_object);
+        const Tuple *closure = function->closure().value().extract();
+        int32_t count = int32_t(code_object->n_freevars);
+        assert(count > 0);
+        for(int32_t index = 0; index < count; ++index)
+        {
+            fp[-FrameHeaderSizeBelowFp - 1 - index] =
+                closure->item_unchecked(index);
+        }
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_clear_local(PARAMS)
     {
         START(2);
@@ -4667,6 +4683,40 @@ namespace cl
                               Optional<TValue<Tuple>>::some(defaults))
                           .raw_value();
 
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_create_function_with_closure(PARAMS)
+    {
+        START(3);
+        TValue<CodeObject> code = TValue<CodeObject>::from_value_assumed(
+            code_object->constant_table[pc[1]].value());
+        TValue<Tuple> closure =
+            TValue<Tuple>::from_value_assumed(fp[int8_t(pc[2])]);
+        accumulator = thread
+                          ->make_object_value<Function>(
+                              code, code.extract()->docstring.value(),
+                              Optional<TValue<Tuple>>::none(),
+                              Optional<TValue<Tuple>>::some(closure))
+                          .raw_value();
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_create_function_with_defaults_and_closure(PARAMS)
+    {
+        START(4);
+        TValue<CodeObject> code = TValue<CodeObject>::from_value_assumed(
+            code_object->constant_table[pc[1]].value());
+        TValue<Tuple> defaults =
+            TValue<Tuple>::from_value_assumed(fp[int8_t(pc[2])]);
+        TValue<Tuple> closure =
+            TValue<Tuple>::from_value_assumed(fp[int8_t(pc[3])]);
+        accumulator = thread
+                          ->make_object_value<Function>(
+                              code, code.extract()->docstring.value(),
+                              Optional<TValue<Tuple>>::some(defaults),
+                              Optional<TValue<Tuple>>::some(closure))
+                          .raw_value();
         COMPLETE();
     }
 
@@ -6926,6 +6976,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::StoreCell, op_store_cell);
         SET_TABLE_ENTRY(Bytecode::DelCell, op_del_cell);
         SET_TABLE_ENTRY(Bytecode::Enter, op_enter);
+        SET_TABLE_ENTRY(Bytecode::CopyFreeVars, op_copy_free_vars);
         SET_TABLE_ENTRY(Bytecode::ClearLocal, op_clear_local);
         SET_TABLE_ENTRY(Bytecode::Star, op_star);
         SET_TABLE_ENTRY(Bytecode::Mov, op_mov);
@@ -7069,6 +7120,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
         SET_TABLE_ENTRY(Bytecode::CreateFunctionWithDefaults,
                         op_create_function_with_defaults);
+        SET_TABLE_ENTRY(Bytecode::CreateFunctionWithClosure,
+                        op_create_function_with_closure);
+        SET_TABLE_ENTRY(Bytecode::CreateFunctionWithDefaultsAndClosure,
+                        op_create_function_with_defaults_and_closure);
         SET_TABLE_ENTRY(Bytecode::CreateInstanceKnownClass,
                         op_create_instance_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateListKnownClass,

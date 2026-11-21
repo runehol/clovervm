@@ -616,6 +616,35 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_copy_free_vars(uint32_t source_offset)
+    {
+        return Expected<uint32_t>::ok(
+            emplace_back(source_offset, uint8_t(Bytecode::CopyFreeVars)));
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_create_function_with_closure(
+        uint32_t source_offset, uint8_t code_idx, uint32_t closure_reg)
+    {
+        return emit_opcode_constant_idx_reg(source_offset,
+                                            Bytecode::CreateFunctionWithClosure,
+                                            code_idx, closure_reg);
+    }
+
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_create_function_with_defaults_and_closure(
+        uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg,
+        uint32_t closure_reg)
+    {
+        uint32_t offset = emplace_back(
+            source_offset,
+            uint8_t(Bytecode::CreateFunctionWithDefaultsAndClosure));
+        emplace_back(source_offset, code_idx);
+        emplace_back(source_offset, encode_reg(defaults_reg));
+        emplace_back(source_offset, encode_reg(closure_reg));
+        return Expected<uint32_t>::ok(offset);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_create_tuple(uint32_t source_offset,
                                          uint32_t first_reg, uint8_t n_regs)
     {

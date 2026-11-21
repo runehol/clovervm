@@ -650,6 +650,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::Nop:
+            case cl::Bytecode::CopyFreeVars:
             case cl::Bytecode::FinishTruthiness:
             case cl::Bytecode::FinishTruthinessNot:
             case cl::Bytecode::Sqrt:
@@ -935,8 +936,18 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::CreateFunctionWithDefaults:
+            case cl::Bytecode::CreateFunctionWithClosure:
                 fmt::format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
+                fmt::format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::CreateFunctionWithDefaultsAndClosure:
+                fmt::format_to(out, " ");
+                disassemble_constant(code_obj, out, pc++);
+                fmt::format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
                 fmt::format_to(out, ", ");
                 disassemble_reg(code_obj, out, pc++);
                 break;

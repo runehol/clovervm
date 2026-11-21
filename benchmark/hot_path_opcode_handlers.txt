@@ -105,3 +105,4 @@ op_to_exact_tuple
 op_to_exact_list
 
 op_enter
+op_copy_free_vars

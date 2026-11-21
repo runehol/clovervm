@@ -50,6 +50,7 @@ namespace cl
         Register,
         RegisterRegister,
         ConstantRegister,
+        ConstantRegisterRegister,
         RegisterRegisterConstantRegister,
         RegisterCount,
         ConstantModuleGlobalReadCache,
@@ -207,6 +208,9 @@ namespace cl
             case BytecodeFormat::ConstantRegister:
                 return make_bytecode_format_info(Operand::Constant,
                                                  Operand::Register);
+            case BytecodeFormat::ConstantRegisterRegister:
+                return make_bytecode_format_info(
+                    Operand::Constant, Operand::Register, Operand::Register);
             case BytecodeFormat::RegisterCount:
                 return make_bytecode_format_info(Operand::Register,
                                                  Operand::Count);

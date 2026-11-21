@@ -1,5 +1,7 @@
 #include "builtin_types/float.h"
 #include "builtin_types/tuple.h"
+#include "bytecode/code_object_builder.h"
+#include "compiler/scope.h"
 #include "jit/aarch64_allocation_constraints.h"
 #include "jit/aarch64_assembler.h"
 #include "jit/aarch64_backend.h"
@@ -16,6 +18,7 @@
 #include "jit/location_assignments.h"
 #include "jit/machine_address_internal.h"
 #include "jit/register_allocator.h"
+#include "object_model/cell.h"
 #include "object_model/function.h"
 #include "object_model/validity_cell.h"
 #include "runtime/runtime_helpers.h"
@@ -1612,6 +1615,76 @@ def run(): return reduce(subtract, [10, 2, 3])
         }
         fixture.thread()->get_machine()->set_safepoint_callback_for_testing(
             nullptr, nullptr);
+    }
+
+    TEST(AArch64Execution, CopyFreeVarsSideExitRecoversEachFunction)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope activation(thread);
+        auto name =
+            context.vm().get_or_create_interned_string_value(L"capture");
+        Scope *scope = thread->make_internal_raw<Scope>(nullptr);
+        CodeObjectBuilder builder(&context.vm(), nullptr,
+                                  context.vm().global_builtins_module(), scope,
+                                  name);
+        builder.configure_positional_function(0);
+        uint32_t slot = scope->register_slot_index_for_write(name);
+        builder.set_n_freevars(1);
+        uint32_t copy_pc = builder.emit_copy_free_vars(0).value();
+        builder.emit_load_cell_checked(0, slot).value();
+        builder.emit_return(0).value();
+        CodeObject *code = builder.finalize().value();
+        auto compilation = compile_jit_code(*thread, *code);
+        ASSERT_TRUE(compilation);
+        code->publish_jit_code(std::move(compilation).value());
+
+        struct Observation
+        {
+            CodeObject *code;
+            uint32_t copy_pc;
+            Value expected;
+            bool observed = false;
+        };
+        Observation observation{code, copy_pc, Value::not_present()};
+        context.vm().set_safepoint_callback_for_testing(
+            [](void *opaque, ThreadState *, Value accumulator, Value *,
+               CodeObject *current, uint32_t pc_offset,
+               const SafepointScanRecord &record) {
+                auto &state = *static_cast<Observation *>(opaque);
+                if(current == state.code && pc_offset == state.copy_pc)
+                {
+                    state.observed = true;
+                    EXPECT_EQ(state.expected, accumulator);
+                    EXPECT_EQ(state.expected,
+                              record.accumulator_or_not_present);
+                }
+            },
+            &observation);
+
+        std::vector<Owned<TValue<Function>>> functions;
+        for(int64_t captured: {13, 73})
+        {
+            auto cell =
+                thread->make_object_value<Cell>(Value::from_smi(captured));
+            Owned<TValue<Tuple>> closure(thread->make_object_value<Tuple>(1));
+            closure.extract()->initialize_item_unchecked(0, cell.raw_value());
+            functions.emplace_back(thread->make_object_value<Function>(
+                TValue<CodeObject>::from_oop(code),
+                Optional<TValue<String>>::none(),
+                Optional<TValue<Tuple>>::none(),
+                Optional<TValue<Tuple>>::some(closure.value())));
+        }
+        for(size_t index = 0; index < functions.size(); ++index)
+        {
+            observation.expected = functions[index].raw_value();
+            observation.observed = false;
+            context.vm().request_safepoint();
+            EXPECT_EQ(Value::from_smi(index == 0 ? 13 : 73),
+                      thread->call_clovervm_function(functions[index].value()));
+            EXPECT_TRUE(observation.observed);
+        }
+        context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
     }
 
     TEST(AArch64Execution, RecoversOperatorFunctionAtEarlySideExit)

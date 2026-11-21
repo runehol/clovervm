@@ -305,5 +305,9 @@ CL_BYTECODE(MakeCell, Register, Sequential, None)
 CL_BYTECODE(LoadCellChecked, Register, Sequential, None)
 CL_BYTECODE(StoreCell, Register, Sequential, None)
 CL_BYTECODE(DelCell, Register, Sequential, None)
+CL_BYTECODE(CopyFreeVars, NoOperands, Sequential, None)
+CL_BYTECODE(CreateFunctionWithClosure, ConstantRegister, Sequential, None)
+CL_BYTECODE(CreateFunctionWithDefaultsAndClosure, ConstantRegisterRegister,
+            Sequential, None)
 
 CL_BYTECODE(Invalid, Invalid, Invalid, None)

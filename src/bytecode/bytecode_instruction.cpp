@@ -162,6 +162,13 @@ namespace cl
             add_registers(instruction.sources_, first_local, count);
         }
 
+        void destination_locals(uint32_t count)
+        {
+            add_registers(
+                instruction.destinations_,
+                code_object.get_padded_n_parameters() + FrameHeaderSize, count);
+        }
+
     private:
         void add_registers(std::vector<BytecodeValueLocation> &locations,
                            uint32_t first_register, uint32_t count)
@@ -651,8 +658,20 @@ namespace cl
                 break;
 
             case Bytecode::CreateFunctionWithDefaults:
+            case Bytecode::CreateFunctionWithClosure:
                 effects.source_register(1);
                 effects.destination_accumulator();
+                break;
+
+            case Bytecode::CreateFunctionWithDefaultsAndClosure:
+                effects.source_register(1);
+                effects.source_register(2);
+                effects.destination_accumulator();
+                break;
+
+            case Bytecode::CopyFreeVars:
+                effects.source_accumulator();
+                effects.destination_locals(code_object.n_freevars);
                 break;
 
             case Bytecode::CreateClass:

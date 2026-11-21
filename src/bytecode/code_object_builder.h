@@ -363,6 +363,12 @@ namespace cl
                                                 uint8_t code_idx);
         Expected<uint32_t> emit_create_function_with_defaults(
             uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg);
+        Expected<uint32_t> emit_copy_free_vars(uint32_t source_offset);
+        Expected<uint32_t> emit_create_function_with_closure(
+            uint32_t source_offset, uint8_t code_idx, uint32_t closure_reg);
+        Expected<uint32_t> emit_create_function_with_defaults_and_closure(
+            uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg,
+            uint32_t closure_reg);
         Expected<uint32_t> emit_create_tuple(uint32_t source_offset,
                                              uint32_t first_reg,
                                              uint8_t n_regs);

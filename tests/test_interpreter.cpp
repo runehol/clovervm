@@ -45,6 +45,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace cl;
 
@@ -9939,6 +9940,107 @@ TEST(Interpreter, checked_cell_opcodes_report_the_binding_scope)
                     L"associated with a value");
             }
         }
+    }
+}
+
+TEST(Interpreter, closure_creation_opcodes_share_code_and_keep_distinct_cells)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    auto builder = make_cell_test_builder(context);
+    Scope *scope = builder.get_local_scope_ptr();
+    uint32_t first_free = scope->register_slot_index_for_write(
+        context.vm().get_or_create_interned_string_value(L"first"));
+    uint32_t second_free = scope->register_slot_index_for_write(
+        context.vm().get_or_create_interned_string_value(L"second"));
+    builder.set_n_freevars(2);
+    builder.function_signature().first_default_slot = 0;
+    builder.function_signature().default_presence_mask = 1;
+    builder.emit_copy_free_vars(0).value();
+    {
+        CodeObjectBuilder::TemporaryReg results(builder, 4);
+        builder.emit_star(0, results + 3).value();
+        builder.emit_load_cell_checked(0, first_free).value();
+        builder.emit_star(0, results).value();
+        builder.emit_load_cell_checked(0, second_free).value();
+        builder.emit_star(0, results + 1).value();
+        builder.emit_mov(0, results + 2, 0).value();
+        builder.emit_create_tuple(0, results, 4).value();
+    }
+    builder.emit_return(0).value();
+    CodeObject *code = builder.finalize().value();
+    Owned<TValue<Tuple>> defaults(thread->make_object_value<Tuple>(1));
+    defaults.extract()->initialize_item_unchecked(0, Value::from_smi(91));
+
+    std::vector<Owned<TValue<Function>>> functions;
+    for(int32_t index = 0; index < 2; ++index)
+    {
+        Owned<TValue<Tuple>> closure(thread->make_object_value<Tuple>(2));
+        for(int32_t cell_index = 0; cell_index < 2; ++cell_index)
+        {
+            auto cell = thread->make_object_value<Cell>(
+                Value::from_smi(10 * index + cell_index));
+            closure.extract()->initialize_item_unchecked(cell_index,
+                                                         cell.raw_value());
+        }
+
+        CodeObjectBuilder factory(&context.vm(), nullptr,
+                                  code->get_defining_module(), nullptr,
+                                  code->name.value());
+        uint8_t target =
+            factory.allocate_constant(Value::from_oop(code)).value();
+        uint8_t capture =
+            factory.allocate_constant(closure.raw_value()).value();
+        {
+            CodeObjectBuilder::TemporaryReg closure_reg(factory);
+            factory.emit_lda_constant(0, capture).value();
+            factory.emit_star(0, closure_reg).value();
+            if(index == 0)
+            {
+                factory
+                    .emit_create_function_with_closure(0, target, closure_reg)
+                    .value();
+            }
+            else
+            {
+                CodeObjectBuilder::TemporaryReg defaults_reg(factory);
+                uint8_t values =
+                    factory.allocate_constant(defaults.raw_value()).value();
+                factory.emit_lda_constant(0, values).value();
+                factory.emit_star(0, defaults_reg).value();
+                factory
+                    .emit_create_function_with_defaults_and_closure(
+                        0, target, defaults_reg, closure_reg)
+                    .value();
+            }
+        }
+        factory.emit_return(0).value();
+        Value created =
+            thread->run_clovervm_code_object(factory.finalize().value());
+        ASSERT_TRUE(has_native_layout<Function>(created));
+        functions.emplace_back(TValue<Function>::from_value_assumed(created));
+        EXPECT_EQ(code, functions[index].extract()->code_object.extract());
+        ASSERT_TRUE(functions[index].extract()->closure().has_value());
+        EXPECT_EQ(closure.value(),
+                  functions[index].extract()->closure().value());
+    }
+
+    for(int32_t index = 0; index < 2; ++index)
+    {
+        Value result =
+            index == 0
+                ? thread->call_clovervm_function(functions[index].value(),
+                                                 Value::from_smi(73))
+                : thread->call_clovervm_function(functions[index].value());
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        const Tuple *tuple = native_cast<Tuple>(result);
+        ASSERT_EQ(4u, tuple->size());
+        EXPECT_EQ(Value::from_smi(10 * index), tuple->item_unchecked(0));
+        EXPECT_EQ(Value::from_smi(10 * index + 1), tuple->item_unchecked(1));
+        EXPECT_EQ(Value::from_smi(index == 0 ? 73 : 91),
+                  tuple->item_unchecked(2));
+        EXPECT_EQ(functions[index].raw_value(), tuple->item_unchecked(3));
     }
 }
 
