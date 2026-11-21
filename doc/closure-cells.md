@@ -488,6 +488,12 @@ method, and native-to-managed calls, must honor this contract. The accumulator
 contains the selected function, which may be an adapter chosen during call
 resolution. Resuming an existing frame skips this entry initialization.
 
+Operator dispatch through continuations follows the same entry contract when
+it calls a Python function. Both cached and uncached dispatch put the exact
+selected `Function` in the accumulator after argument adaptation and before
+dispatching to the callee. The operator continuation keeps its existing
+return and safepoint behavior.
+
 ### Direct Code-Object Calls From Constructor Thunks
 
 `CallCodeObject` enters the target with already-bound arguments and preserves

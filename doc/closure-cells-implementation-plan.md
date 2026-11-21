@@ -35,13 +35,15 @@ checkpoint. Implementation requires separate authorization.
    destination for `CallCodeObject`. Verify forced side exits before and after
    an accumulator overwrite, and preserve the existing Python argument
    locations. This stage can proceed independently of stages 1 and 2.
-4. **Carry the selected function through ordinary call entry.** After
+4. **Carry the selected function through managed call entry.** After
    adaptation, put the exact resolved `Function` in the accumulator for
    interpreter or JIT entry. Expanded calls use the function retained across
    adaptation. Use the accumulator-preserving helper at the existing
-   interpreter entry poll. Check positional, keyword, expanded, method, and
-   native-to-managed calls, force the existing entry safepoint, and run the
-   Release opcode-frame check.
+   interpreter entry poll. Cached and uncached operator continuations also
+   load the selected `Function` into the accumulator before dispatching to
+   a Python callee. Check positional, keyword, expanded, method,
+   native-to-managed, and operator entry paths. Force the existing entry
+   safepoint and run the Release opcode-frame check.
 
 Land the preparation before enabling closures in source programs. The
 annotation fix and analyzer refactor should be reviewed in that order. The
@@ -66,16 +68,19 @@ before stage 4 supplies the function.
    `CopyFreeVars` and verify that each invocation recovers its own function.
 4. **Constructor thunk entry.** Put the exact target function in the thunk's
    constant table and emit `LdaConstant target_function` immediately before
-   `CallCodeObject` only when the target has free variables. Exercise a
-   closure-backed `__init__` or `__new__` with already-bound arguments.
-   Verify that a closure-free target keeps its existing instruction sequence.
+   `CallCodeObject` only when the target has free variables. Use bytecode
+   fixtures to exercise both closure-backed paths, `__init__` and `__new__`,
+   with already-bound arguments. Verify that a closure-free target keeps its
+   existing instruction sequence.
 5. **Enable lexical captures.** Resolve `Cell` and `Free` in the unified
    analyzer, assign the free-variable locals prefix, and emit closure bytecode.
    Include capture forwarding and explicit rejection across class bodies.
    Audit lowering paths that consume or write frame slots directly, especially
    assignment, loop targets, and exception targets and their cleanup. Verify
    sibling sharing, separate activations, late binding, shadowing, recursive
-   closures, defaults, and a capture of an annotation-only local.
+   closures, defaults, and a capture of an annotation-only local. Exercise a
+   closure-backed operator such as `__bool__` or `__add__` on both a cache
+   miss and a cache hit.
 6. **Enable `nonlocal`.** Parse the directive and extend shared declaration
    validation and resolution. Lower reads, writes, and deletion through the
    enclosing cell. Verify write-only capture, rebinding visible to a sibling,
