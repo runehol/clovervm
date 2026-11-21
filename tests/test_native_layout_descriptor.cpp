@@ -12,6 +12,7 @@
 #include "compiler/scope.h"
 #include "memory/global_heap.h"
 #include "memory/native_layout_descriptor.h"
+#include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -569,12 +570,51 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<RangeIterator>();
     expect_static_native_layout_descriptor<TupleIterator>();
     expect_static_native_layout_descriptor<ListIterator>();
+    expect_static_native_layout_descriptor<Cell>();
     expect_static_native_layout_descriptor<ExceptionObject>();
     expect_static_native_layout_descriptor<StopIterationObject>();
     expect_static_native_layout_descriptor<Function>();
     expect_static_native_layout_descriptor<Dict>();
     expect_static_native_layout_descriptor<SlotDict>();
     expect_static_native_layout_descriptor<ClassObject>();
+}
+
+TEST(NativeLayoutDescriptor, CellOwnsAndTracesItsCurrentValue)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Owned<TValue<List>> first(thread->make_object_value<List>());
+    Owned<TValue<List>> second(thread->make_object_value<List>());
+    const auto first_refcount = first.extract()->refcount();
+    const auto second_refcount = second.extract()->refcount();
+
+    Owned<TValue<Cell>> cell(
+        thread->make_object_value<Cell>(Value::not_present()));
+    EXPECT_EQ(Value::not_present(), cell.extract()->value());
+
+    cell.extract()->set_value(first.raw_value());
+    EXPECT_EQ(first.raw_value(), cell.extract()->value());
+    EXPECT_EQ(first_refcount + 1, first.extract()->refcount());
+
+    cell.extract()->set_value(second.raw_value());
+    EXPECT_EQ(second.raw_value(), cell.extract()->value());
+    EXPECT_EQ(first_refcount, first.extract()->refcount());
+    EXPECT_EQ(second_refcount + 1, second.extract()->refcount());
+
+    size_t value_slots = 0;
+    visit_strong_reference_slots(cell.extract(), [&](HeapReferenceSlot slot) {
+        EXPECT_NE(first.extract(), slot.load_pointer());
+        if(slot.load_pointer() == second.extract())
+        {
+            ++value_slots;
+        }
+    });
+    EXPECT_EQ(1u, value_slots);
+
+    cell.extract()->set_value(Value::not_present());
+    EXPECT_EQ(Value::not_present(), cell.extract()->value());
+    EXPECT_EQ(second_refcount, second.extract()->refcount());
 }
 
 TEST(NativeLayoutDescriptor, BigIntUsesInheritedObjectReleaseDescriptor)

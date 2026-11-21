@@ -36,6 +36,7 @@
 #include "import_system/native_extension_loader_internal.h"
 #include "jit/code_cache.h"
 #include "memory/heap_reclamation.h"
+#include "object_model/cell.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
 #include "object_model/native_function.h"
@@ -1183,6 +1184,7 @@ namespace cl
             empty_package.raw_value(), Value::None(), Value::None(),
             Value::not_present());
         global_builtins_module_ = builtins_module;
+        register_builtin_class(make_cell_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));

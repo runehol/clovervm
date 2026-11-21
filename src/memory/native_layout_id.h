@@ -56,6 +56,7 @@ namespace cl
         ValueArrayBacking,
         HeapPtrArrayBacking,
         HandleChunk,
+        Cell,
         TestOnly,
 
         Count,
