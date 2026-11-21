@@ -89,15 +89,24 @@ codegen:
   recursively emit code objects using their completed scope results
 ```
 
-`AstCodegen::make` receives the corresponding completed analysis rather than
-starting an independent analysis for every code object. Recursive code-object
-emission can remain; it must not rediscover lexical bindings.
+`AstCodegen::make` receives the corresponding completed scope result and the
+compilation-wide annotations. Recursive code-object emission uses those results
+for lexical bindings and name accesses.
 
 ### Scope Results And Lifetime
 
 Extend each existing `ScopeAnalysis` result with its scope AST node and mode,
-child scopes, binding classifications, and ordered free-variable bindings.
-Retain its existing load/store/delete annotations and presence information.
+child scopes, binding classifications, named-slot layout, and ordered
+free-variable bindings.
+
+The compilation owns one set of load, store, and delete annotations indexed by
+AST node ID. Each body's flow analysis fills the entries for accesses it
+analyzes, including their presence information. Codegen reads those entries by
+node ID. Analysis of a nested definition's defaults fills their entries in the
+enclosing scope, where the defaults execute. With one array per access kind,
+annotation storage scales with the size of the AST regardless of how many
+scope results are retained.
+
 Conceptually, `BindingScope` becomes:
 
 ```cpp
@@ -128,6 +137,13 @@ declarations, and child scopes. Scan the whole body regardless of reachability
 or conditional assignment. A nested function's body belongs to the child;
 default-value expressions are analyzed in the enclosing scope, where they
 execute. The function definition's name is a binding in the enclosing scope.
+
+A simple bare annotation such as `x: int` in a function declares a local
+without assigning a value. Use the parser's simple-annotation flag to collect
+this binding even without an initializer. Flow analysis records no write, and
+codegen emits no store for the annotation. If a nested function captures the
+binding, its cell starts empty with `Value::not_present()`. A bare parenthesized
+annotation such as `(x): int` does not declare a local.
 
 Collection does not assign slots. In particular, decouple
 `ensure_local_binding()` from its current immediate slot allocation through
@@ -462,10 +478,24 @@ safepoint.
 
 All fresh `Function` entry paths, including positional, keyword, expanded,
 method, and native-to-managed calls, must honor this contract. The accumulator
-contains the selected function, which need not be the original callable when
-resolution chooses an adapter. Internal direct code-object entry has no
-function instance and must not silently enter code requiring closure context.
-Resuming an existing frame skips this entry initialization.
+contains the selected function, which may be an adapter chosen during call
+resolution. Resuming an existing frame skips this entry initialization.
+
+### Direct Code-Object Calls From Constructor Thunks
+
+`CallCodeObject` enters the target with already-bound arguments and preserves
+the accumulator. When generating an `__init__` or `__new__` constructor thunk
+whose target code has free variables, keep the exact target `Function` in the
+thunk's constant table. After preparing the arguments, emit
+`LdaConstant target_function` immediately before `CallCodeObject`. The target
+function owns its closure tuple, and the callee's `CopyFreeVars` reads it
+through the accumulator after `Enter`.
+
+The thunk builder decides whether to emit the load using
+`target_code.n_freevars > 0`. Targets without free variables retain their
+existing bytecode sequence. `CallCodeObject` uses the existing operand format
+and handler for both cases. Every direct call to code with free variables must
+supply the matching function instance through this entry contract.
 
 ## JIT Entry Accumulator And Side Exits
 
