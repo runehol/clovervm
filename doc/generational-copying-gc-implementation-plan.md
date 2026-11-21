@@ -800,9 +800,9 @@ runtime verifiers, and executable comparison address that remaining boundary.
 Each slice starts from a concrete readiness sketch and finishes with a usable
 runtime state. Preserve the existing collector until its replacement contract
 has a tested consumer. Check C++ changes with the required debug build and
-tests, and run release checks at the exact HEAD before pushing. Documentation
-and Lean-only changes use their relevant content or proof checks instead of
-unrelated VM rebuilds.
+tests, and follow the repository's release-check rule for pushes to `main`.
+Documentation and Lean-only changes use their relevant content or proof checks
+instead of unrelated VM rebuilds.
 
 Stage 1's ordinary reference-span resolution is implemented and consumed by
 existing reclamation. Remaining native-rooting, runtime integration, and

@@ -59,8 +59,9 @@ This repository contains clovervm, a Python VM.
   before finalizing. Use focused checks during iteration; repeat verification
   when subsequent changes affect it. Documentation/instruction-only edits need
   relevant content, link, and format checks, not a VM build.
-- Before every push, run `ninja -C build-release all check` at the exact HEAD
-  being pushed.
+- Before pushing to `main`, run `ninja -C build-release all check` at the
+  exact commit being pushed. This release check is optional for pushes to PR
+  branches, including when a task skill refers to pre-push release checks.
 - Run benchmarks with `cmake --build build-release --target run_benchmark`.
 - On the shared macOS host, serialize substantial builds/full checks with
   exclusive `fcntl.flock` on `/private/tmp/clovervm-next-wave-build.lock`. While
