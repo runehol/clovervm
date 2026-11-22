@@ -137,19 +137,19 @@ namespace cl
         __builtin_unreachable();
     }
 
+    static bool can_change_class(const Object *object)
+    {
+        NativeLayoutId layout = object->native_layout_id();
+        return !object->get_shape()->has_flag(ShapeFlag::IsImmutable) &&
+               (layout == NativeLayoutId::Instance ||
+                layout == NativeLayoutId::ModuleObject);
+    }
+
     static Expected<bool> store_attr_change_class(Value receiver, Value value)
     {
         assert(receiver.is_ptr());
         Object *object = receiver.get_ptr<Object>();
-        if(object->get_shape()->has_flag(ShapeFlag::IsImmutable))
-        {
-            return Expected<bool>::raise_exception(
-                L"TypeError", L"__class__ assignment only supported for "
-                              L"mutable types or ModuleType subclasses");
-        }
-        NativeLayoutId receiver_layout = object->native_layout_id();
-        if(receiver_layout != NativeLayoutId::Instance &&
-           receiver_layout != NativeLayoutId::ModuleObject)
+        if(!can_change_class(object))
         {
             return Expected<bool>::raise_exception(
                 L"TypeError",
@@ -163,7 +163,8 @@ namespace cl
         }
         TValue<ClassObject> new_class =
             TValue<ClassObject>::from_value_assumed(value);
-        if(new_class.extract()->instance_native_layout_id() != receiver_layout)
+        if(new_class.extract()->instance_native_layout_id() !=
+           object->native_layout_id())
         {
             return Expected<bool>::raise_exception(
                 L"TypeError",
@@ -443,6 +444,47 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor
+    finalize_instance_class_read(AttributeReadDescriptor descriptor,
+                                 ClassObject *receiver_class)
+    {
+        if(descriptor.cache_blockers !=
+               attribute_cache_blocker(
+                   AttributeCacheBlocker::UnsupportedDescriptorKind) ||
+           (descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
+            descriptor.plan.kind !=
+                AttributeReadPlanKind::NonDataDescriptorGet) ||
+           descriptor.plan.constant_or_getter.is_not_present())
+        {
+            return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                descriptor, receiver_class);
+        }
+
+        Value value = descriptor.lookup_value;
+        if(value.is_ptr() && can_change_class(value.get_ptr<Object>()))
+        {
+            return descriptor;
+        }
+
+        ClassObject *type = active_thread()->class_of_value(value);
+        // The receiver's validity cell cannot see changes in the descriptor
+        // MRO.
+        if(!type->get_shape()->has_flag(ShapeFlag::IsImmutable) ||
+           type->get_or_create_mro_shape_and_contents_validity_cell()
+                   ->dependency_mutability() !=
+               ValidityCellDependencyMutability::Immutable)
+        {
+            return descriptor;
+        }
+
+        descriptor.cache_blockers =
+            attribute_cache_blocker(AttributeCacheBlocker::None);
+        descriptor.lookup_validity_cell =
+            receiver_class
+                ->get_or_create_mro_shape_and_contents_validity_cell();
+        return descriptor;
+    }
+
     static bool class_read_descriptor_is_mutating_descriptor(
         const AttributeReadDescriptor &descriptor)
     {
@@ -505,8 +547,8 @@ namespace cl
                class_descriptor.plan.kind ==
                    AttributeReadPlanKind::DataDescriptorGet)
             {
-                return with_mro_shape_and_contents_validity_cell_if_unblocked(
-                    class_descriptor, class_object);
+                return finalize_instance_class_read(class_descriptor,
+                                                    class_object);
             }
 
             DescriptorLookup own_lookup =
@@ -545,8 +587,7 @@ namespace cl
             }
 
             // Replacing the class slot value can change how the read binds.
-            return with_mro_shape_and_contents_validity_cell_if_unblocked(
-                class_descriptor, class_object);
+            return finalize_instance_class_read(class_descriptor, class_object);
         }
 
         AttributeReadDescriptor inline_shape_descriptor =

@@ -42,6 +42,9 @@ namespace cl
         }
     };
 
+    static_assert(sizeof(AttributeReadInlineCache) == 48,
+                  "AttributeReadInlineCache should stay compact");
+
     class AttributeMutationInlineCache
     {
     public:

@@ -4198,6 +4198,124 @@ assert Base.x is Base
     EXPECT_FALSE(run.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, cached_instance_descriptor_getter_uses_current_receiver)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+class Hooks:
+    def __get__(self, obj, owner, delta=3):
+        assert self is descriptor
+        assert owner is Child
+        return obj.marker + delta
+
+class Descriptor(Hooks):
+    pass
+
+class Bad:
+    def __get__(self, obj, owner, *, required):
+        return required
+
+class Fallback:
+    x = 61
+
+class Base(Fallback):
+    pass
+
+class Child(Base):
+    pass
+
+descriptor = Descriptor()
+bad = Bad()
+Base.x = descriptor
+first = Child()
+second = Child()
+first.marker = 20
+second.marker = 39
+
+def read(obj):
+    return obj.x
+
+def read_bad(obj):
+    try:
+        return obj.x
+    except TypeError as error:
+        return str(error) == "wrong number of arguments"
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    Owned<TValue<Function>> reader{
+        TValue<Function>::from_value_assumed(global(L"read"))};
+    Owned<Value> first{global(L"first")};
+    Owned<Value> second{global(L"second")};
+    auto &cache = reader.value()
+                      .extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    auto read = [&](Value receiver) {
+        return context.thread()->call_clovervm_function(reader.value(),
+                                                        receiver);
+    };
+
+    auto *descriptor_type = native_cast<ClassObject>(global(L"Descriptor"));
+    descriptor_type->freeze();
+    EXPECT_EQ(Value::from_smi(23), read(first.value()));
+    EXPECT_EQ(nullptr,
+              cache.lookup_validity_cell);  // __class__ can still change.
+
+    auto freeze_object = [](Object *object) {
+        Shape *shape = object->get_shape();
+        object->set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
+    };
+    freeze_object(global(L"descriptor").get_ptr<Object>());
+    EXPECT_EQ(Value::from_smi(23), read(first.value()));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);  // Hooks is still mutable.
+
+    native_cast<ClassObject>(global(L"Hooks"))->freeze();
+    EXPECT_EQ(Value::from_smi(23), read(first.value()));
+    ASSERT_TRUE(cache.matches(second.value()));
+    ASSERT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    EXPECT_EQ(FunctionCallAdaptation::Defaultable, cache.plan.adaptation);
+    auto *cell = cache.lookup_validity_cell;
+    EXPECT_EQ(Value::from_smi(42), read(second.value()));
+    EXPECT_EQ(cell, cache.lookup_validity_cell);
+
+    auto name = interned_string(L"x");
+    auto *first_object = first.value().get_ptr<Object>();
+    ASSERT_TRUE(
+        first_object->set_own_property(name, Value::from_smi(9)).value());
+    EXPECT_EQ(Value::from_smi(9), read(first.value()));
+    EXPECT_EQ(Value::from_smi(42), read(second.value()));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    ASSERT_TRUE(base->set_own_property(name, Value::from_smi(57)).value());
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::from_smi(57), read(second.value()));
+    ASSERT_TRUE(base->delete_own_property(name));
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::from_smi(61), read(second.value()));
+
+    native_cast<ClassObject>(global(L"Bad"))->freeze();
+    Owned<Value> bad{global(L"bad")};
+    freeze_object(bad.value().get_ptr<Object>());
+    ASSERT_TRUE(base->set_own_property(name, bad.value()).value());
+    Owned<TValue<Function>> bad_reader{
+        TValue<Function>::from_value_assumed(global(L"read_bad"))};
+    EXPECT_EQ(Value::True(), context.thread()->call_clovervm_function(
+                                 bad_reader.value(), second.value()));
+    EXPECT_EQ(nullptr, bad_reader.value()
+                           .extract()
+                           ->code_object.extract()
+                           ->inline_caches.attribute_read_caches.at(0)
+                           .lookup_validity_cell);
+}
+
 TEST(Interpreter, metaclass_descriptor_getter_receives_class_and_metaclass)
 {
     test::VmTestContext context;

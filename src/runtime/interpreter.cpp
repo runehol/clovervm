@@ -2774,6 +2774,39 @@ namespace cl
         return true;
     }
 
+    NOINLINE static INTERP_CC Value op_load_attr_descriptor_hit(PARAMS)
+    {
+        constexpr uint32_t call_instr_len = 4;
+        Value receiver = fp[int8_t(pc[1])];
+        const AttributeReadPlan &plan =
+            code_object->inline_caches.attribute_read_caches[pc[3]].plan;
+        assert(plan.path == AttributeReadPlanPath::InstanceClassChain);
+        assert(plan.storage_owner != nullptr);
+
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] =
+            plan.storage_owner->read_storage_location(plan.storage_location);
+        fp[first_arg_reg - 1] = receiver;
+        fp[first_arg_reg - 2] =
+            Value::from_oop(thread->class_of_value(receiver));
+        DispatchTableEntry jit_entry =
+            enter_function_frame_from_positional_args(
+                accumulator, thread, fp, pc, dispatch, code_object,
+                TValue<Function>::from_value_assumed(plan.constant_or_getter),
+                first_arg_reg, 3, call_instr_len, plan.adaptation);
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_load_attr_cache_miss(PARAMS)
     {
         START(4);
@@ -2790,10 +2823,6 @@ namespace cl
         if(!descriptor.is_found())
         {
             MUSTTAIL return attribute_error(ARGS);
-        }
-        if(descriptor.is_cacheable())
-        {
-            cache.populate(receiver, descriptor);
         }
         AttributeLoadPlanStatus plan_status =
             load_attr_from_plan_inline(receiver, descriptor.plan, accumulator);
@@ -2814,6 +2843,19 @@ namespace cl
                 MUSTTAIL return descriptor_dispatch_error(ARGS);
             }
             assert(has_native_layout<Function>(getter));
+
+            if(descriptor.is_cacheable())
+            {
+                auto function = TValue<Function>::from_value_assumed(getter);
+                if(!function.extract()->accepts_positional_only_call_arity(3))
+                {
+                    MUSTTAIL return wrong_arity_error(ARGS);
+                }
+                descriptor.plan.adaptation =
+                    function_call_adaptation_for_positional_call(function, 3);
+                cache.populate(receiver, descriptor);
+                MUSTTAIL return op_load_attr_descriptor_hit(ARGS);
+            }
 
             Value binding_object = receiver;
             Value owner;
@@ -2867,6 +2909,10 @@ namespace cl
 
             START(0);
             COMPLETE();
+        }
+        if(descriptor.is_cacheable())
+        {
+            cache.populate(receiver, descriptor);
         }
         COMPLETE();
     }
@@ -3332,7 +3378,7 @@ namespace cl
         if(unlikely(plan_status ==
                     AttributeLoadPlanStatus::RequiresDescriptorDispatch))
         {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
+            MUSTTAIL return op_load_attr_descriptor_hit(ARGS);
         }
         if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
         {

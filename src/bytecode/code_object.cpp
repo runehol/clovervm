@@ -167,9 +167,12 @@ namespace cl
                     return repair.state();
                 case AttributeReadPlanKind::ReceiverSlot:
                 case AttributeReadPlanKind::BindFunctionReceiver:
+                    repair.target(cache.plan.storage_owner);
+                    return repair.state();
                 case AttributeReadPlanKind::DataDescriptorGet:
                 case AttributeReadPlanKind::NonDataDescriptorGet:
                     repair.target(cache.plan.storage_owner);
+                    repair.value(cache.plan.constant_or_getter);
                     return repair.state();
             }
             assert(false && "invalid attribute read plan kind");

@@ -143,7 +143,9 @@ namespace
                 cache.plan = AttributeReadPlan::from_storage(
                     AttributeReadPlanPath::InstanceClassChain, read_kinds[idx],
                     old_module.get(), {3, StorageKind::Inline});
-                cache.plan.constant_or_getter = old_value.raw_value();
+                cache.plan.constant_or_getter =
+                    idx < 2 ? old_value.raw_value()
+                            : Value::from_oop(old_function.get());
             }
             caches.attribute_mutation_caches.resize(4);
             caches.attribute_mutation_caches[0].plan =
@@ -248,7 +250,9 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
         else
         {
             EXPECT_EQ(new_module.get(), cache.plan.storage_owner);
-            EXPECT_EQ(old_value.raw_value(), cache.plan.constant_or_getter);
+            EXPECT_EQ(idx < 3 ? old_value.raw_value()
+                              : Value::from_oop(new_function.get()),
+                      cache.plan.constant_or_getter);
             EXPECT_EQ(3, cache.plan.storage_location.physical_idx);
         }
     }
@@ -330,9 +334,10 @@ TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
         bool receiver_dead = dead == old_shape.get() || dead == old_cell.get();
         for(size_t idx = 0; idx < caches.attribute_read_caches.size(); ++idx)
         {
-            bool cleared =
-                receiver_dead || (idx == 0 ? dead == old_value.extract()
-                                           : dead == old_module.get());
+            bool cleared = receiver_dead ||
+                           (idx == 0 ? dead == old_value.extract()
+                                     : dead == old_module.get()) ||
+                           (idx >= 3 && dead == old_function.get());
             const auto &cache = caches.attribute_read_caches[idx];
             EXPECT_EQ(cleared, cache.receiver_shape == nullptr);
             if(cleared)
@@ -611,8 +616,9 @@ TEST_F(WeakReferenceProcessing, PendingFieldsDoNotShortCircuitAnyCacheFamily)
 {
     // Independent counts from populate()'s active arms. Function guards and
     // function targets can be the same object but are distinct weak fields.
-    constexpr std::array<size_t, 7> expected_calls = {3, 6, 7, 11, 3, 15, 1};
-    constexpr std::array<size_t, 7> expected_pending_units = {3, 4,  7, 11,
+    // The data and non-data read plans each also have a weak function field.
+    constexpr std::array<size_t, 7> expected_calls = {3, 8, 7, 11, 3, 15, 1};
+    constexpr std::array<size_t, 7> expected_pending_units = {3, 6,  7, 11,
                                                               3, 15, 1};
     auto targets = sources();
     for(size_t pending = 0; pending < targets.size(); ++pending)

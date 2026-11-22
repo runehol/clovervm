@@ -1,6 +1,7 @@
 #ifndef CL_ATTRIBUTE_DESCRIPTOR_H
 #define CL_ATTRIBUTE_DESCRIPTOR_H
 
+#include "object_model/function_call_adaptation.h"
 #include "object_model/shape_descriptor.h"
 #include "object_model/value.h"
 #include <cassert>
@@ -120,6 +121,7 @@ namespace cl
     public:
         AttributeReadPlanPath path;
         AttributeReadPlanKind kind;
+        FunctionCallAdaptation adaptation;
         const Object *storage_owner;
         StorageLocation storage_location;
         Value constant_or_getter;  // Interpreted according to kind.
@@ -129,15 +131,18 @@ namespace cl
                                               const Object *storage_owner,
                                               StorageLocation location)
         {
-            return AttributeReadPlan{path, kind, storage_owner, location,
-                                     Value::not_present()};
+            return AttributeReadPlan{
+                path,          kind,     FunctionCallAdaptation::FixedArity,
+                storage_owner, location, Value::not_present()};
         }
 
         static AttributeReadPlan constant(Value value)
         {
             return AttributeReadPlan{AttributeReadPlanPath::ReceiverOwnProperty,
                                      AttributeReadPlanKind::ConstantValue,
-                                     nullptr, StorageLocation::not_found(),
+                                     FunctionCallAdaptation::FixedArity,
+                                     nullptr,
+                                     StorageLocation::not_found(),
                                      value};
         }
     };
