@@ -37,9 +37,10 @@ namespace cl
             other.binding_plan != nullptr
                 ? std::make_unique<ExpandedCallCachedPlan>(*other.binding_plan)
                 : nullptr;
-        guard_value = other.guard_value;
+        guard = other.guard;
         function = other.function;
-        validity_cell = other.validity_cell;
+        receiver_binding = other.receiver_binding;
+        guard_kind = other.guard_kind;
         mode = other.mode;
         binding_plan = std::move(cloned_plan);
         return *this;
@@ -220,10 +221,10 @@ namespace cl
                                    WeakResolver resolver)
         {
             WeakCacheRepair repair(resolver);
-            repair.value(cache.guard_value);
+            repair.target(cache.guard.identity);
             repair.target(cache.function);
             repair.target(cache.code_object);
-            repair.target(cache.validity_cell);
+            repair.target(cache.guard.validity_cell);
             return repair.state();
         }
 
@@ -231,10 +232,10 @@ namespace cl
                                    WeakResolver resolver)
         {
             WeakCacheRepair repair(resolver);
-            repair.value(cache.guard_value);
+            repair.target(cache.guard.identity);
             repair.target(cache.function);
             repair.target(cache.code_object);
-            repair.target(cache.validity_cell);
+            repair.target(cache.guard.validity_cell);
             return repair.state();
         }
 
@@ -244,9 +245,9 @@ namespace cl
             // binding_plan owns strong keyword names, repaired during strong
             // closure. Do not treat those names as weak cache guards.
             WeakCacheRepair repair(resolver);
-            repair.value(cache.guard_value);
+            repair.target(cache.guard.identity);
             repair.target(cache.function);
-            repair.target(cache.validity_cell);
+            repair.target(cache.guard.validity_cell);
             return repair.state();
         }
 

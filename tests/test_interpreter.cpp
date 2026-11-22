@@ -23,11 +23,13 @@
 #include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
+#include "object_model/heap_ptr.h"
 #include "object_model/instance.h"
 #include "object_model/native_function.h"
 #include "object_model/shape.h"
 #include "object_model/slot_dict.h"
 #include "object_model/typed_value.h"
+#include "object_model/validity_cell.h"
 #include "object_model/value_string.h"
 #include "runtime/exception_object.h"
 #include "runtime/interpreter.h"
@@ -4646,6 +4648,69 @@ TEST(Interpreter, name_error)
 {
     expect_python_error(L"missing_name\n", L"NameError",
                         L"name 'missing_name' is not defined");
+}
+
+TEST(Interpreter, call_shape_hit_reuses_cached_target_until_cell_invalidates)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *module = context.compile_file(LR"(
+def target(value):
+    return value + 1
+def positional(f):
+    return f(4)
+def keyword(f):
+    return f(value=4)
+)");
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(module)
+                     .is_exception_marker());
+    Value target =
+        load_global_from_module_for_test(module, interned_string(L"target"));
+    auto positional =
+        TValue<Function>::from_value_assumed(load_global_from_module_for_test(
+            module, interned_string(L"positional")));
+    auto keyword = TValue<Function>::from_value_assumed(
+        load_global_from_module_for_test(module, interned_string(L"keyword")));
+    auto &positional_caches = positional.extract()
+                                  ->code_object.extract()
+                                  ->inline_caches.function_call_caches;
+    auto &keyword_caches = keyword.extract()
+                               ->code_object.extract()
+                               ->inline_caches.keyword_call_caches;
+    ASSERT_EQ(1u, positional_caches.size());
+    ASSERT_EQ(1u, keyword_caches.size());
+
+    // The resolver emits exact guards, so seed a shape guard to exercise
+    // replay.
+    auto check_shape_replay = [&](TValue<Function> invoke, auto &cache) {
+        EXPECT_EQ(CallTargetGuardKind::Empty, cache.guard_kind);
+        auto call = [&] {
+            return context.thread()->call_clovervm_function(invoke, target);
+        };
+        ASSERT_EQ(Value::from_smi(5), call());
+        ASSERT_EQ(target.get_ptr(), cache.guard.identity);
+        EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard_kind);
+
+        OwnedHeapPtr<ValidityCell> cell{
+            context.thread()->make_internal_raw<ValidityCell>(
+                ValidityCellDependencyMutability::Mutable)};
+        Shape *shape = target.get_ptr()->get_shape();
+        cache.guard = {shape, cell.get()};
+        cache.guard_kind = CallTargetGuardKind::ReceiverShape;
+        ASSERT_EQ(Value::from_smi(5), call());
+        EXPECT_EQ(shape, cache.guard.identity);
+        EXPECT_EQ(CallTargetGuardKind::ReceiverShape, cache.guard_kind);
+
+        cell.get()->invalidate();
+        EXPECT_EQ(Value::from_smi(5), call());
+        EXPECT_EQ(target.get_ptr(), cache.guard.identity);
+        EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard_kind);
+        EXPECT_EQ(nullptr, cache.guard.validity_cell);
+    };
+
+    check_shape_replay(positional, positional_caches[0]);
+    check_shape_replay(keyword, keyword_caches[0]);
 }
 
 TEST(Interpreter, call_non_callable)

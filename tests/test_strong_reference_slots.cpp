@@ -72,18 +72,18 @@ TEST(StrongReferenceSlots, CodeObjectVisitsOwnedCellsButNotWeakCaches)
 
     auto &caches = code.get()->inline_caches;
     caches.function_call_caches.emplace_back();
-    caches.function_call_caches.back().guard_value = name.raw_value();
+    caches.function_call_caches.back().guard.identity = name.extract();
     caches.operator_caches.emplace_back();
     caches.operator_caches.back().operand_shape_keys[0] =
         ShapeKey::from_shape(code.get()->get_shape());
     // Include both an absent plan and an owned plan in external native storage.
     caches.expanded_call_caches.resize(2);
     auto &expanded = caches.expanded_call_caches.back();
-    expanded.guard_value = name.raw_value();
+    expanded.guard.identity = name.extract();
     OwnedHeapPtr<ValidityCell> weak_cell(
         thread->make_internal_raw<ValidityCell>(
             ValidityCellDependencyMutability::Mutable));
-    expanded.validity_cell = weak_cell.get();
+    expanded.guard.validity_cell = weak_cell.get();
     expanded.binding_plan = std::make_unique<ExpandedCallCachedPlan>();
     expanded.binding_plan->keyword_names.emplace_back(name.value());
     expanded.binding_plan->keyword_names.emplace_back(name.value());
@@ -119,9 +119,9 @@ TEST(StrongReferenceSlots, CodeObjectVisitsOwnedCellsButNotWeakCaches)
               expanded.binding_plan->keyword_names[0].value());
     EXPECT_EQ(replacement.value(),
               expanded.binding_plan->keyword_names[1].value());
-    EXPECT_EQ(name.raw_value(), caches.function_call_caches[0].guard_value);
-    EXPECT_EQ(name.raw_value(), expanded.guard_value);
-    EXPECT_EQ(weak_cell.get(), expanded.validity_cell);
+    EXPECT_EQ(name.extract(), caches.function_call_caches[0].guard.identity);
+    EXPECT_EQ(name.extract(), expanded.guard.identity);
+    EXPECT_EQ(weak_cell.get(), expanded.guard.validity_cell);
     // Neither the module nor the VM-array backing is recursively scanned.
     EXPECT_EQ(name.raw_value(), code.get()->function_keyword_remap.name_at(0));
     EXPECT_EQ(name_refs, name.extract()->refcount());

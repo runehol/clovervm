@@ -294,12 +294,53 @@ TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)
     EXPECT_EQ(14, *backedge.jump_target_pc_offset());
 }
 
+TEST(CallTargetGuard, matches_exact_identity_or_shape_with_a_valid_cell)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> objects(context.run_file(L"([], [], {})"));
+    ASSERT_TRUE(has_native_layout<Tuple>(objects.value()));
+    Tuple *tuple = objects.value().get_ptr<Tuple>();
+    Value first = tuple->item_unchecked(0);
+    Value second = tuple->item_unchecked(1);
+    Value other = tuple->item_unchecked(2);
+
+    EXPECT_FALSE(CallTargetGuard{}.matches(Value::from_smi(0)));
+    EXPECT_FALSE(CallTargetGuard{}.matches_shape(first, 1, 1));
+    EXPECT_FALSE(CallTargetGuard{}.matches_exact(first, 1, UINT32_MAX));
+    EXPECT_FALSE(
+        CallTargetGuard{}.matches_exact(Value::from_smi(0), 1, 1, false));
+    CallTargetGuard exact{first.get_ptr(), nullptr};
+    EXPECT_TRUE(exact.matches(first));
+    EXPECT_TRUE(exact.matches_exact(first, 1, 1));
+    EXPECT_FALSE(exact.matches_exact(first, 2, 1));
+    EXPECT_FALSE(exact.matches_exact(second, 1, 1));
+    EXPECT_FALSE(exact.matches_shape(first, 1, 1));
+
+    ValidityCell *cell = context.thread()->make_internal_raw<ValidityCell>(
+        ValidityCellDependencyMutability::Mutable);
+    CallTargetGuard shape{first.get_ptr()->get_shape(), cell};
+    EXPECT_TRUE(shape.matches(first));
+    EXPECT_TRUE(shape.matches_shape(first, 1, 1));
+    EXPECT_FALSE(shape.matches_shape(first, 2, 1));
+    EXPECT_TRUE(shape.matches_shape(second, 1, 1));
+    EXPECT_FALSE(shape.matches_exact(first, 1, 1));
+    EXPECT_FALSE(shape.matches_shape(other, 1, 1));
+    EXPECT_FALSE(shape.matches_shape(Value::from_smi(0), 1, 1));
+
+    exact.validity_cell = cell;
+    cell->invalidate();
+    EXPECT_FALSE(exact.matches_exact(first, 1, 1));
+    EXPECT_FALSE(shape.matches_shape(first, 1, 1));
+}
+
 TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
 {
     InlineCacheTables live_tables;
     live_tables.keyword_call_caches.emplace_back();
     KeywordCallInlineCache &live = live_tables.keyword_call_caches[0];
-    live.guard_value = Value::from_smi(42);
+    live.receiver_binding = ReceiverBinding::PrependCallable;
+    live.guard_kind = CallTargetGuardKind::ReceiverShape;
     live.n_kw_args = 3;
     live.keyword_dest_regs = std::make_unique<int8_t[]>(live.n_kw_args);
     live.keyword_dest_regs[0] = -1;
@@ -310,7 +351,8 @@ TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
     ASSERT_EQ(1, snapshot_tables.keyword_call_caches.size());
     const KeywordCallInlineCache &snapshot =
         snapshot_tables.keyword_call_caches[0];
-    EXPECT_EQ(live.guard_value, snapshot.guard_value);
+    EXPECT_EQ(live.receiver_binding, snapshot.receiver_binding);
+    EXPECT_EQ(live.guard_kind, snapshot.guard_kind);
     EXPECT_EQ(live.n_kw_args, snapshot.n_kw_args);
     ASSERT_NE(nullptr, snapshot.keyword_dest_regs);
     EXPECT_NE(live.keyword_dest_regs.get(), snapshot.keyword_dest_regs.get());

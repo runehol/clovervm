@@ -270,7 +270,7 @@ TEST(GCCloverHeapAdapter, CustomStorageIsStrongButCacheTargetsAreWeak)
     code.get()->constant_table.emplace_back(constant.raw_value());
     auto &caches = code.get()->inline_caches;
     caches.function_call_caches.emplace_back();
-    caches.function_call_caches.back().guard_value = weak_only.raw_value();
+    caches.function_call_caches.back().guard.identity = weak_only.extract();
     caches.expanded_call_caches.resize(1);
     auto &expanded = caches.expanded_call_caches.back();
     expanded.binding_plan = std::make_unique<cl::ExpandedCallCachedPlan>();
@@ -295,8 +295,8 @@ TEST(GCCloverHeapAdapter, CustomStorageIsStrongButCacheTargetsAreWeak)
     EXPECT_EQ(cl::Value::from_oop(code.get()), root);
     EXPECT_EQ(constant.raw_value(), code.get()->constant_table.back().value());
     EXPECT_EQ(keyword.value(), expanded.binding_plan->keyword_names[0].value());
-    EXPECT_EQ(weak_only.raw_value(),
-              caches.function_call_caches.back().guard_value);
+    EXPECT_EQ(weak_only.extract(),
+              caches.function_call_caches.back().guard.identity);
     EXPECT_EQ(code_refs, code.get()->refcount());
     EXPECT_EQ(constant_refs, constant.extract()->refcount());
     EXPECT_EQ(keyword_refs, keyword.extract()->refcount());

@@ -1173,10 +1173,11 @@ namespace cl
         FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_args)
     {
-        cache.guard_value = guard_value;
+        cache.guard = {guard_value.get_ptr(), validity_cell};
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
-        cache.validity_cell = validity_cell;
+        cache.receiver_binding = ReceiverBinding::None;
+        cache.guard_kind = CallTargetGuardKind::ExactCallable;
         cache.n_args = n_args;
         cache.adaptation =
             function_call_adaptation_for_positional_call(fun, n_args);
@@ -1232,41 +1233,17 @@ namespace cl
         return Expected<void>::ok();
     }
 
-    static ALWAYSINLINE bool
-    function_call_cache_matches(const FunctionCallInlineCache &cache, Value fun,
-                                uint32_t n_args)
-    {
-        if(cache.n_args != n_args || cache.guard_value != fun)
-        {
-            return false;
-        }
-        return cache.validity_cell == nullptr ||
-               cache.validity_cell->is_valid();
-    }
-
-    static ALWAYSINLINE bool
-    keyword_call_cache_matches(const KeywordCallInlineCache &cache, Value fun,
-                               uint32_t n_pos_args)
-    {
-        if(cache.function == nullptr || cache.n_pos_args != n_pos_args ||
-           cache.guard_value != fun)
-        {
-            return false;
-        }
-        return cache.validity_cell == nullptr ||
-               cache.validity_cell->is_valid();
-    }
-
     static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
         KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_pos_args, uint32_t n_kw_args,
         uint32_t default_fill_start_slot,
         std::unique_ptr<int8_t[]> keyword_dest_regs)
     {
-        cache.guard_value = guard_value;
+        cache.guard = {guard_value.get_ptr(), validity_cell};
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
-        cache.validity_cell = validity_cell;
+        cache.receiver_binding = ReceiverBinding::None;
+        cache.guard_kind = CallTargetGuardKind::ExactCallable;
         assert(n_pos_args <= UINT8_MAX);
         cache.n_pos_args = uint8_t(n_pos_args);
         assert(n_kw_args <= UINT8_MAX);
@@ -1683,7 +1660,7 @@ namespace cl
         int32_t first_arg_reg, uint32_t n_args, uint32_t instr_len,
         FunctionCallInlineCache &cache, DispatchTableEntry &jit_entry)
     {
-        if(unlikely(!function_call_cache_matches(cache, callable, n_args)))
+        if(unlikely(cache.n_args != n_args || !cache.guard.matches(callable)))
         {
             return false;
         }
@@ -1790,16 +1767,16 @@ namespace cl
         int32_t first_arg_reg, uint32_t instr_len,
         DispatchTableEntry &jit_entry)
     {
-        if(cache.guard_value != callable || cache.function == nullptr ||
-           (cache.validity_cell != nullptr && !cache.validity_cell->is_valid()))
+        if(!cache.guard.matches(callable))
         {
             ResolvedFunctionCallTarget target =
                 CL_TRY(resolve_function_call_target(callable));
             const FunctionSignature signature =
                 target.function.extract()->call_signature.function;
-            cache.guard_value = callable;
+            cache.guard = {callable.get_ptr(), target.validity_cell};
             cache.function = target.function.extract();
-            cache.validity_cell = target.validity_cell;
+            cache.receiver_binding = ReceiverBinding::None;
+            cache.guard_kind = CallTargetGuardKind::ExactCallable;
             cache.binding_plan.reset();
             cache.mode = signature.has_varargs() && signature.has_kwargs() &&
                                  signature.n_positional_parameters == 0 &&
@@ -5382,21 +5359,13 @@ namespace cl
         MUSTTAIL return raise_bare(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_call_positional_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_positional_cached(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
-        int8_t callable_reg = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
-        uint8_t cache_idx = pc[4];
-        Value callable = fp[callable_reg];
         FunctionCallInlineCache &call_cache =
-            code_object->inline_caches.function_call_caches[cache_idx];
-        if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
-        {
-            INTERP_TRY(populate_positional_call_cache_from_callable(
-                callable, n_args, call_cache));
-        }
+            code_object->inline_caches.function_call_caches[pc[4]];
         DispatchTableEntry jit_entry = enter_positional_call_from_cache(
             accumulator, thread, fp, pc, dispatch, code_object, call_cache,
             first_arg_reg, n_args, call_instr_len);
@@ -5411,6 +5380,30 @@ namespace cl
 
         START(0);
         COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_call_positional_miss(PARAMS)
+    {
+        Value callable = fp[int8_t(pc[1])];
+        uint8_t n_args = pc[3];
+        FunctionCallInlineCache &cache =
+            code_object->inline_caches.function_call_caches[pc[4]];
+        INTERP_TRY(populate_positional_call_cache_from_callable(callable,
+                                                                n_args, cache));
+        MUSTTAIL return op_call_positional_cached(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_call_positional_shape(PARAMS)
+    {
+        Value callable = fp[int8_t(pc[1])];
+        uint8_t n_args = pc[3];
+        const FunctionCallInlineCache &cache =
+            code_object->inline_caches.function_call_caches[pc[4]];
+        if(cache.guard.matches_shape(callable, n_args, cache.n_args))
+        {
+            MUSTTAIL return op_call_positional_cached(ARGS);
+        }
+        MUSTTAIL return op_call_positional_miss(ARGS);
     }
 
     static INTERP_CC Value op_call_code_object(PARAMS)
@@ -5442,13 +5435,13 @@ namespace cl
         FunctionCallInlineCache &cache =
             code_object->inline_caches.function_call_caches[cache_idx];
 
-        if(unlikely(!function_call_cache_matches(cache, fun, n_args)))
+        if(unlikely(!cache.guard.matches_exact(fun, n_args, cache.n_args)))
         {
-            MUSTTAIL return op_call_positional_slow(ARGS);
+            MUSTTAIL return op_call_positional_shape(ARGS);
         }
         if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return op_call_positional_slow(ARGS);
+            MUSTTAIL return op_call_positional_cached(ARGS);
         }
         DispatchTableEntry jit_entry = enter_fixed_positional_call_from_cache(
             accumulator, thread, fp, pc, dispatch, code_object, cache,
@@ -5502,27 +5495,16 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_call_keyword_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_keyword_cached(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 8;
-        int8_t callable_reg = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_pos_args = pc[3];
         int8_t first_kw_value_reg = pc[4];
         uint8_t n_kw_args = pc[5];
         uint8_t keyword_names_idx = pc[6];
-        uint8_t cache_idx = pc[7];
-        Value fun = fp[callable_reg];
-        Value keyword_names =
-            code_object->constant_table[keyword_names_idx].value();
         KeywordCallInlineCache &cache =
-            code_object->inline_caches.keyword_call_caches[cache_idx];
-        if(unlikely(!keyword_call_cache_matches(cache, fun, n_pos_args)))
-        {
-            INTERP_TRY(populate_keyword_call_cache_from_callable(
-                fun, keyword_names, n_pos_args, n_kw_args, cache));
-        }
-
+            code_object->inline_caches.keyword_call_caches[pc[7]];
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
             accumulator, thread, fp, pc, dispatch, code_object, cache,
             first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
@@ -5540,6 +5522,32 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_call_keyword_miss(PARAMS)
+    {
+        Value callable = fp[int8_t(pc[1])];
+        uint8_t n_pos_args = pc[3];
+        uint8_t n_kw_args = pc[5];
+        Value keyword_names = code_object->constant_table[pc[6]].value();
+        KeywordCallInlineCache &cache =
+            code_object->inline_caches.keyword_call_caches[pc[7]];
+        INTERP_TRY(populate_keyword_call_cache_from_callable(
+            callable, keyword_names, n_pos_args, n_kw_args, cache));
+        MUSTTAIL return op_call_keyword_cached(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_call_keyword_shape(PARAMS)
+    {
+        Value callable = fp[int8_t(pc[1])];
+        uint8_t n_pos_args = pc[3];
+        const KeywordCallInlineCache &cache =
+            code_object->inline_caches.keyword_call_caches[pc[7]];
+        if(cache.guard.matches_shape(callable, n_pos_args, cache.n_pos_args))
+        {
+            MUSTTAIL return op_call_keyword_cached(ARGS);
+        }
+        MUSTTAIL return op_call_keyword_miss(ARGS);
+    }
+
     static INTERP_CC Value op_call_keyword(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 8;
@@ -5554,9 +5562,10 @@ namespace cl
         KeywordCallInlineCache &cache =
             code_object->inline_caches.keyword_call_caches[cache_idx];
 
-        if(unlikely(!keyword_call_cache_matches(cache, fun, n_pos_args)))
+        if(unlikely(!cache.guard.matches_exact(
+               fun, n_pos_args, cache.n_pos_args, cache.function != nullptr)))
         {
-            MUSTTAIL return op_call_keyword_slow(ARGS);
+            MUSTTAIL return op_call_keyword_shape(ARGS);
         }
 
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
@@ -5748,7 +5757,8 @@ namespace cl
         FunctionCallInlineCache &call_cache =
             code_object->inline_caches.function_call_caches[call_cache_idx];
 
-        if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
+        if(unlikely(!call_cache.guard.matches_exact(callable, n_args,
+                                                    call_cache.n_args)))
         {
             MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
         }
@@ -5832,8 +5842,8 @@ namespace cl
         uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
         KeywordCallInlineCache &call_cache =
             code_object->inline_caches.keyword_call_caches[call_cache_idx];
-        if(unlikely(
-               !keyword_call_cache_matches(call_cache, callable, n_pos_args)))
+        if(unlikely(call_cache.n_pos_args != n_pos_args ||
+                    !call_cache.guard.matches(callable)))
         {
             INTERP_TRY(populate_keyword_call_cache_from_callable(
                 callable, keyword_names, n_pos_args, n_kw_args, call_cache));
@@ -5890,8 +5900,9 @@ namespace cl
         uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
         KeywordCallInlineCache &call_cache =
             code_object->inline_caches.keyword_call_caches[call_cache_idx];
-        if(unlikely(
-               !keyword_call_cache_matches(call_cache, callable, n_pos_args)))
+        if(unlikely(!call_cache.guard.matches_exact(
+               callable, n_pos_args, call_cache.n_pos_args,
+               call_cache.function != nullptr)))
         {
             MUSTTAIL return op_call_method_attr_keyword_slow(ARGS);
         }

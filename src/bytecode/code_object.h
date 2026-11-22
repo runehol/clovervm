@@ -240,15 +240,83 @@ namespace cl
         Full,
     };
 
+    enum class ReceiverBinding : uint8_t
+    {
+        None,
+        PrependCallable,
+    };
+
+    enum class CallTargetGuardKind : uint8_t
+    {
+        Empty,
+        ExactCallable,
+        ReceiverShape,
+    };
+
+    struct CallTargetGuard
+    {
+        // Weak identity of a callable object or an internal Shape.
+        HeapObject *identity = nullptr;
+        ValidityCell *validity_cell = nullptr;
+
+        // A compatible arity must imply a populated entry at the call site.
+        ALWAYSINLINE bool matches_exact(Value callable, uint32_t n_args,
+                                        uint32_t cached_n_args,
+                                        bool populated = true) const
+        {
+            // Both checks are safe for an empty slot and can share a branch.
+            const bool compatible = populated & (cached_n_args == n_args);
+            assert(!compatible || identity != nullptr);
+            return compatible && matches_identity(callable) && has_valid_cell();
+        }
+
+        ALWAYSINLINE bool matches_shape(Value callable, uint32_t n_args,
+                                        uint32_t cached_n_args) const
+        {
+            return cached_n_args == n_args && identity != nullptr &&
+                   matches_shape_identity(callable) && has_valid_cell();
+        }
+
+        ALWAYSINLINE bool matches(Value callable) const
+        {
+            return identity != nullptr &&
+                   (matches_identity(callable) ||
+                    matches_shape_identity(callable)) &&
+                   has_valid_cell();
+        }
+
+    private:
+        ALWAYSINLINE bool matches_identity(Value callable) const
+        {
+            return static_cast<uintptr_t>(callable.as.integer) ==
+                   reinterpret_cast<uintptr_t>(identity);
+        }
+
+        ALWAYSINLINE bool matches_shape_identity(Value callable) const
+        {
+            return callable.is_ptr() &&
+                   callable.get_ptr()->get_shape() == identity;
+        }
+
+        ALWAYSINLINE bool has_valid_cell() const
+        {
+            return validity_cell == nullptr || validity_cell->is_valid();
+        }
+    };
+
     struct FunctionCallInlineCache
     {
-        Value guard_value = Value::not_present();
+        CallTargetGuard guard;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
-        ValidityCell *validity_cell = nullptr;
         uint32_t n_args = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        ReceiverBinding receiver_binding = ReceiverBinding::None;
+        CallTargetGuardKind guard_kind = CallTargetGuardKind::Empty;
     };
+
+    static_assert(sizeof(FunctionCallInlineCache) == 40,
+                  "FunctionCallInlineCache should stay compact");
 
     enum class ExpandedCallMode : uint8_t
     {
@@ -268,12 +336,16 @@ namespace cl
         ExpandedCallInlineCache(ExpandedCallInlineCache &&) noexcept;
         ExpandedCallInlineCache &operator=(ExpandedCallInlineCache &&) noexcept;
 
-        Value guard_value = Value::not_present();
+        CallTargetGuard guard;
         Function *function = nullptr;
-        ValidityCell *validity_cell = nullptr;
+        ReceiverBinding receiver_binding = ReceiverBinding::None;
+        CallTargetGuardKind guard_kind = CallTargetGuardKind::Empty;
         ExpandedCallMode mode = ExpandedCallMode::General;
         std::unique_ptr<ExpandedCallCachedPlan> binding_plan;
     };
+
+    static_assert(sizeof(ExpandedCallInlineCache) == 40,
+                  "ExpandedCallInlineCache should stay compact");
 
     struct OperatorInlineCache
     {
@@ -443,10 +515,11 @@ namespace cl
                             cloned_keyword_dest_regs.get());
             }
 
-            guard_value = other.guard_value;
+            guard = other.guard;
             function = other.function;
             code_object = other.code_object;
-            validity_cell = other.validity_cell;
+            receiver_binding = other.receiver_binding;
+            guard_kind = other.guard_kind;
             keyword_dest_regs = std::move(cloned_keyword_dest_regs);
             default_fill_start_slot = other.default_fill_start_slot;
             n_pos_args = other.n_pos_args;
@@ -459,15 +532,16 @@ namespace cl
         KeywordCallInlineCache &
         operator=(KeywordCallInlineCache &&) noexcept = default;
 
-        Value guard_value = Value::not_present();
+        CallTargetGuard guard;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
-        ValidityCell *validity_cell = nullptr;
         std::unique_ptr<int8_t[]> keyword_dest_regs;
         uint16_t default_fill_start_slot = 0;
         uint8_t n_pos_args = UINT8_MAX;
         uint8_t n_kw_args = 0;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        ReceiverBinding receiver_binding = ReceiverBinding::None;
+        CallTargetGuardKind guard_kind = CallTargetGuardKind::Empty;
     };
 
     static_assert(sizeof(KeywordCallInlineCache) == 48,
