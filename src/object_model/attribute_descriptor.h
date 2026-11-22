@@ -57,6 +57,7 @@ namespace cl
         ChangeClass,
         DescriptorSet,
         DescriptorDelete,
+        ExactPropertySet,
     };
 
     enum class AttributeReadPlanPath : uint8_t
@@ -270,7 +271,8 @@ namespace cl
                             Value hook)
         {
             assert(kind == AttributeMutationPlanKind::DescriptorSet ||
-                   kind == AttributeMutationPlanKind::DescriptorDelete);
+                   kind == AttributeMutationPlanKind::DescriptorDelete ||
+                   kind == AttributeMutationPlanKind::ExactPropertySet);
             AttributeMutationPlan plan;
             plan.descriptor = descriptor;
             plan.physical_idx = -1;
@@ -302,7 +304,8 @@ namespace cl
 
         bool is_descriptor_set() const
         {
-            return kind == AttributeMutationPlanKind::DescriptorSet;
+            return kind == AttributeMutationPlanKind::DescriptorSet ||
+                   kind == AttributeMutationPlanKind::ExactPropertySet;
         }
 
         bool is_descriptor_delete() const

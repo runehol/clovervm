@@ -803,7 +803,8 @@ namespace cl
         if(class_descriptor.is_found())
         {
             Value value = class_descriptor.lookup_value;
-            ClassObject *type = active_thread()->class_of_value(value);
+            ThreadState *thread = active_thread();
+            ClassObject *type = thread->class_of_value(value);
             DescriptorProtocol protocol = lookup_descriptor_protocol(type);
             if(protocol.has_set_or_delete())
             {
@@ -823,6 +824,13 @@ namespace cl
                 }
                 setter.cache_blockers = mutation_cache_blockers_for_class_value(
                     class_descriptor, type);
+                if(attribute_cache_blockers_are_none(setter.cache_blockers) &&
+                   type == thread->class_for_native_layout(
+                               NativeLayoutId::Property))
+                {
+                    setter.plan.kind =
+                        AttributeMutationPlanKind::ExactPropertySet;
+                }
                 return with_mro_shape_and_contents_validity_cell_if_unblocked(
                     setter, lookup_class);
             }

@@ -2939,8 +2939,26 @@ namespace cl
         ScopedRoot code_root(*thread, HeapReferenceSlot(&code_object));
         ScopedRoot accumulator_root(*thread, HeapReferenceSlot(&accumulator));
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
-        Expected<void> result =
-            execute_descriptor_mutation(*thread, plan, receiver, accumulator);
+        auto result = [&]() -> Expected<void> {
+            if(plan.kind == AttributeMutationPlanKind::ExactPropertySet)
+            {
+                Value setter =
+                    native_cast<Property>(plan.descriptor)->fset.raw_value();
+                if(has_native_layout<Function>(setter))
+                {
+                    Value value = thread->call_clovervm_function(
+                        TValue<Function>::from_value_assumed(setter), receiver,
+                        accumulator);
+                    if(value.is_exception_marker())
+                    {
+                        return Expected<void>::propagate_exception();
+                    }
+                    return Expected<void>::ok();
+                }
+            }
+            return execute_descriptor_mutation(*thread, plan, receiver,
+                                               accumulator);
+        }();
         pc = code_object->interpreted_pc_for_offset(mutation_offset);
         return result;
     }

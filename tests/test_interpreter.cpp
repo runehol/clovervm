@@ -4675,6 +4675,26 @@ p.__init__(C.get, replacement)
 store(obj, 25)
 assert obj.x == 50
 
+def raising_setter(obj, value):
+    raise ValueError(value)
+
+p.__init__(C.get, raising_setter)
+try:
+    store(obj, 99)
+except ValueError as error:
+    assert error.args == (99,)
+else:
+    assert False
+assert obj.x == 50
+
+class CallableSetter:
+    def __call__(self, obj, value):
+        obj.stored = value + 1
+
+p.__init__(C.get, CallableSetter())
+store(obj, 50)
+assert obj.x == 51
+
 C.x = property(C.get)
 try:
     store(obj, 1)
@@ -4706,11 +4726,23 @@ except TypeError:
     pass
 else:
     assert False
+
+C.x = p
+p.__init__(C.get, replacement)
+store(obj, 30)
+assert obj.x == 60
 )");
     context.vm().set_fire_every_safepoint_for_testing(true);
     context.vm().request_safepoint();
-    EXPECT_FALSE(
+    ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
+    Value writer =
+        load_global_from_module_for_test(code, interned_string(L"store"));
+    ASSERT_TRUE(has_native_layout<Function>(writer));
+    const auto &cache = native_cast<Function>(writer)
+                            ->code_object.extract()
+                            ->inline_caches.attribute_mutation_caches.at(0);
+    EXPECT_EQ(AttributeMutationPlanKind::ExactPropertySet, cache.plan.kind);
 }
 
 TEST(Interpreter, store_attr_add_slot_does_not_cache_mutable_descriptor_type)

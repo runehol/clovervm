@@ -198,6 +198,7 @@ namespace cl
                 case AttributeMutationPlanKind::ChangeClass:
                     return repair.state();
                 case AttributeMutationPlanKind::DescriptorSet:
+                case AttributeMutationPlanKind::ExactPropertySet:
                     repair.value(cache.plan.descriptor);
                     repair.value(cache.plan.descriptor_hook);
                     return repair.state();
