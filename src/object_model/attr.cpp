@@ -1030,14 +1030,15 @@ namespace cl
         return Expected<bool>::ok(false);
     }
 
-    bool delete_attr(Value obj, TValue<String> name)
+    Expected<bool> delete_attr(Value obj, TValue<String> name)
     {
         AttributeDeleteDescriptor descriptor =
             resolve_attr_delete_descriptor(obj, name);
         if(descriptor.is_found() && !descriptor.plan.is_descriptor_delete())
         {
-            return delete_attr_from_plan(obj, descriptor.plan);
+            return Expected<bool>::ok(
+                delete_attr_from_plan(obj, descriptor.plan));
         }
-        return false;
+        return Expected<bool>::ok(false);
     }
 }  // namespace cl

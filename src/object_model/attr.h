@@ -60,7 +60,7 @@ namespace cl
     Value load_attr(Value obj, TValue<String> name);
     [[nodiscard]] Expected<bool> store_attr(Value obj, TValue<String> name,
                                             Value value);
-    bool delete_attr(Value obj, TValue<String> name);
+    [[nodiscard]] Expected<bool> delete_attr(Value obj, TValue<String> name);
     bool load_method(Value obj, TValue<String> name, Value &callable_out,
                      Value &self_out);
     bool load_special_method(Value obj, TValue<String> name,

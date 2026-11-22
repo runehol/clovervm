@@ -149,18 +149,15 @@ namespace cl
             L"AttributeError", L"cannot set attribute");
     }
 
-    static Value builtin_delattr(ThreadState *thread, Value obj, Value name)
+    [[nodiscard]] static Value builtin_delattr(ThreadState *thread, Value obj,
+                                               Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        if(delete_attr(obj, TValue<String>::from_value_assumed(name)))
+        if(CL_TRY(delete_attr(obj, TValue<String>::from_value_assumed(name))))
         {
             return Value::None();
         }
-        if(active_thread()->has_pending_exception())
-        {
-            return Value::exception_marker();
-        }
-        return active_thread()->set_pending_builtin_exception_string(
+        return thread->set_pending_builtin_exception_string(
             L"AttributeError", L"object has no such attribute");
     }
 
