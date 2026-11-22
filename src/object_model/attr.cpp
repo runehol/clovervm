@@ -653,6 +653,39 @@ namespace cl
             descriptor, receiver_class);
     }
 
+    Expected<DescriptorGetCall>
+    prepare_descriptor_get_call(Value receiver,
+                                const AttributeReadDescriptor &read)
+    {
+        assert(read.plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
+               read.plan.kind == AttributeReadPlanKind::NonDataDescriptorGet);
+        Value getter = read.plan.constant_or_getter;
+        if(getter.is_not_present())
+        {
+            return Expected<DescriptorGetCall>::raise_exception(
+                L"TypeError",
+                L"descriptor __get__ requires interpreter dispatch");
+        }
+
+        auto function = TValue<Function>::from_value_assumed(getter);
+        switch(read.plan.path)
+        {
+            case AttributeReadPlanPath::InstanceClassChain:
+            case AttributeReadPlanPath::MetaclassChain:
+                return Expected<DescriptorGetCall>::ok(
+                    {function, read.lookup_value, receiver,
+                     Value::from_oop(
+                         active_thread()->class_of_value(receiver))});
+            case AttributeReadPlanPath::ClassObjectChain:
+                return Expected<DescriptorGetCall>::ok(
+                    {function, read.lookup_value, Value::None(), receiver});
+            case AttributeReadPlanPath::ReceiverOwnProperty:
+                assert(false && "own slot cannot require descriptor dispatch");
+                __builtin_unreachable();
+        }
+        __builtin_unreachable();
+    }
+
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
     {
         if(plan.kind == AttributeReadPlanKind::ConstantValue)

@@ -2837,16 +2837,10 @@ namespace cl
         if(unlikely(plan_status ==
                     AttributeLoadPlanStatus::RequiresDescriptorDispatch))
         {
-            Value getter = descriptor.plan.constant_or_getter;
-            if(getter.is_not_present())
-            {
-                MUSTTAIL return descriptor_dispatch_error(ARGS);
-            }
-            assert(has_native_layout<Function>(getter));
-
             if(descriptor.is_cacheable())
             {
-                auto function = TValue<Function>::from_value_assumed(getter);
+                auto function = TValue<Function>::from_value_assumed(
+                    descriptor.plan.constant_or_getter);
                 if(!function.extract()->accepts_positional_only_call_arity(3))
                 {
                     MUSTTAIL return wrong_arity_error(ARGS);
@@ -2857,40 +2851,29 @@ namespace cl
                 MUSTTAIL return op_load_attr_descriptor_hit(ARGS);
             }
 
-            Value binding_object = receiver;
-            Value owner;
-            switch(descriptor.plan.path)
-            {
-                case AttributeReadPlanPath::InstanceClassChain:
-                case AttributeReadPlanPath::MetaclassChain:
-                    owner = Value::from_oop(thread->class_of_value(receiver));
-                    break;
-                case AttributeReadPlanPath::ClassObjectChain:
-                    binding_object = Value::None();
-                    owner = receiver;
-                    break;
-                case AttributeReadPlanPath::ReceiverOwnProperty:
-                    assert(false &&
-                           "own slot cannot require descriptor dispatch");
-                    __builtin_unreachable();
-            }
-
-            int32_t first_arg_reg =
-                code_object->get_first_free_arg_encoded_reg();
-            fp[first_arg_reg] = descriptor.lookup_value;
-            fp[first_arg_reg - 1] = binding_object;
-            fp[first_arg_reg - 2] = owner;
             DispatchTableEntry jit_entry = nullptr;
             bool has_exception;
             {
-                // Destroy the nontrivial Expected before tail dispatch.
-                auto entry = enter_uncached_resolved_positional_call(
-                    thread, fp, pc, dispatch, code_object, accumulator, getter,
-                    first_arg_reg, 3, instr_len);
-                has_exception = entry.has_exception();
+                // Destroy the nontrivial Expected values before tail dispatch.
+                auto prepared =
+                    prepare_descriptor_get_call(receiver, descriptor);
+                has_exception = prepared.has_exception();
                 if(!has_exception)
                 {
-                    jit_entry = entry.value();
+                    const DescriptorGetCall &call = prepared.value();
+                    int32_t first_arg_reg =
+                        code_object->get_first_free_arg_encoded_reg();
+                    fp[first_arg_reg] = call.descriptor;
+                    fp[first_arg_reg - 1] = call.object;
+                    fp[first_arg_reg - 2] = call.owner;
+                    auto entry = enter_uncached_resolved_positional_call(
+                        thread, fp, pc, dispatch, code_object, accumulator,
+                        call.getter.raw_value(), first_arg_reg, 3, instr_len);
+                    has_exception = entry.has_exception();
+                    if(!has_exception)
+                    {
+                        jit_entry = entry.value();
+                    }
                 }
             }
             if(unlikely(has_exception))

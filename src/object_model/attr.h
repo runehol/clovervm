@@ -10,6 +10,15 @@
 namespace cl
 {
     class Object;
+    class Function;
+
+    struct DescriptorGetCall
+    {
+        TValue<Function> getter;
+        Value descriptor;
+        Value object;
+        Value owner;
+    };
 
     struct AttributeMappingEntry
     {
@@ -19,6 +28,9 @@ namespace cl
 
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
                                                          TValue<String> name);
+    [[nodiscard]] Expected<DescriptorGetCall>
+    prepare_descriptor_get_call(Value receiver,
+                                const AttributeReadDescriptor &read);
     AttributeReadDescriptor
     resolve_special_method_read_descriptor(Value obj, TValue<String> name);
     AttributeReadDescriptor

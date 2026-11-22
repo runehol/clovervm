@@ -65,12 +65,23 @@ def getattr(obj, name, *default):
     """Return the named attribute from an object.
 
 If a default is given, it is returned when the attribute is missing."""
-    return _clover_builtin_getattr_default(obj, name, default)
+    if not default:
+        return _clover_builtin_read_attr(obj, name)
+    if len(default) > 1:
+        raise TypeError
+    try:
+        return _clover_builtin_read_attr(obj, name)
+    except AttributeError:
+        return default[0]
 
 
 def hasattr(obj, name):
     """Return whether the object has the named attribute."""
-    return _clover_builtin_hasattr(obj, name)
+    try:
+        _clover_builtin_read_attr(obj, name)
+    except AttributeError:
+        return False
+    return True
 
 
 def vars(*obj):

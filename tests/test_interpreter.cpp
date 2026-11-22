@@ -4486,6 +4486,115 @@ assert copy.__doc__ is None
     EXPECT_FALSE(run.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, getattr_and_hasattr_read_descriptors_once)
+{
+    test::FileRunner run(LR"(
+class Descriptor:
+    def __get__(self, obj, owner):
+        return (self, obj, owner)
+
+class Base:
+    x = Descriptor()
+
+class Child(Base):
+    def get_value(self):
+        self.calls = self.calls + 1
+        return None
+
+    value = property(get_value)
+
+obj = Child()
+obj.calls = 0
+obj.slot = 42
+
+desc = Base.x[0]
+assert getattr(obj, "x") == (desc, obj, Child)
+assert getattr(Child, "x") == (desc, None, Child)
+assert getattr(Child, "value") is Child.value
+assert getattr(obj, "slot") == 42
+
+assert getattr(obj, "value", 9) is None
+assert obj.calls == 1
+assert hasattr(obj, "value")
+assert obj.calls == 2
+assert not hasattr(obj, "missing")
+assert getattr(obj, "missing", 9) == 9
+
+obj.x = 7
+assert getattr(obj, "x") == 7
+try:
+    getattr(obj, "value", 1, 2)
+except TypeError:
+    pass
+else:
+    assert False
+assert obj.calls == 2
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, getattr_and_hasattr_handle_descriptor_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Missing(AttributeError):
+    pass
+
+class C:
+    def get_missing(self):
+        self.calls = self.calls + 1
+        raise Missing("from getter")
+
+    def get_bad(self):
+        raise ValueError("other error")
+
+    missing = property(get_missing)
+    bad = property(get_bad)
+
+obj = C()
+obj.calls = 0
+
+assert getattr(obj, "missing", 42) == 42
+assert obj.calls == 1
+assert not hasattr(obj, "missing")
+assert obj.calls == 2
+
+try:
+    getattr(obj, "missing")
+except Missing as error:
+    assert str(error) == "from getter"
+else:
+    assert False
+assert obj.calls == 3
+
+try:
+    getattr(obj, "bad", 42)
+except ValueError as error:
+    assert str(error) == "other error"
+else:
+    assert False
+
+try:
+    hasattr(obj, "bad")
+except ValueError:
+    pass
+else:
+    assert False
+
+try:
+    hasattr(obj, 42)
+except TypeError:
+    pass
+else:
+    assert False
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, metaclass_descriptor_getter_receives_class_and_metaclass)
 {
     test::VmTestContext context;
@@ -4499,6 +4608,9 @@ descriptor = Descriptor()
 
 def read(obj):
     return obj.x
+
+def read_dynamic(obj):
+    return getattr(obj, "x")
 )");
     ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
@@ -4522,14 +4634,21 @@ def read(obj):
                     ->set_own_property(interned_string(L"x"), descriptor)
                     .value());
 
-    Value result = context.thread()->call_clovervm_function(
-        reader, Value::from_oop(cls.get()));
-    ASSERT_TRUE(has_native_layout<Tuple>(result));
-    const Tuple *arguments = native_cast<Tuple>(result);
-    ASSERT_EQ(3u, arguments->size());
-    EXPECT_EQ(descriptor, arguments->item_unchecked(0));
-    EXPECT_EQ(Value::from_oop(cls.get()), arguments->item_unchecked(1));
-    EXPECT_EQ(Value::from_oop(meta.get()), arguments->item_unchecked(2));
+    for(const wchar_t *name: {L"read", L"read_dynamic"})
+    {
+        Value function =
+            load_global_from_module_for_test(code, interned_string(name));
+        ASSERT_TRUE(has_native_layout<Function>(function));
+        Value result = context.thread()->call_clovervm_function(
+            TValue<Function>::from_value_assumed(function),
+            Value::from_oop(cls.get()));
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        const Tuple *arguments = native_cast<Tuple>(result);
+        ASSERT_EQ(3u, arguments->size());
+        EXPECT_EQ(descriptor, arguments->item_unchecked(0));
+        EXPECT_EQ(Value::from_oop(cls.get()), arguments->item_unchecked(1));
+        EXPECT_EQ(Value::from_oop(meta.get()), arguments->item_unchecked(2));
+    }
 
     const auto &caches = reader.extract()
                              ->code_object.extract()
@@ -8930,10 +9049,9 @@ TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
                                   ->get_defining_module()
                                   .extract());
     for(const wchar_t *name:
-        {L"_clover_builtin_getattr", L"_clover_builtin_getattr_default",
-         L"_clover_builtin_hasattr", L"_clover_builtin_dir",
-         L"_clover_dict_allocate", L"_clover_dict_next", L"_clover_dict_new",
-         L"_clover_dict_update", L"_clover_min_max",
+        {L"_clover_builtin_getattr", L"_clover_builtin_read_attr",
+         L"_clover_builtin_dir", L"_clover_dict_allocate", L"_clover_dict_next",
+         L"_clover_dict_new", L"_clover_dict_update", L"_clover_min_max",
          L"_clover_selection_keywords", L"_clover_list_eq", L"_clover_tuple_eq",
          L"_clover_iter_membership_fallback"})
     {
