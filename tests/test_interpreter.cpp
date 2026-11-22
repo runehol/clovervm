@@ -4808,6 +4808,115 @@ assert not hasattr(obj, "stored")
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
+TEST(Interpreter, setattr_and_delattr_invoke_descriptor_hooks)
+{
+    test::FileRunner run(LR"(
+class C:
+    def get(self):
+        return self.stored
+
+    def set(self, value):
+        self.stored = value
+        return 1
+
+    def remove(self):
+        del self.stored
+        return 2
+
+obj = C()
+obj.x = 20
+C.x = property(C.get, C.set, C.remove)
+assert setattr(obj, "x", 42) is None
+assert obj.x == 42
+assert delattr(obj, "x") is None
+assert not hasattr(obj, "stored")
+
+class SetOnly:
+    def __set__(self, obj, value):
+        assert False
+
+class DeleteOnly:
+    def __delete__(self, obj):
+        assert False
+
+C.x = SetOnly()
+try:
+    delattr(obj, "x")
+except AttributeError:
+    pass
+else:
+    assert False
+
+C.x = DeleteOnly()
+try:
+    setattr(obj, "x", 100)
+except AttributeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+
+class BadHooks:
+    __set__ = None
+    __delete__ = None
+
+C.x = BadHooks()
+try:
+    setattr(obj, "x", 100)
+except TypeError:
+    pass
+else:
+    assert False
+try:
+    delattr(obj, "x")
+except TypeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, setattr_and_delattr_propagate_reentrant_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class C:
+    def set(self, value):
+        setattr(self, "stored", value)
+        raise ValueError("setter exception")
+
+    def remove(self):
+        delattr(self, "stored")
+        raise LookupError("deleter exception")
+
+    x = property(fset=set, fdel=remove)
+
+obj = C()
+try:
+    setattr(obj, "x", [42])
+except ValueError as error:
+    assert str(error) == "setter exception"
+else:
+    assert False
+assert obj.stored[0] == 42
+
+try:
+    delattr(obj, "x")
+except LookupError as error:
+    assert str(error) == "deleter exception"
+else:
+    assert False
+assert not hasattr(obj, "stored")
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, getattr_and_hasattr_read_descriptors_once)
 {
     test::FileRunner run(LR"(

@@ -7,7 +7,14 @@
 
 namespace cl
 {
+    class AttributeMutationPlan;
+    class ThreadState;
     class VirtualMachine;
+
+    [[nodiscard]] Expected<void>
+    execute_descriptor_mutation(ThreadState &thread,
+                                const AttributeMutationPlan &plan,
+                                Value receiver, Value rhs);
 
     Expected<TValue<Function>>
     make_hash_value_helper_function(VirtualMachine *vm);

@@ -136,8 +136,8 @@ namespace cl
             L"AttributeError", L"object has no such attribute");
     }
 
-    static Value builtin_setattr(ThreadState *thread, Value obj, Value name,
-                                 Value value)
+    [[nodiscard]] static Value builtin_setattr(ThreadState *thread, Value obj,
+                                               Value name, Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         if(CL_TRY(store_attr(obj, TValue<String>::from_value_assumed(name),
@@ -145,7 +145,7 @@ namespace cl
         {
             return Value::None();
         }
-        return active_thread()->set_pending_builtin_exception_string(
+        return thread->set_pending_builtin_exception_string(
             L"AttributeError", L"cannot set attribute");
     }
 

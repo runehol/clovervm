@@ -37,6 +37,7 @@
 #include "runtime/operator_frame.h"
 #include "runtime/operator_walk.h"
 #include "runtime/os_error.h"
+#include "runtime/protocol_helper_functions.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -2926,21 +2927,11 @@ namespace cl
         COMPLETE();
     }
 
-    [[nodiscard]] NOINLINE static Value invoke_descriptor_mutation(
+    [[nodiscard]] NOINLINE static Expected<void> invoke_descriptor_mutation(
         ThreadState *thread, Value *fp, const uint8_t *&pc,
         CodeObject *&code_object, Value &accumulator,
         const AttributeMutationPlan &plan, Value receiver)
     {
-        assert(plan.is_descriptor_set() || plan.is_descriptor_delete());
-        if(!has_native_layout<Function>(plan.descriptor_hook))
-        {
-            return thread->set_pending_builtin_exception_string(
-                L"TypeError",
-                plan.is_descriptor_set()
-                    ? L"descriptor __set__ requires a plain function"
-                    : L"descriptor __delete__ requires a plain function");
-        }
-
         const uint32_t mutation_offset =
             code_object->offset_for_interpreted_pc(pc);
         // Keep caller state live independently of the nested interpreter's
@@ -2948,12 +2939,8 @@ namespace cl
         ScopedRoot code_root(*thread, HeapReferenceSlot(&code_object));
         ScopedRoot accumulator_root(*thread, HeapReferenceSlot(&accumulator));
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
-        auto hook = TValue<Function>::from_value_assumed(plan.descriptor_hook);
-        Value result = plan.is_descriptor_set()
-                           ? thread->call_clovervm_function(
-                                 hook, plan.descriptor, receiver, accumulator)
-                           : thread->call_clovervm_function(
-                                 hook, plan.descriptor, receiver);
+        Expected<void> result =
+            execute_descriptor_mutation(*thread, plan, receiver, accumulator);
         pc = code_object->interpreted_pc_for_offset(mutation_offset);
         return result;
     }
@@ -2975,13 +2962,9 @@ namespace cl
         {
             if(descriptor.plan.is_descriptor_set())
             {
-                Value result = invoke_descriptor_mutation(
+                INTERP_TRY(invoke_descriptor_mutation(
                     thread, fp, pc, code_object, accumulator, descriptor.plan,
-                    receiver);
-                if(unlikely(result.is_exception_marker()))
-                {
-                    MUSTTAIL return propagate_pending_exception(ARGS);
-                }
+                    receiver));
                 COMPLETE();
             }
             if(descriptor.is_cacheable())
@@ -3066,13 +3049,9 @@ namespace cl
         {
             if(descriptor.plan.is_descriptor_delete())
             {
-                Value result = invoke_descriptor_mutation(
+                INTERP_TRY(invoke_descriptor_mutation(
                     thread, fp, pc, code_object, accumulator, descriptor.plan,
-                    receiver);
-                if(unlikely(result.is_exception_marker()))
-                {
-                    MUSTTAIL return propagate_pending_exception(ARGS);
-                }
+                    receiver));
                 COMPLETE();
             }
             if(descriptor.is_cacheable())

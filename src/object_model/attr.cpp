@@ -8,6 +8,7 @@
 #include "object_model/function.h"
 #include "object_model/slot_dict.h"
 #include "runtime/fatal.h"
+#include "runtime/protocol_helper_functions.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 
@@ -1018,7 +1019,9 @@ namespace cl
         {
             if(descriptor.plan.is_descriptor_set())
             {
-                return Expected<bool>::ok(false);
+                CL_TRY(execute_descriptor_mutation(
+                    *active_thread(), descriptor.plan, obj, value));
+                return Expected<bool>::ok(true);
             }
             return store_attr_from_plan(obj, descriptor.plan, value);
         }
@@ -1034,8 +1037,14 @@ namespace cl
     {
         AttributeDeleteDescriptor descriptor =
             resolve_attr_delete_descriptor(obj, name);
-        if(descriptor.is_found() && !descriptor.plan.is_descriptor_delete())
+        if(descriptor.is_found())
         {
+            if(descriptor.plan.is_descriptor_delete())
+            {
+                CL_TRY(execute_descriptor_mutation(
+                    *active_thread(), descriptor.plan, obj, Value::None()));
+                return Expected<bool>::ok(true);
+            }
             return Expected<bool>::ok(
                 delete_attr_from_plan(obj, descriptor.plan));
         }
