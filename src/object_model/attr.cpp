@@ -879,10 +879,21 @@ namespace cl
                 {
                     return AttributeDeleteDescriptor::disallowed();
                 }
-                return AttributeDeleteDescriptor::found(
-                    AttributeMutationPlan::descriptor_mutation(
-                        AttributeMutationPlanKind::DescriptorDelete, value,
-                        protocol.delete_));
+                AttributeDeleteDescriptor deleter =
+                    AttributeDeleteDescriptor::found(
+                        AttributeMutationPlan::descriptor_mutation(
+                            AttributeMutationPlanKind::DescriptorDelete, value,
+                            protocol.delete_));
+                if(object->get_shape()->has_flag(ShapeFlag::IsClassObject) ||
+                   !has_native_layout<Function>(protocol.delete_))
+                {
+                    return deleter;
+                }
+                deleter.cache_blockers =
+                    mutation_cache_blockers_for_class_value(class_descriptor,
+                                                            type);
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    deleter, lookup_class);
             }
             cache_blockers =
                 mutation_cache_blockers_for_class_value(class_descriptor, type);

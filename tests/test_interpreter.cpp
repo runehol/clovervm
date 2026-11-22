@@ -4814,6 +4814,107 @@ assert obj.stored[0] == 42
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
+TEST(Interpreter, cached_descriptor_deleter_uses_current_receiver)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+class Hooks:
+    def __delete__(self, obj, bias=1):
+        obj.stored = self.marker + bias
+        return -1
+
+class Descriptor(Hooks):
+    pass
+
+class Base:
+    pass
+
+class Child(Base):
+    pass
+
+first = Child()
+second = Child()
+first.x = 10
+second.x = 20
+first.stored = 0
+second.stored = 0
+descriptor = Descriptor()
+descriptor.marker = 41
+replacement = Descriptor()
+replacement.marker = 50
+Base.x = descriptor
+
+def erase(obj):
+    del obj.x
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    Owned<TValue<Function>> eraser{
+        TValue<Function>::from_value_assumed(global(L"erase"))};
+    Owned<Value> first{global(L"first")};
+    Owned<Value> second{global(L"second")};
+    auto &cache = eraser.value()
+                      .extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_mutation_caches.at(0);
+    auto erase = [&](Value receiver) {
+        return context.thread()->call_clovervm_function(eraser.value(),
+                                                        receiver);
+    };
+    auto stored = interned_string(L"stored");
+
+    native_cast<ClassObject>(global(L"Descriptor"))->freeze();
+    native_cast<ClassObject>(global(L"Hooks"))->freeze();
+    EXPECT_EQ(Value::None(), erase(first.value()));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);
+
+    for(const wchar_t *name: {L"descriptor", L"replacement"})
+    {
+        Object *object = global(name).get_ptr<Object>();
+        Shape *shape = object->get_shape();
+        object->set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
+    }
+    ASSERT_TRUE(first.value()
+                    .get_ptr<Object>()
+                    ->set_own_property(stored, Value::from_smi(0))
+                    .value());
+    EXPECT_EQ(Value::None(), erase(first.value()));
+    ASSERT_TRUE(cache.matches(second.value()));
+    ASSERT_TRUE(cache.plan.is_descriptor_delete());
+    EXPECT_EQ(global(L"descriptor"), cache.plan.descriptor);
+    EXPECT_EQ(Value::None(), erase(second.value()));
+    EXPECT_EQ(Value::from_smi(42),
+              first.value().get_ptr<Object>()->get_own_property(stored));
+    EXPECT_EQ(Value::from_smi(42),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    auto name = interned_string(L"x");
+    ASSERT_TRUE(base->set_own_property(name, global(L"replacement")).value());
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), erase(second.value()));
+    EXPECT_EQ(global(L"replacement"), cache.plan.descriptor);
+    EXPECT_EQ(Value::from_smi(51),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+    EXPECT_EQ(Value::from_smi(42),
+              first.value().get_ptr<Object>()->get_own_property(stored));
+
+    ASSERT_TRUE(base->delete_own_property(name));
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), erase(second.value()));
+    EXPECT_TRUE(second.value()
+                    .get_ptr<Object>()
+                    ->get_own_property(name)
+                    .is_not_present());
+}
+
 TEST(Interpreter, del_attr_invokes_property_deleter_with_precedence)
 {
     test::FileRunner run(LR"(

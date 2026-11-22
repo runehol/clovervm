@@ -3078,16 +3078,16 @@ namespace cl
             resolve_attr_delete_descriptor(receiver, attr_name);
         if(descriptor.is_found())
         {
+            if(descriptor.is_cacheable())
+            {
+                cache.populate(receiver, descriptor);
+            }
             if(descriptor.plan.is_descriptor_delete())
             {
                 INTERP_TRY(invoke_descriptor_mutation(
                     thread, fp, pc, code_object, accumulator, descriptor.plan,
                     receiver));
                 COMPLETE();
-            }
-            if(descriptor.is_cacheable())
-            {
-                cache.populate(receiver, descriptor);
             }
             delete_attr_from_plan(receiver, descriptor.plan);
             COMPLETE();
@@ -3529,6 +3529,21 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_del_attr_cached_slow(PARAMS)
+    {
+        START(4);
+        Value receiver = fp[int8_t(pc[1])];
+        const AttributeMutationPlan &plan =
+            code_object->inline_caches.attribute_mutation_caches[pc[3]].plan;
+        if(plan.is_descriptor_delete())
+        {
+            INTERP_TRY(invoke_descriptor_mutation(thread, fp, pc, code_object,
+                                                  accumulator, plan, receiver));
+            COMPLETE();
+        }
+        MUSTTAIL return op_del_attr_cache_miss(ARGS);
+    }
+
     static INTERP_CC Value op_del_attr(PARAMS)
     {
         START(4);
@@ -3543,7 +3558,7 @@ namespace cl
         }
         if(unlikely(!cache.plan.is_delete_own_property()))
         {
-            MUSTTAIL return op_del_attr_cache_miss(ARGS);
+            MUSTTAIL return op_del_attr_cached_slow(ARGS);
         }
         delete_attr_delete_own_property_inline_fast(receiver, cache.plan);
         COMPLETE();
