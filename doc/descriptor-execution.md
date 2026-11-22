@@ -4,15 +4,15 @@
 |---|---|
 | Document type | Design |
 | Status | Proposed |
-| Implementation | Partial |
+| Implementation | Lookup and classification only |
 | Scope | Executing descriptor `__get__` during attribute reads |
 | Owning layers | Runtime attribute semantics, inline caches, interpreter, and call adaptation |
-| Validated against | `d25fe55` (2026-06-28) |
+| Validated against | `083d3313` (2026-11-22) |
 | Supersedes | N/A |
 
-This document covers descriptor `__get__` execution for attribute reads.
-`obj.method(...)` keyword handling, descriptor writes, descriptor deletes, and
-`__set_name__` are separate design slices.
+This document starts with executing descriptor `__get__` for explicit
+attribute reads. It also records how later method loads and other descriptor
+consumers can share that execution path.
 
 The design below applies to default attribute lookup. Custom
 `__getattribute__` and `__getattr__` support is a separate slice; when those
@@ -24,6 +24,117 @@ descriptor call plan without turning ordinary attribute reads into generic call
 dispatch. The descriptor result is the result of the attribute read. If
 `__get__` returns another descriptor or another callable, that value is returned
 as-is. Any later call belongs to a later bytecode operation.
+
+## First Implementation Slice
+
+Support explicit instance reads through `LoadAttr` when descriptor protocol
+lookup selects a plain `Function` for `__get__`. Keep the existing
+`DataDescriptorGet` and `NonDataDescriptorGet` precedence decisions. Execute
+the getter without installing a descriptor-execution inline-cache entry in
+this slice. Ordinary slot and constant plans keep their existing replay paths.
+
+The first step records the selected getter in the existing read plan.
+`AttributeReadDescriptor::lookup_value` is the descriptor object.
+`AttributeReadPlan::constant_or_getter` holds the plain `Function` already
+found during protocol lookup. The plan kind determines how to read that
+field.
+
+```cpp
+Value descriptor = read.lookup_value;
+Value getter = read.plan.constant_or_getter;
+```
+
+Descriptor plans stay uncached. The existing error path handles them until
+the call is wired in the second step. The plan fields are borrowed handles.
+During call setup the interpreter keeps the getter and arguments live until
+the callee frame owns its inputs. A reentrant getter may change the class
+attribute or descriptor type. The next lookup observes the change.
+
+Step 2 handles the descriptor branch in `op_load_attr_cache_miss`. An
+instance-class-chain read with a selected plain getter stages three positional
+arguments at the aligned scratch call window: the descriptor, the current
+instance, and its runtime class. It calls
+`enter_uncached_resolved_positional_call` with `n_args = 3` and
+`instr_len = 4`, using a local call plan and the
+[existing argument adapter](function-call-adaptation.md).
+
+Use the normal call-entry dispatch after the helper commits the callee frame.
+The callee's saved return address is the instruction after `LoadAttr`. A
+normal getter return delivers its value in the accumulator. An entry error
+or a getter exception follows the interpreter's pending-exception path.
+`LoadAttr`'s direct cache hit keeps its existing dispatch.
+
+Class-namespace, metaclass, and `super` binding are described below for later
+slices. Arbitrary callable getter targets, trusted cached getter replay,
+first-class bound methods, and native-originated attribute reads also follow
+separately.
+
+## Attribute and Method Loads
+
+`LoadAttr` produces one Python-visible value. These are its replay cases
+after ordinary lookup has applied descriptor precedence and instance
+shadowing.
+
+| Winning entry | Read action | Cached payload |
+|---|---|---|
+| Instance attribute | Read the current instance slot. | Slot location. |
+| Plain class attribute | Read the current value from the winning class slot. | Storage owner and slot location. |
+| Exact built-in `property` with instance binding | Load the property's current getter and call it with the current instance. | Property object. |
+| General descriptor | Invoke `__get__` with the selected object and owner, then return its result. | Descriptor, hook, and binding plan when the descriptor protocol and lookup are stable. Mutable descriptor types stay uncached. |
+
+The proposed `LoadMethod` runs the same attribute lookup before evaluating
+arguments. It adds two binding shortcuts when the winning class entry
+qualifies. In every other case it uses the ordinary attribute-read result.
+
+| Winning entry | Value slot | Receiver slot |
+|---|---|---|
+| Exact `Function` with instance binding | Function, including a thunk backed by native code. | Current instance. |
+| Exact built-in `staticmethod` | Current wrapped value. | Empty. |
+| Any other lookup result | The value produced by `LoadAttr` semantics. | Empty. |
+
+A function stored in an instance slot follows the ordinary slot read.
+An exact built-in `classmethod` follows the cached general descriptor path.
+Its getter produces the bound method, which goes in the value slot. The
+empty receiver slot uses the VM's absence sentinel.
+
+Both output slots stay live across argument evaluation. The call consumes
+the values selected by `LoadMethod` and checks callability after evaluating
+the arguments. A lookup or getter exception stops before argument evaluation.
+
+## Built-in Property Reads
+
+For an instance read, lookup can recognize an exact built-in `property` and
+cache the property object under the receiver shape and class lookup guards.
+The built-in type has an immutable descriptor protocol, but reinitializing a
+property instance can replace its getter in place. Each hit loads the current
+getter from the cached property and calls it with the current lookup receiver.
+The class lookup guard covers replacement of the property in its class slot.
+
+For a read through the class namespace, such as `C.x`, use the general
+descriptor path even when the selected entry is an exact built-in
+`property`. The hook receives `None` as the object and `C` as the owner.
+The hook itself returns the property object. The exact built-in property's
+immutable protocol makes this general descriptor plan cacheable under the
+usual lookup guards.
+
+A call plan distinguishes the current lookup receiver, a fixed receiver
+proved by the guards, and an absent receiver. The instance property plan uses
+the first case. The explicit `None` passed by the general descriptor path is
+a Python argument.
+
+## Later Consumers
+
+- Descriptor-backed `__call__` still starts with type-MRO lookup. After a
+  getter runs, call entry uses its result with the original arguments. A
+  receiver supplied by a method load is distinct from any receiver added
+  when resolving that value's own `__call__`.
+- Operators can reuse descriptor execution and generic call entry. The
+  operator keeps the operands and its position in the walk, including
+  reflected dispatch after a method returns `NotImplemented`.
+- Writes and deletes keep precedence in the object model and execute the
+  selected hook in the interpreter. A descriptor with either mutation hook
+  controls both operations. A missing requested hook raises `AttributeError`.
+  Store and delete discard the hook's return value.
 
 ## Python Semantics Boundary
 
@@ -146,7 +257,19 @@ lookup validity cell. For descriptor reads, that outer cache proves that the sam
 descriptor object is the attribute result candidate and that the same lookup
 precedence decision still holds.
 
-Descriptor execution is installable in `AttributeReadInlineCache` only when all
+An immutable descriptor type with stable protocol lookup can use a cached
+general descriptor plan. Cache the selected descriptor and hook, plus the binding
+information needed for the current read. Replay invokes the hook through
+ordinary call entry and uses its result for that read. Class-namespace
+`property` reads and built-in `classmethod` use this path.
+
+Mutable descriptor types resolve the plan on each access. A cache hit on
+the general path depends on the descriptor protocol and lookup precedence
+remaining stable.
+
+### Trusted Handler Replay
+
+A trusted handler is installable in `AttributeReadInlineCache` only when all
 of the following hold:
 
 - the descriptor type is immutable;
@@ -158,11 +281,6 @@ of the following hold:
 - the function's `CodeObject` trusted handler resolver accepts
   `TrustedHandlerArity::Ternary` for normal operand order;
 - the attribute-read plan itself has no existing cache blockers.
-
-Mutable descriptor classes use the uncached slow path. This is intentional. The
-descriptor protocol depends on the descriptor type's dunder methods, and the
-runtime should not spend validity-cell budget trying to make uncommon mutable
-descriptor classes fast.
 
 No trusted handler means no trusted fast replay. It does not mean the descriptor
 is semantically unsupported. A user-defined descriptor whose `__get__` has
@@ -177,12 +295,11 @@ semantic edge the descriptor slow path must support, but the cross-product of
 descriptor lookup and arbitrary `__call__` should not shape the cached
 descriptor plan.
 
-The first implementation should therefore install descriptor plans in
-`AttributeReadInlineCache` only when `descriptor_get.get_handler` is non-null.
-Immutable descriptor classes without a trusted ternary handler still run with
-correct descriptor semantics, but they stay on the uncached descriptor path.
+The trusted-replay slice installs a trusted-handler plan when
+`descriptor_get.get_handler` is non-null. The general descriptor plan and the
+direct instance-property plan use ordinary call entry.
 
-## Attribute Read Plan Payload
+## Attribute Read Plan Payload for Trusted Getter Replay
 
 Descriptor execution should be integrated into `AttributeReadPlan` and
 `AttributeReadInlineCache`, not represented by a standalone cached descriptor
@@ -299,10 +416,9 @@ public:
 };
 ```
 
-The cache already has a kind-bearing plan. Cache replay should switch on
-`plan.kind`: direct read kinds keep the existing slot/constant behavior, while
-descriptor get kinds require `plan.descriptor_get.get_handler` to be non-null
-and call it with
+The cache already has a kind-bearing plan. Direct read kinds keep the existing
+slot and constant behavior. Trusted descriptor replay requires a non-null
+`plan.descriptor_get.get_handler` and calls it with
 `plan.descriptor_get.descriptor`, the `obj_or_none` value computed from
 `plan.descriptor_get.self_kind`, and `plan.descriptor_get.owner`.
 
@@ -348,17 +464,17 @@ additional callable-object protocol is required, such as resolving `__call__`.
 The descriptor path must not prepare a second argument layout for callable
 objects.
 
-Any future inline cache for callable objects should be designed for direct call
-opcodes first. Descriptor slow paths can reuse that generic call machinery after
-they have resolved `type(descriptor).__get__`, but descriptor IC entries should
-continue to require the trusted `Function` handler shape above.
+Direct call opcodes now cache ordinary instance `__call__` backed by a plain
+function. The descriptor slow path can reuse the same one-shot call machinery
+after it has resolved the getter. Support for arbitrary getter targets is a
+later slice. Trusted getter replay uses the handler shape described above.
 
 The call continuation is the next bytecode after `LoadAttr`: `pc + 4`. Entering
 the frame should pass `instr_len = 4`, so normal return resumes after the
 attribute read. This is a `LoadAttr`-specific single-call continuation; unlike
 operator continuations, it does not need to resume a multi-row protocol.
 
-## Slow Path
+## Slow Path with Trusted Replay
 
 A descriptor-read miss should:
 
@@ -407,9 +523,22 @@ They must continue to prove:
 - whether a receiver-owned attribute shadows a non-data descriptor;
 - whether class or metaclass mutation could change the lookup result.
 
+Instance class-chain `LoadAttr` plans depend on both shape and contents along the
+receiver's class MRO. A same-slot replacement can change a direct read into a
+descriptor call, so it must invalidate the previous plan even when no shape
+changes. The direct class-slot reads on instances already use this dependency.
+For future cached class-object descriptor reads, the guards also cover
+metaclass precedence.
+
+The class MRO guard covers which value the namespace holds. The selected
+value's type can independently gain or lose descriptor hooks. A direct-read
+plan that depends on the absence of a hook requires a stable descriptor
+protocol too. Keep that lookup uncached when the selected value's type can
+change that protocol.
+
 The descriptor fields on `AttributeReadPlan` add one more assumption: the
-descriptor type's `__get__` lookup and trusted handler are stable. The first
-implementation should only cache this when the descriptor type is immutable.
+descriptor type's `__get__` lookup and trusted handler are stable. The
+trusted-replay slice should only cache this when the descriptor type is immutable.
 Mutable descriptor types fall back to the slow path every time.
 
 A cacheable trusted descriptor read needs these validity ingredients:
@@ -479,8 +608,8 @@ class D:
 class C:
     x = D()
 
-C().x   # returns the function
-C().x() # performs a separate call
+value = C().x  # returns the function
+value()        # performs a separate call
 ```
 
 Mutable descriptor classes are semantically supported but not fast-cacheable:
@@ -499,27 +628,50 @@ C().x  # observes 2 through the slow path
 
 ## Test Plan
 
-Interpreter tests should cover:
+The first slice should use interpreter tests for:
 
-- data descriptor beats a receiver-owned attribute;
+- data-descriptor precedence and instance shadowing of a non-data descriptor;
+- a warmed direct class-slot read dispatches a getter after a descriptor
+  replaces the plain value in the same slot;
+- a repeated class-slot read dispatches a getter after the existing value's
+  type gains `__get__`;
+- instance binding with the current receiver and its runtime class;
+- returning descriptor and callable values unchanged;
+- ignoring an instance-level `__get__` on the descriptor object;
+- getter replacement on a mutable descriptor class at a repeated read site;
+- defaults, variadic parameters, wrong arity, and getter exceptions;
+- reentry that replaces the selected class attribute, with the current read
+  returning the original getter's result and the next read observing the
+  replacement;
+- forced reclamation around frame entry and during the getter, including a
+  caller expression with another live temporary.
+
+Check the Release opcode frames and compare the generated direct-hit
+`LoadAttr` path against the current version when implementing the slow path.
+
+Follow-up tests should cover:
+
+- a warmed instance-property read uses a new getter after reinitializing the
+  same property object in place;
 - metaclass data descriptor beats a class namespace attribute for `C.x`;
-- non-data descriptor is shadowed by a receiver-owned attribute;
 - class access passes `None` as the object and the class as owner;
+- an exact built-in property read through a class namespace replays the cached
+  general descriptor plan and returns the property via its hook;
+- an inherited built-in class method replays the cached general descriptor
+  plan and binds the class through which it was accessed;
 - `super(..., cls)` passes `None` as the object and the subclass as owner;
-- instance access passes the receiver and `type(receiver)`;
 - `super(..., obj)` passes the original receiver and `type(obj)`;
 - functions remain on the `BindFunctionReceiver` fast path and produce bound
   methods for ordinary `obj.f`;
-- descriptor result is not recursively treated as a descriptor;
-- descriptor result is not automatically called;
-- instance-level `__get__` on a descriptor object is ignored;
-- mutable descriptor class changes are observed through the slow path;
-- descriptors with optional parameters work on the slow path;
+- split method loads run getters before argument evaluation and preserve the
+  selected target across argument side effects;
+- split method loads distinguish a class-chain function from one stored in an
+  instance slot, and unwrap an exact built-in static method with an empty
+  receiver slot;
 - callable-object `__get__` implementations work through uncached generic
   callable dispatch;
-- non-callable `__get__` values and wrong-arity `__get__` functions fail through
-  the ordinary call error path;
-- descriptor `__get__` exceptions propagate on uncached and trusted cached paths;
+- non-callable `__get__` values fail through the ordinary call error path;
+- descriptor `__get__` exceptions propagate on trusted cached paths;
 - cached descriptor values are released/kept alive correctly across class-slot
   replacement and cache clearing.
 
