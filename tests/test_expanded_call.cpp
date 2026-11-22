@@ -686,8 +686,9 @@ def verify(value): return value.value == 14
                             .extract()
                             ->code_object.extract()
                             ->inline_caches.expanded_call_caches[0];
-    ASSERT_NE(nullptr, cache.validity_cell);
-    EXPECT_TRUE(cache.validity_cell->is_valid());
+    EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard.kind);
+    ASSERT_NE(nullptr, cache.guard.validity_cell);
+    EXPECT_TRUE(cache.guard.validity_cell->is_valid());
 }
 
 TEST_F(ExpandedCallExecution,

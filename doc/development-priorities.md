@@ -49,10 +49,12 @@ For bounded work that can land independently of this priority order, see
 
 2. **Generic callable protocol and call-site IC contracts**
 
-   Extend the call-plan model from ordinary functions, constructor thunks, and
-   direct method calls to all callable-object shapes the VM can encounter:
-   escaped bound methods, descriptor-produced callables, and arbitrary objects
-   with `__call__`.
+   The call-plan model covers ordinary functions, constructor thunks, direct
+   method calls, and instances whose type MRO supplies a plain function for
+   `__call__`. See [Function Call Adaptation](function-call-adaptation.md).
+   Extend it to escaped bound methods, descriptor-produced callables, and
+   instances whose `__call__` needs descriptor binding or resolves to a
+   non-function callable.
 
    Keep call adaptation call-site-shaped, not just callee-shaped. A warmed call
    site should expose enough normalized plan metadata for exact JIT-to-JIT calls

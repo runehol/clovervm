@@ -779,23 +779,18 @@ keys
         EXPECT_EQ(1, observed->item_unchecked(index).get_ptr()->refcount());
 }
 
-TEST(List, SortPreservesExistingCallableLimitations)
+TEST(List, SortAcceptsCallableInstanceKeys)
 {
     test::VmTestContext context;
     ASSERT_FALSE(context
                      .run_file(LR"(
 class Callable:
     def __call__(self, item):
-        raise AssertionError('sort must not add callable instance support')
+        return -item
 
-values = [2, 1]
-try:
-    values.sort(key=Callable())
-except TypeError:
-    pass
-else:
-    raise AssertionError('expected existing callable instance limitation')
-assert values == [2, 1]
+values = [2, 1, 3]
+values.sort(key=Callable())
+assert values == [3, 2, 1]
 )")
                      .is_exception_marker());
 }
