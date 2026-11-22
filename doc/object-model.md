@@ -755,68 +755,10 @@ cacheable plans. The shared runtime representation lives in
 `attribute_descriptor.h` so the interpreter, code objects, attribute
 helpers, and object implementations can all talk in the same terms.
 
-```cpp
-enum class AttributeReadStatus : uint8_t {
-    Found = 0,
-    NotFound,
-    NonObjectReceiver,
-    Error,
-};
-
-enum class AttributeReadPlanPath : uint8_t {
-    ReceiverOwnProperty,
-    InstanceClassChain,
-    ClassObjectChain,
-    MetaclassChain,
-};
-
-enum class AttributeReadPlanKind : uint8_t {
-    ReturnValue,
-    ReceiverSlot,
-    ResolvedValue,
-    BindFunctionReceiver,
-    DataDescriptorGet,
-    NonDataDescriptorGet,
-};
-
-enum class AttributeCacheBlocker : uint16_t {
-    None = 0,
-    MutableDescriptorType = 1 << 0,
-    CustomGetAttribute = 1 << 1,
-    MissingLookupCell = 1 << 2,
-    UnsupportedDescriptorKind = 1 << 3,
-};
-
-using AttributeCacheBlockers = uint16_t;
-
-struct AttributeBindingContext {
-    Value self;
-    const ClassObject *owner;
-};
-
-struct AttributeReadPlan {
-    AttributeReadPlanPath path;
-    AttributeReadPlanKind kind;
-    const Object *storage_owner; // nullptr means receiver-relative storage
-    StorageLocation storage_location;
-    Value value;
-    AttributeBindingContext binding;
-    ValidityCell *lookup_validity_cell;
-};
-
-struct AttributeReadDescriptor {
-    AttributeReadStatus status;
-    AttributeReadPlan plan; // valid only when status == Found
-    AttributeCacheBlockers cache_blockers;
-};
-```
-
-`status == Found` means the plan can execute immediately. The descriptor's
-`is_cacheable()` predicate is the authoritative cacheability test: today a
-read plan must have a lookup validity cell and must not require descriptor
-dispatch. `cache_blockers` records why otherwise-successful lookups were not
-cache-friendly, but the interpreter does not separately consult it on the
-inline-cache path.
+The descriptor's `is_cacheable()` predicate checks for a lookup validity
+cell. The resolver supplies that cell after checking the plan's cache blockers
+and guard requirements. See [descriptor execution](descriptor-execution.md)
+for cacheable hook plans and their replay paths.
 
 Attribute lookup and mutation are split into two stages:
 
@@ -838,12 +780,9 @@ instance-chain, class-chain, and metaclass-chain descriptors. The
 top-level attribute helper only composes the lookup order and executes
 the plan for the legacy load APIs.
 
-For example, lookup may find a class-chain value that is not currently a data
-descriptor, but whose type is mutable. The runtime can use that result
-immediately. The descriptor may record a `MutableDescriptorType` cache blocker
-as diagnostic information for future tightening, but the current cacheability
-predicate is intentionally simpler: successful direct plans are cacheable when
-they carry a lookup validity cell and do not require descriptor dispatch.
+A class-chain value with a mutable descriptor protocol can be used for the
+current access. The resolver withholds a validity cell when the plan depends
+on that protocol and it can change independently of the receiver's class MRO.
 
 Receiver-own-slot hits also need the class-chain dependency that proves no data
 descriptor currently wins for the same name. The current runtime represents
