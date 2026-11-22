@@ -1618,23 +1618,6 @@ namespace cl
         return Expected<DispatchTableEntry>::ok(jit_entry);
     }
 
-    static ALWAYSINLINE bool try_enter_cached_positional_call(
-        Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
-        void *&dispatch, CodeObject *&code_object, Value callable,
-        int32_t first_arg_reg, uint32_t n_args, uint32_t instr_len,
-        FunctionCallInlineCache &cache, DispatchTableEntry &jit_entry)
-    {
-        if(unlikely(cache.n_args != n_args || !cache.guard.matches(callable)))
-        {
-            return false;
-        }
-
-        jit_entry = enter_positional_call_from_cache(
-            accumulator, thread, fp, pc, dispatch, code_object, cache,
-            first_arg_reg, n_args, instr_len);
-        return true;
-    }
-
     static ALWAYSINLINE DispatchTableEntry
     enter_function_frame_from_keyword_args(
         Value &accumulator, ThreadState *thread, Value *&fp, const uint8_t *&pc,
@@ -5663,19 +5646,18 @@ namespace cl
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
         FunctionCallInlineCache &call_cache =
             code_object->inline_caches.function_call_caches[call_cache_idx];
-        int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_args, self);
-        DispatchTableEntry jit_entry = nullptr;
-        if(unlikely(!try_enter_cached_positional_call(
-               accumulator, thread, fp, pc, dispatch, code_object, callable,
-               first_arg_reg, n_args, call_instr_len, call_cache, jit_entry)))
+        if(unlikely(call_cache.n_args != n_args ||
+                    !call_cache.guard.matches(callable)))
         {
             INTERP_TRY(populate_positional_call_cache_from_callable(
                 callable, n_args, call_cache));
-            jit_entry = enter_positional_call_from_cache(
-                accumulator, thread, fp, pc, dispatch, code_object, call_cache,
-                first_arg_reg, n_args, call_instr_len);
         }
+
+        int32_t first_arg_reg = prepare_method_call_argument_slots(
+            fp, receiver_reg, n_user_args, self);
+        DispatchTableEntry jit_entry = enter_positional_call_from_cache(
+            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
+            first_arg_reg, n_args, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
