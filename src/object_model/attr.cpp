@@ -43,16 +43,13 @@ namespace cl
         if(path == AttributeReadPlanPath::InstanceClassChain &&
            has_native_layout<Function>(value))
         {
-            // Class-chain method plans reload the defining class slot before
-            // binding, so ordinary class contents writes do not invalidate the
-            // method IC.
+            // Class-chain method plans load the defining class slot before
+            // binding the function to the current receiver.
             return AttributeReadPlanKind::BindFunctionReceiver;
         }
 
-        // Ordinary lookup hits are cached as storage loads. This lets
-        // contents writes update the observed value without invalidating
-        // shape-only lookup assumptions, and keeps even rare metaclass-chain
-        // hits on the same simple IC representation.
+        // Ordinary lookup hits are cached as storage loads, including hits
+        // on the metaclass chain.
         return AttributeReadPlanKind::ReceiverSlot;
     }
 
@@ -533,12 +530,8 @@ namespace cl
                     class_object);
             }
 
-            // A class-chain hit only needs the receiver class MRO shape. Reuse
-            // the combined class-read cell instead of adding a third owned
-            // cell: it is shape-only along this MRO and merely over-invalidates
-            // on metaclass changes, which are much colder than class contents
-            // writes.
-            return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+            // Replacing the class slot value can change how the read binds.
+            return with_mro_shape_and_contents_validity_cell_if_unblocked(
                 class_descriptor, class_object);
         }
 

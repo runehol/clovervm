@@ -4110,6 +4110,31 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     expect_thread_python_error(test_context.thread(), L"AttributeError", L"");
 }
 
+TEST(Interpreter, cached_instance_read_reclassifies_replaced_class_attribute)
+{
+    expect_python_error(LR"(
+class Descriptor:
+    def __get__(self, obj, owner):
+        return 42
+
+class Base:
+    value = 7
+
+class Child(Base):
+    pass
+
+def read(obj):
+    return obj.value
+
+obj = Child()
+assert read(obj) == 7
+Base.value = Descriptor()
+read(obj)
+)",
+                        L"TypeError",
+                        L"descriptor __get__ requires interpreter dispatch");
+}
+
 TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
 {
     test::VmTestContext test_context;
