@@ -1,5 +1,6 @@
 #include "object_model/class_object.h"
 #include "builtin_types/io_base.h"
+#include "builtin_types/property.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "object_model/attr.h"
@@ -888,6 +889,7 @@ namespace cl
         if(new_descriptor.is_found())
         {
             if((instance_native_layout_id() == NativeLayoutId::OSError ||
+                instance_native_layout_id() == NativeLayoutId::Property ||
                 instance_native_layout_id() == NativeLayoutId::IOBase ||
                 instance_native_layout_id() == NativeLayoutId::RawIOBase ||
                 instance_native_layout_id() ==
@@ -907,24 +909,31 @@ namespace cl
                                                       new_descriptor.plan);
                 Value init_value = load_attr_from_plan(Value::from_oop(self),
                                                        init_descriptor.plan);
-                Value builtin_new = active_thread()
-                                        ->class_for_native_layout(
-                                            instance_native_layout_id() ==
-                                                    NativeLayoutId::OSError
-                                                ? NativeLayoutId::OSError
-                                                : NativeLayoutId::IOBase)
-                                        ->get_own_property(new_name);
+                NativeLayoutId constructor_layout = instance_native_layout_id();
+                if(constructor_layout != NativeLayoutId::OSError &&
+                   constructor_layout != NativeLayoutId::Property)
+                {
+                    constructor_layout = NativeLayoutId::IOBase;
+                }
+                Value builtin_new =
+                    active_thread()
+                        ->class_for_native_layout(constructor_layout)
+                        ->get_own_property(new_name);
                 if(new_value == builtin_new &&
                    has_native_layout<Function>(init_value))
                 {
                     TValue<Function> thunk = CL_TRY(
-                        instance_native_layout_id() == NativeLayoutId::OSError
+                        constructor_layout == NativeLayoutId::OSError
                             ? make_os_error_constructor_thunk_function(
                                   self, TValue<Function>::from_value_assumed(
                                             init_value))
-                            : make_io_base_constructor_thunk_function(
-                                  self, TValue<Function>::from_value_assumed(
-                                            init_value)));
+                            : make_allocating_constructor_thunk_function(
+                                  self,
+                                  TValue<Function>::from_value_assumed(
+                                      init_value),
+                                  constructor_layout == NativeLayoutId::Property
+                                      ? allocate_property
+                                      : allocate_io_base));
                     constructor_thunk = thunk.extract();
                     return Expected<ConstructorThunkLookup>::ok(
                         ConstructorThunkLookup{thunk.extract(), lookup_cell});

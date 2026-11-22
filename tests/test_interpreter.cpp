@@ -4316,6 +4316,176 @@ def read_bad(obj):
                            .lookup_validity_cell);
 }
 
+TEST(Interpreter, builtin_property_reads_and_accessor_copies)
+{
+    test::FileRunner run(LR"(
+class Base:
+    def get_value(self):
+        "original getter"
+        return self.stored
+
+    def set_value(self, incoming):
+        self.stored = incoming
+        return 123
+
+    def delete_value(self):
+        del self.stored
+        return 456
+
+    value = property(get_value)
+    value = value.setter(set_value)
+    value = value.deleter(delete_value)
+
+class Child(Base):
+    pass
+
+p = Base.value
+assert Child.value is p
+assert p.__get__(None, Base) is p
+assert p.__doc__ == "original getter"
+assert p.fget is not None and p.fset is not None and p.fdel is not None
+
+obj = Child()
+assert p.__set__(obj, 41) is None
+assert obj.value == 41
+assert p.__delete__(obj) is None
+try:
+    obj.stored
+except AttributeError:
+    pass
+else:
+    assert False
+
+def replacement(obj):
+    "replacement getter"
+    return 42
+
+copy = p.getter(replacement)
+assert copy is not p
+assert copy.fget is replacement and copy.fset is p.fset and copy.fdel is p.fdel
+assert copy.__doc__ == "replacement getter"
+assert p.getter(None).fget is p.fget
+assert p.__doc__ == "original getter"
+
+explicit = property(fget=p.fget, doc="explicit")
+assert explicit.getter(replacement).__doc__ == "explicit"
+try:
+    p.fget = replacement
+except AttributeError:
+    pass
+else:
+    assert False
+
+class DerivedProperty(property):
+    pass
+
+derived = DerivedProperty(replacement)
+assert derived.getter(p.fget).__class__ is DerivedProperty
+assert derived.__get__(obj) == 42
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, builtin_property_observes_reinitialization_after_cache_hit)
+{
+    test::FileRunner run(LR"(
+class C:
+    pass
+
+first = C()
+second = C()
+first.x = 100
+second.x = 200
+
+def get(obj):
+    return 1 if obj is first else 2
+
+class Accessor:
+    def __call__(self, obj):
+        return 3 if obj is first else 4
+
+p = property(get)
+C.x = p
+
+def read(obj):
+    return obj.x
+
+assert read(first) == 1
+assert read(second) == 2
+p.__init__(fget=Accessor())
+assert read(first) == 3
+assert read(second) == 4
+assert C.x is p
+
+p.__init__()
+try:
+    read(first)
+except AttributeError:
+    pass
+else:
+    assert False
+
+for name in ("set", "delete"):
+    try:
+        if name == "set":
+            p.__set__(first, 0)
+        else:
+            p.__delete__(first)
+    except AttributeError:
+        pass
+    else:
+        assert False
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, property_subclass_reinitialization_restores_deleted_doc)
+{
+    test::FileRunner run(LR"(
+class P(property):
+    pass
+
+p = P(doc="original")
+del p.__doc__
+p.__init__(doc="reinitialized")
+assert p.__doc__ == "reinitialized"
+p.__doc__ = "assigned"
+assert p.__doc__ == "assigned"
+
+class Getter:
+    def get_doc(self):
+        del p.__doc__
+        return "inferred"
+
+    __doc__ = property(get_doc)
+
+    def __call__(self, obj):
+        return 42
+
+p.__init__(Getter())
+assert p.__doc__ == "inferred"
+p.__doc__ = "assigned after inference"
+assert p.__doc__ == "assigned after inference"
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, property_subclass_copy_accepts_deleted_doc)
+{
+    test::FileRunner run(LR"(
+class P(property):
+    pass
+
+p = P(doc="original")
+del p.__doc__
+copy = p.getter(None)
+assert copy is not p
+assert copy.__class__ is P
+assert copy.__doc__ is None
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
 TEST(Interpreter, metaclass_descriptor_getter_receives_class_and_metaclass)
 {
     test::VmTestContext context;

@@ -105,6 +105,8 @@ add_library(libclovervm_objects OBJECT
     util/result.h
     builtin_types/enumerate.cpp
     builtin_types/enumerate.h
+    builtin_types/property.cpp
+    builtin_types/property.h
     builtin_types/zip.cpp
     builtin_types/zip.h
     builtin_types/io_base.cpp

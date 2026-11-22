@@ -15,6 +15,7 @@
 #include "builtin_types/module_loader_object.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/module_spec_object.h"
+#include "builtin_types/property.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/str.h"
@@ -72,6 +73,7 @@
     V(RawIOBaseObject);                                                        \
     V(FileIOObject);                                                           \
     V(Slice);                                                                  \
+    V(Property);                                                               \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

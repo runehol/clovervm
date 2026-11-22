@@ -669,6 +669,70 @@ def _clover_list_extend(builder, source):
     return None
 
 
+def _clover_property_new(cls, /, *args, **kwargs):
+    return _clover_property_allocate(cls)
+
+
+def _clover_property_init(self, /, fget=None, fset=None, fdel=None, doc=None):
+    _clover_property_reset(self, fget, fset, fdel)
+    from_getter = False
+    if doc is None and fget is not None:
+        try:
+            doc = fget.__doc__
+        except AttributeError:
+            pass
+        from_getter = doc is not None
+    _clover_property_set_doc(self, doc, from_getter)
+
+
+def _clover_property_get(self, obj, owner=None, /):
+    getter = _clover_property_getter_slot(self)
+    if obj is None:
+        if owner is None:
+            raise TypeError("__get__(None, None) is invalid")
+        return self
+    if getter is None:
+        raise AttributeError("property has no getter")
+    return getter(obj)
+
+
+def _clover_property_set(self, obj, value, /):
+    setter = _clover_property_setter_slot(self)
+    if setter is None:
+        raise AttributeError("property has no setter")
+    setter(obj, value)
+
+
+def _clover_property_delete(self, obj, /):
+    deleter = _clover_property_deleter_slot(self)
+    if deleter is None:
+        raise AttributeError("property has no deleter")
+    deleter(obj)
+
+
+def _clover_property_copy(self, fget=None, fset=None, fdel=None):
+    state = _clover_property_copy_state(self)
+    cls = state[0]
+    return cls(
+        state[1] if fget is None else fget,
+        state[2] if fset is None else fset,
+        state[3] if fdel is None else fdel,
+        state[4],
+    )
+
+
+def _clover_property_getter(self, getter, /):
+    return _clover_property_copy(self, fget=getter)
+
+
+def _clover_property_setter(self, setter, /):
+    return _clover_property_copy(self, fset=setter)
+
+
+def _clover_property_deleter(self, deleter, /):
+    return _clover_property_copy(self, fdel=deleter)
+
+
 def _clover_enumerate_call(cls, /, *args, **kwargs):
     _clover_enumerate_validate_class(cls)
     count = len(args) + len(kwargs)
