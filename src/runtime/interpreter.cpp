@@ -28,6 +28,7 @@
 #include "object_model/slot_dict.h"
 #include "object_model/validity_cell.h"
 #include "object_model/value.h"
+#include "runtime/call_target.h"
 #include "runtime/exception_handling.h"
 #include "runtime/exception_object.h"
 #include "runtime/method_call.h"
@@ -1169,81 +1170,46 @@ namespace cl
                 .bits_for_indirect_target());
     }
 
-    static ALWAYSINLINE void populate_function_call_cache_with_guard(
-        FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
-        ValidityCell *validity_cell, uint32_t n_args)
+    static ALWAYSINLINE void
+    populate_function_call_cache(FunctionCallInlineCache &cache,
+                                 const CallTargetDescriptor &target,
+                                 uint32_t n_args)
     {
-        cache.guard =
-            CallTargetGuard::exact(guard_value.get_ptr(), validity_cell);
-        cache.function = fun.extract();
-        cache.code_object = fun.extract()->code_object.extract();
-        cache.receiver_binding = ReceiverBinding::None;
+        cache.guard = target.guard;
+        cache.function = target.function.extract();
+        cache.code_object = cache.function->code_object.extract();
+        cache.receiver_binding = target.receiver_binding;
         cache.n_args = n_args;
-        cache.adaptation =
-            function_call_adaptation_for_positional_call(fun, n_args);
-    }
-
-    struct ResolvedFunctionCallTarget
-    {
-        TValue<Function> function;
-        ValidityCell *validity_cell;
-    };
-
-    static Expected<ResolvedFunctionCallTarget>
-    resolve_function_call_target(Value callable)
-    {
-        if(callable.is_ptr())
-        {
-            Object *object = callable.get_ptr<Object>();
-            if(object->native_layout_id() == NativeLayoutId::Function)
-            {
-                return Expected<ResolvedFunctionCallTarget>::ok(
-                    {TValue<Function>::from_value_assumed(callable), nullptr});
-            }
-            if(object->native_layout_id() == NativeLayoutId::ClassObject)
-            {
-                ConstructorThunkLookup constructor =
-                    CL_TRY(static_cast<ClassObject *>(object)
-                               ->get_or_create_constructor_thunk());
-                if(constructor.is_found())
-                {
-                    return Expected<ResolvedFunctionCallTarget>::ok(
-                        {TValue<Function>::from_oop(constructor.thunk),
-                         constructor.lookup_cell});
-                }
-            }
-        }
-        return Expected<ResolvedFunctionCallTarget>::raise_exception(
-            L"TypeError", L"object is not callable");
+        cache.adaptation = function_call_adaptation_for_positional_call(
+            target.function, n_args);
     }
 
     NOINLINE static Expected<void> populate_positional_call_cache_from_callable(
         Value callable, uint32_t n_args, FunctionCallInlineCache &cache)
     {
-        ResolvedFunctionCallTarget target =
-            CL_TRY(resolve_function_call_target(callable));
+        CallTargetDescriptor target = CL_TRY(resolve_call_target(callable));
         if(!target.function.extract()->accepts_positional_only_call_arity(
                n_args))
         {
             return Expected<void>::raise_exception(
                 L"TypeError", L"wrong number of arguments");
         }
-        populate_function_call_cache_with_guard(
-            cache, callable, target.function, target.validity_cell, n_args);
+        populate_function_call_cache(cache, target, n_args);
         return Expected<void>::ok();
     }
 
-    static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
-        KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
-        ValidityCell *validity_cell, uint32_t n_pos_args, uint32_t n_kw_args,
-        uint32_t default_fill_start_slot,
-        std::unique_ptr<int8_t[]> keyword_dest_regs)
+    static ALWAYSINLINE void
+    populate_keyword_call_cache(KeywordCallInlineCache &cache,
+                                const CallTargetDescriptor &target,
+                                uint32_t n_pos_args, uint32_t n_kw_args,
+                                uint32_t default_fill_start_slot,
+                                std::unique_ptr<int8_t[]> keyword_dest_regs)
     {
-        cache.guard =
-            CallTargetGuard::exact(guard_value.get_ptr(), validity_cell);
+        TValue<Function> fun = target.function;
+        cache.guard = target.guard;
         cache.function = fun.extract();
-        cache.code_object = fun.extract()->code_object.extract();
-        cache.receiver_binding = ReceiverBinding::None;
+        cache.code_object = cache.function->code_object.extract();
+        cache.receiver_binding = target.receiver_binding;
         assert(n_pos_args <= UINT8_MAX);
         cache.n_pos_args = uint8_t(n_pos_args);
         assert(n_kw_args <= UINT8_MAX);
@@ -1280,11 +1246,11 @@ namespace cl
     }
 
     static Expected<void> build_and_populate_keyword_call_cache(
-        KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
-        ValidityCell *validity_cell, Value keyword_names_value,
-        uint32_t n_pos_args, uint32_t n_kw_args)
+        KeywordCallInlineCache &cache, const CallTargetDescriptor &target,
+        Value keyword_names_value, uint32_t n_pos_args, uint32_t n_kw_args)
     {
         KeywordCallInlineCache candidate;
+        TValue<Function> fun = target.function;
         Function *function = fun.extract();
         FunctionSignature signature = function->call_signature.function;
         if(n_pos_args > signature.n_positional_parameters &&
@@ -1386,9 +1352,9 @@ namespace cl
 
         uint32_t default_fill_start_slot =
             default_fill_start_slot_for_keyword_call(fun, n_filled_by_position);
-        populate_keyword_call_cache_with_guard(
-            candidate, guard_value, fun, validity_cell, n_pos_args, n_kw_args,
-            default_fill_start_slot, std::move(keyword_dest_regs));
+        populate_keyword_call_cache(candidate, target, n_pos_args, n_kw_args,
+                                    default_fill_start_slot,
+                                    std::move(keyword_dest_regs));
         cache = std::move(candidate);
         return Expected<void>::ok();
     }
@@ -1397,11 +1363,9 @@ namespace cl
         Value callable, Value keyword_names, uint32_t n_pos_args,
         uint32_t n_kw_args, KeywordCallInlineCache &cache)
     {
-        ResolvedFunctionCallTarget target =
-            CL_TRY(resolve_function_call_target(callable));
+        CallTargetDescriptor target = CL_TRY(resolve_call_target(callable));
         return build_and_populate_keyword_call_cache(
-            cache, callable, target.function, target.validity_cell,
-            keyword_names, n_pos_args, n_kw_args);
+            cache, target, keyword_names, n_pos_args, n_kw_args);
     }
 
     static ALWAYSINLINE void
@@ -1769,14 +1733,12 @@ namespace cl
     {
         if(!cache.guard.matches(callable))
         {
-            ResolvedFunctionCallTarget target =
-                CL_TRY(resolve_function_call_target(callable));
+            CallTargetDescriptor target = CL_TRY(resolve_call_target(callable));
             const FunctionSignature signature =
                 target.function.extract()->call_signature.function;
-            cache.guard = CallTargetGuard::exact(callable.get_ptr(),
-                                                 target.validity_cell);
+            cache.guard = target.guard;
             cache.function = target.function.extract();
-            cache.receiver_binding = ReceiverBinding::None;
+            cache.receiver_binding = target.receiver_binding;
             cache.binding_plan.reset();
             cache.mode = signature.has_varargs() && signature.has_kwargs() &&
                                  signature.n_positional_parameters == 0 &&

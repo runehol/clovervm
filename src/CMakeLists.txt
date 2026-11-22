@@ -95,6 +95,8 @@ add_library(libclovervm_objects OBJECT
     runtime/exception_object.cpp
     runtime/exception_object.h
     runtime/exception_propagation.h
+    runtime/call_target.cpp
+    runtime/call_target.h
     runtime/expanded_call.cpp
     runtime/expanded_call.h
     runtime/fatal.cpp
