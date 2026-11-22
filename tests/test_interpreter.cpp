@@ -4684,28 +4684,27 @@ def keyword(f):
     // The resolver emits exact guards, so seed a shape guard to exercise
     // replay.
     auto check_shape_replay = [&](TValue<Function> invoke, auto &cache) {
-        EXPECT_EQ(CallTargetGuardKind::Empty, cache.guard_kind);
+        EXPECT_EQ(CallTargetGuardKind::Empty, cache.guard.kind);
         auto call = [&] {
             return context.thread()->call_clovervm_function(invoke, target);
         };
         ASSERT_EQ(Value::from_smi(5), call());
         ASSERT_EQ(target.get_ptr(), cache.guard.identity);
-        EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard_kind);
+        EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard.kind);
 
         OwnedHeapPtr<ValidityCell> cell{
             context.thread()->make_internal_raw<ValidityCell>(
                 ValidityCellDependencyMutability::Mutable)};
         Shape *shape = target.get_ptr()->get_shape();
-        cache.guard = {shape, cell.get()};
-        cache.guard_kind = CallTargetGuardKind::ReceiverShape;
+        cache.guard = CallTargetGuard::receiver_shape(shape, cell.get());
         ASSERT_EQ(Value::from_smi(5), call());
         EXPECT_EQ(shape, cache.guard.identity);
-        EXPECT_EQ(CallTargetGuardKind::ReceiverShape, cache.guard_kind);
+        EXPECT_EQ(CallTargetGuardKind::ReceiverShape, cache.guard.kind);
 
         cell.get()->invalidate();
         EXPECT_EQ(Value::from_smi(5), call());
         EXPECT_EQ(target.get_ptr(), cache.guard.identity);
-        EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard_kind);
+        EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard.kind);
         EXPECT_EQ(nullptr, cache.guard.validity_cell);
     };
 

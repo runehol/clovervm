@@ -448,8 +448,8 @@ namespace cl
             TValue<String>::from_oop(child));
         code_object->inline_caches.function_call_caches.push_back(
             FunctionCallInlineCache{});
-        code_object->inline_caches.function_call_caches.back().guard.identity =
-            child;
+        code_object->inline_caches.function_call_caches.back().guard =
+            CallTargetGuard::exact(child);
         ASSERT_EQ(2, child->refcount());
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         SlabAllocator *module_slab = heap.slab_for_object_unlocked(module);

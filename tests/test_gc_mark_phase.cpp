@@ -270,7 +270,8 @@ TEST(GCCloverHeapAdapter, CustomStorageIsStrongButCacheTargetsAreWeak)
     code.get()->constant_table.emplace_back(constant.raw_value());
     auto &caches = code.get()->inline_caches;
     caches.function_call_caches.emplace_back();
-    caches.function_call_caches.back().guard.identity = weak_only.extract();
+    caches.function_call_caches.back().guard =
+        cl::CallTargetGuard::exact(weak_only.extract());
     caches.expanded_call_caches.resize(1);
     auto &expanded = caches.expanded_call_caches.back();
     expanded.binding_plan = std::make_unique<cl::ExpandedCallCachedPlan>();

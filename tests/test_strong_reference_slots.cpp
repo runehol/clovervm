@@ -72,18 +72,18 @@ TEST(StrongReferenceSlots, CodeObjectVisitsOwnedCellsButNotWeakCaches)
 
     auto &caches = code.get()->inline_caches;
     caches.function_call_caches.emplace_back();
-    caches.function_call_caches.back().guard.identity = name.extract();
+    caches.function_call_caches.back().guard =
+        CallTargetGuard::exact(name.extract());
     caches.operator_caches.emplace_back();
     caches.operator_caches.back().operand_shape_keys[0] =
         ShapeKey::from_shape(code.get()->get_shape());
     // Include both an absent plan and an owned plan in external native storage.
     caches.expanded_call_caches.resize(2);
     auto &expanded = caches.expanded_call_caches.back();
-    expanded.guard.identity = name.extract();
     OwnedHeapPtr<ValidityCell> weak_cell(
         thread->make_internal_raw<ValidityCell>(
             ValidityCellDependencyMutability::Mutable));
-    expanded.guard.validity_cell = weak_cell.get();
+    expanded.guard = CallTargetGuard::exact(name.extract(), weak_cell.get());
     expanded.binding_plan = std::make_unique<ExpandedCallCachedPlan>();
     expanded.binding_plan->keyword_names.emplace_back(name.value());
     expanded.binding_plan->keyword_names.emplace_back(name.value());

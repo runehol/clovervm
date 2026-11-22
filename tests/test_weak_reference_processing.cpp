@@ -179,15 +179,15 @@ namespace
                                                     {3, StorageKind::Inline});
             caches.function_call_caches.resize(1);
             auto &call = caches.function_call_caches[0];
-            call.guard = {old_function.get(), old_cell.get()};
-            call.guard_kind = CallTargetGuardKind::ExactCallable;
+            call.guard =
+                CallTargetGuard::exact(old_function.get(), old_cell.get());
             call.function = old_function.get();
             call.code_object = old_code.get();
             call.n_args = 3;
             caches.keyword_call_caches.resize(1);
             auto &keyword = caches.keyword_call_caches[0];
-            keyword.guard = {old_shape.get(), old_cell.get()};
-            keyword.guard_kind = CallTargetGuardKind::ReceiverShape;
+            keyword.guard = CallTargetGuard::receiver_shape(old_shape.get(),
+                                                            old_cell.get());
             keyword.receiver_binding = ReceiverBinding::PrependCallable;
             keyword.function = old_function.get();
             keyword.code_object = old_code.get();
@@ -198,8 +198,7 @@ namespace
             keyword.keyword_dest_regs[1] = -3;
             caches.expanded_call_caches.resize(1);
             auto &expanded = caches.expanded_call_caches[0];
-            expanded.guard = {call.guard.identity, old_cell.get()};
-            expanded.guard_kind = CallTargetGuardKind::ExactCallable;
+            expanded.guard = call.guard;
             expanded.function = old_function.get();
             expanded.mode = ExpandedCallMode::PureCollector;
             expanded.binding_plan = std::make_unique<ExpandedCallCachedPlan>();
@@ -283,7 +282,7 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
     const auto &keyword = caches.keyword_call_caches[0];
     EXPECT_EQ(new_shape.get(), keyword.guard.identity);
     EXPECT_EQ(ReceiverBinding::PrependCallable, keyword.receiver_binding);
-    EXPECT_EQ(CallTargetGuardKind::ReceiverShape, keyword.guard_kind);
+    EXPECT_EQ(CallTargetGuardKind::ReceiverShape, keyword.guard.kind);
     EXPECT_EQ(new_function.get(), keyword.function);
     EXPECT_EQ(new_code.get(), keyword.code_object);
     EXPECT_EQ(new_cell.get(), keyword.guard.validity_cell);
@@ -292,7 +291,7 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
     EXPECT_EQ(2, keyword.n_kw_args);
     const auto &expanded = caches.expanded_call_caches[0];
     EXPECT_EQ(call.guard.identity, expanded.guard.identity);
-    EXPECT_EQ(CallTargetGuardKind::ExactCallable, expanded.guard_kind);
+    EXPECT_EQ(CallTargetGuardKind::ExactCallable, expanded.guard.kind);
     EXPECT_EQ(new_function.get(), expanded.function);
     EXPECT_EQ(new_cell.get(), expanded.guard.validity_cell);
     EXPECT_EQ(plan, expanded.binding_plan.get());
@@ -397,7 +396,7 @@ TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
             EXPECT_EQ(nullptr, keyword.keyword_dest_regs);
             EXPECT_EQ(UINT8_MAX, keyword.n_pos_args);
             EXPECT_EQ(ReceiverBinding::None, keyword.receiver_binding);
-            EXPECT_EQ(CallTargetGuardKind::Empty, keyword.guard_kind);
+            EXPECT_EQ(CallTargetGuardKind::Empty, keyword.guard.kind);
         }
         bool expanded_dead =
             dead == old_function.get() || dead == old_cell.get();
@@ -442,11 +441,12 @@ TEST_F(WeakReferenceProcessing,
         auto &caches = owner.get()->inline_caches;
         // Constructor-call caches can guard a different object from the
         // resolved function. Test each weak role without invoking the cache.
-        caches.function_call_caches[0].guard = {old_value.extract(), nullptr};
-        caches.keyword_call_caches[0].guard = {old_value.extract(), nullptr};
-        caches.keyword_call_caches[0].guard_kind =
-            CallTargetGuardKind::ExactCallable;
-        caches.expanded_call_caches[0].guard = {old_value.extract(), nullptr};
+        caches.function_call_caches[0].guard =
+            CallTargetGuard::exact(old_value.extract());
+        caches.keyword_call_caches[0].guard =
+            CallTargetGuard::exact(old_value.extract());
+        caches.expanded_call_caches[0].guard =
+            CallTargetGuard::exact(old_value.extract());
         repair_late_units(owner.get(), [&](HeapObject *object) {
             return object == dead ? nullptr : resolve(object);
         });
@@ -791,7 +791,7 @@ TEST_F(WeakReferenceProcessing, FullCacheClearIncludesKeywordAndExpandedEntries)
     EXPECT_EQ(nullptr, keyword.keyword_dest_regs);
     EXPECT_EQ(UINT8_MAX, keyword.n_pos_args);
     EXPECT_EQ(ReceiverBinding::None, keyword.receiver_binding);
-    EXPECT_EQ(CallTargetGuardKind::Empty, keyword.guard_kind);
+    EXPECT_EQ(CallTargetGuardKind::Empty, keyword.guard.kind);
     EXPECT_EQ(nullptr, caches.expanded_call_caches[0].binding_plan);
     EXPECT_EQ(1, old_value.extract()->refcount());
 }

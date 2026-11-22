@@ -1173,11 +1173,11 @@ namespace cl
         FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_args)
     {
-        cache.guard = {guard_value.get_ptr(), validity_cell};
+        cache.guard =
+            CallTargetGuard::exact(guard_value.get_ptr(), validity_cell);
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.receiver_binding = ReceiverBinding::None;
-        cache.guard_kind = CallTargetGuardKind::ExactCallable;
         cache.n_args = n_args;
         cache.adaptation =
             function_call_adaptation_for_positional_call(fun, n_args);
@@ -1239,11 +1239,11 @@ namespace cl
         uint32_t default_fill_start_slot,
         std::unique_ptr<int8_t[]> keyword_dest_regs)
     {
-        cache.guard = {guard_value.get_ptr(), validity_cell};
+        cache.guard =
+            CallTargetGuard::exact(guard_value.get_ptr(), validity_cell);
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.receiver_binding = ReceiverBinding::None;
-        cache.guard_kind = CallTargetGuardKind::ExactCallable;
         assert(n_pos_args <= UINT8_MAX);
         cache.n_pos_args = uint8_t(n_pos_args);
         assert(n_kw_args <= UINT8_MAX);
@@ -1773,10 +1773,10 @@ namespace cl
                 CL_TRY(resolve_function_call_target(callable));
             const FunctionSignature signature =
                 target.function.extract()->call_signature.function;
-            cache.guard = {callable.get_ptr(), target.validity_cell};
+            cache.guard = CallTargetGuard::exact(callable.get_ptr(),
+                                                 target.validity_cell);
             cache.function = target.function.extract();
             cache.receiver_binding = ReceiverBinding::None;
-            cache.guard_kind = CallTargetGuardKind::ExactCallable;
             cache.binding_plan.reset();
             cache.mode = signature.has_varargs() && signature.has_kwargs() &&
                                  signature.n_positional_parameters == 0 &&

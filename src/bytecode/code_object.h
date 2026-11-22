@@ -258,6 +258,21 @@ namespace cl
         // Weak identity of a callable object or an internal Shape.
         HeapObject *identity = nullptr;
         ValidityCell *validity_cell = nullptr;
+        CallTargetGuardKind kind = CallTargetGuardKind::Empty;
+
+        static CallTargetGuard exact(Object *callable,
+                                     ValidityCell *cell = nullptr)
+        {
+            assert(callable != nullptr);
+            return {callable, cell, CallTargetGuardKind::ExactCallable};
+        }
+
+        static CallTargetGuard receiver_shape(Shape *shape, ValidityCell *cell)
+        {
+            assert(shape != nullptr);
+            assert(cell != nullptr);
+            return {shape, cell, CallTargetGuardKind::ReceiverShape};
+        }
 
         // A compatible arity must imply a populated entry at the call site.
         ALWAYSINLINE bool matches_exact(Value callable, uint32_t n_args,
@@ -304,6 +319,8 @@ namespace cl
         }
     };
 
+    static_assert(sizeof(CallTargetGuard) == 24);
+
     struct FunctionCallInlineCache
     {
         CallTargetGuard guard;
@@ -312,10 +329,9 @@ namespace cl
         uint32_t n_args = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         ReceiverBinding receiver_binding = ReceiverBinding::None;
-        CallTargetGuardKind guard_kind = CallTargetGuardKind::Empty;
     };
 
-    static_assert(sizeof(FunctionCallInlineCache) == 40,
+    static_assert(sizeof(FunctionCallInlineCache) == 48,
                   "FunctionCallInlineCache should stay compact");
 
     enum class ExpandedCallMode : uint8_t
@@ -339,12 +355,11 @@ namespace cl
         CallTargetGuard guard;
         Function *function = nullptr;
         ReceiverBinding receiver_binding = ReceiverBinding::None;
-        CallTargetGuardKind guard_kind = CallTargetGuardKind::Empty;
         ExpandedCallMode mode = ExpandedCallMode::General;
         std::unique_ptr<ExpandedCallCachedPlan> binding_plan;
     };
 
-    static_assert(sizeof(ExpandedCallInlineCache) == 40,
+    static_assert(sizeof(ExpandedCallInlineCache) == 48,
                   "ExpandedCallInlineCache should stay compact");
 
     struct OperatorInlineCache
@@ -519,7 +534,6 @@ namespace cl
             function = other.function;
             code_object = other.code_object;
             receiver_binding = other.receiver_binding;
-            guard_kind = other.guard_kind;
             keyword_dest_regs = std::move(cloned_keyword_dest_regs);
             default_fill_start_slot = other.default_fill_start_slot;
             n_pos_args = other.n_pos_args;
@@ -541,10 +555,9 @@ namespace cl
         uint8_t n_kw_args = 0;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         ReceiverBinding receiver_binding = ReceiverBinding::None;
-        CallTargetGuardKind guard_kind = CallTargetGuardKind::Empty;
     };
 
-    static_assert(sizeof(KeywordCallInlineCache) == 48,
+    static_assert(sizeof(KeywordCallInlineCache) == 56,
                   "KeywordCallInlineCache should stay compact");
 
     struct ExceptionTableEntry

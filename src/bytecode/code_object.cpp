@@ -40,7 +40,6 @@ namespace cl
         guard = other.guard;
         function = other.function;
         receiver_binding = other.receiver_binding;
-        guard_kind = other.guard_kind;
         mode = other.mode;
         binding_plan = std::move(cloned_plan);
         return *this;

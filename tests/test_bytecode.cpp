@@ -310,7 +310,8 @@ TEST(CallTargetGuard, matches_exact_identity_or_shape_with_a_valid_cell)
     EXPECT_FALSE(CallTargetGuard{}.matches_exact(first, 1, UINT32_MAX));
     EXPECT_FALSE(
         CallTargetGuard{}.matches_exact(Value::from_smi(0), 1, 1, false));
-    CallTargetGuard exact{first.get_ptr(), nullptr};
+    CallTargetGuard exact = CallTargetGuard::exact(first.get_ptr());
+    EXPECT_EQ(CallTargetGuardKind::ExactCallable, exact.kind);
     EXPECT_TRUE(exact.matches(first));
     EXPECT_TRUE(exact.matches_exact(first, 1, 1));
     EXPECT_FALSE(exact.matches_exact(first, 2, 1));
@@ -319,7 +320,9 @@ TEST(CallTargetGuard, matches_exact_identity_or_shape_with_a_valid_cell)
 
     ValidityCell *cell = context.thread()->make_internal_raw<ValidityCell>(
         ValidityCellDependencyMutability::Mutable);
-    CallTargetGuard shape{first.get_ptr()->get_shape(), cell};
+    CallTargetGuard shape =
+        CallTargetGuard::receiver_shape(first.get_ptr()->get_shape(), cell);
+    EXPECT_EQ(CallTargetGuardKind::ReceiverShape, shape.kind);
     EXPECT_TRUE(shape.matches(first));
     EXPECT_TRUE(shape.matches_shape(first, 1, 1));
     EXPECT_FALSE(shape.matches_shape(first, 2, 1));
@@ -328,7 +331,7 @@ TEST(CallTargetGuard, matches_exact_identity_or_shape_with_a_valid_cell)
     EXPECT_FALSE(shape.matches_shape(other, 1, 1));
     EXPECT_FALSE(shape.matches_shape(Value::from_smi(0), 1, 1));
 
-    exact.validity_cell = cell;
+    exact = CallTargetGuard::exact(first.get_ptr(), cell);
     cell->invalidate();
     EXPECT_FALSE(exact.matches_exact(first, 1, 1));
     EXPECT_FALSE(shape.matches_shape(first, 1, 1));
@@ -336,11 +339,20 @@ TEST(CallTargetGuard, matches_exact_identity_or_shape_with_a_valid_cell)
 
 TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
 {
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    Owned<Value> target(context.run_file(L"[]"));
+    ASSERT_TRUE(target.value().is_ptr());
+    OwnedHeapPtr<ValidityCell> cell{
+        context.thread()->make_internal_raw<ValidityCell>(
+            ValidityCellDependencyMutability::Mutable)};
+
     InlineCacheTables live_tables;
     live_tables.keyword_call_caches.emplace_back();
     KeywordCallInlineCache &live = live_tables.keyword_call_caches[0];
     live.receiver_binding = ReceiverBinding::PrependCallable;
-    live.guard_kind = CallTargetGuardKind::ReceiverShape;
+    live.guard = CallTargetGuard::receiver_shape(
+        target.value().get_ptr()->get_shape(), cell.get());
     live.n_kw_args = 3;
     live.keyword_dest_regs = std::make_unique<int8_t[]>(live.n_kw_args);
     live.keyword_dest_regs[0] = -1;
@@ -352,7 +364,9 @@ TEST(KeywordCallInlineCache, copy_clones_keyword_destination_registers)
     const KeywordCallInlineCache &snapshot =
         snapshot_tables.keyword_call_caches[0];
     EXPECT_EQ(live.receiver_binding, snapshot.receiver_binding);
-    EXPECT_EQ(live.guard_kind, snapshot.guard_kind);
+    EXPECT_EQ(live.guard.kind, snapshot.guard.kind);
+    EXPECT_EQ(live.guard.identity, snapshot.guard.identity);
+    EXPECT_EQ(live.guard.validity_cell, snapshot.guard.validity_cell);
     EXPECT_EQ(live.n_kw_args, snapshot.n_kw_args);
     ASSERT_NE(nullptr, snapshot.keyword_dest_regs);
     EXPECT_NE(live.keyword_dest_regs.get(), snapshot.keyword_dest_regs.get());
