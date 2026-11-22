@@ -496,17 +496,18 @@ namespace cl
         return descriptor;
     }
 
-    static bool class_read_descriptor_is_mutating_descriptor(
-        const AttributeReadDescriptor &descriptor)
+    static AttributeCacheBlockers mutation_cache_blockers_for_class_value(
+        const AttributeReadDescriptor &descriptor, ClassObject *type)
     {
-        if(!descriptor.is_found())
+        Value value = descriptor.lookup_value;
+        if((value.is_ptr() && can_change_class(value.get_ptr<Object>())) ||
+           !descriptor_type_has_stable_protocol(type))
         {
-            return false;
+            return attribute_cache_blockers(
+                descriptor.cache_blockers,
+                AttributeCacheBlocker::MutableDescriptorType);
         }
-
-        DescriptorProtocol protocol = lookup_descriptor_protocol(
-            active_thread()->class_of_value(descriptor.lookup_value));
-        return protocol.has_set_or_delete();
+        return descriptor.cache_blockers;
     }
 
     static AttributeReadDescriptor
@@ -810,15 +811,12 @@ namespace cl
                     return AttributeWriteDescriptor::disallowed();
                 }
                 return AttributeWriteDescriptor::found(
-                    AttributeMutationPlan::descriptor_set(value, protocol.set));
+                    AttributeMutationPlan::descriptor_mutation(
+                        AttributeMutationPlanKind::DescriptorSet, value,
+                        protocol.set));
             }
-            if((value.is_ptr() && can_change_class(value.get_ptr<Object>())) ||
-               !descriptor_type_has_stable_protocol(type))
-            {
-                cache_blockers = attribute_cache_blockers(
-                    cache_blockers,
-                    AttributeCacheBlocker::MutableDescriptorType);
-            }
+            cache_blockers =
+                mutation_cache_blockers_for_class_value(class_descriptor, type);
         }
 
         AttributeWriteDescriptor own_descriptor =
@@ -850,9 +848,25 @@ namespace cl
         ClassObject *lookup_class = object->get_shape()->get_class();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
-        if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
+        AttributeCacheBlockers cache_blockers = class_descriptor.cache_blockers;
+        if(class_descriptor.is_found())
         {
-            return AttributeDeleteDescriptor::disallowed();
+            Value value = class_descriptor.lookup_value;
+            ClassObject *type = active_thread()->class_of_value(value);
+            DescriptorProtocol protocol = lookup_descriptor_protocol(type);
+            if(protocol.has_set_or_delete())
+            {
+                if(protocol.delete_.is_not_present())
+                {
+                    return AttributeDeleteDescriptor::disallowed();
+                }
+                return AttributeDeleteDescriptor::found(
+                    AttributeMutationPlan::descriptor_mutation(
+                        AttributeMutationPlanKind::DescriptorDelete, value,
+                        protocol.delete_));
+            }
+            cache_blockers =
+                mutation_cache_blockers_for_class_value(class_descriptor, type);
         }
 
         AttributeDeleteDescriptor own_descriptor =
@@ -862,8 +876,7 @@ namespace cl
             return own_descriptor;
         }
 
-        own_descriptor.cache_blockers |=
-            superseded_class_read_descriptor_cache_blockers(class_descriptor);
+        own_descriptor.cache_blockers |= cache_blockers;
         return with_mro_shape_and_contents_validity_cell_if_unblocked(
             own_descriptor, lookup_class);
     }
@@ -1021,7 +1034,7 @@ namespace cl
     {
         AttributeDeleteDescriptor descriptor =
             resolve_attr_delete_descriptor(obj, name);
-        if(descriptor.is_found())
+        if(descriptor.is_found() && !descriptor.plan.is_descriptor_delete())
         {
             return delete_attr_from_plan(obj, descriptor.plan);
         }

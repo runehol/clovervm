@@ -56,6 +56,7 @@ namespace cl
         DeleteOwnProperty,
         ChangeClass,
         DescriptorSet,
+        DescriptorDelete,
     };
 
     enum class AttributeReadPlanPath : uint8_t
@@ -264,15 +265,18 @@ namespace cl
             return plan;
         }
 
-        static AttributeMutationPlan descriptor_set(Value descriptor,
-                                                    Value setter)
+        static AttributeMutationPlan
+        descriptor_mutation(AttributeMutationPlanKind kind, Value descriptor,
+                            Value hook)
         {
+            assert(kind == AttributeMutationPlanKind::DescriptorSet ||
+                   kind == AttributeMutationPlanKind::DescriptorDelete);
             AttributeMutationPlan plan;
             plan.descriptor = descriptor;
             plan.physical_idx = -1;
             plan.storage_kind = StorageKind::Inline;
-            plan.kind = AttributeMutationPlanKind::DescriptorSet;
-            plan.descriptor_hook = setter;
+            plan.kind = kind;
+            plan.descriptor_hook = hook;
             return plan;
         }
 
@@ -299,6 +303,11 @@ namespace cl
         bool is_descriptor_set() const
         {
             return kind == AttributeMutationPlanKind::DescriptorSet;
+        }
+
+        bool is_descriptor_delete() const
+        {
+            return kind == AttributeMutationPlanKind::DescriptorDelete;
         }
     };
 

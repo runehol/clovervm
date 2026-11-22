@@ -2926,28 +2926,35 @@ namespace cl
         COMPLETE();
     }
 
-    [[nodiscard]] NOINLINE static Value
-    invoke_descriptor_setter(ThreadState *thread, Value *fp, const uint8_t *&pc,
-                             CodeObject *&code_object, Value &rhs,
-                             const AttributeMutationPlan &plan, Value receiver)
+    [[nodiscard]] NOINLINE static Value invoke_descriptor_mutation(
+        ThreadState *thread, Value *fp, const uint8_t *&pc,
+        CodeObject *&code_object, Value &accumulator,
+        const AttributeMutationPlan &plan, Value receiver)
     {
+        assert(plan.is_descriptor_set() || plan.is_descriptor_delete());
         if(!has_native_layout<Function>(plan.descriptor_hook))
         {
             return thread->set_pending_builtin_exception_string(
-                L"TypeError", L"descriptor __set__ requires a plain function");
+                L"TypeError",
+                plan.is_descriptor_set()
+                    ? L"descriptor __set__ requires a plain function"
+                    : L"descriptor __delete__ requires a plain function");
         }
 
-        const uint32_t store_offset =
+        const uint32_t mutation_offset =
             code_object->offset_for_interpreted_pc(pc);
-        // The native entry returns here, so keep the caller's code and RHS live
-        // independently of the nested interpreter's safepoint publication.
+        // Keep caller state live independently of the nested interpreter's
+        // safepoint publication.
         ScopedRoot code_root(*thread, HeapReferenceSlot(&code_object));
-        ScopedRoot rhs_root(*thread, HeapReferenceSlot(&rhs));
+        ScopedRoot accumulator_root(*thread, HeapReferenceSlot(&accumulator));
         set_clover_frame_frontier_for_native_call(thread, fp, code_object);
-        Value result = thread->call_clovervm_function(
-            TValue<Function>::from_value_assumed(plan.descriptor_hook),
-            plan.descriptor, receiver, rhs);
-        pc = code_object->interpreted_pc_for_offset(store_offset);
+        auto hook = TValue<Function>::from_value_assumed(plan.descriptor_hook);
+        Value result = plan.is_descriptor_set()
+                           ? thread->call_clovervm_function(
+                                 hook, plan.descriptor, receiver, accumulator)
+                           : thread->call_clovervm_function(
+                                 hook, plan.descriptor, receiver);
+        pc = code_object->interpreted_pc_for_offset(mutation_offset);
         return result;
     }
 
@@ -2968,7 +2975,7 @@ namespace cl
         {
             if(descriptor.plan.is_descriptor_set())
             {
-                Value result = invoke_descriptor_setter(
+                Value result = invoke_descriptor_mutation(
                     thread, fp, pc, code_object, accumulator, descriptor.plan,
                     receiver);
                 if(unlikely(result.is_exception_marker()))
@@ -3057,6 +3064,17 @@ namespace cl
             resolve_attr_delete_descriptor(receiver, attr_name);
         if(descriptor.is_found())
         {
+            if(descriptor.plan.is_descriptor_delete())
+            {
+                Value result = invoke_descriptor_mutation(
+                    thread, fp, pc, code_object, accumulator, descriptor.plan,
+                    receiver);
+                if(unlikely(result.is_exception_marker()))
+                {
+                    MUSTTAIL return propagate_pending_exception(ARGS);
+                }
+                COMPLETE();
+            }
             if(descriptor.is_cacheable())
             {
                 cache.populate(receiver, descriptor);

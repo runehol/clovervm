@@ -4679,6 +4679,135 @@ assert obj.stored[0] == 42
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
+TEST(Interpreter, del_attr_invokes_property_deleter_with_precedence)
+{
+    test::FileRunner run(LR"(
+class C:
+    def get(self):
+        return self.stored
+
+    def remove(self, marker=42):
+        del self.stored
+        self.removed = marker
+        return -1
+
+obj = C()
+obj.x = 20
+obj.stored = 41
+
+def erase(obj):
+    del obj.x
+
+C.x = property(C.get, fdel=C.remove)
+erase(obj)
+assert obj.removed == 42
+assert not hasattr(obj, "stored")
+
+C.x = property(C.get)
+try:
+    erase(obj)
+except AttributeError:
+    pass
+else:
+    assert False
+
+class SetOnly:
+    def __set__(self, obj, value):
+        assert False
+
+C.x = SetOnly()
+try:
+    erase(obj)
+except AttributeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+
+class BadDeleter:
+    __delete__ = None
+
+C.x = BadDeleter()
+try:
+    erase(obj)
+except TypeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, del_attr_does_not_cache_mutable_descriptor_type)
+{
+    test::FileRunner run(LR"(
+class Candidate:
+    pass
+
+candidate = Candidate()
+class C:
+    x = candidate
+
+def erase(obj):
+    del obj.x
+
+first = C()
+second = C()
+first.x = 10
+second.x = 20
+erase(first)
+assert first.x is candidate
+
+def deleter(self, receiver):
+    assert self is candidate
+    receiver.erased = True
+
+Candidate.__delete__ = deleter
+erase(second)
+assert second.erased
+assert second.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, del_attr_deleter_reenters_and_propagates_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Replacement:
+    def __delete__(self, obj):
+        del obj.stored
+
+class Original:
+    def __delete__(self, obj):
+        C.x = Replacement()
+        erase(obj)
+        raise ValueError("deleter exception")
+
+class C:
+    x = Original()
+
+def erase(obj):
+    del obj.x
+
+obj = C()
+obj.stored = [42]
+try:
+    erase(obj)
+except ValueError as error:
+    assert str(error) == "deleter exception"
+else:
+    assert False
+assert not hasattr(obj, "stored")
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, getattr_and_hasattr_read_descriptors_once)
 {
     test::FileRunner run(LR"(
