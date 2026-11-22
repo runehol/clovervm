@@ -1,5 +1,15 @@
 # Descriptor execution
 
+| Field | Value |
+|---|---|
+| Document type | Design |
+| Status | Accepted |
+| Implementation | Partial |
+| Scope | Plain-function descriptor reads, writes, and deletes, plus property shortcuts and cache guards |
+| Owning layers | Object-model lookup and binding, interpreter dispatch, call adaptation, and inline caches |
+| Validated against | `4671784d` (2026-11-23) |
+| Supersedes | N/A |
+
 `LoadAttr`, `StoreAttr`, and `DelAttr` execute descriptor protocol hooks
 implemented as CloverVM functions. The object model resolves precedence and
 returns a plan. The interpreter executes the selected hook through normal
