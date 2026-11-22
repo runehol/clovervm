@@ -4547,6 +4547,138 @@ assert copy.__doc__ is None
     EXPECT_FALSE(run.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, store_attr_invokes_property_setter_and_ignores_result)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class C:
+    def get(self):
+        return self.stored
+
+    def set(self, value, delta=1):
+        self.stored = value + delta
+        return -1
+
+obj = C()
+
+def store(obj, value):
+    obj.x = value
+
+store(obj, 10)
+store(obj, 20)
+C.x = property(C.get, C.set)
+store(obj, 41)
+assert obj.x == 42
+assert obj.stored == 42
+
+C.x = property(C.get)
+try:
+    store(obj, 1)
+except AttributeError:
+    pass
+else:
+    assert False
+
+class DeleteOnly:
+    def __delete__(self, obj):
+        assert False
+
+C.x = DeleteOnly()
+try:
+    store(obj, 1)
+except AttributeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+
+class BadSetter:
+    __set__ = None
+
+C.x = BadSetter()
+try:
+    store(obj, 1)
+except TypeError:
+    pass
+else:
+    assert False
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, store_attr_add_slot_does_not_cache_mutable_descriptor_type)
+{
+    test::FileRunner run(LR"(
+class Candidate:
+    pass
+
+candidate = Candidate()
+class C:
+    x = candidate
+
+def store(obj, value):
+    obj.x = value
+
+first = C()
+second = C()
+store(first, 10)
+store(first, 20)
+
+def setter(self, receiver, value):
+    assert self is candidate
+    receiver.seen = value
+
+Candidate.__set__ = setter
+store(second, 41)
+assert second.seen == 41
+assert second.x is candidate
+store(first, 42)
+assert first.seen == 42
+assert first.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, store_attr_setter_reenters_and_propagates_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Replacement:
+    def __set__(self, obj, value):
+        obj.stored = value
+
+class Original:
+    def __set__(self, obj, value):
+        C.x = Replacement()
+        store(obj, value)
+        raise ValueError("setter exception")
+
+class C:
+    x = Original()
+
+def store(obj, value):
+    obj.x = value
+
+obj = C()
+try:
+    store(obj, [42])
+except ValueError as error:
+    assert str(error) == "setter exception"
+else:
+    assert False
+assert obj.stored[0] == 42
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, getattr_and_hasattr_read_descriptors_once)
 {
     test::FileRunner run(LR"(

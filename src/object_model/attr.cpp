@@ -145,6 +145,16 @@ namespace cl
                 layout == NativeLayoutId::ModuleObject);
     }
 
+    static bool descriptor_type_has_stable_protocol(ClassObject *type)
+    {
+        // The receiver's validity cell cannot see changes in the descriptor
+        // MRO.
+        return type->get_shape()->has_flag(ShapeFlag::IsImmutable) &&
+               type->get_or_create_mro_shape_and_contents_validity_cell()
+                       ->dependency_mutability() ==
+                   ValidityCellDependencyMutability::Immutable;
+    }
+
     static Expected<bool> store_attr_change_class(Value receiver, Value value)
     {
         assert(receiver.is_ptr());
@@ -471,18 +481,9 @@ namespace cl
         }
 
         Value value = descriptor.lookup_value;
-        if(value.is_ptr() && can_change_class(value.get_ptr<Object>()))
-        {
-            return descriptor;
-        }
-
-        ClassObject *type = active_thread()->class_of_value(value);
-        // The receiver's validity cell cannot see changes in the descriptor
-        // MRO.
-        if(!type->get_shape()->has_flag(ShapeFlag::IsImmutable) ||
-           type->get_or_create_mro_shape_and_contents_validity_cell()
-                   ->dependency_mutability() !=
-               ValidityCellDependencyMutability::Immutable)
+        if((value.is_ptr() && can_change_class(value.get_ptr<Object>())) ||
+           !descriptor_type_has_stable_protocol(
+               active_thread()->class_of_value(value)))
         {
             return descriptor;
         }
@@ -796,13 +797,33 @@ namespace cl
         ClassObject *lookup_class = object->get_shape()->get_class();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
-        if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
+        AttributeCacheBlockers cache_blockers = class_descriptor.cache_blockers;
+        if(class_descriptor.is_found())
         {
-            return AttributeWriteDescriptor::disallowed();
+            Value value = class_descriptor.lookup_value;
+            ClassObject *type = active_thread()->class_of_value(value);
+            DescriptorProtocol protocol = lookup_descriptor_protocol(type);
+            if(protocol.has_set_or_delete())
+            {
+                if(protocol.set.is_not_present())
+                {
+                    return AttributeWriteDescriptor::disallowed();
+                }
+                return AttributeWriteDescriptor::found(
+                    AttributeMutationPlan::descriptor_set(value, protocol.set));
+            }
+            if((value.is_ptr() && can_change_class(value.get_ptr<Object>())) ||
+               !descriptor_type_has_stable_protocol(type))
+            {
+                cache_blockers = attribute_cache_blockers(
+                    cache_blockers,
+                    AttributeCacheBlocker::MutableDescriptorType);
+            }
         }
 
         AttributeWriteDescriptor own_descriptor =
             object->lookup_own_attribute_write_descriptor(name);
+        own_descriptor.cache_blockers |= cache_blockers;
         if(!own_descriptor.is_found())
         {
             if(string_eq(name, active_vm()->dunder_class_name()))
@@ -813,8 +834,6 @@ namespace cl
             return own_descriptor;
         }
 
-        own_descriptor.cache_blockers |=
-            superseded_class_read_descriptor_cache_blockers(class_descriptor);
         return with_mro_shape_and_contents_validity_cell_if_unblocked(
             own_descriptor, lookup_class);
     }
@@ -859,6 +878,7 @@ namespace cl
         {
             return store_attr_change_class(receiver, value);
         }
+        assert(!plan.is_descriptor_set());
         if(likely(!plan.is_add_own_property()))
         {
             Object *storage_owner = plan.storage_owner;
@@ -983,6 +1003,10 @@ namespace cl
             resolve_attr_write_descriptor(obj, name);
         if(descriptor.is_found())
         {
+            if(descriptor.plan.is_descriptor_set())
+            {
+                return Expected<bool>::ok(false);
+            }
             return store_attr_from_plan(obj, descriptor.plan, value);
         }
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())

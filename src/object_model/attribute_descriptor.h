@@ -55,6 +55,7 @@ namespace cl
         AddOwnProperty,
         DeleteOwnProperty,
         ChangeClass,
+        DescriptorSet,
     };
 
     enum class AttributeReadPlanPath : uint8_t
@@ -211,10 +212,13 @@ namespace cl
         {
             Object *storage_owner;
             Shape *next_shape;
+            Value descriptor;
         };
         int32_t physical_idx;
         StorageKind storage_kind;
         AttributeMutationPlanKind kind;
+        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        Value descriptor_hook = Value::not_present();
 
         static AttributeMutationPlan store_existing(Object *storage_owner,
                                                     StorageLocation location)
@@ -260,6 +264,18 @@ namespace cl
             return plan;
         }
 
+        static AttributeMutationPlan descriptor_set(Value descriptor,
+                                                    Value setter)
+        {
+            AttributeMutationPlan plan;
+            plan.descriptor = descriptor;
+            plan.physical_idx = -1;
+            plan.storage_kind = StorageKind::Inline;
+            plan.kind = AttributeMutationPlanKind::DescriptorSet;
+            plan.descriptor_hook = setter;
+            return plan;
+        }
+
         StorageLocation storage_location() const
         {
             return StorageLocation{physical_idx, storage_kind};
@@ -279,9 +295,14 @@ namespace cl
         {
             return kind == AttributeMutationPlanKind::ChangeClass;
         }
+
+        bool is_descriptor_set() const
+        {
+            return kind == AttributeMutationPlanKind::DescriptorSet;
+        }
     };
 
-    static_assert(sizeof(AttributeMutationPlan) == 16,
+    static_assert(sizeof(AttributeMutationPlan) == 24,
                   "AttributeMutationPlan should stay compact");
 
     class AttributeWriteDescriptor

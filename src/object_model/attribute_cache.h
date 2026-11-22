@@ -98,7 +98,7 @@ namespace cl
         }
     };
 
-    static_assert(sizeof(AttributeMutationInlineCache) == 32,
+    static_assert(sizeof(AttributeMutationInlineCache) == 40,
                   "AttributeMutationInlineCache should stay compact");
 
 }  // namespace cl

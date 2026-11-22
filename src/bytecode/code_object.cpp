@@ -197,6 +197,9 @@ namespace cl
                     return repair.state();
                 case AttributeMutationPlanKind::ChangeClass:
                     return repair.state();
+                case AttributeMutationPlanKind::DescriptorSet:
+                    // Descriptor setters are never installed in the IC.
+                    return gc::WeakState::Dead;
             }
             assert(false && "invalid attribute mutation plan kind");
             __builtin_unreachable();

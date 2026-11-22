@@ -20,6 +20,7 @@
 #include "jit/jit_code_object.h"
 #include "jit/jit_compiler.h"
 #include "jit/jit_config.h"
+#include "memory/scoped_root.h"
 #include "object_model/attr.h"
 #include "object_model/cell.h"
 #include "object_model/class_object.h"
@@ -2925,6 +2926,31 @@ namespace cl
         COMPLETE();
     }
 
+    [[nodiscard]] NOINLINE static Value
+    invoke_descriptor_setter(ThreadState *thread, Value *fp, const uint8_t *&pc,
+                             CodeObject *&code_object, Value &rhs,
+                             const AttributeMutationPlan &plan, Value receiver)
+    {
+        if(!has_native_layout<Function>(plan.descriptor_hook))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"descriptor __set__ requires a plain function");
+        }
+
+        const uint32_t store_offset =
+            code_object->offset_for_interpreted_pc(pc);
+        // The native entry returns here, so keep the caller's code and RHS live
+        // independently of the nested interpreter's safepoint publication.
+        ScopedRoot code_root(*thread, HeapReferenceSlot(&code_object));
+        ScopedRoot rhs_root(*thread, HeapReferenceSlot(&rhs));
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
+        Value result = thread->call_clovervm_function(
+            TValue<Function>::from_value_assumed(plan.descriptor_hook),
+            plan.descriptor, receiver, rhs);
+        pc = code_object->interpreted_pc_for_offset(store_offset);
+        return result;
+    }
+
     NOINLINE static INTERP_CC Value op_store_attr_cache_miss(PARAMS)
     {
         START(4);
@@ -2940,6 +2966,17 @@ namespace cl
             resolve_attr_write_descriptor(receiver, attr_name);
         if(descriptor.is_found())
         {
+            if(descriptor.plan.is_descriptor_set())
+            {
+                Value result = invoke_descriptor_setter(
+                    thread, fp, pc, code_object, accumulator, descriptor.plan,
+                    receiver);
+                if(unlikely(result.is_exception_marker()))
+                {
+                    MUSTTAIL return propagate_pending_exception(ARGS);
+                }
+                COMPLETE();
+            }
             if(descriptor.is_cacheable())
             {
                 cache.populate(receiver, descriptor);
@@ -2971,7 +3008,8 @@ namespace cl
         {
             Object *receiver_object = receiver.get_ptr<Object>();
             Shape *receiver_shape = receiver_object->get_shape();
-            if(receiver_shape != nullptr &&
+            if(attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
+               receiver_shape != nullptr &&
                !receiver_shape->has_flag(ShapeFlag::IsClassObject) &&
                receiver_shape->allows_attribute_add_delete())
             {
