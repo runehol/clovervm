@@ -179,7 +179,7 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
               owner_cls->current_mro_shape_and_contents_validity_cell());
 }
 
-TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
+TEST(Attr, InstanceClassReadDescriptorBlocksOnWinningMutableValue)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -210,11 +210,13 @@ TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
 
     ASSERT_TRUE(read_descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
-    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
-              read_descriptor.cache_blockers);
-    EXPECT_TRUE(read_descriptor.is_cacheable());
-    EXPECT_EQ(owner_cls->current_mro_shape_and_contents_validity_cell(),
-              read_descriptor.lookup_validity_cell);
+    EXPECT_EQ(
+        attribute_cache_blocker(AttributeCacheBlocker::MutableDescriptorType),
+        read_descriptor.cache_blockers);
+    EXPECT_FALSE(read_descriptor.is_cacheable());
+    EXPECT_EQ(nullptr, read_descriptor.lookup_validity_cell);
+    EXPECT_EQ(nullptr,
+              owner_cls->current_mro_shape_and_contents_validity_cell());
 }
 
 TEST(Attr, InstanceClassReadDescriptorInvalidatesOnClassContentsWrite)

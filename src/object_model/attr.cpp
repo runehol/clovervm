@@ -534,6 +534,16 @@ namespace cl
                     class_object);
             }
 
+            if(class_descriptor.is_found() &&
+               class_descriptor.plan.kind ==
+                   AttributeReadPlanKind::ReceiverSlot)
+            {
+                // The value's type can gain __get__ without a class-slot write.
+                class_descriptor.cache_blockers |=
+                    attribute_cache_blockers_for_class_value(
+                        class_descriptor.lookup_value);
+            }
+
             // Replacing the class slot value can change how the read binds.
             return with_mro_shape_and_contents_validity_cell_if_unblocked(
                 class_descriptor, class_object);

@@ -4135,6 +4135,34 @@ read(obj)
                         L"descriptor __get__ requires interpreter dispatch");
 }
 
+TEST(Interpreter,
+     instance_read_reclassifies_class_value_after_type_gains_getter)
+{
+    expect_python_error(LR"(
+class Candidate:
+    pass
+
+candidate = Candidate()
+
+class C:
+    value = candidate
+
+def read(obj):
+    return obj.value
+
+obj = C()
+assert read(obj) is candidate
+
+def getter(self, obj, owner):
+    return 42
+
+Candidate.__get__ = getter
+read(obj)
+)",
+                        L"TypeError",
+                        L"descriptor __get__ requires interpreter dispatch");
+}
+
 TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
 {
     test::VmTestContext test_context;
