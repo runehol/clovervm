@@ -73,6 +73,8 @@ TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
     EXPECT_EQ(AttributeReadPlanKind::DataDescriptorGet,
               read_descriptor.plan.kind);
     EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.lookup_value);
+    EXPECT_TRUE(read_descriptor.plan.constant_or_getter.is_not_present());
+    EXPECT_FALSE(read_descriptor.is_cacheable());
 }
 
 TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
@@ -89,11 +91,21 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     TValue<String> get_name(
         context.vm().get_or_create_interned_string_value(L"__get__"));
 
+    CodeObject *getter_code =
+        context.compile_file(L"def __get__(self, obj, owner):\n"
+                             L"    return 42\n");
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(getter_code)
+                     .is_exception_marker());
+    Value getter = load_module_global(
+        getter_code->get_defining_module().extract(), get_name);
+    ASSERT_TRUE(has_native_layout<Function>(getter));
+
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
             descriptor_cls_name, 2, context.vm().object_class(),
             NativeLayoutId::Instance);
-    descriptor_cls->set_own_property(get_name, Value::from_smi(1)).value();
+    descriptor_cls->set_own_property(get_name, getter).value();
 
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
@@ -111,6 +123,7 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     ASSERT_TRUE(read_descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
     EXPECT_EQ(nullptr, read_descriptor.plan.storage_owner);
+    EXPECT_TRUE(read_descriptor.plan.constant_or_getter.is_not_present());
     EXPECT_EQ(Value::from_smi(7), load_attr_from_plan(Value::from_oop(instance),
                                                       read_descriptor.plan));
 
@@ -121,6 +134,8 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet,
               read_descriptor.plan.kind);
     EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.lookup_value);
+    EXPECT_EQ(getter, read_descriptor.plan.constant_or_getter);
+    EXPECT_FALSE(read_descriptor.is_cacheable());
 }
 
 TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)

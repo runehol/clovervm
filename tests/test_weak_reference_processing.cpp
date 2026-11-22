@@ -143,7 +143,7 @@ namespace
                 cache.plan = AttributeReadPlan::from_storage(
                     AttributeReadPlanPath::InstanceClassChain, read_kinds[idx],
                     old_module.get(), {3, StorageKind::Inline});
-                cache.plan.constant_value = old_value.raw_value();
+                cache.plan.constant_or_getter = old_value.raw_value();
             }
             caches.attribute_mutation_caches.resize(4);
             caches.attribute_mutation_caches[0].plan =
@@ -242,13 +242,13 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
         EXPECT_EQ(new_cell.get(), cache.lookup_validity_cell);
         if(idx == 0)
         {
-            EXPECT_EQ(new_value.raw_value(), cache.plan.constant_value);
+            EXPECT_EQ(new_value.raw_value(), cache.plan.constant_or_getter);
             EXPECT_EQ(old_module.get(), cache.plan.storage_owner);
         }
         else
         {
             EXPECT_EQ(new_module.get(), cache.plan.storage_owner);
-            EXPECT_EQ(old_value.raw_value(), cache.plan.constant_value);
+            EXPECT_EQ(old_value.raw_value(), cache.plan.constant_or_getter);
             EXPECT_EQ(3, cache.plan.storage_location.physical_idx);
         }
     }
@@ -339,7 +339,7 @@ TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
             {
                 EXPECT_EQ(nullptr, cache.lookup_validity_cell);
                 EXPECT_EQ(nullptr, cache.plan.storage_owner);
-                EXPECT_TRUE(cache.plan.constant_value.is_not_present());
+                EXPECT_TRUE(cache.plan.constant_or_getter.is_not_present());
             }
         }
         for(size_t idx = 0; idx < caches.attribute_mutation_caches.size();
@@ -602,7 +602,7 @@ TEST_F(WeakReferenceProcessing,
     }
     EXPECT_EQ(old_shape.get(), caches.attribute_read_caches[0].receiver_shape);
     EXPECT_EQ(old_value.raw_value(),
-              caches.attribute_read_caches[0].plan.constant_value);
+              caches.attribute_read_caches[0].plan.constant_or_getter);
     EXPECT_EQ(binding, caches.expanded_call_caches[0].binding_plan.get());
     EXPECT_EQ(keyword, caches.keyword_call_caches[0].keyword_dest_regs.get());
 }
@@ -684,7 +684,7 @@ TEST_F(WeakReferenceProcessing, PartialRepairDefersOnlyOneAdjacentEntry)
     EXPECT_EQ(new_cell.get(),
               caches.attribute_read_caches[0].lookup_validity_cell);
     EXPECT_EQ(new_value.raw_value(),
-              caches.attribute_read_caches[0].plan.constant_value);
+              caches.attribute_read_caches[0].plan.constant_or_getter);
     EXPECT_EQ(new_shape.get(), caches.attribute_read_caches[1].receiver_shape);
     size_t late_calls = 0;
     EXPECT_EQ(gc::WeakRepairResult::Complete,
