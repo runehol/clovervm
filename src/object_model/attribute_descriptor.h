@@ -72,6 +72,7 @@ namespace cl
         BindFunctionReceiver,
         DataDescriptorGet,
         NonDataDescriptorGet,
+        ExactPropertyGet,
     };
 
     enum class AttributeCacheBlocker : uint16_t
@@ -125,6 +126,18 @@ namespace cl
         const Object *storage_owner;
         StorageLocation storage_location;
         Value constant_or_getter;  // Interpreted according to kind.
+
+        constexpr bool is_data_descriptor_get() const
+        {
+            return kind == AttributeReadPlanKind::DataDescriptorGet ||
+                   kind == AttributeReadPlanKind::ExactPropertyGet;
+        }
+
+        constexpr bool is_descriptor_get() const
+        {
+            return is_data_descriptor_get() ||
+                   kind == AttributeReadPlanKind::NonDataDescriptorGet;
+        }
 
         static AttributeReadPlan from_storage(AttributeReadPlanPath path,
                                               AttributeReadPlanKind kind,

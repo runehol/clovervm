@@ -4439,6 +4439,67 @@ for name in ("set", "delete"):
     EXPECT_FALSE(run.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, exact_property_load_attr_plan_preserves_lookup)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class C:
+    pass
+
+class P(property):
+    def __get__(self, obj, owner):
+        return 55
+
+def get(obj, delta=3):
+    return obj.marker + delta
+
+def read(obj):
+    return obj.x
+
+first = C()
+second = C()
+first.x = 70
+second.x = 80
+first.marker = 39
+second.marker = 40
+
+p = property(get)
+C.x = p
+assert read(first) == 42
+assert read(second) == 43
+C.x = P(get)
+assert read(first) == 55
+C.x = p
+assert read(first) == 42
+assert read(second) == 43
+assert C.x is p
+assert getattr(second, "x") == 43
+)");
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+
+    Value receiver =
+        load_global_from_module_for_test(code, interned_string(L"second"));
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(receiver, interned_string(L"x"));
+    EXPECT_EQ(AttributeReadPlanKind::ExactPropertyGet, descriptor.plan.kind);
+    Value cls = load_global_from_module_for_test(code, interned_string(L"C"));
+    EXPECT_EQ(
+        AttributeReadPlanKind::DataDescriptorGet,
+        resolve_attr_read_descriptor(cls, interned_string(L"x")).plan.kind);
+
+    Value read =
+        load_global_from_module_for_test(code, interned_string(L"read"));
+    ASSERT_TRUE(has_native_layout<Function>(read));
+    const AttributeReadInlineCache &cache =
+        native_cast<Function>(read)
+            ->code_object.extract()
+            ->inline_caches.attribute_read_caches.at(0);
+    EXPECT_TRUE(cache.matches(receiver));
+    EXPECT_EQ(AttributeReadPlanKind::ExactPropertyGet, cache.plan.kind);
+}
+
 TEST(Interpreter, property_subclass_reinitialization_restores_deleted_doc)
 {
     test::FileRunner run(LR"(

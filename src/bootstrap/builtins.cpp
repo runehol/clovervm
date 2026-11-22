@@ -119,8 +119,7 @@ namespace cl
             obj, TValue<String>::from_value_assumed(name));
         if(read.is_found())
         {
-            if(read.plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
-               read.plan.kind == AttributeReadPlanKind::NonDataDescriptorGet)
+            if(read.plan.is_descriptor_get())
             {
                 DescriptorGetCall call =
                     CL_TRY(prepare_descriptor_get_call(obj, read));

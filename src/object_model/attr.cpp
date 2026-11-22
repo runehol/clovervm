@@ -228,8 +228,7 @@ namespace cl
         descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
-           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
+           !descriptor.plan.is_descriptor_get())
         {
             descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_contents_validity_cell();
@@ -244,8 +243,7 @@ namespace cl
         descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
-           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
+           !descriptor.plan.is_descriptor_get())
         {
             descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
@@ -402,9 +400,8 @@ namespace cl
                                     metaclass});
     }
 
-    static DescriptorProtocol lookup_descriptor_protocol(Value value)
+    static DescriptorProtocol lookup_descriptor_protocol(ClassObject *type)
     {
-        ClassObject *type = active_thread()->class_of_value(value);
         TValue<String> get_name(interned_string(L"__get__"));
         TValue<String> set_name(interned_string(L"__set__"));
         TValue<String> delete_name(interned_string(L"__delete__"));
@@ -416,8 +413,16 @@ namespace cl
                 .lookup_value};
     }
 
+    enum class DescriptorReadClassification : uint8_t
+    {
+        General,
+        InstanceAttribute,
+    };
+
     static AttributeReadDescriptor
-    classify_class_read_descriptor(AttributeReadDescriptor descriptor)
+    classify_class_read_descriptor(AttributeReadDescriptor descriptor,
+                                   DescriptorReadClassification classification =
+                                       DescriptorReadClassification::General)
     {
         if(!descriptor.is_found() ||
            descriptor.plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
@@ -425,8 +430,9 @@ namespace cl
             return descriptor;
         }
 
-        DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.lookup_value);
+        ThreadState *thread = active_thread();
+        ClassObject *type = thread->class_of_value(descriptor.lookup_value);
+        DescriptorProtocol protocol = lookup_descriptor_protocol(type);
         if(!protocol.has_get())
         {
             return descriptor;
@@ -436,6 +442,12 @@ namespace cl
             protocol.has_set_or_delete()
                 ? AttributeReadPlanKind::DataDescriptorGet
                 : AttributeReadPlanKind::NonDataDescriptorGet;
+        if(classification == DescriptorReadClassification::InstanceAttribute &&
+           kind == AttributeReadPlanKind::DataDescriptorGet &&
+           type == thread->class_for_native_layout(NativeLayoutId::Property))
+        {
+            kind = AttributeReadPlanKind::ExactPropertyGet;
+        }
         descriptor = with_plan_kind(
             descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
         descriptor.plan.constant_or_getter =
@@ -451,9 +463,7 @@ namespace cl
         if(descriptor.cache_blockers !=
                attribute_cache_blocker(
                    AttributeCacheBlocker::UnsupportedDescriptorKind) ||
-           (descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-            descriptor.plan.kind !=
-                AttributeReadPlanKind::NonDataDescriptorGet) ||
+           !descriptor.plan.is_descriptor_get() ||
            descriptor.plan.constant_or_getter.is_not_present())
         {
             return with_mro_shape_and_contents_validity_cell_if_unblocked(
@@ -493,8 +503,8 @@ namespace cl
             return false;
         }
 
-        DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.lookup_value);
+        DescriptorProtocol protocol = lookup_descriptor_protocol(
+            active_thread()->class_of_value(descriptor.lookup_value));
         return protocol.has_set_or_delete();
     }
 
@@ -542,10 +552,10 @@ namespace cl
             AttributeReadDescriptor class_descriptor =
                 classify_class_read_descriptor(
                     lookup_instance_attribute_read_descriptor(class_object,
-                                                              name, obj));
+                                                              name, obj),
+                    DescriptorReadClassification::InstanceAttribute);
             if(class_descriptor.is_found() &&
-               class_descriptor.plan.kind ==
-                   AttributeReadPlanKind::DataDescriptorGet)
+               class_descriptor.plan.is_data_descriptor_get())
             {
                 return finalize_instance_class_read(class_descriptor,
                                                     class_object);
@@ -657,8 +667,7 @@ namespace cl
     prepare_descriptor_get_call(Value receiver,
                                 const AttributeReadDescriptor &read)
     {
-        assert(read.plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
-               read.plan.kind == AttributeReadPlanKind::NonDataDescriptorGet);
+        assert(read.plan.is_descriptor_get());
         Value getter = read.plan.constant_or_getter;
         if(getter.is_not_present())
         {
@@ -705,8 +714,7 @@ namespace cl
             return storage_owner->read_storage_location(plan.storage_location);
         }
 
-        if(plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
-           plan.kind == AttributeReadPlanKind::NonDataDescriptorGet)
+        if(plan.is_descriptor_get())
         {
             fatal("descriptor __get__ requires interpreter dispatch");
         }

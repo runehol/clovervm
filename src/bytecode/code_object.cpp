@@ -171,6 +171,7 @@ namespace cl
                     return repair.state();
                 case AttributeReadPlanKind::DataDescriptorGet:
                 case AttributeReadPlanKind::NonDataDescriptorGet:
+                case AttributeReadPlanKind::ExactPropertyGet:
                     repair.target(cache.plan.storage_owner);
                     repair.value(cache.plan.constant_or_getter);
                     return repair.state();

@@ -7,6 +7,7 @@
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
+#include "builtin_types/property.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/str.h"
@@ -2723,6 +2724,7 @@ namespace cl
 
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::ExactPropertyGet:
                 value_out = Value::not_present();
                 return AttributeLoadPlanStatus::RequiresDescriptorDispatch;
         }
@@ -2784,16 +2786,39 @@ namespace cl
         assert(plan.storage_owner != nullptr);
 
         int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
-        fp[first_arg_reg] =
+        Value descriptor =
             plan.storage_owner->read_storage_location(plan.storage_location);
-        fp[first_arg_reg - 1] = receiver;
-        fp[first_arg_reg - 2] =
-            Value::from_oop(thread->class_of_value(receiver));
-        DispatchTableEntry jit_entry =
-            enter_function_frame_from_positional_args(
+        Value getter = plan.kind == AttributeReadPlanKind::ExactPropertyGet
+                           ? native_cast<Property>(descriptor)->fget.raw_value()
+                           : Value::None();
+        DispatchTableEntry jit_entry;
+        if(!getter.is_none())
+        {
+            fp[first_arg_reg] = receiver;
+            bool has_exception;
+            {
+                auto entry = enter_uncached_resolved_positional_call(
+                    thread, fp, pc, dispatch, code_object, accumulator, getter,
+                    first_arg_reg, 1, call_instr_len);
+                has_exception = entry.has_exception();
+                jit_entry = has_exception ? nullptr : entry.value();
+            }
+            if(unlikely(has_exception))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+        }
+        else
+        {
+            fp[first_arg_reg] = descriptor;
+            fp[first_arg_reg - 1] = receiver;
+            fp[first_arg_reg - 2] =
+                Value::from_oop(thread->class_of_value(receiver));
+            jit_entry = enter_function_frame_from_positional_args(
                 accumulator, thread, fp, pc, dispatch, code_object,
                 TValue<Function>::from_value_assumed(plan.constant_or_getter),
                 first_arg_reg, 3, call_instr_len, plan.adaptation);
+        }
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
