@@ -9,9 +9,10 @@
 | Validated against | `fc13f0ee` (2026-10-24) |
 
 CloverVM has separate positional, explicit-keyword, and expanded-call paths for
-Functions, eligible constructor thunks, and attribute method calls. They all
-enter the same managed frame convention. Calls without expansion keep their
-existing opcodes and avoid constructing expansion transport.
+Functions, eligible constructor thunks, attribute method calls, and ordinary
+instances with a plain Function as `__call__`. They all enter the same managed
+frame convention. Calls without expansion keep their existing opcodes and avoid
+constructing expansion transport.
 
 [Function Calling Convention](function-calling-convention.md) owns frame layout,
 register encoding, alignment, and entry/return. [Call Argument Temporaries and
@@ -27,11 +28,11 @@ adaptation above those contracts.
 | Codegen | Evaluation order, rooted temporaries, container-building precode, call opcode selection |
 | Function metadata | Parameter layout, keyword-bindable names, default locations and values |
 | Runtime adaptation | Binding validation, native plans, defaults, varargs and keyword collectors |
-| Interpreter | Callable/method resolution, IC guards, helper entry, frame publication and dispatch |
+| Call-target resolver | Function selection, receiver binding, and lookup dependencies |
+| Interpreter | Attribute-method lookup, IC replay, argument staging, frame publication and dispatch |
 
 The native binder receives an already-resolved Function. It does not perform
-attribute lookup or duplicate callable resolution. Arbitrary object `__call__`
-and descriptor dispatch beyond the existing method-call support are unsupported.
+attribute lookup or duplicate callable resolution.
 
 ## Signature and default metadata
 
@@ -468,6 +469,12 @@ the original tuple can become the varargs suffix. If the collector includes
 self, application packs a new tuple. Pure-collector direct handoff is restricted
 to calls without a prefix.
 
+Ordinary instance calls look up `__call__` on the type MRO. A plain Function is
+cached by instance shape and the type's MRO shape-and-contents validity cell.
+The cache records the receiver binding, and each invocation supplies its own
+instance. The interpreter prepends it in the aligned outgoing span or uses the
+expanded positional prefix before applying the existing argument adapter.
+
 Eligible class calls resolve to constructor thunks through the shared callable
 resolver. Thunks mirror the selected `__init__` or `__new__` signature with
 `self`/`cls` removed, shifting keyword remaps and rebuilding default metadata.
@@ -510,9 +517,8 @@ These are existing behavior boundaries, not unfinished expanded-call stages:
 - Generic mapping error translation is limited to the direct `source.keys()`
   call. Later callback exceptions retain their original types.
 - Binding `TypeError` messages remain generic in several paths.
-- Arbitrary object `__call__`, descriptor-driven callable behavior beyond the
-  existing method support, and native-to-managed keyword-call APIs require
-  separate work.
+- Descriptor binding for `__call__`, non-Function targets selected by
+  `__call__`, and native-to-managed keyword-call APIs require separate work.
 
 ## Implementation map
 

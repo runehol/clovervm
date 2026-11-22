@@ -4712,6 +4712,201 @@ def keyword(f):
     check_shape_replay(keyword, keyword_caches[0]);
 }
 
+TEST(Interpreter, instance_call_shape_hit_binds_the_current_receiver)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *module = context.compile_file(LR"(
+class Base:
+    def __call__(self, *, offset):
+        return self.marker + offset
+
+class Callable(Base): pass
+first = Callable()
+second = Callable()
+first.marker = 10
+second.marker = 20
+
+def invoke(obj):
+    return obj(offset=3)
+)");
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(module)
+                     .is_exception_marker());
+    Value first =
+        load_global_from_module_for_test(module, interned_string(L"first"));
+    Value second =
+        load_global_from_module_for_test(module, interned_string(L"second"));
+    auto invoke = TValue<Function>::from_value_assumed(
+        load_global_from_module_for_test(module, interned_string(L"invoke")));
+    Shape *shape = first.get_ptr()->get_shape();
+    ASSERT_EQ(shape, second.get_ptr()->get_shape());
+    auto &caches = invoke.extract()
+                       ->code_object.extract()
+                       ->inline_caches.keyword_call_caches;
+    ASSERT_EQ(1u, caches.size());
+    EXPECT_EQ(Value::from_smi(13),
+              context.thread()->call_clovervm_function(invoke, first));
+    EXPECT_EQ(CallTargetGuardKind::ReceiverShape, caches[0].guard.kind);
+    EXPECT_EQ(shape, caches[0].guard.identity);
+    ASSERT_NE(nullptr, caches[0].guard.validity_cell);
+    EXPECT_EQ(ReceiverBinding::PrependCallable, caches[0].receiver_binding);
+    const int8_t *destinations = caches[0].keyword_dest_regs.get();
+    ASSERT_NE(nullptr, destinations);
+
+    EXPECT_EQ(Value::from_smi(23),
+              context.thread()->call_clovervm_function(invoke, second));
+    // A miss allocates the replacement table before releasing this one.
+    EXPECT_EQ(destinations, caches[0].keyword_dest_regs.get());
+}
+
+TEST(Interpreter, instance_call_forms_and_inherited_invalidation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Fallback:
+    def __call__(self, x=1, *, y=2):
+        return self.tag - x - y
+
+class Base(Fallback):
+    def __call__(self, x=1, *, y=2):
+        return self.tag + x + y
+
+class Child(Base): pass
+a = Child()
+b = Child()
+a.tag = 10
+b.tag = 20
+a.__call__ = None
+b.__call__ = None
+
+def positional(obj):
+    return obj(3)
+
+def keyword(obj):
+    return obj(y=4)
+
+def expanded(obj):
+    return obj(*(3,), **{"y": 4})
+
+assert a() == 13
+assert (positional(a), keyword(a), expanded(a)) == (15, 15, 17)
+assert (positional(b), keyword(b), expanded(b)) == (25, 25, 27)
+
+def replacement(self, x=1, *, y=2):
+    return self.tag * 10 + x + y
+
+def unchanged():
+    return 3
+
+def mutate():
+    Base.__call__ = replacement
+    return 3
+
+def with_argument(obj, argument):
+    return obj(argument())
+
+assert with_argument(a, unchanged) == 15
+assert with_argument(a, mutate) == 105
+assert (positional(b), keyword(b), expanded(b)) == (205, 205, 207)
+
+class Holder: pass
+holder = Holder()
+holder.value = a
+assert holder.value(3) == 105
+assert holder.value(y=4) == 105
+assert holder.value(*(3,), **{"y": 4}) == 107
+
+try:
+    a(self=a)
+except TypeError:
+    pass
+else:
+    assert False
+
+class Blocked(Base):
+    __call__ = None
+
+try:
+    Blocked()()
+except TypeError:
+    pass
+else:
+    assert False
+
+del Base.__call__
+assert (positional(b), keyword(b), expanded(b)) == (15, 15, 13)
+del Fallback.__call__
+for call in (positional, keyword, expanded):
+    try:
+        call(a)
+    except TypeError:
+        pass
+    else:
+        assert False
+
+class Variadic:
+    def __call__(*args, **kwargs):
+        return args, kwargs
+
+v = Variadic()
+assert v() == ((v,), {})
+assert v(1, 2) == ((v, 1, 2), {})
+assert v(x=2) == ((v,), {"x": 2})
+assert v(*(1, 2), **{"x": 3}) == ((v, 1, 2), {"x": 3})
+)");
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, instance_expanded_call_preserves_target_across_reentry)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+def invoke(obj, kwargs):
+    return obj(**kwargs)
+
+class Outer:
+    def __call__(self, *, key):
+        return self.marker + key
+
+class Inner:
+    def __call__(self, *, key):
+        return key * 2
+
+inner = Inner()
+
+def replacement(self, *, key):
+    return -key
+
+events = []
+class Keyword(str):
+    def __hash__(self):
+        return 37
+    def __eq__(self, other):
+        if other != "key":
+            return False
+        events.append(other)
+        assert invoke(inner, {"key": 5}) == 10
+        Outer.__call__ = replacement
+        return True
+
+outer = Outer()
+outer.marker = 100
+assert invoke(outer, {"key": 2}) == 102
+assert invoke(outer, {Keyword("key"): 4}) == 104
+assert len(events) == 1
+assert invoke(outer, {"key": 3}) == -3
+assert invoke(inner, {"key": 6}) == 12
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, call_non_callable)
 {
     expect_python_error(L"1()\n", L"TypeError", L"object is not callable");

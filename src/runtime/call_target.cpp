@@ -1,7 +1,9 @@
 #include "runtime/call_target.h"
 
+#include "object_model/attr.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
+#include "runtime/runtime_helpers.h"
 #include "util/result.h"
 
 namespace cl
@@ -28,6 +30,24 @@ namespace cl
                         {TValue<Function>::from_oop(constructor.thunk),
                          CallTargetGuard::exact(object,
                                                 constructor.lookup_cell)});
+                }
+            }
+            else
+            {
+                AttributeReadDescriptor lookup =
+                    resolve_special_method_read_descriptor(
+                        callable, interned_string(L"__call__"));
+                if(lookup.is_found() &&
+                   lookup.plan.kind ==
+                       AttributeReadPlanKind::BindFunctionReceiver &&
+                   lookup.is_cacheable())
+                {
+                    return Expected<CallTargetDescriptor>::ok(
+                        {TValue<Function>::from_value_assumed(
+                             lookup.lookup_value),
+                         CallTargetGuard::receiver_shape(
+                             object->get_shape(), lookup.lookup_validity_cell),
+                         ReceiverBinding::PrependCallable});
                 }
             }
         }
