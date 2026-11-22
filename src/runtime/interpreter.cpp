@@ -2945,6 +2945,8 @@ namespace cl
         return result;
     }
 
+    NOINLINE static INTERP_CC Value op_store_attr_cached_slow(PARAMS);
+
     NOINLINE static INTERP_CC Value op_store_attr_cache_miss(PARAMS)
     {
         START(4);
@@ -2962,6 +2964,17 @@ namespace cl
         {
             if(descriptor.plan.is_descriptor_set())
             {
+                if(descriptor.is_cacheable())
+                {
+                    auto setter = TValue<Function>::from_value_assumed(
+                        descriptor.plan.descriptor_hook);
+                    if(!setter.extract()->accepts_positional_only_call_arity(3))
+                    {
+                        MUSTTAIL return wrong_arity_error(ARGS);
+                    }
+                    cache.populate(receiver, descriptor);
+                    MUSTTAIL return op_store_attr_cached_slow(ARGS);
+                }
                 INTERP_TRY(invoke_descriptor_mutation(
                     thread, fp, pc, code_object, accumulator, descriptor.plan,
                     receiver));
@@ -3466,6 +3479,13 @@ namespace cl
             {
                 MUSTTAIL return attribute_assignment_error(ARGS);
             }
+            COMPLETE();
+        }
+        if(cache.plan.is_descriptor_set())
+        {
+            INTERP_TRY(invoke_descriptor_mutation(thread, fp, pc, code_object,
+                                                  accumulator, cache.plan,
+                                                  receiver));
             COMPLETE();
         }
         MUSTTAIL return op_store_attr_cache_miss(ARGS);

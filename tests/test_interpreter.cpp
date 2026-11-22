@@ -4547,6 +4547,100 @@ assert copy.__doc__ is None
     EXPECT_FALSE(run.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, cached_descriptor_setter_uses_current_receiver_and_value)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+class Hooks:
+    def __set__(self, obj, value, bias=1):
+        obj.stored = value + self.delta + bias
+
+class Descriptor(Hooks):
+    pass
+
+class Base:
+    pass
+
+class Child(Base):
+    pass
+
+descriptor = Descriptor()
+descriptor.delta = 3
+replacement = Descriptor()
+replacement.delta = 10
+Base.x = descriptor
+first = Child()
+second = Child()
+first.stored = 0
+second.stored = 0
+
+def store(obj, value):
+    obj.x = value
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    Owned<TValue<Function>> writer{
+        TValue<Function>::from_value_assumed(global(L"store"))};
+    Owned<Value> first{global(L"first")};
+    Owned<Value> second{global(L"second")};
+    auto &cache = writer.value()
+                      .extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_mutation_caches.at(0);
+    auto store = [&](Value receiver, int64_t rhs) {
+        return context.thread()->call_clovervm_function(
+            writer.value(), receiver, Value::from_smi(rhs));
+    };
+
+    native_cast<ClassObject>(global(L"Descriptor"))->freeze();
+    EXPECT_EQ(Value::None(), store(first.value(), 1));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);
+
+    for(const wchar_t *name: {L"descriptor", L"replacement"})
+    {
+        Object *object = global(name).get_ptr<Object>();
+        Shape *shape = object->get_shape();
+        object->set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
+    }
+    EXPECT_EQ(Value::None(), store(first.value(), 2));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);  // Hooks is still mutable.
+
+    native_cast<ClassObject>(global(L"Hooks"))->freeze();
+    EXPECT_EQ(Value::None(), store(first.value(), 38));
+    ASSERT_TRUE(cache.matches(second.value()));
+    ASSERT_TRUE(cache.plan.is_descriptor_set());
+    EXPECT_EQ(global(L"descriptor"), cache.plan.descriptor);
+    EXPECT_EQ(Value::None(), store(second.value(), 39));
+    auto stored = interned_string(L"stored");
+    EXPECT_EQ(Value::from_smi(42),
+              first.value().get_ptr<Object>()->get_own_property(stored));
+    EXPECT_EQ(Value::from_smi(43),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    auto name = interned_string(L"x");
+    ASSERT_TRUE(base->set_own_property(name, global(L"replacement")).value());
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), store(second.value(), 40));
+    ASSERT_TRUE(cache.matches(second.value()));
+    EXPECT_EQ(global(L"replacement"), cache.plan.descriptor);
+    EXPECT_EQ(Value::from_smi(51),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+
+    ASSERT_TRUE(base->delete_own_property(name));
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), store(second.value(), 42));
+    EXPECT_EQ(Value::from_smi(42),
+              second.value().get_ptr<Object>()->get_own_property(name));
+}
+
 TEST(Interpreter, store_attr_invokes_property_setter_and_ignores_result)
 {
     test::VmTestContext context;
@@ -4567,10 +4661,19 @@ def store(obj, value):
 
 store(obj, 10)
 store(obj, 20)
-C.x = property(C.get, C.set)
+p = property(C.get, C.set)
+C.x = p
 store(obj, 41)
 assert obj.x == 42
 assert obj.stored == 42
+store(obj, 41)
+
+def replacement(obj, value):
+    obj.stored = value * 2
+
+p.__init__(C.get, replacement)
+store(obj, 25)
+assert obj.x == 50
 
 C.x = property(C.get)
 try:

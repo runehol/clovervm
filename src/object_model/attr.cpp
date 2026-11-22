@@ -811,10 +811,20 @@ namespace cl
                 {
                     return AttributeWriteDescriptor::disallowed();
                 }
-                return AttributeWriteDescriptor::found(
-                    AttributeMutationPlan::descriptor_mutation(
-                        AttributeMutationPlanKind::DescriptorSet, value,
-                        protocol.set));
+                AttributeWriteDescriptor setter =
+                    AttributeWriteDescriptor::found(
+                        AttributeMutationPlan::descriptor_mutation(
+                            AttributeMutationPlanKind::DescriptorSet, value,
+                            protocol.set));
+                if(object->get_shape()->has_flag(ShapeFlag::IsClassObject) ||
+                   !has_native_layout<Function>(protocol.set))
+                {
+                    return setter;
+                }
+                setter.cache_blockers = mutation_cache_blockers_for_class_value(
+                    class_descriptor, type);
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    setter, lookup_class);
             }
             cache_blockers =
                 mutation_cache_blockers_for_class_value(class_descriptor, type);

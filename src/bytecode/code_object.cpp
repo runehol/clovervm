@@ -198,8 +198,11 @@ namespace cl
                 case AttributeMutationPlanKind::ChangeClass:
                     return repair.state();
                 case AttributeMutationPlanKind::DescriptorSet:
+                    repair.value(cache.plan.descriptor);
+                    repair.value(cache.plan.descriptor_hook);
+                    return repair.state();
                 case AttributeMutationPlanKind::DescriptorDelete:
-                    // Descriptor mutations are never installed in the IC.
+                    // Descriptor deletions are never installed in the IC.
                     return gc::WeakState::Dead;
             }
             assert(false && "invalid attribute mutation plan kind");

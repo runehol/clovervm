@@ -321,6 +321,39 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
         owner.get(), [&](HeapObject *object) { return resolve(object, true); });
 }
 
+TEST_F(WeakReferenceProcessing, CachedDescriptorSetterRepairsBothWeakValues)
+{
+    auto &caches = owner.get()->inline_caches.attribute_mutation_caches;
+    caches.resize(1);
+    auto &cache = caches[0];
+    auto populate_setter = [&] {
+        cache.receiver_shape = old_shape.get();
+        cache.lookup_validity_cell = old_cell.get();
+        cache.plan = AttributeMutationPlan::descriptor_mutation(
+            AttributeMutationPlanKind::DescriptorSet, old_value.raw_value(),
+            Value::from_oop(old_function.get()));
+    };
+
+    populate_setter();
+    repair_late_units(owner.get(),
+                      [&](HeapObject *object) { return resolve(object); });
+    EXPECT_EQ(new_shape.get(), cache.receiver_shape);
+    EXPECT_EQ(new_cell.get(), cache.lookup_validity_cell);
+    EXPECT_EQ(new_value.raw_value(), cache.plan.descriptor);
+    EXPECT_EQ(Value::from_oop(new_function.get()), cache.plan.descriptor_hook);
+
+    for(HeapObject *dead:
+        std::array<HeapObject *, 2>{old_value.extract(), old_function.get()})
+    {
+        populate_setter();
+        repair_late_units(owner.get(), [&](HeapObject *object) {
+            return object == dead ? nullptr : resolve(object);
+        });
+        EXPECT_EQ(nullptr, cache.receiver_shape);
+        EXPECT_EQ(nullptr, cache.lookup_validity_cell);
+    }
+}
+
 TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
 {
     for(HeapObject *dead: sources())
