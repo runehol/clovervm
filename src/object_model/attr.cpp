@@ -435,8 +435,12 @@ namespace cl
             protocol.has_set_or_delete()
                 ? AttributeReadPlanKind::DataDescriptorGet
                 : AttributeReadPlanKind::NonDataDescriptorGet;
-        return with_plan_kind(descriptor, kind,
-                              AttributeCacheBlocker::UnsupportedDescriptorKind);
+        descriptor = with_plan_kind(
+            descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
+        descriptor.plan.constant_or_getter =
+            has_native_layout<Function>(protocol.get) ? protocol.get
+                                                      : Value::not_present();
+        return descriptor;
     }
 
     static bool class_read_descriptor_is_mutating_descriptor(
@@ -530,6 +534,16 @@ namespace cl
                     class_object);
             }
 
+            if(class_descriptor.is_found() &&
+               class_descriptor.plan.kind ==
+                   AttributeReadPlanKind::ReceiverSlot)
+            {
+                // The value's type can gain __get__ without a class-slot write.
+                class_descriptor.cache_blockers |=
+                    attribute_cache_blockers_for_class_value(
+                        class_descriptor.lookup_value);
+            }
+
             // Replacing the class slot value can change how the read binds.
             return with_mro_shape_and_contents_validity_cell_if_unblocked(
                 class_descriptor, class_object);
@@ -602,7 +616,7 @@ namespace cl
     {
         if(plan.kind == AttributeReadPlanKind::ConstantValue)
         {
-            return plan.constant_value;
+            return plan.constant_or_getter;
         }
 
         const Object *storage_owner = plan.storage_owner;

@@ -1637,7 +1637,7 @@ namespace cl
             first_arg_reg, n_args, instr_len, cache.adaptation);
     }
 
-    [[maybe_unused]] NOINLINE static Expected<DispatchTableEntry>
+    NOINLINE static Expected<DispatchTableEntry>
     enter_uncached_resolved_positional_call(ThreadState *thread, Value *&fp,
                                             const uint8_t *&pc, void *&dispatch,
                                             CodeObject *&code_object,
@@ -2682,7 +2682,7 @@ namespace cl
         switch(plan.kind)
         {
             case AttributeReadPlanKind::ConstantValue:
-                value_out = plan.constant_value;
+                value_out = plan.constant_or_getter;
                 return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::ReceiverSlot:
@@ -2808,7 +2808,65 @@ namespace cl
         if(unlikely(plan_status ==
                     AttributeLoadPlanStatus::RequiresDescriptorDispatch))
         {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
+            Value getter = descriptor.plan.constant_or_getter;
+            if(getter.is_not_present())
+            {
+                MUSTTAIL return descriptor_dispatch_error(ARGS);
+            }
+            assert(has_native_layout<Function>(getter));
+
+            Value binding_object = receiver;
+            Value owner;
+            switch(descriptor.plan.path)
+            {
+                case AttributeReadPlanPath::InstanceClassChain:
+                case AttributeReadPlanPath::MetaclassChain:
+                    owner = Value::from_oop(thread->class_of_value(receiver));
+                    break;
+                case AttributeReadPlanPath::ClassObjectChain:
+                    binding_object = Value::None();
+                    owner = receiver;
+                    break;
+                case AttributeReadPlanPath::ReceiverOwnProperty:
+                    assert(false &&
+                           "own slot cannot require descriptor dispatch");
+                    __builtin_unreachable();
+            }
+
+            int32_t first_arg_reg =
+                code_object->get_first_free_arg_encoded_reg();
+            fp[first_arg_reg] = descriptor.lookup_value;
+            fp[first_arg_reg - 1] = binding_object;
+            fp[first_arg_reg - 2] = owner;
+            DispatchTableEntry jit_entry = nullptr;
+            bool has_exception;
+            {
+                // Destroy the nontrivial Expected before tail dispatch.
+                auto entry = enter_uncached_resolved_positional_call(
+                    thread, fp, pc, dispatch, code_object, accumulator, getter,
+                    first_arg_reg, 3, instr_len);
+                has_exception = entry.has_exception();
+                if(!has_exception)
+                {
+                    jit_entry = entry.value();
+                }
+            }
+            if(unlikely(has_exception))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            if(jit_entry != nullptr)
+            {
+                MUSTTAIL return jit_entry(ARGS);
+            }
+            if(unlikely(thread->safepoint_requested()))
+            {
+                MUSTTAIL return op_committed_safepoint_with_accumulator_slow(
+                    ARGS);
+            }
+
+            START(0);
+            COMPLETE();
         }
         COMPLETE();
     }

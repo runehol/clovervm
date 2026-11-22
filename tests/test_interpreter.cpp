@@ -4112,7 +4112,7 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
 
 TEST(Interpreter, cached_instance_read_reclassifies_replaced_class_attribute)
 {
-    expect_python_error(LR"(
+    test::FileRunner run(LR"(
 class Descriptor:
     def __get__(self, obj, owner):
         return 42
@@ -4130,9 +4130,208 @@ obj = Child()
 assert read(obj) == 7
 Base.value = Descriptor()
 read(obj)
-)",
-                        L"TypeError",
-                        L"descriptor __get__ requires interpreter dispatch");
+)");
+    EXPECT_EQ(Value::from_smi(42), run.return_value);
+}
+
+TEST(Interpreter,
+     instance_read_reclassifies_class_value_after_type_gains_getter)
+{
+    test::FileRunner run(LR"(
+class Candidate:
+    pass
+
+candidate = Candidate()
+
+class C:
+    value = candidate
+
+def read(obj):
+    return obj.value
+
+obj = C()
+assert read(obj) is candidate
+
+def getter(self, obj, owner):
+    return 42
+
+Candidate.__get__ = getter
+read(obj)
+)");
+    EXPECT_EQ(Value::from_smi(42), run.return_value);
+}
+
+TEST(Interpreter, instance_descriptor_getter_uses_lookup_binding_and_precedence)
+{
+    test::FileRunner run(LR"(
+class Base:
+    pass
+
+class Child(Base):
+    pass
+
+class Data:
+    def __get__(self, obj, owner, default=3):
+        if obj is None:
+            return owner
+        assert owner is Child
+        return obj.marker + default
+
+    def __set__(self, obj, value):
+        assert False
+
+class NonData:
+    def __get__(self, obj, owner):
+        assert False
+
+obj = Child()
+obj.x = 7
+obj.y = 11
+obj.marker = 39
+Base.x = Data()
+Base.y = NonData()
+assert obj.x == 42
+assert obj.y == 11
+assert Child.x is Child
+assert Base.x is Base
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, metaclass_descriptor_getter_receives_class_and_metaclass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Descriptor:
+    def __get__(self, obj, owner):
+        return (self, obj, owner)
+
+descriptor = Descriptor()
+
+def read(obj):
+    return obj.x
+)");
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+    Value descriptor =
+        load_global_from_module_for_test(code, interned_string(L"descriptor"));
+    Value read =
+        load_global_from_module_for_test(code, interned_string(L"read"));
+    ASSERT_TRUE(has_native_layout<Function>(read));
+    auto reader = TValue<Function>::from_value_assumed(read);
+
+    OwnedHeapPtr<ClassObject> meta{
+        context.thread()->make_internal_raw<ClassObject>(
+            context.vm().type_class(), interned_string(L"Meta"),
+            ClassObject::class_inline_storage_slot_count,
+            context.vm().type_class(), NativeLayoutId::ClassObject)};
+    OwnedHeapPtr<ClassObject> cls{
+        context.thread()->make_internal_raw<ClassObject>(
+            meta.get(), interned_string(L"C"), 2, context.vm().object_class(),
+            NativeLayoutId::Instance)};
+    ASSERT_TRUE(meta.get()
+                    ->set_own_property(interned_string(L"x"), descriptor)
+                    .value());
+
+    Value result = context.thread()->call_clovervm_function(
+        reader, Value::from_oop(cls.get()));
+    ASSERT_TRUE(has_native_layout<Tuple>(result));
+    const Tuple *arguments = native_cast<Tuple>(result);
+    ASSERT_EQ(3u, arguments->size());
+    EXPECT_EQ(descriptor, arguments->item_unchecked(0));
+    EXPECT_EQ(Value::from_oop(cls.get()), arguments->item_unchecked(1));
+    EXPECT_EQ(Value::from_oop(meta.get()), arguments->item_unchecked(2));
+
+    const auto &caches = reader.extract()
+                             ->code_object.extract()
+                             ->inline_caches.attribute_read_caches;
+    ASSERT_EQ(1u, caches.size());
+    EXPECT_EQ(nullptr, caches[0].lookup_validity_cell);
+}
+
+TEST(Interpreter, instance_descriptor_getter_propagates_call_and_body_errors)
+{
+    test::FileRunner run(LR"(
+class WrongArity:
+    def __get__(self, obj):
+        assert False
+
+class Raises:
+    def __get__(self, obj, owner):
+        raise ValueError("getter failed")
+
+class Unsupported:
+    __get__ = 7
+
+class C:
+    wrong = WrongArity()
+    raises = Raises()
+    unsupported = Unsupported()
+
+obj = C()
+try:
+    obj.wrong
+except TypeError as error:
+    assert str(error) == "wrong number of arguments"
+else:
+    assert False
+
+try:
+    obj.raises
+except ValueError as error:
+    assert str(error) == "getter failed"
+else:
+    assert False
+
+try:
+    obj.unsupported
+except TypeError as error:
+    assert str(error) == "descriptor __get__ requires interpreter dispatch"
+else:
+    assert False
+)");
+    EXPECT_EQ(Value::None(), run.return_value);
+}
+
+TEST(Interpreter, instance_descriptor_getter_reenters_under_reclamation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+def pair(temporary, value):
+    return (temporary, value)
+
+def read(obj):
+    return pair([7], obj.x)
+
+class Replacement:
+    def __get__(self, obj, owner):
+        return 42
+
+class Original:
+    def __init__(self):
+        self.marker = 23
+
+    def __get__(self, *args, **kwargs):
+        assert len(args) == 2
+        assert args[1] is C
+        assert not kwargs
+        C.x = Replacement()
+        assert read(args[0]) == ([7], 42)
+        return self.marker
+
+class C:
+    x = Original()
+
+obj = C()
+assert read(obj) == ([7], 23)
+assert read(obj) == ([7], 42)
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
 TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)

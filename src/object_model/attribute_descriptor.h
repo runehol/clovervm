@@ -122,7 +122,7 @@ namespace cl
         AttributeReadPlanKind kind;
         const Object *storage_owner;
         StorageLocation storage_location;
-        Value constant_value;
+        Value constant_or_getter;  // Interpreted according to kind.
 
         static AttributeReadPlan from_storage(AttributeReadPlanPath path,
                                               AttributeReadPlanKind kind,

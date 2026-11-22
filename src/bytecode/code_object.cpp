@@ -163,7 +163,7 @@ namespace cl
             switch(cache.plan.kind)
             {
                 case AttributeReadPlanKind::ConstantValue:
-                    repair.value(cache.plan.constant_value);
+                    repair.value(cache.plan.constant_or_getter);
                     return repair.state();
                 case AttributeReadPlanKind::ReceiverSlot:
                 case AttributeReadPlanKind::BindFunctionReceiver:
