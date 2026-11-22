@@ -93,13 +93,24 @@ namespace cl
             Transition(TValue<String> name, ShapeTransitionVerb verb,
                        DescriptorFlags descriptor_flags, Shape *next_shape);
 
+            static Transition delete_to_predecessor(TValue<String> name)
+            {
+                return Transition(name, ShapeTransitionVerb::Delete,
+                                  descriptor_flag(DescriptorFlag::None),
+                                  nullptr);
+            }
+
             TValue<String> get_name() const { return name.value(); }
             ShapeTransitionVerb get_verb() const { return verb; }
             DescriptorFlags get_descriptor_flags() const
             {
                 return descriptor_flags;
             }
-            Shape *get_next_shape() const { return next_shape.extract(); }
+            Shape *resolve_target(Shape *previous_shape) const
+            {
+                Shape *target = next_shape.extract();
+                return target != nullptr ? target : previous_shape;
+            }
 
             void visit_strong_reference_slots(StrongSlotVisitor visitor)
             {
@@ -111,6 +122,7 @@ namespace cl
             Owned<TValue<String>> name;
             ShapeTransitionVerb verb;
             DescriptorFlags descriptor_flags;
+            // A null target denotes an inverse delete using the weak backlink.
             OwnedHeapPtr<Shape> next_shape;
         };
 

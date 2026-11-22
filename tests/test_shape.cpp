@@ -1171,7 +1171,75 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
 
     instance->set_own_property(a_name, Value::from_smi(12)).value();
     EXPECT_EQ(Value::from_smi(12), instance->get_own_property(a_name));
-    EXPECT_EQ(3, instance->get_shape()->get_next_slot_index());
+    Shape *shape_with_ba = instance->get_shape();
+    EXPECT_EQ(3, shape_with_ba->get_next_slot_index());
+    auto slot = shape_with_ba->resolve_present_property(a_name);
+    ASSERT_EQ(StorageKind::Overflow, slot.kind);
+    EXPECT_LT(shape_with_ba->lookup_descriptor_index(b_name),
+              shape_with_ba->lookup_descriptor_index(a_name));
+
+    ASSERT_TRUE(instance->delete_own_property(a_name));
+    Shape *shape_with_b = instance->get_shape();
+    EXPECT_EQ(Value::not_present(), instance->read_storage_location(slot));
+    EXPECT_EQ(2, shape_with_b->get_next_slot_index());
+    ASSERT_TRUE(instance->add_own_property(a_name, Value::from_smi(13)));
+    EXPECT_EQ(shape_with_ba, instance->get_shape());
+    EXPECT_EQ(Value::from_smi(13), instance->read_storage_location(slot));
+    ASSERT_TRUE(instance->delete_own_property(a_name));
+    EXPECT_EQ(shape_with_b, instance->get_shape());
+    EXPECT_EQ(Value::from_smi(11), instance->get_own_property(b_name));
+}
+
+TEST(Shape, UndoAddReusesInlineSlotAndLeavesClonesIndependent)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    auto cls_name = context.vm().get_or_create_interned_string_value(L"Cls");
+    auto name = context.vm().get_or_create_interned_string_value(L"x");
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+    Shape *root = instance->get_shape();
+    ASSERT_TRUE(instance->add_own_property(name, Value::from_smi(1)));
+    Shape *with_x = instance->get_shape();
+    EXPECT_EQ(1u, with_x->transition_count());
+    EXPECT_EQ(root,
+              with_x->lookup_transition(name, ShapeTransitionVerb::Delete));
+    StorageLocation slot = with_x->resolve_present_property(name);
+    ASSERT_EQ(StorageKind::Inline, slot.kind);
+
+    ASSERT_TRUE(instance->delete_own_property(name));
+    EXPECT_EQ(root, instance->get_shape());
+    EXPECT_EQ(Value::not_present(), instance->read_storage_location(slot));
+    ASSERT_TRUE(instance->add_own_property(name, Value::from_smi(2)));
+    EXPECT_EQ(with_x, instance->get_shape());
+    EXPECT_EQ(Value::from_smi(2), instance->read_storage_location(slot));
+
+    Shape *clone = with_x->clone_with_flags(with_x->flags());
+    EXPECT_EQ(nullptr,
+              clone->lookup_transition(name, ShapeTransitionVerb::Delete));
+}
+
+TEST(Shape, UndoAddPreservesAttributeMappingOrder)
+{
+    test::VmTestContext context;
+    EXPECT_EQ(Value::True(), context.run_file(LR"(
+class C:
+    pass
+
+obj = C()
+obj.a = 1
+obj.b = 2
+mapping = obj.__dict__
+assert str(mapping) == "{'a': 1, 'b': 2}"
+del obj.a
+for i in range(4):
+    assert str(mapping) == "{'b': 2}"
+    obj.a = 3
+    assert str(mapping) == "{'b': 2, 'a': 3}"
+    del obj.a
+True
+)"));
 }
 
 TEST(Shape, CachedOverflowAccessSurvivesGrowthDeletionAndReaddition)

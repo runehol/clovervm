@@ -552,6 +552,8 @@ TEST_F(WeakReferenceProcessing,
     repair_late_units(child,
                       [&](HeapObject *object) { return resolve(object); });
     EXPECT_EQ(new_shape.get(), child->get_previous_shape());
+    EXPECT_EQ(new_shape.get(),
+              child->lookup_transition(name, ShapeTransitionVerb::Delete));
     EXPECT_EQ(old_refs, old_shape.get()->refcount());
     EXPECT_EQ(new_refs, new_shape.get()->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
@@ -570,6 +572,14 @@ TEST_F(WeakReferenceProcessing,
         ADD_FAILURE() << "cleared back-link reached resolver";
         return nullptr;
     });
+    EXPECT_EQ(nullptr,
+              child->lookup_transition(name, ShapeTransitionVerb::Delete));
+    Shape *fallback =
+        child->derive_transition(name, ShapeTransitionVerb::Delete);
+    EXPECT_EQ(child, fallback->get_previous_shape());
+    EXPECT_FALSE(fallback->resolve_present_property(name).is_found());
+    EXPECT_EQ(fallback,
+              child->lookup_transition(name, ShapeTransitionVerb::Delete));
 }
 
 TEST_F(WeakReferenceProcessing,

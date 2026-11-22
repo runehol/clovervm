@@ -680,18 +680,21 @@ attribute order; an implementation may compact or drop latent
 descriptors for non-fixed names as long as observable lookup and
 `__dict__` behavior remain correct.
 
+When a fresh, unflagged attribute is added to an ordinary instance Shape,
+its new Shape records the inverse delete transition in its transition
+table. That entry uses the weak predecessor link as its target.
+
 ### Deletion
 
 When deleting a present attribute:
 
-1. Search the existing Shape transitions for a cached deletion
-   transition for this attribute. If one exists, use the cached target
-   Shape.
-2. Build a new Shape.
-3. Copy all remaining present descriptors in order.
-4. Append the deleted descriptor to the latent region.
-5. Preserve its slot index.
-6. Store `Value::not_present()` in the corresponding object slot.
+1. Search the transition table for this attribute's delete transition.
+   Use its target Shape if it is still live. If this reverses an add,
+   the next add can reuse the original forward transition and slot.
+2. Otherwise, build a new Shape and copy the remaining present
+   descriptors in order. A stable-slot descriptor moves to the latent
+   region and keeps its slot index.
+3. Store `Value::not_present()` in the corresponding object slot.
 
 This preserves insertion order for present attributes while keeping the
 stable slot available for reinsertion when the descriptor is one of the
