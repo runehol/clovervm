@@ -1170,10 +1170,44 @@ namespace cl
                 .bits_for_indirect_target());
     }
 
+    static ALWAYSINLINE uint32_t bound_positional_count(uint32_t n_args,
+                                                        ReceiverBinding binding)
+    {
+        return n_args + (binding == ReceiverBinding::PrependCallable);
+    }
+
+    static ALWAYSINLINE Value call_receiver(Value callable,
+                                            ReceiverBinding binding,
+                                            Value existing_receiver)
+    {
+        if(binding == ReceiverBinding::PrependCallable)
+        {
+            assert(existing_receiver.is_not_present());
+            return callable;
+        }
+        return existing_receiver;
+    }
+
+    static ALWAYSINLINE uint32_t prepare_call_argument_slots(
+        Value *fp, int32_t first_arg_reg, uint32_t n_args, Value callable,
+        ReceiverBinding binding)
+    {
+        if(binding == ReceiverBinding::PrependCallable)
+        {
+            // Keep the first slot aligned while extending the outgoing span.
+            for(int32_t i = int32_t(n_args); i > 0; --i)
+            {
+                fp[first_arg_reg - i] = fp[first_arg_reg - i + 1];
+            }
+            fp[first_arg_reg] = callable;
+        }
+        return bound_positional_count(n_args, binding);
+    }
+
     static ALWAYSINLINE void
     populate_function_call_cache(FunctionCallInlineCache &cache,
                                  const CallTargetDescriptor &target,
-                                 uint32_t n_args)
+                                 uint32_t n_args, uint32_t n_bound_args)
     {
         cache.guard = target.guard;
         cache.function = target.function.extract();
@@ -1181,20 +1215,22 @@ namespace cl
         cache.receiver_binding = target.receiver_binding;
         cache.n_args = n_args;
         cache.adaptation = function_call_adaptation_for_positional_call(
-            target.function, n_args);
+            target.function, n_bound_args);
     }
 
     NOINLINE static Expected<void> populate_positional_call_cache_from_callable(
         Value callable, uint32_t n_args, FunctionCallInlineCache &cache)
     {
         CallTargetDescriptor target = CL_TRY(resolve_call_target(callable));
+        uint32_t n_bound_args =
+            bound_positional_count(n_args, target.receiver_binding);
         if(!target.function.extract()->accepts_positional_only_call_arity(
-               n_args))
+               n_bound_args))
         {
             return Expected<void>::raise_exception(
                 L"TypeError", L"wrong number of arguments");
         }
-        populate_function_call_cache(cache, target, n_args);
+        populate_function_call_cache(cache, target, n_args, n_bound_args);
         return Expected<void>::ok();
     }
 
@@ -1253,7 +1289,9 @@ namespace cl
         TValue<Function> fun = target.function;
         Function *function = fun.extract();
         FunctionSignature signature = function->call_signature.function;
-        if(n_pos_args > signature.n_positional_parameters &&
+        uint32_t n_bound_pos_args =
+            bound_positional_count(n_pos_args, target.receiver_binding);
+        if(n_bound_pos_args > signature.n_positional_parameters &&
            !signature.has_varargs())
         {
             return Expected<void>::raise_exception(
@@ -1266,9 +1304,7 @@ namespace cl
 
         absl::InlinedVector<bool, 16> filled(signature.n_parameters, false);
         uint32_t n_filled_by_position =
-            n_pos_args < signature.n_positional_parameters
-                ? n_pos_args
-                : signature.n_positional_parameters;
+            std::min(n_bound_pos_args, signature.n_positional_parameters);
         for(uint32_t idx = 0; idx < n_filled_by_position; ++idx)
         {
             filled[idx] = true;
@@ -1612,6 +1648,8 @@ namespace cl
         FunctionCallInlineCache local_cache;
         CL_TRY(populate_positional_call_cache_from_callable(callable, n_args,
                                                             local_cache));
+        n_args = prepare_call_argument_slots(
+            fp, first_arg_reg, n_args, callable, local_cache.receiver_binding);
         DispatchTableEntry jit_entry = enter_positional_call_from_cache(
             accumulator, thread, fp, pc, dispatch, code_object, local_cache,
             first_arg_reg, n_args, instr_len);
@@ -5308,9 +5346,12 @@ namespace cl
     {
         static constexpr uint32_t call_instr_len = 5;
         int8_t first_arg_reg = pc[2];
-        uint8_t n_args = pc[3];
+        uint32_t n_args = pc[3];
         FunctionCallInlineCache &call_cache =
             code_object->inline_caches.function_call_caches[pc[4]];
+        n_args = prepare_call_argument_slots(fp, first_arg_reg, n_args,
+                                             fp[int8_t(pc[1])],
+                                             call_cache.receiver_binding);
         DispatchTableEntry jit_entry = enter_positional_call_from_cache(
             accumulator, thread, fp, pc, dispatch, code_object, call_cache,
             first_arg_reg, n_args, call_instr_len);
@@ -5444,12 +5485,15 @@ namespace cl
     {
         static constexpr uint32_t call_instr_len = 8;
         int8_t first_arg_reg = pc[2];
-        uint8_t n_pos_args = pc[3];
+        uint32_t n_pos_args = pc[3];
         int8_t first_kw_value_reg = pc[4];
         uint8_t n_kw_args = pc[5];
         uint8_t keyword_names_idx = pc[6];
         KeywordCallInlineCache &cache =
             code_object->inline_caches.keyword_call_caches[pc[7]];
+        n_pos_args = prepare_call_argument_slots(fp, first_arg_reg, n_pos_args,
+                                                 fp[int8_t(pc[1])],
+                                                 cache.receiver_binding);
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
             accumulator, thread, fp, pc, dispatch, code_object, cache,
             first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
@@ -5642,8 +5686,7 @@ namespace cl
             MUSTTAIL return descriptor_dispatch_error(ARGS);
         }
 
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        uint32_t n_args = n_user_args + !self.is_not_present();
         FunctionCallInlineCache &call_cache =
             code_object->inline_caches.function_call_caches[call_cache_idx];
         if(unlikely(call_cache.n_args != n_args ||
@@ -5653,11 +5696,13 @@ namespace cl
                 callable, n_args, call_cache));
         }
 
+        self = call_receiver(callable, call_cache.receiver_binding, self);
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
         DispatchTableEntry jit_entry = enter_positional_call_from_cache(
             accumulator, thread, fp, pc, dispatch, code_object, call_cache,
-            first_arg_reg, n_args, call_instr_len);
+            first_arg_reg, n_user_args + !self.is_not_present(),
+            call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
@@ -5793,12 +5838,13 @@ namespace cl
                 callable, keyword_names, n_pos_args, n_kw_args, call_cache));
         }
 
+        self = call_receiver(callable, call_cache.receiver_binding, self);
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_pos_args, self);
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
             accumulator, thread, fp, pc, dispatch, code_object, call_cache,
-            first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
-            keyword_names_idx, call_instr_len);
+            first_arg_reg, n_user_pos_args + !self.is_not_present(),
+            first_kw_value_reg, n_kw_args, keyword_names_idx, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
