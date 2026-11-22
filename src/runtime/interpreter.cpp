@@ -1775,6 +1775,8 @@ namespace cl
         CodeObject *target_code = function.extract()->code_object.extract();
         Value *new_fp =
             new_frame_pointer_from_first_arg(fp, target_code, first_arg_reg);
+        positional.prefix =
+            call_receiver(callable, cache.receiver_binding, positional.prefix);
         Owned<Value> live_prefix(positional.prefix);
         if(mode == ExpandedCallMode::PureCollector && !positional.has_prefix())
         {
