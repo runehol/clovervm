@@ -20,6 +20,7 @@
 #include "import_system/module_global.h"
 #include "memory/heap_reclamation.h"
 #include "object_model/attr.h"
+#include "object_model/bound_method.h"
 #include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -5273,6 +5274,9 @@ class Descriptor:
 
 descriptor = Descriptor()
 
+def meta_method(self):
+    return self
+
 def read(obj):
     return obj.x
 
@@ -5322,6 +5326,24 @@ def read_dynamic(obj):
                              ->inline_caches.attribute_read_caches;
     ASSERT_EQ(1u, caches.size());
     EXPECT_EQ(nullptr, caches[0].lookup_validity_cell);
+
+    Value meta_method =
+        load_global_from_module_for_test(code, interned_string(L"meta_method"));
+    ASSERT_TRUE(meta.get()
+                    ->set_own_property(interned_string(L"x"), meta_method)
+                    .value());
+    for(const wchar_t *name: {L"read", L"read_dynamic"})
+    {
+        Value function =
+            load_global_from_module_for_test(code, interned_string(name));
+        Value result = context.thread()->call_clovervm_function(
+            TValue<Function>::from_value_assumed(function),
+            Value::from_oop(cls.get()));
+        ASSERT_TRUE(has_native_layout<BoundMethod>(result));
+        auto *bound = native_cast<BoundMethod>(result);
+        EXPECT_EQ(meta_method, bound->callable());
+        EXPECT_EQ(Value::from_oop(cls.get()), bound->receiver());
+    }
 }
 
 TEST(Interpreter, instance_descriptor_getter_propagates_call_and_body_errors)

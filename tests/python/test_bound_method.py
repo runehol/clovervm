@@ -19,7 +19,79 @@ assert callable(m)
 assert m(1, extra=2) == (o, 1, 2)
 assert m(*(3,), **{"extra": 4}) == (o, 3, 4)
 assert repr(m) == "<bound method f of receiver>"
-assert o.f is Receiver.f
+
+saved = o.f
+assert saved.__func__ is Receiver.f
+assert saved.__self__ is o
+assert saved(5, extra=6) == (o, 5, 6)
+assert getattr(o, "f").__self__ is o
+assert Receiver.f.__get__(o, Receiver).__self__ is o
+assert Receiver.f.__get__(o).__func__ is Receiver.f
+assert Receiver.f.__get__(None, Receiver) is Receiver.f
+getter = Receiver.f.__get__
+assert getter(o).__self__ is o
+
+for args in ((None,), (None, None)):
+    try:
+        getter(*args)
+        assert False
+    except TypeError as exc:
+        assert str(exc) == "__get__(None, None) is invalid"
+
+try:
+    Receiver.f.__class__.__get__(o, o)
+    assert False
+except TypeError:
+    pass
+
+
+class Derived(Receiver):
+    pass
+
+
+def read_f(obj):
+    return obj.f
+
+
+def replacement(obj, value, *, extra):
+    return obj, value + extra
+
+
+class OtherDescriptor:
+    def __get__(self, obj, owner):
+        return 71
+
+
+d = Derived()
+assert Derived.f is Receiver.f
+for i in range(3):
+    assert read_f(d).__func__ is Receiver.f
+d.f = replacement
+assert read_f(d) is replacement
+assert getattr(d, "f") is replacement
+del d.f
+assert read_f(d).__self__ is d
+assert d.f(1, extra=2) == (d, 1, 2)
+original = Receiver.f
+Receiver.f = replacement
+assert read_f(d).__func__ is replacement
+assert saved.__func__ is original
+assert saved(8, extra=9) == (o, 8, 9)
+Receiver.f = OtherDescriptor()
+assert read_f(d) == 71
+Receiver.f = original
+
+
+class IntrinsicOwner:
+    convert = ord
+
+
+assert ord.__class__ is Receiver.f.__class__
+assert ord.__get__(None, IntrinsicOwner) is ord
+assert ord.__get__("A")() == 65
+bound_intrinsic = IntrinsicOwner().convert
+assert bound_intrinsic.__func__ is ord
+assert bound_intrinsic.__self__.__class__ is IntrinsicOwner
 
 
 class MethodLookalike:

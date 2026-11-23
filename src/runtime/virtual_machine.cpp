@@ -1379,6 +1379,7 @@ namespace cl
                 this, make_call_keyword_add_function(this),
                 "creating keyword helper"));
         install_slotdict_class_methods(this);
+        install_function_class_methods(this);
         install_slice_class_methods(this);
         install_io_base_methods(this);
         install_file_io_methods(this);

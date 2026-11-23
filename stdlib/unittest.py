@@ -6,10 +6,8 @@
 
 Use Case("test_name").run() or TestSuite([...]).run(result). Discovery,
 callable case/suite instances, runners, skips, cleanups, and context-manager
-assertRaises are not supported. Test methods must be ordinary Python methods;
-attribute reads do not yet produce bound-method callback objects. Failure/error
-entries are (test, exception) pairs, without traceback formatting. successes is
-a CloverVM extension.
+assertRaises are not supported. Failure/error entries are (test, exception)
+pairs, without traceback formatting. successes is a CloverVM extension.
 
 Assertions use minimal messages: failures pass msg unchanged to fail(), even
 for invalid container arguments. There are no generated diffs, longMessage or
@@ -82,8 +80,7 @@ class TestCase:
                 return result
             successful = True
             try:
-                # Attribute reads currently yield an unbound Python function.
-                method(self)
+                method()
             except KeyboardInterrupt:
                 raise
             except BaseException as error:

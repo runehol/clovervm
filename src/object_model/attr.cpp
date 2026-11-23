@@ -441,6 +441,13 @@ namespace cl
             return descriptor;
         }
 
+        // The function getter returns the function unchanged on class reads.
+        if(descriptor.plan.path == AttributeReadPlanPath::ClassObjectChain &&
+           has_native_layout<Function>(descriptor.lookup_value))
+        {
+            return descriptor;
+        }
+
         ThreadState *thread = active_thread();
         ClassObject *type = thread->class_of_value(descriptor.lookup_value);
         DescriptorProtocol protocol = lookup_descriptor_protocol(type);
@@ -616,6 +623,28 @@ namespace cl
             classify_class_read_descriptor(
                 lookup_instance_attribute_read_descriptor(class_object, name,
                                                           obj)));
+    }
+
+    AttributeReadDescriptor
+    resolve_attr_value_read_descriptor(Value obj, TValue<String> name)
+    {
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(obj, name);
+        if(!descriptor.is_found() ||
+           descriptor.plan.kind != AttributeReadPlanKind::BindFunctionReceiver)
+        {
+            return descriptor;
+        }
+
+        // A call target can carry the function and receiver separately.
+        // A value read instead executes the function's descriptor getter.
+        ClassObject *function_class =
+            active_thread()->class_for_native_layout(NativeLayoutId::Function);
+        descriptor.plan.kind = AttributeReadPlanKind::NonDataDescriptorGet;
+        descriptor.plan.constant_or_getter =
+            function_class->get_own_property(interned_string(L"__get__"));
+        assert(has_native_layout<Function>(descriptor.plan.constant_or_getter));
+        return descriptor;
     }
 
     AttributeReadDescriptor

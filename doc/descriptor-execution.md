@@ -47,6 +47,7 @@ bindings above. Cached descriptor replay currently covers instance access.
 |---|---|
 | Instance slot | Read the current instance's slot. |
 | Plain class slot | Read the winning class's slot. |
+| Function in the instance's class or metaclass lookup path | Execute the shared function getter to produce a bound method. |
 | Exact built-in `property` on an instance | Load the current `fget` from the property and call it with the current instance. If absent, call the property's `__get__` to raise the normal error. |
 | General descriptor | Call the selected `__get__` with the binding from lookup. |
 
@@ -111,7 +112,7 @@ sites warm.
   `staticmethod` can supply its wrapped value and an empty receiver, and a
   general descriptor supplies its getter's result and an empty receiver.
   Both slots stay live across argument evaluation. Ordinary saved bound
-  methods and `classmethod` binding need first-class method values.
+  methods now use the shared function getter. `classmethod` binding is separate.
 - Extend descriptor dispatch to additional consumers, including `super`,
   descriptor-backed `__call__`, and operator special methods. Operators must
   preserve their operands and reflected-dispatch continuation across hook

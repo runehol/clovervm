@@ -115,7 +115,7 @@ namespace cl
                                                  Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        AttributeReadDescriptor read = resolve_attr_read_descriptor(
+        AttributeReadDescriptor read = resolve_attr_value_read_descriptor(
             obj, TValue<String>::from_value_assumed(name));
         if(read.is_found())
         {

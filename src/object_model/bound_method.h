@@ -8,6 +8,7 @@
 namespace cl
 {
     class ModuleObject;
+    class ThreadState;
     class VirtualMachine;
 
     class BoundMethod : public InlineSlotObject
@@ -38,6 +39,8 @@ namespace cl
         Member<Value> receiver_;
     };
 
+    [[nodiscard]] TValue<BoundMethod>
+    make_bound_method(ThreadState *thread, Value callable, Value receiver);
     BuiltinClassDefinition make_bound_method_class(VirtualMachine *vm);
     void
     install_bound_method_class_methods(VirtualMachine *vm,

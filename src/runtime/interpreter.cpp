@@ -2846,7 +2846,7 @@ namespace cl
         AttributeReadInlineCache &cache =
             code_object->inline_caches.attribute_read_caches[cache_idx];
         AttributeReadDescriptor descriptor =
-            resolve_attr_read_descriptor(receiver, attr_name);
+            resolve_attr_value_read_descriptor(receiver, attr_name);
         if(!descriptor.is_found())
         {
             MUSTTAIL return attribute_error(ARGS);

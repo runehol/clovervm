@@ -50,7 +50,7 @@ for entry in checks:
     check = entry[0]
     args = entry[1]
     try:
-        check(case, *args, msg='failure message')
+        check(*args, msg='failure message')
         assert False
     except AssertionError as error:
         assert error.args == ('failure message',)

@@ -25,12 +25,8 @@ The current clovervm `with` implementation calls `__exit__` later through
 `CallSpecialMethod` on the manager. That means mutations between `__enter__` and
 block exit may affect which `__exit__` implementation runs.
 
-Reason: clovervm currently does not have a separate method-load primitive that
-preserves the callable plus receiver binding, and `LoadAttr` does not
-materialize bound method objects.
-
-To close: materialize the bound method during lookup, or add a method-load
-representation that can preserve `(callable, self)` and be called later.
+To close: make the `with` lowering load and preserve the exit target before
+calling `__enter__`.
 
 ### Traceback argument to `__exit__`
 
@@ -352,25 +348,12 @@ cached calls, subclass overrides, aliases and every-safepoint reclamation.
 
 ## Methods And Attribute Access
 
-### `obj.method` does not produce a bound method object
+### Intrinsic functions share the Python function descriptor
 
-In Python, reading a function through an instance produces a bound method object:
-
-```python
-f = obj.method
-f()
-```
-
-clovervm's `LoadAttr` currently loads the underlying attribute value. Binding is
-handled by `CallMethodAttrPositional` and `CallSpecialMethod`, which internally split a
-method call into `callable` and optional `self`.
-
-Explicit construction is available through `types.MethodType(callable, receiver)`.
-The wrapper forwards calls with the receiver as the first positional argument.
-Its repr uses a Python function's code name and the receiver's repr. Other
-callables are shown as `?`.
-
-To close: materialize the bound method during attribute lookup.
+Python-defined and intrinsic functions use CloverVM's `function` type and bind
+through the same `__get__`. Their bound methods share the `method` type exposed
+as `types.MethodType`. CPython uses separate types for C functions and methods.
+CloverVM's method repr uses the function's code name and the receiver's repr.
 
 ### Descriptor protocol execution is partial
 

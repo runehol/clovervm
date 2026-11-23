@@ -28,6 +28,8 @@ namespace cl
 
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
                                                          TValue<String> name);
+    AttributeReadDescriptor
+    resolve_attr_value_read_descriptor(Value obj, TValue<String> name);
     [[nodiscard]] Expected<DescriptorGetCall>
     prepare_descriptor_get_call(Value receiver,
                                 const AttributeReadDescriptor &read);

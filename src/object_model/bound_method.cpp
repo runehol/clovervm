@@ -13,6 +13,12 @@
 
 namespace cl
 {
+    TValue<BoundMethod> make_bound_method(ThreadState *thread, Value callable,
+                                          Value receiver)
+    {
+        return thread->make_object_value<BoundMethod>(callable, receiver);
+    }
+
     [[nodiscard]] static Value native_method_new(ThreadState *thread, Value cls,
                                                  Value callable, Value receiver)
     {
@@ -32,8 +38,7 @@ namespace cl
             return thread->set_pending_builtin_exception_string(
                 L"TypeError", L"instance must not be None");
         }
-        return thread->make_object_value<BoundMethod>(callable, receiver)
-            .raw_value();
+        return make_bound_method(thread, callable, receiver).raw_value();
     }
 
     [[nodiscard]] static Value native_method_repr(ThreadState *, Value self)
