@@ -61,6 +61,7 @@ namespace cl
         Property,
         BoundMethod,
         StaticMethod,
+        ClassMethod,
 
         Count,
     };

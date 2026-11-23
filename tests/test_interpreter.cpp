@@ -5403,6 +5403,69 @@ def read(obj):
     EXPECT_TRUE(cache.matches(receiver));
 }
 
+TEST(Interpreter,
+     classmethod_caches_inherited_lookup_and_binds_the_derived_class)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+def original(cls):
+    return 1
+
+def replacement(cls):
+    return 2
+
+class Base:
+    f = classmethod(original)
+
+class Derived(Base):
+    pass
+
+o = Derived()
+new_descriptor = classmethod(replacement)
+
+def read(obj):
+    return obj.f
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    auto reader = TValue<Function>::from_value_assumed(global(L"read"));
+    Value receiver = global(L"o");
+    Value derived = global(L"Derived");
+    auto &cache = reader.extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    auto check_read = [&](Value expected_function) {
+        Value result =
+            context.thread()->call_clovervm_function(reader, receiver);
+        ASSERT_TRUE(has_native_layout<BoundMethod>(result));
+        auto *bound = native_cast<BoundMethod>(result);
+        EXPECT_EQ(expected_function, bound->callable());
+        EXPECT_EQ(derived, bound->receiver());
+    };
+
+    EXPECT_FALSE(cache.matches(receiver));
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    check_read(global(L"original"));
+    ASSERT_TRUE(cache.matches(receiver));
+    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    check_read(global(L"original"));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    ASSERT_TRUE(
+        base->set_own_property(interned_string(L"f"), global(L"new_descriptor"))
+            .value());
+    EXPECT_FALSE(cache.matches(receiver));
+    check_read(global(L"replacement"));
+    EXPECT_TRUE(cache.matches(receiver));
+}
+
 TEST(Interpreter, instance_descriptor_getter_propagates_call_and_body_errors)
 {
     test::FileRunner run(LR"(

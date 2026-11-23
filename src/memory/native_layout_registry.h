@@ -28,6 +28,7 @@
 #include "jit/jit_code_object.h"
 #include "object_model/bound_method.h"
 #include "object_model/cell.h"
+#include "object_model/class_method.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -78,6 +79,7 @@
     V(Property);                                                               \
     V(BoundMethod);                                                            \
     V(StaticMethod);                                                           \
+    V(ClassMethod);                                                            \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

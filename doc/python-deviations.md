@@ -355,13 +355,14 @@ through the same `__get__`. Their bound methods share the `method` type exposed
 as `types.MethodType`. CPython uses separate types for C functions and methods.
 CloverVM's method repr uses the function's code name and the receiver's repr.
 
-### `staticmethod` supports explicit wrapping and attribute lookup
+### `staticmethod` and `classmethod` support explicit wrapping and attribute lookup
 
-Use `f = staticmethod(f)` inside the class body. The descriptor returns the
-wrapped value unchanged on both class and instance reads. Save the result of
+Use `f = staticmethod(f)` or `f = classmethod(f)` inside the class body. Static
+methods return the wrapped value unchanged. Class methods bind the lookup
+class, including a subclass that inherits the descriptor. Save the result of
 the read before calling it, since direct method-call instructions do not yet
-execute descriptor getters. Calling the wrapper itself, subclassing it,
-metadata forwarding, and decorator syntax are deferred.
+execute descriptor getters. Calling a static method wrapper itself, subclassing
+either wrapper, metadata forwarding, and decorator syntax are deferred.
 
 ### Descriptor protocol execution is partial
 
