@@ -20,6 +20,7 @@
 #include "import_system/module_global.h"
 #include "memory/heap_reclamation.h"
 #include "object_model/attr.h"
+#include "object_model/bound_method.h"
 #include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -5273,6 +5274,9 @@ class Descriptor:
 
 descriptor = Descriptor()
 
+def meta_method(self):
+    return self
+
 def read(obj):
     return obj.x
 
@@ -5322,6 +5326,144 @@ def read_dynamic(obj):
                              ->inline_caches.attribute_read_caches;
     ASSERT_EQ(1u, caches.size());
     EXPECT_EQ(nullptr, caches[0].lookup_validity_cell);
+
+    Value meta_method =
+        load_global_from_module_for_test(code, interned_string(L"meta_method"));
+    ASSERT_TRUE(meta.get()
+                    ->set_own_property(interned_string(L"x"), meta_method)
+                    .value());
+    for(const wchar_t *name: {L"read", L"read_dynamic"})
+    {
+        Value function =
+            load_global_from_module_for_test(code, interned_string(name));
+        Value result = context.thread()->call_clovervm_function(
+            TValue<Function>::from_value_assumed(function),
+            Value::from_oop(cls.get()));
+        ASSERT_TRUE(has_native_layout<BoundMethod>(result));
+        auto *bound = native_cast<BoundMethod>(result);
+        EXPECT_EQ(meta_method, bound->callable());
+        EXPECT_EQ(Value::from_oop(cls.get()), bound->receiver());
+    }
+}
+
+TEST(Interpreter,
+     staticmethod_reads_cache_the_getter_and_invalidate_on_replacement)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+def make_wrapper():
+    return staticmethod([41])
+
+class C:
+    value = make_wrapper()
+
+o = C()
+replacement = staticmethod(42)
+
+def read(obj):
+    return obj.value
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    auto reader = TValue<Function>::from_value_assumed(global(L"read"));
+    Value receiver = global(L"o");
+    auto &cache = reader.extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    const auto getter =
+        context.thread()
+            ->class_for_native_layout(NativeLayoutId::StaticMethod)
+            ->get_own_property(interned_string(L"__get__"));
+    auto read = [&] {
+        return context.thread()->call_clovervm_function(reader, receiver);
+    };
+
+    EXPECT_FALSE(cache.matches(receiver));
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value first = read();
+    ASSERT_TRUE(has_native_layout<List>(first));
+    ASSERT_TRUE(cache.matches(receiver));
+    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    EXPECT_EQ(getter, cache.plan.constant_or_getter);
+    EXPECT_EQ(first, read());
+
+    auto *cls = native_cast<ClassObject>(global(L"C"));
+    ASSERT_TRUE(
+        cls->set_own_property(interned_string(L"value"), global(L"replacement"))
+            .value());
+    EXPECT_FALSE(cache.matches(receiver));
+    EXPECT_EQ(Value::from_smi(42), read());
+    EXPECT_TRUE(cache.matches(receiver));
+}
+
+TEST(Interpreter,
+     classmethod_caches_inherited_lookup_and_binds_the_derived_class)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+def original(cls):
+    return 1
+
+def replacement(cls):
+    return 2
+
+class Base:
+    f = classmethod(original)
+
+class Derived(Base):
+    pass
+
+o = Derived()
+new_descriptor = classmethod(replacement)
+
+def read(obj):
+    return obj.f
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    auto reader = TValue<Function>::from_value_assumed(global(L"read"));
+    Value receiver = global(L"o");
+    Value derived = global(L"Derived");
+    auto &cache = reader.extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    auto check_read = [&](Value expected_function) {
+        Value result =
+            context.thread()->call_clovervm_function(reader, receiver);
+        ASSERT_TRUE(has_native_layout<BoundMethod>(result));
+        auto *bound = native_cast<BoundMethod>(result);
+        EXPECT_EQ(expected_function, bound->callable());
+        EXPECT_EQ(derived, bound->receiver());
+    };
+
+    EXPECT_FALSE(cache.matches(receiver));
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    check_read(global(L"original"));
+    ASSERT_TRUE(cache.matches(receiver));
+    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    check_read(global(L"original"));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    ASSERT_TRUE(
+        base->set_own_property(interned_string(L"f"), global(L"new_descriptor"))
+            .value());
+    EXPECT_FALSE(cache.matches(receiver));
+    check_read(global(L"replacement"));
+    EXPECT_TRUE(cache.matches(receiver));
 }
 
 TEST(Interpreter, instance_descriptor_getter_propagates_call_and_body_errors)

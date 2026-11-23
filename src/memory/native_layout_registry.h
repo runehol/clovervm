@@ -26,13 +26,16 @@
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
 #include "jit/jit_code_object.h"
+#include "object_model/bound_method.h"
 #include "object_model/cell.h"
+#include "object_model/class_method.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
 #include "object_model/overflow_slots.h"
 #include "object_model/shape.h"
 #include "object_model/slot_dict.h"
+#include "object_model/static_method.h"
 #include "object_model/validity_cell.h"
 #include "object_model/vm_array_backing.h"
 #include "runtime/exception_object.h"
@@ -74,6 +77,9 @@
     V(FileIOObject);                                                           \
     V(Slice);                                                                  \
     V(Property);                                                               \
+    V(BoundMethod);                                                            \
+    V(StaticMethod);                                                           \
+    V(ClassMethod);                                                            \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

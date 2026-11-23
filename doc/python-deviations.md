@@ -25,12 +25,8 @@ The current clovervm `with` implementation calls `__exit__` later through
 `CallSpecialMethod` on the manager. That means mutations between `__enter__` and
 block exit may affect which `__exit__` implementation runs.
 
-Reason: clovervm currently does not have a separate method-load primitive that
-preserves the callable plus receiver binding, and `LoadAttr` does not
-materialize bound method objects.
-
-To close: add either bound method objects, or a method-load representation that
-can preserve `(callable, self)` and be called later.
+To close: make the `with` lowering load and preserve the exit target before
+calling `__enter__`.
 
 ### Traceback argument to `__exit__`
 
@@ -352,24 +348,23 @@ cached calls, subclass overrides, aliases and every-safepoint reclamation.
 
 ## Methods And Attribute Access
 
-### `obj.method` does not produce a bound method object
+### Intrinsic functions share the Python function descriptor
 
-In Python, reading a function through an instance produces a bound method object:
+Python-defined and intrinsic functions use CloverVM's `function` type and bind
+through the same `__get__`. Their bound methods share the `method` type exposed
+as `types.MethodType`. CPython uses separate types for C functions and methods.
+CloverVM's method repr uses the function's code name and the receiver's repr.
+Bound methods compare their callables for equality and their receivers by
+identity. Bound methods are unhashable in CloverVM.
 
-```python
-f = obj.method
-f()
-```
+### `staticmethod` and `classmethod` support explicit wrapping and attribute lookup
 
-clovervm's `LoadAttr` currently loads the underlying attribute value. Binding is
-handled by `CallMethodAttrPositional` and `CallSpecialMethod`, which internally split a
-method call into `callable` and optional `self`.
-
-Reason: this is enough for direct method calls and avoids introducing bound
-method objects before the object model needs them.
-
-To close: implement bound method objects, or expose a first-class method-load
-operation with equivalent semantics where needed.
+Use `f = staticmethod(f)` or `f = classmethod(f)` inside the class body. Static
+methods return the wrapped value unchanged. Class methods bind the lookup
+class, including a subclass that inherits the descriptor. Save the result of
+the read before calling it, since direct method-call instructions do not yet
+execute descriptor getters. Calling a static method wrapper itself, subclassing
+either wrapper, metadata forwarding, and decorator syntax are deferred.
 
 ### Descriptor protocol execution is partial
 

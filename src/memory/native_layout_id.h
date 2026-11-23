@@ -59,6 +59,9 @@ namespace cl
         Cell,
         TestOnly,
         Property,
+        BoundMethod,
+        StaticMethod,
+        ClassMethod,
 
         Count,
     };

@@ -123,6 +123,9 @@ add_library(libclovervm_objects OBJECT
     builtin_types/hash.h
     object_model/cell.cpp
     object_model/cell.h
+    object_model/bound_method.cpp
+    object_model/class_method.cpp
+    object_model/static_method.cpp
     object_model/function.cpp
     object_model/function.h
     memory/global_heap.cpp

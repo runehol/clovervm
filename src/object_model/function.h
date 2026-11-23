@@ -196,6 +196,7 @@ namespace cl
     static_assert(std::is_trivially_destructible_v<Function>);
 
     BuiltinClassDefinition make_function_class(VirtualMachine *vm);
+    void install_function_class_methods(VirtualMachine *vm);
 
 };  // namespace cl
 
