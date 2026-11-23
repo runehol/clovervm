@@ -26,6 +26,7 @@
 #include "bytecode/code_object.h"
 #include "compiler/scope.h"
 #include "jit/jit_code_object.h"
+#include "object_model/bound_method.h"
 #include "object_model/cell.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -74,6 +75,7 @@
     V(FileIOObject);                                                           \
     V(Slice);                                                                  \
     V(Property);                                                               \
+    V(BoundMethod);                                                            \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

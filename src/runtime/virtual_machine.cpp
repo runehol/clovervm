@@ -37,6 +37,7 @@
 #include "import_system/native_extension_loader_internal.h"
 #include "jit/code_cache.h"
 #include "memory/heap_reclamation.h"
+#include "object_model/bound_method.h"
 #include "object_model/cell.h"
 #include "object_model/function.h"
 #include "object_model/instance.h"
@@ -1187,6 +1188,7 @@ namespace cl
         global_builtins_module_ = builtins_module;
         register_builtin_class(make_cell_class(this));
         register_builtin_class(make_function_class(this));
+        register_builtin_class(make_bound_method_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
@@ -1524,6 +1526,10 @@ namespace cl
                                     Value::from_oop(definition.cls));
         }
 
+        install_builtin_binding(interned_string(L"__clover_method_type__"),
+                                Value::from_oop(class_for_native_layout(
+                                    NativeLayoutId::BoundMethod)));
+
         install_builtin_binding(get_or_create_interned_string_value(L"True"),
                                 Value::True());
         install_builtin_binding(get_or_create_interned_string_value(L"False"),
@@ -1650,6 +1656,7 @@ namespace cl
                                        L"str",
                                        L"object",
                                        L"isinstance",
+                                       L"__clover_method_type__",
                                        L"TypeError",
                                        L"ValueError",
                                        L"UnicodeEncodeError",
@@ -1777,6 +1784,7 @@ namespace cl
         install_list_python_methods(this, implementation_module);
         install_tuple_python_methods(this, implementation_module);
         install_enumerate_python_methods(this, implementation_module);
+        install_bound_method_class_methods(this, implementation_module);
         install_property_python_methods(this, implementation_module);
         install_zip_python_methods(this, implementation_module);
         install_slice_python_methods(this, implementation_module);

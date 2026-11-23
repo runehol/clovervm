@@ -161,17 +161,9 @@ namespace cl
             L"AttributeError", L"object has no such attribute");
     }
 
-    static Value builtin_callable(ThreadState *thread, Value obj)
+    static Value builtin_callable(ThreadState *, Value obj)
     {
-        if(has_native_layout<Function>(obj) ||
-           has_native_layout<ClassObject>(obj))
-        {
-            return Value::True();
-        }
-        TValue<String> call_name = interned_string(L"__call__");
-        return resolve_special_method_read_descriptor(obj, call_name).is_found()
-                   ? Value::True()
-                   : Value::False();
+        return is_callable(obj) ? Value::True() : Value::False();
     }
 
     template <unsigned DigitBits>

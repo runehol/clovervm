@@ -15,7 +15,6 @@ assert types.FunctionType is sample_function.__class__
 assert types.LambdaType is types.FunctionType
 assert types.BuiltinFunctionType is types.FunctionType
 assert types.BuiltinMethodType is types.FunctionType
-assert types.MethodType is types.FunctionType
 assert isinstance(sample_function, types.FunctionType)
 assert isinstance(sample_function.__code__, types.CodeType)
 assert sample_function.__code__.__class__ is types.CodeType

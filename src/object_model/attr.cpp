@@ -632,6 +632,18 @@ namespace cl
             descriptor, class_object);
     }
 
+    bool is_callable(Value obj)
+    {
+        if(has_native_layout<Function>(obj) ||
+           has_native_layout<ClassObject>(obj))
+        {
+            return true;
+        }
+        return resolve_special_method_read_descriptor(
+                   obj, interned_string(L"__call__"))
+            .is_found();
+    }
+
     AttributeReadDescriptor
     resolve_reflected_priority_special_method_read_descriptor(
         Value receiver, Value alternate, TValue<String> name)

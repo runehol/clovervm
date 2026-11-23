@@ -33,6 +33,7 @@ namespace cl
                                 const AttributeReadDescriptor &read);
     AttributeReadDescriptor
     resolve_special_method_read_descriptor(Value obj, TValue<String> name);
+    bool is_callable(Value obj);
     AttributeReadDescriptor
     resolve_reflected_priority_special_method_read_descriptor(
         Value receiver, Value alternate, TValue<String> name);

@@ -680,6 +680,12 @@ def _clover_list_extend(builder, source):
     return None
 
 
+def _clover_method_call(self, /, *args, **kwargs):
+    if not isinstance(self, __clover_method_type__):
+        raise TypeError("method.__call__ expects a method receiver")
+    return self.__func__(self.__self__, *args, **kwargs)
+
+
 def _clover_property_new(cls, /, *args, **kwargs):
     return _clover_property_allocate(cls)
 

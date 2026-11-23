@@ -29,8 +29,8 @@ Reason: clovervm currently does not have a separate method-load primitive that
 preserves the callable plus receiver binding, and `LoadAttr` does not
 materialize bound method objects.
 
-To close: add either bound method objects, or a method-load representation that
-can preserve `(callable, self)` and be called later.
+To close: materialize the bound method during lookup, or add a method-load
+representation that can preserve `(callable, self)` and be called later.
 
 ### Traceback argument to `__exit__`
 
@@ -365,11 +365,12 @@ clovervm's `LoadAttr` currently loads the underlying attribute value. Binding is
 handled by `CallMethodAttrPositional` and `CallSpecialMethod`, which internally split a
 method call into `callable` and optional `self`.
 
-Reason: this is enough for direct method calls and avoids introducing bound
-method objects before the object model needs them.
+Explicit construction is available through `types.MethodType(callable, receiver)`.
+The wrapper forwards calls with the receiver as the first positional argument.
+Its repr uses a Python function's code name and the receiver's repr. Other
+callables are shown as `?`.
 
-To close: implement bound method objects, or expose a first-class method-load
-operation with equivalent semantics where needed.
+To close: materialize the bound method during attribute lookup.
 
 ### Descriptor protocol execution is partial
 

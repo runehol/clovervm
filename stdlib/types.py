@@ -6,6 +6,7 @@ Python code.
 """
 
 import sys
+from builtins import __clover_method_type__ as MethodType
 
 
 def _function_type_probe():
@@ -19,7 +20,6 @@ LambdaType = FunctionType
 CodeType = _function_type_probe.__code__.__class__
 BuiltinFunctionType = FunctionType
 BuiltinMethodType = FunctionType
-MethodType = FunctionType
 ModuleType = sys.__class__
 NoneType = None.__class__
 
