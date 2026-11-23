@@ -373,31 +373,16 @@ operation with equivalent semantics where needed.
 
 ### Descriptor protocol execution is partial
 
-Python invokes descriptor methods such as `__get__`, `__set__`, `__delete__`,
-and `__set_name__` at specific attribute-access and class-creation points.
-clovervm already classifies descriptor-shaped values so lookup precedence and
-cache invalidation can account for them, but descriptor execution is not fully
-wired through the interpreter.
+Attribute bytecodes and the attribute built-ins execute plain-function
+`__get__`, `__set__`, and `__delete__` hooks. The remaining gaps include
+arbitrary callable hooks, descriptor-aware method calls, and class creation
+notifications through `__set_name__`. Class creation still rejects values that
+require that notification. See [descriptor execution](descriptor-execution.md).
 
-Observable consequences include:
-
-- loading or calling an attribute that requires descriptor `__get__` dispatch
-  raises an internal unsupported-descriptor error instead of invoking `__get__`;
-- class creation rejects values that require `__set_name__` notification instead
-  of calling `descriptor.__set_name__(owner, name)`.
-- native-originated attribute reads and method calls can still reach an unchecked
-  descriptor loader and abort the process when a Python subclass supplies a
-  descriptor override. The shared boundary remains an
-  [open design issue](descriptor-execution.md#open-attribute-access-initiated-by-native-code);
-  it needs to be addressed across native callers rather than patched per class.
-
-Reason: the lookup planner needs descriptor awareness for correct precedence and
-cache guards, but invoking arbitrary Python code from those descriptor paths is a
-separate interpreter-dispatch slice.
-
-To close: route descriptor get/set/delete/name notifications through explicit
-fallible interpreter paths with correct binding, exception propagation, and
-cache behavior.
+Internal native reads and method calls can still reach an unchecked loader
+when a Python subclass supplies a descriptor override. The
+[open native boundary](descriptor-execution.md#open-attribute-access-initiated-by-native-code)
+covers those callers.
 
 ## Truthiness
 

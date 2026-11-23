@@ -1,6 +1,5 @@
 #include "object_model/constructor_thunk.h"
 
-#include "builtin_types/io_base.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object_builder.h"
@@ -440,14 +439,15 @@ namespace cl
             Optional<TValue<String>>::none()));
     }
 
-    static Expected<CodeObject *> make_io_base_allocator_code()
+    static Expected<CodeObject *>
+    make_builtin_allocator_code(IntrinsicFunction1 allocator)
     {
         CodeObjectBuilder code(nullptr, active_vm()->global_builtins_module(),
                                make_internal_raw<Scope>(nullptr),
-                               interned_string(L"<io_base_allocator>"));
+                               interned_string(L"<builtin_allocator>"));
         code.configure_positional_function(1);
         NativeFunctionTarget target{};
-        target.fixed1 = allocate_io_base;
+        target.fixed1 = allocator;
         uint32_t idx = CL_TRY(code.add_native_function_target(target));
         CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic1,
                                         uint8_t(idx)));
@@ -455,20 +455,20 @@ namespace cl
         return code.finalize();
     }
 
-    Expected<TValue<Function>>
-    make_io_base_constructor_thunk_function(ClassObject *cls,
-                                            TValue<Function> init)
+    Expected<TValue<Function>> make_allocating_constructor_thunk_function(
+        ClassObject *cls, TValue<Function> init, IntrinsicFunction1 allocator)
     {
         VirtualMachine *vm = active_vm();
-        CodeObjectBuilder code(nullptr, vm->global_builtins_module(),
-                               make_internal_raw<Scope>(nullptr),
-                               interned_string(L"<io_base_constructor_thunk>"));
+        CodeObjectBuilder code(
+            nullptr, vm->global_builtins_module(),
+            make_internal_raw<Scope>(nullptr),
+            interned_string(L"<allocating_constructor_thunk>"));
         code.n_parameters() = 2;
         code.parameter_flags() = FunctionParameterFlags::HasVarArgs |
                                  FunctionParameterFlags::HasKwArgs;
         code.reserve_parameter_slots_and_frame_header();
         uint32_t cls_idx = CL_TRY(code.allocate_constant(Value::from_oop(cls)));
-        CodeObject *allocate = CL_TRY(make_io_base_allocator_code());
+        CodeObject *allocate = CL_TRY(make_builtin_allocator_code(allocator));
         uint32_t allocate_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(allocate)));
         {

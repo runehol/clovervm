@@ -4,12 +4,42 @@
 #include "bytecode/bytecode.h"
 #include "bytecode/code_object_builder.h"
 #include "compiler/scope.h"
+#include "object_model/attribute_descriptor.h"
 #include "object_model/function.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 
 namespace cl
 {
+    Expected<void>
+    execute_descriptor_mutation(ThreadState &thread,
+                                const AttributeMutationPlan &plan,
+                                Value receiver, Value rhs)
+    {
+        assert(plan.is_descriptor_set() || plan.is_descriptor_delete());
+        if(!has_native_layout<Function>(plan.descriptor_hook))
+        {
+            return Expected<void>::raise_exception(
+                L"TypeError",
+                plan.is_descriptor_set()
+                    ? L"descriptor __set__ requires a plain function"
+                    : L"descriptor __delete__ requires a plain function");
+        }
+
+        auto hook = TValue<Function>::from_value_assumed(plan.descriptor_hook);
+        Value result = plan.is_descriptor_set()
+                           ? thread.call_clovervm_function(
+                                 hook, plan.descriptor, receiver, rhs)
+                           : thread.call_clovervm_function(
+                                 hook, plan.descriptor, receiver);
+        if(result.is_exception_marker())
+        {
+            return Expected<void>::propagate_exception();
+        }
+        return Expected<void>::ok();
+    }
+
     Expected<TValue<Function>>
     make_hash_value_helper_function(VirtualMachine *vm)
     {

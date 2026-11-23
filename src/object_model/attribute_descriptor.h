@@ -1,6 +1,7 @@
 #ifndef CL_ATTRIBUTE_DESCRIPTOR_H
 #define CL_ATTRIBUTE_DESCRIPTOR_H
 
+#include "object_model/function_call_adaptation.h"
 #include "object_model/shape_descriptor.h"
 #include "object_model/value.h"
 #include <cassert>
@@ -54,6 +55,9 @@ namespace cl
         AddOwnProperty,
         DeleteOwnProperty,
         ChangeClass,
+        DescriptorSet,
+        DescriptorDelete,
+        ExactPropertySet,
     };
 
     enum class AttributeReadPlanPath : uint8_t
@@ -71,6 +75,7 @@ namespace cl
         BindFunctionReceiver,
         DataDescriptorGet,
         NonDataDescriptorGet,
+        ExactPropertyGet,
     };
 
     enum class AttributeCacheBlocker : uint16_t
@@ -120,24 +125,40 @@ namespace cl
     public:
         AttributeReadPlanPath path;
         AttributeReadPlanKind kind;
+        FunctionCallAdaptation adaptation;
         const Object *storage_owner;
         StorageLocation storage_location;
         Value constant_or_getter;  // Interpreted according to kind.
+
+        constexpr bool is_data_descriptor_get() const
+        {
+            return kind == AttributeReadPlanKind::DataDescriptorGet ||
+                   kind == AttributeReadPlanKind::ExactPropertyGet;
+        }
+
+        constexpr bool is_descriptor_get() const
+        {
+            return is_data_descriptor_get() ||
+                   kind == AttributeReadPlanKind::NonDataDescriptorGet;
+        }
 
         static AttributeReadPlan from_storage(AttributeReadPlanPath path,
                                               AttributeReadPlanKind kind,
                                               const Object *storage_owner,
                                               StorageLocation location)
         {
-            return AttributeReadPlan{path, kind, storage_owner, location,
-                                     Value::not_present()};
+            return AttributeReadPlan{
+                path,          kind,     FunctionCallAdaptation::FixedArity,
+                storage_owner, location, Value::not_present()};
         }
 
         static AttributeReadPlan constant(Value value)
         {
             return AttributeReadPlan{AttributeReadPlanPath::ReceiverOwnProperty,
                                      AttributeReadPlanKind::ConstantValue,
-                                     nullptr, StorageLocation::not_found(),
+                                     FunctionCallAdaptation::FixedArity,
+                                     nullptr,
+                                     StorageLocation::not_found(),
                                      value};
         }
     };
@@ -193,10 +214,13 @@ namespace cl
         {
             Object *storage_owner;
             Shape *next_shape;
+            Value descriptor;
         };
         int32_t physical_idx;
         StorageKind storage_kind;
         AttributeMutationPlanKind kind;
+        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        Value descriptor_hook = Value::not_present();
 
         static AttributeMutationPlan store_existing(Object *storage_owner,
                                                     StorageLocation location)
@@ -242,6 +266,22 @@ namespace cl
             return plan;
         }
 
+        static AttributeMutationPlan
+        descriptor_mutation(AttributeMutationPlanKind kind, Value descriptor,
+                            Value hook)
+        {
+            assert(kind == AttributeMutationPlanKind::DescriptorSet ||
+                   kind == AttributeMutationPlanKind::DescriptorDelete ||
+                   kind == AttributeMutationPlanKind::ExactPropertySet);
+            AttributeMutationPlan plan;
+            plan.descriptor = descriptor;
+            plan.physical_idx = -1;
+            plan.storage_kind = StorageKind::Inline;
+            plan.kind = kind;
+            plan.descriptor_hook = hook;
+            return plan;
+        }
+
         StorageLocation storage_location() const
         {
             return StorageLocation{physical_idx, storage_kind};
@@ -261,9 +301,20 @@ namespace cl
         {
             return kind == AttributeMutationPlanKind::ChangeClass;
         }
+
+        bool is_descriptor_set() const
+        {
+            return kind == AttributeMutationPlanKind::DescriptorSet ||
+                   kind == AttributeMutationPlanKind::ExactPropertySet;
+        }
+
+        bool is_descriptor_delete() const
+        {
+            return kind == AttributeMutationPlanKind::DescriptorDelete;
+        }
     };
 
-    static_assert(sizeof(AttributeMutationPlan) == 16,
+    static_assert(sizeof(AttributeMutationPlan) == 24,
                   "AttributeMutationPlan should stay compact");
 
     class AttributeWriteDescriptor

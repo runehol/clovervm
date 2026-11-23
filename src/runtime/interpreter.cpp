@@ -7,6 +7,7 @@
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
 #include "builtin_types/list.h"
+#include "builtin_types/property.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/str.h"
@@ -19,6 +20,7 @@
 #include "jit/jit_code_object.h"
 #include "jit/jit_compiler.h"
 #include "jit/jit_config.h"
+#include "memory/scoped_root.h"
 #include "object_model/attr.h"
 #include "object_model/cell.h"
 #include "object_model/class_object.h"
@@ -35,6 +37,7 @@
 #include "runtime/operator_frame.h"
 #include "runtime/operator_walk.h"
 #include "runtime/os_error.h"
+#include "runtime/protocol_helper_functions.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -2723,6 +2726,7 @@ namespace cl
 
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::ExactPropertyGet:
                 value_out = Value::not_present();
                 return AttributeLoadPlanStatus::RequiresDescriptorDispatch;
         }
@@ -2774,6 +2778,62 @@ namespace cl
         return true;
     }
 
+    NOINLINE static INTERP_CC Value op_load_attr_descriptor_hit(PARAMS)
+    {
+        constexpr uint32_t call_instr_len = 4;
+        Value receiver = fp[int8_t(pc[1])];
+        const AttributeReadPlan &plan =
+            code_object->inline_caches.attribute_read_caches[pc[3]].plan;
+        assert(plan.path == AttributeReadPlanPath::InstanceClassChain);
+        assert(plan.storage_owner != nullptr);
+
+        int32_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        Value descriptor =
+            plan.storage_owner->read_storage_location(plan.storage_location);
+        Value getter = plan.kind == AttributeReadPlanKind::ExactPropertyGet
+                           ? native_cast<Property>(descriptor)->fget.raw_value()
+                           : Value::None();
+        DispatchTableEntry jit_entry;
+        if(!getter.is_none())
+        {
+            fp[first_arg_reg] = receiver;
+            bool has_exception;
+            {
+                auto entry = enter_uncached_resolved_positional_call(
+                    thread, fp, pc, dispatch, code_object, accumulator, getter,
+                    first_arg_reg, 1, call_instr_len);
+                has_exception = entry.has_exception();
+                jit_entry = has_exception ? nullptr : entry.value();
+            }
+            if(unlikely(has_exception))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+        }
+        else
+        {
+            fp[first_arg_reg] = descriptor;
+            fp[first_arg_reg - 1] = receiver;
+            fp[first_arg_reg - 2] =
+                Value::from_oop(thread->class_of_value(receiver));
+            jit_entry = enter_function_frame_from_positional_args(
+                accumulator, thread, fp, pc, dispatch, code_object,
+                TValue<Function>::from_value_assumed(plan.constant_or_getter),
+                first_arg_reg, 3, call_instr_len, plan.adaptation);
+        }
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static INTERP_CC Value op_load_attr_cache_miss(PARAMS)
     {
         START(4);
@@ -2791,10 +2851,6 @@ namespace cl
         {
             MUSTTAIL return attribute_error(ARGS);
         }
-        if(descriptor.is_cacheable())
-        {
-            cache.populate(receiver, descriptor);
-        }
         AttributeLoadPlanStatus plan_status =
             load_attr_from_plan_inline(receiver, descriptor.plan, accumulator);
         if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
@@ -2808,47 +2864,43 @@ namespace cl
         if(unlikely(plan_status ==
                     AttributeLoadPlanStatus::RequiresDescriptorDispatch))
         {
-            Value getter = descriptor.plan.constant_or_getter;
-            if(getter.is_not_present())
+            if(descriptor.is_cacheable())
             {
-                MUSTTAIL return descriptor_dispatch_error(ARGS);
-            }
-            assert(has_native_layout<Function>(getter));
-
-            Value binding_object = receiver;
-            Value owner;
-            switch(descriptor.plan.path)
-            {
-                case AttributeReadPlanPath::InstanceClassChain:
-                case AttributeReadPlanPath::MetaclassChain:
-                    owner = Value::from_oop(thread->class_of_value(receiver));
-                    break;
-                case AttributeReadPlanPath::ClassObjectChain:
-                    binding_object = Value::None();
-                    owner = receiver;
-                    break;
-                case AttributeReadPlanPath::ReceiverOwnProperty:
-                    assert(false &&
-                           "own slot cannot require descriptor dispatch");
-                    __builtin_unreachable();
+                auto function = TValue<Function>::from_value_assumed(
+                    descriptor.plan.constant_or_getter);
+                if(!function.extract()->accepts_positional_only_call_arity(3))
+                {
+                    MUSTTAIL return wrong_arity_error(ARGS);
+                }
+                descriptor.plan.adaptation =
+                    function_call_adaptation_for_positional_call(function, 3);
+                cache.populate(receiver, descriptor);
+                MUSTTAIL return op_load_attr_descriptor_hit(ARGS);
             }
 
-            int32_t first_arg_reg =
-                code_object->get_first_free_arg_encoded_reg();
-            fp[first_arg_reg] = descriptor.lookup_value;
-            fp[first_arg_reg - 1] = binding_object;
-            fp[first_arg_reg - 2] = owner;
             DispatchTableEntry jit_entry = nullptr;
             bool has_exception;
             {
-                // Destroy the nontrivial Expected before tail dispatch.
-                auto entry = enter_uncached_resolved_positional_call(
-                    thread, fp, pc, dispatch, code_object, accumulator, getter,
-                    first_arg_reg, 3, instr_len);
-                has_exception = entry.has_exception();
+                // Destroy the nontrivial Expected values before tail dispatch.
+                auto prepared =
+                    prepare_descriptor_get_call(receiver, descriptor);
+                has_exception = prepared.has_exception();
                 if(!has_exception)
                 {
-                    jit_entry = entry.value();
+                    const DescriptorGetCall &call = prepared.value();
+                    int32_t first_arg_reg =
+                        code_object->get_first_free_arg_encoded_reg();
+                    fp[first_arg_reg] = call.descriptor;
+                    fp[first_arg_reg - 1] = call.object;
+                    fp[first_arg_reg - 2] = call.owner;
+                    auto entry = enter_uncached_resolved_positional_call(
+                        thread, fp, pc, dispatch, code_object, accumulator,
+                        call.getter.raw_value(), first_arg_reg, 3, instr_len);
+                    has_exception = entry.has_exception();
+                    if(!has_exception)
+                    {
+                        jit_entry = entry.value();
+                    }
                 }
             }
             if(unlikely(has_exception))
@@ -2868,8 +2920,50 @@ namespace cl
             START(0);
             COMPLETE();
         }
+        if(descriptor.is_cacheable())
+        {
+            cache.populate(receiver, descriptor);
+        }
         COMPLETE();
     }
+
+    [[nodiscard]] NOINLINE static Expected<void> invoke_descriptor_mutation(
+        ThreadState *thread, Value *fp, const uint8_t *&pc,
+        CodeObject *&code_object, Value &accumulator,
+        const AttributeMutationPlan &plan, Value receiver)
+    {
+        const uint32_t mutation_offset =
+            code_object->offset_for_interpreted_pc(pc);
+        // Keep caller state live independently of the nested interpreter's
+        // safepoint publication.
+        ScopedRoot code_root(*thread, HeapReferenceSlot(&code_object));
+        ScopedRoot accumulator_root(*thread, HeapReferenceSlot(&accumulator));
+        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
+        auto result = [&]() -> Expected<void> {
+            if(plan.kind == AttributeMutationPlanKind::ExactPropertySet)
+            {
+                Value setter =
+                    native_cast<Property>(plan.descriptor)->fset.raw_value();
+                if(has_native_layout<Function>(setter))
+                {
+                    Value value = thread->call_clovervm_function(
+                        TValue<Function>::from_value_assumed(setter), receiver,
+                        accumulator);
+                    if(value.is_exception_marker())
+                    {
+                        return Expected<void>::propagate_exception();
+                    }
+                    return Expected<void>::ok();
+                }
+            }
+            return execute_descriptor_mutation(*thread, plan, receiver,
+                                               accumulator);
+        }();
+        pc = code_object->interpreted_pc_for_offset(mutation_offset);
+        return result;
+    }
+
+    NOINLINE static INTERP_CC Value op_store_attr_cached_slow(PARAMS);
 
     NOINLINE static INTERP_CC Value op_store_attr_cache_miss(PARAMS)
     {
@@ -2886,6 +2980,24 @@ namespace cl
             resolve_attr_write_descriptor(receiver, attr_name);
         if(descriptor.is_found())
         {
+            if(descriptor.plan.is_descriptor_set())
+            {
+                if(descriptor.is_cacheable())
+                {
+                    auto setter = TValue<Function>::from_value_assumed(
+                        descriptor.plan.descriptor_hook);
+                    if(!setter.extract()->accepts_positional_only_call_arity(3))
+                    {
+                        MUSTTAIL return wrong_arity_error(ARGS);
+                    }
+                    cache.populate(receiver, descriptor);
+                    MUSTTAIL return op_store_attr_cached_slow(ARGS);
+                }
+                INTERP_TRY(invoke_descriptor_mutation(
+                    thread, fp, pc, code_object, accumulator, descriptor.plan,
+                    receiver));
+                COMPLETE();
+            }
             if(descriptor.is_cacheable())
             {
                 cache.populate(receiver, descriptor);
@@ -2917,7 +3029,8 @@ namespace cl
         {
             Object *receiver_object = receiver.get_ptr<Object>();
             Shape *receiver_shape = receiver_object->get_shape();
-            if(receiver_shape != nullptr &&
+            if(attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
+               receiver_shape != nullptr &&
                !receiver_shape->has_flag(ShapeFlag::IsClassObject) &&
                receiver_shape->allows_attribute_add_delete())
             {
@@ -2968,6 +3081,13 @@ namespace cl
             if(descriptor.is_cacheable())
             {
                 cache.populate(receiver, descriptor);
+            }
+            if(descriptor.plan.is_descriptor_delete())
+            {
+                INTERP_TRY(invoke_descriptor_mutation(
+                    thread, fp, pc, code_object, accumulator, descriptor.plan,
+                    receiver));
+                COMPLETE();
             }
             delete_attr_from_plan(receiver, descriptor.plan);
             COMPLETE();
@@ -3332,7 +3452,7 @@ namespace cl
         if(unlikely(plan_status ==
                     AttributeLoadPlanStatus::RequiresDescriptorDispatch))
         {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
+            MUSTTAIL return op_load_attr_descriptor_hit(ARGS);
         }
         if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
         {
@@ -3379,6 +3499,13 @@ namespace cl
             }
             COMPLETE();
         }
+        if(cache.plan.is_descriptor_set())
+        {
+            INTERP_TRY(invoke_descriptor_mutation(thread, fp, pc, code_object,
+                                                  accumulator, cache.plan,
+                                                  receiver));
+            COMPLETE();
+        }
         MUSTTAIL return op_store_attr_cache_miss(ARGS);
     }
 
@@ -3402,6 +3529,21 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_del_attr_cached_slow(PARAMS)
+    {
+        START(4);
+        Value receiver = fp[int8_t(pc[1])];
+        const AttributeMutationPlan &plan =
+            code_object->inline_caches.attribute_mutation_caches[pc[3]].plan;
+        if(plan.is_descriptor_delete())
+        {
+            INTERP_TRY(invoke_descriptor_mutation(thread, fp, pc, code_object,
+                                                  accumulator, plan, receiver));
+            COMPLETE();
+        }
+        MUSTTAIL return op_del_attr_cache_miss(ARGS);
+    }
+
     static INTERP_CC Value op_del_attr(PARAMS)
     {
         START(4);
@@ -3416,7 +3558,7 @@ namespace cl
         }
         if(unlikely(!cache.plan.is_delete_own_property()))
         {
-            MUSTTAIL return op_del_attr_cache_miss(ARGS);
+            MUSTTAIL return op_del_attr_cached_slow(ARGS);
         }
         delete_attr_delete_own_property_inline_fast(receiver, cache.plan);
         COMPLETE();

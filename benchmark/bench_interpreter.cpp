@@ -292,22 +292,25 @@ namespace
                            std::istreambuf_iterator<char>());
     }
 
-    std::wstring make_clover_source(const char *relative_path, int64_t n)
+    std::wstring make_clover_source(const char *relative_path, int64_t n,
+                                    const char *entry)
     {
         std::string source = load_program_source(relative_path);
-        source += "\nrun(" + std::to_string(n) + ")\n";
+        source += "\n" + std::string(entry) + "(" + std::to_string(n) + ")\n";
         return std::wstring(source.begin(), source.end());
     }
 
     class CloverProgram
     {
     public:
-        CloverProgram(const char *relative_path, int64_t n)
+        CloverProgram(const char *relative_path, int64_t n,
+                      const char *entry = "run")
             : thread_(vm_.get_default_thread()),
               context_(std::string(relative_path) + "/" + std::to_string(n))
         {
             Expected<CodeObject *> compilation = thread_->compile(
-                make_clover_source(relative_path, n).c_str(), StartRule::File);
+                make_clover_source(relative_path, n, entry).c_str(),
+                StartRule::File);
             if(compilation.has_exception())
             {
                 throw std::runtime_error(
@@ -1078,6 +1081,55 @@ static void BM_InstanceAttributeWrite(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_InstanceAttributeWrite, CloverProgram)
     ->Name("BM_InstanceAttributeWrite")
+    ->Arg(100000);
+
+static void BM_MatchedAttribute(benchmark::State &state, const char *entry)
+{
+    const int64_t n = state.range(0);
+    const char *path = "benchmark/descriptor_attributes.py";
+    try
+    {
+        CloverProgram program(path, n, entry);
+        verify_benchmark_result(entry, n, n, program.run());
+        for(auto _: state)
+        {
+            benchmark::DoNotOptimize(program.run());
+        }
+        state.SetItemsProcessed(state.iterations() * n);
+    }
+    catch(const std::exception &err)
+    {
+        state.SkipWithError(err.what());
+    }
+}
+BENCHMARK_CAPTURE(BM_MatchedAttribute, ReadSlot, "read_slot")
+    ->Name("BM_MatchedAttributeRead/Slot")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, ReadProperty, "read_property")
+    ->Name("BM_MatchedAttributeRead/Property")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, ReadDescriptor, "read_descriptor")
+    ->Name("BM_MatchedAttributeRead/PythonDescriptor")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, WriteSlot, "write_slot")
+    ->Name("BM_MatchedAttributeWrite/Slot")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, WriteProperty, "write_property")
+    ->Name("BM_MatchedAttributeWrite/Property")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, WriteDescriptor, "write_descriptor")
+    ->Name("BM_MatchedAttributeWrite/PythonDescriptor")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, DeleteSlot, "reset_and_delete_slot")
+    ->Name("BM_MatchedAttributeResetAndDelete/Slot")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, DeleteProperty,
+                  "reset_and_delete_property")
+    ->Name("BM_MatchedAttributeResetAndDelete/Property")
+    ->Arg(100000);
+BENCHMARK_CAPTURE(BM_MatchedAttribute, DeleteDescriptor,
+                  "reset_and_delete_descriptor")
+    ->Name("BM_MatchedAttributeResetAndDelete/PythonDescriptor")
     ->Arg(100000);
 
 template <typename Program>

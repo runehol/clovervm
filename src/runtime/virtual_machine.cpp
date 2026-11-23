@@ -20,6 +20,7 @@
 #include "builtin_types/module_spec_object.h"
 #include "builtin_types/none_type.h"
 #include "builtin_types/not_implemented_type.h"
+#include "builtin_types/property.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_iterator.h"
@@ -1190,6 +1191,7 @@ namespace cl
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
         register_builtin_class(make_enumerate_class(this));
+        register_builtin_class(make_property_class(this));
         register_builtin_class(make_zip_class(this));
         register_builtin_class(make_string_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
@@ -1633,6 +1635,7 @@ namespace cl
         install_bytes_helpers(this, implementation_module);
         install_str_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
+        install_property_helpers(this, implementation_module);
         install_zip_helpers(this, implementation_module);
 
         // Seed dependencies explicitly: empty __builtins__ disables public
@@ -1774,6 +1777,7 @@ namespace cl
         install_list_python_methods(this, implementation_module);
         install_tuple_python_methods(this, implementation_module);
         install_enumerate_python_methods(this, implementation_module);
+        install_property_python_methods(this, implementation_module);
         install_zip_python_methods(this, implementation_module);
         install_slice_python_methods(this, implementation_module);
 

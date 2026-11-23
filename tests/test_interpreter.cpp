@@ -4198,6 +4198,1070 @@ assert Base.x is Base
     EXPECT_FALSE(run.return_value.is_exception_marker());
 }
 
+TEST(Interpreter, cached_instance_descriptor_getter_uses_current_receiver)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+class Hooks:
+    def __get__(self, obj, owner, delta=3):
+        assert self is descriptor
+        assert owner is Child
+        return obj.marker + delta
+
+class Descriptor(Hooks):
+    pass
+
+class Bad:
+    def __get__(self, obj, owner, *, required):
+        return required
+
+class Fallback:
+    x = 61
+
+class Base(Fallback):
+    pass
+
+class Child(Base):
+    pass
+
+descriptor = Descriptor()
+bad = Bad()
+Base.x = descriptor
+first = Child()
+second = Child()
+first.marker = 20
+second.marker = 39
+
+def read(obj):
+    return obj.x
+
+def read_bad(obj):
+    try:
+        return obj.x
+    except TypeError as error:
+        return str(error) == "wrong number of arguments"
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    Owned<TValue<Function>> reader{
+        TValue<Function>::from_value_assumed(global(L"read"))};
+    Owned<Value> first{global(L"first")};
+    Owned<Value> second{global(L"second")};
+    auto &cache = reader.value()
+                      .extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    auto read = [&](Value receiver) {
+        return context.thread()->call_clovervm_function(reader.value(),
+                                                        receiver);
+    };
+
+    auto *descriptor_type = native_cast<ClassObject>(global(L"Descriptor"));
+    descriptor_type->freeze();
+    EXPECT_EQ(Value::from_smi(23), read(first.value()));
+    EXPECT_EQ(nullptr,
+              cache.lookup_validity_cell);  // __class__ can still change.
+
+    auto freeze_object = [](Object *object) {
+        Shape *shape = object->get_shape();
+        object->set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
+    };
+    freeze_object(global(L"descriptor").get_ptr<Object>());
+    EXPECT_EQ(Value::from_smi(23), read(first.value()));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);  // Hooks is still mutable.
+
+    native_cast<ClassObject>(global(L"Hooks"))->freeze();
+    EXPECT_EQ(Value::from_smi(23), read(first.value()));
+    ASSERT_TRUE(cache.matches(second.value()));
+    ASSERT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    EXPECT_EQ(FunctionCallAdaptation::Defaultable, cache.plan.adaptation);
+    auto *cell = cache.lookup_validity_cell;
+    EXPECT_EQ(Value::from_smi(42), read(second.value()));
+    EXPECT_EQ(cell, cache.lookup_validity_cell);
+
+    auto name = interned_string(L"x");
+    auto *first_object = first.value().get_ptr<Object>();
+    ASSERT_TRUE(
+        first_object->set_own_property(name, Value::from_smi(9)).value());
+    EXPECT_EQ(Value::from_smi(9), read(first.value()));
+    EXPECT_EQ(Value::from_smi(42), read(second.value()));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    ASSERT_TRUE(base->set_own_property(name, Value::from_smi(57)).value());
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::from_smi(57), read(second.value()));
+    ASSERT_TRUE(base->delete_own_property(name));
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::from_smi(61), read(second.value()));
+
+    native_cast<ClassObject>(global(L"Bad"))->freeze();
+    Owned<Value> bad{global(L"bad")};
+    freeze_object(bad.value().get_ptr<Object>());
+    ASSERT_TRUE(base->set_own_property(name, bad.value()).value());
+    Owned<TValue<Function>> bad_reader{
+        TValue<Function>::from_value_assumed(global(L"read_bad"))};
+    EXPECT_EQ(Value::True(), context.thread()->call_clovervm_function(
+                                 bad_reader.value(), second.value()));
+    EXPECT_EQ(nullptr, bad_reader.value()
+                           .extract()
+                           ->code_object.extract()
+                           ->inline_caches.attribute_read_caches.at(0)
+                           .lookup_validity_cell);
+}
+
+TEST(Interpreter, builtin_property_reads_and_accessor_copies)
+{
+    test::FileRunner run(LR"(
+class Base:
+    def get_value(self):
+        "original getter"
+        return self.stored
+
+    def set_value(self, incoming):
+        self.stored = incoming
+        return 123
+
+    def delete_value(self):
+        del self.stored
+        return 456
+
+    value = property(get_value)
+    value = value.setter(set_value)
+    value = value.deleter(delete_value)
+
+class Child(Base):
+    pass
+
+p = Base.value
+assert Child.value is p
+assert p.__get__(None, Base) is p
+assert p.__doc__ == "original getter"
+assert p.fget is not None and p.fset is not None and p.fdel is not None
+
+obj = Child()
+assert p.__set__(obj, 41) is None
+assert obj.value == 41
+assert p.__delete__(obj) is None
+try:
+    obj.stored
+except AttributeError:
+    pass
+else:
+    assert False
+
+def replacement(obj):
+    "replacement getter"
+    return 42
+
+copy = p.getter(replacement)
+assert copy is not p
+assert copy.fget is replacement and copy.fset is p.fset and copy.fdel is p.fdel
+assert copy.__doc__ == "replacement getter"
+assert p.getter(None).fget is p.fget
+assert p.__doc__ == "original getter"
+
+explicit = property(fget=p.fget, doc="explicit")
+assert explicit.getter(replacement).__doc__ == "explicit"
+try:
+    p.fget = replacement
+except AttributeError:
+    pass
+else:
+    assert False
+
+class DerivedProperty(property):
+    pass
+
+derived = DerivedProperty(replacement)
+assert derived.getter(p.fget).__class__ is DerivedProperty
+assert derived.__get__(obj) == 42
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, builtin_property_observes_reinitialization_after_cache_hit)
+{
+    test::FileRunner run(LR"(
+class C:
+    pass
+
+first = C()
+second = C()
+first.x = 100
+second.x = 200
+
+def get(obj):
+    return 1 if obj is first else 2
+
+class Accessor:
+    def __call__(self, obj):
+        return 3 if obj is first else 4
+
+p = property(get)
+C.x = p
+
+def read(obj):
+    return obj.x
+
+assert read(first) == 1
+assert read(second) == 2
+p.__init__(fget=Accessor())
+assert read(first) == 3
+assert read(second) == 4
+assert C.x is p
+
+p.__init__()
+try:
+    read(first)
+except AttributeError:
+    pass
+else:
+    assert False
+
+for name in ("set", "delete"):
+    try:
+        if name == "set":
+            p.__set__(first, 0)
+        else:
+            p.__delete__(first)
+    except AttributeError:
+        pass
+    else:
+        assert False
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, exact_property_load_attr_plan_preserves_lookup)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class C:
+    pass
+
+class P(property):
+    def __get__(self, obj, owner):
+        return 55
+
+def get(obj, delta=3):
+    return obj.marker + delta
+
+def read(obj):
+    return obj.x
+
+first = C()
+second = C()
+first.x = 70
+second.x = 80
+first.marker = 39
+second.marker = 40
+
+p = property(get)
+C.x = p
+assert read(first) == 42
+assert read(second) == 43
+C.x = P(get)
+assert read(first) == 55
+C.x = p
+assert read(first) == 42
+assert read(second) == 43
+assert C.x is p
+assert getattr(second, "x") == 43
+)");
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+
+    Value receiver =
+        load_global_from_module_for_test(code, interned_string(L"second"));
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(receiver, interned_string(L"x"));
+    EXPECT_EQ(AttributeReadPlanKind::ExactPropertyGet, descriptor.plan.kind);
+    Value cls = load_global_from_module_for_test(code, interned_string(L"C"));
+    EXPECT_EQ(
+        AttributeReadPlanKind::DataDescriptorGet,
+        resolve_attr_read_descriptor(cls, interned_string(L"x")).plan.kind);
+
+    Value read =
+        load_global_from_module_for_test(code, interned_string(L"read"));
+    ASSERT_TRUE(has_native_layout<Function>(read));
+    const AttributeReadInlineCache &cache =
+        native_cast<Function>(read)
+            ->code_object.extract()
+            ->inline_caches.attribute_read_caches.at(0);
+    EXPECT_TRUE(cache.matches(receiver));
+    EXPECT_EQ(AttributeReadPlanKind::ExactPropertyGet, cache.plan.kind);
+}
+
+TEST(Interpreter, property_subclass_reinitialization_restores_deleted_doc)
+{
+    test::FileRunner run(LR"(
+class P(property):
+    pass
+
+p = P(doc="original")
+del p.__doc__
+p.__init__(doc="reinitialized")
+assert p.__doc__ == "reinitialized"
+p.__doc__ = "assigned"
+assert p.__doc__ == "assigned"
+
+class Getter:
+    def get_doc(self):
+        del p.__doc__
+        return "inferred"
+
+    __doc__ = property(get_doc)
+
+    def __call__(self, obj):
+        return 42
+
+p.__init__(Getter())
+assert p.__doc__ == "inferred"
+p.__doc__ = "assigned after inference"
+assert p.__doc__ == "assigned after inference"
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, property_subclass_copy_accepts_deleted_doc)
+{
+    test::FileRunner run(LR"(
+class P(property):
+    pass
+
+p = P(doc="original")
+del p.__doc__
+copy = p.getter(None)
+assert copy is not p
+assert copy.__class__ is P
+assert copy.__doc__ is None
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, cached_descriptor_setter_uses_current_receiver_and_value)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+class Hooks:
+    def __set__(self, obj, value, bias=1):
+        obj.stored = value + self.delta + bias
+
+class Descriptor(Hooks):
+    pass
+
+class Base:
+    pass
+
+class Child(Base):
+    pass
+
+descriptor = Descriptor()
+descriptor.delta = 3
+replacement = Descriptor()
+replacement.delta = 10
+Base.x = descriptor
+first = Child()
+second = Child()
+first.stored = 0
+second.stored = 0
+
+def store(obj, value):
+    obj.x = value
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    Owned<TValue<Function>> writer{
+        TValue<Function>::from_value_assumed(global(L"store"))};
+    Owned<Value> first{global(L"first")};
+    Owned<Value> second{global(L"second")};
+    auto &cache = writer.value()
+                      .extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_mutation_caches.at(0);
+    auto store = [&](Value receiver, int64_t rhs) {
+        return context.thread()->call_clovervm_function(
+            writer.value(), receiver, Value::from_smi(rhs));
+    };
+
+    native_cast<ClassObject>(global(L"Descriptor"))->freeze();
+    EXPECT_EQ(Value::None(), store(first.value(), 1));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);
+
+    for(const wchar_t *name: {L"descriptor", L"replacement"})
+    {
+        Object *object = global(name).get_ptr<Object>();
+        Shape *shape = object->get_shape();
+        object->set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
+    }
+    EXPECT_EQ(Value::None(), store(first.value(), 2));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);  // Hooks is still mutable.
+
+    native_cast<ClassObject>(global(L"Hooks"))->freeze();
+    EXPECT_EQ(Value::None(), store(first.value(), 38));
+    ASSERT_TRUE(cache.matches(second.value()));
+    ASSERT_TRUE(cache.plan.is_descriptor_set());
+    EXPECT_EQ(global(L"descriptor"), cache.plan.descriptor);
+    EXPECT_EQ(Value::None(), store(second.value(), 39));
+    auto stored = interned_string(L"stored");
+    EXPECT_EQ(Value::from_smi(42),
+              first.value().get_ptr<Object>()->get_own_property(stored));
+    EXPECT_EQ(Value::from_smi(43),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    auto name = interned_string(L"x");
+    ASSERT_TRUE(base->set_own_property(name, global(L"replacement")).value());
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), store(second.value(), 40));
+    ASSERT_TRUE(cache.matches(second.value()));
+    EXPECT_EQ(global(L"replacement"), cache.plan.descriptor);
+    EXPECT_EQ(Value::from_smi(51),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+
+    ASSERT_TRUE(base->delete_own_property(name));
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), store(second.value(), 42));
+    EXPECT_EQ(Value::from_smi(42),
+              second.value().get_ptr<Object>()->get_own_property(name));
+}
+
+TEST(Interpreter, store_attr_invokes_property_setter_and_ignores_result)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class C:
+    def get(self):
+        return self.stored
+
+    def set(self, value, delta=1):
+        self.stored = value + delta
+        return -1
+
+obj = C()
+
+def store(obj, value):
+    obj.x = value
+
+store(obj, 10)
+store(obj, 20)
+p = property(C.get, C.set)
+C.x = p
+store(obj, 41)
+assert obj.x == 42
+assert obj.stored == 42
+store(obj, 41)
+
+def replacement(obj, value):
+    obj.stored = value * 2
+
+p.__init__(C.get, replacement)
+store(obj, 25)
+assert obj.x == 50
+
+def raising_setter(obj, value):
+    raise ValueError(value)
+
+p.__init__(C.get, raising_setter)
+try:
+    store(obj, 99)
+except ValueError as error:
+    assert error.args == (99,)
+else:
+    assert False
+assert obj.x == 50
+
+class CallableSetter:
+    def __call__(self, obj, value):
+        obj.stored = value + 1
+
+p.__init__(C.get, CallableSetter())
+store(obj, 50)
+assert obj.x == 51
+
+C.x = property(C.get)
+try:
+    store(obj, 1)
+except AttributeError:
+    pass
+else:
+    assert False
+
+class DeleteOnly:
+    def __delete__(self, obj):
+        assert False
+
+C.x = DeleteOnly()
+try:
+    store(obj, 1)
+except AttributeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+
+class BadSetter:
+    __set__ = None
+
+C.x = BadSetter()
+try:
+    store(obj, 1)
+except TypeError:
+    pass
+else:
+    assert False
+
+C.x = p
+p.__init__(C.get, replacement)
+store(obj, 30)
+assert obj.x == 60
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    ASSERT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+    Value writer =
+        load_global_from_module_for_test(code, interned_string(L"store"));
+    ASSERT_TRUE(has_native_layout<Function>(writer));
+    const auto &cache = native_cast<Function>(writer)
+                            ->code_object.extract()
+                            ->inline_caches.attribute_mutation_caches.at(0);
+    EXPECT_EQ(AttributeMutationPlanKind::ExactPropertySet, cache.plan.kind);
+}
+
+TEST(Interpreter, store_attr_add_slot_does_not_cache_mutable_descriptor_type)
+{
+    test::FileRunner run(LR"(
+class Candidate:
+    pass
+
+candidate = Candidate()
+class C:
+    x = candidate
+
+def store(obj, value):
+    obj.x = value
+
+first = C()
+second = C()
+store(first, 10)
+store(first, 20)
+
+def setter(self, receiver, value):
+    assert self is candidate
+    receiver.seen = value
+
+Candidate.__set__ = setter
+store(second, 41)
+assert second.seen == 41
+assert second.x is candidate
+store(first, 42)
+assert first.seen == 42
+assert first.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, store_attr_setter_reenters_and_propagates_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Replacement:
+    def __set__(self, obj, value):
+        obj.stored = value
+
+class Original:
+    def __set__(self, obj, value):
+        C.x = Replacement()
+        store(obj, value)
+        raise ValueError("setter exception")
+
+class C:
+    x = Original()
+
+def store(obj, value):
+    obj.x = value
+
+obj = C()
+try:
+    store(obj, [42])
+except ValueError as error:
+    assert str(error) == "setter exception"
+else:
+    assert False
+assert obj.stored[0] == 42
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, cached_descriptor_deleter_uses_current_receiver)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+class Hooks:
+    def __delete__(self, obj, bias=1):
+        obj.stored = self.marker + bias
+        return -1
+
+class Descriptor(Hooks):
+    pass
+
+class Base:
+    pass
+
+class Child(Base):
+    pass
+
+first = Child()
+second = Child()
+first.x = 10
+second.x = 20
+first.stored = 0
+second.stored = 0
+descriptor = Descriptor()
+descriptor.marker = 41
+replacement = Descriptor()
+replacement.marker = 50
+Base.x = descriptor
+
+def erase(obj):
+    del obj.x
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    Owned<TValue<Function>> eraser{
+        TValue<Function>::from_value_assumed(global(L"erase"))};
+    Owned<Value> first{global(L"first")};
+    Owned<Value> second{global(L"second")};
+    auto &cache = eraser.value()
+                      .extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_mutation_caches.at(0);
+    auto erase = [&](Value receiver) {
+        return context.thread()->call_clovervm_function(eraser.value(),
+                                                        receiver);
+    };
+    auto stored = interned_string(L"stored");
+
+    native_cast<ClassObject>(global(L"Descriptor"))->freeze();
+    native_cast<ClassObject>(global(L"Hooks"))->freeze();
+    EXPECT_EQ(Value::None(), erase(first.value()));
+    EXPECT_EQ(nullptr, cache.lookup_validity_cell);
+
+    for(const wchar_t *name: {L"descriptor", L"replacement"})
+    {
+        Object *object = global(name).get_ptr<Object>();
+        Shape *shape = object->get_shape();
+        object->set_shape(
+            shape->clone_with_flags(shape->flags() | immutable_shape_flags()));
+    }
+    ASSERT_TRUE(first.value()
+                    .get_ptr<Object>()
+                    ->set_own_property(stored, Value::from_smi(0))
+                    .value());
+    EXPECT_EQ(Value::None(), erase(first.value()));
+    ASSERT_TRUE(cache.matches(second.value()));
+    ASSERT_TRUE(cache.plan.is_descriptor_delete());
+    EXPECT_EQ(global(L"descriptor"), cache.plan.descriptor);
+    EXPECT_EQ(Value::None(), erase(second.value()));
+    EXPECT_EQ(Value::from_smi(42),
+              first.value().get_ptr<Object>()->get_own_property(stored));
+    EXPECT_EQ(Value::from_smi(42),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    auto name = interned_string(L"x");
+    ASSERT_TRUE(base->set_own_property(name, global(L"replacement")).value());
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), erase(second.value()));
+    EXPECT_EQ(global(L"replacement"), cache.plan.descriptor);
+    EXPECT_EQ(Value::from_smi(51),
+              second.value().get_ptr<Object>()->get_own_property(stored));
+    EXPECT_EQ(Value::from_smi(42),
+              first.value().get_ptr<Object>()->get_own_property(stored));
+
+    ASSERT_TRUE(base->delete_own_property(name));
+    EXPECT_FALSE(cache.matches(second.value()));
+    EXPECT_EQ(Value::None(), erase(second.value()));
+    EXPECT_TRUE(second.value()
+                    .get_ptr<Object>()
+                    ->get_own_property(name)
+                    .is_not_present());
+}
+
+TEST(Interpreter, del_attr_invokes_property_deleter_with_precedence)
+{
+    test::FileRunner run(LR"(
+class C:
+    def get(self):
+        return self.stored
+
+    def remove(self, marker=42):
+        del self.stored
+        self.removed = marker
+        return -1
+
+obj = C()
+obj.x = 20
+obj.stored = 41
+
+def erase(obj):
+    del obj.x
+
+C.x = property(C.get, fdel=C.remove)
+erase(obj)
+assert obj.removed == 42
+assert not hasattr(obj, "stored")
+
+C.x = property(C.get)
+try:
+    erase(obj)
+except AttributeError:
+    pass
+else:
+    assert False
+
+class SetOnly:
+    def __set__(self, obj, value):
+        assert False
+
+C.x = SetOnly()
+try:
+    erase(obj)
+except AttributeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+
+class BadDeleter:
+    __delete__ = None
+
+C.x = BadDeleter()
+try:
+    erase(obj)
+except TypeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, del_attr_does_not_cache_mutable_descriptor_type)
+{
+    test::FileRunner run(LR"(
+class Candidate:
+    pass
+
+candidate = Candidate()
+class C:
+    x = candidate
+
+def erase(obj):
+    del obj.x
+
+first = C()
+second = C()
+first.x = 10
+second.x = 20
+erase(first)
+assert first.x is candidate
+
+def deleter(self, receiver):
+    assert self is candidate
+    receiver.erased = True
+
+Candidate.__delete__ = deleter
+erase(second)
+assert second.erased
+assert second.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, del_attr_deleter_reenters_and_propagates_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Replacement:
+    def __delete__(self, obj):
+        del obj.stored
+
+class Original:
+    def __delete__(self, obj):
+        C.x = Replacement()
+        erase(obj)
+        raise ValueError("deleter exception")
+
+class C:
+    x = Original()
+
+def erase(obj):
+    del obj.x
+
+obj = C()
+obj.stored = [42]
+try:
+    erase(obj)
+except ValueError as error:
+    assert str(error) == "deleter exception"
+else:
+    assert False
+assert not hasattr(obj, "stored")
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, setattr_and_delattr_invoke_descriptor_hooks)
+{
+    test::FileRunner run(LR"(
+class C:
+    def get(self):
+        return self.stored
+
+    def set(self, value):
+        self.stored = value
+        return 1
+
+    def remove(self):
+        del self.stored
+        return 2
+
+obj = C()
+obj.x = 20
+C.x = property(C.get, C.set, C.remove)
+assert setattr(obj, "x", 42) is None
+assert obj.x == 42
+assert delattr(obj, "x") is None
+assert not hasattr(obj, "stored")
+
+class SetOnly:
+    def __set__(self, obj, value):
+        assert False
+
+class DeleteOnly:
+    def __delete__(self, obj):
+        assert False
+
+C.x = SetOnly()
+try:
+    delattr(obj, "x")
+except AttributeError:
+    pass
+else:
+    assert False
+
+C.x = DeleteOnly()
+try:
+    setattr(obj, "x", 100)
+except AttributeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+
+class BadHooks:
+    __set__ = None
+    __delete__ = None
+
+C.x = BadHooks()
+try:
+    setattr(obj, "x", 100)
+except TypeError:
+    pass
+else:
+    assert False
+try:
+    delattr(obj, "x")
+except TypeError:
+    pass
+else:
+    assert False
+assert obj.x == 20
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, setattr_and_delattr_propagate_reentrant_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class C:
+    def set(self, value):
+        setattr(self, "stored", value)
+        raise ValueError("setter exception")
+
+    def remove(self):
+        delattr(self, "stored")
+        raise LookupError("deleter exception")
+
+    x = property(fset=set, fdel=remove)
+
+obj = C()
+try:
+    setattr(obj, "x", [42])
+except ValueError as error:
+    assert str(error) == "setter exception"
+else:
+    assert False
+assert obj.stored[0] == 42
+
+try:
+    delattr(obj, "x")
+except LookupError as error:
+    assert str(error) == "deleter exception"
+else:
+    assert False
+assert not hasattr(obj, "stored")
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
+TEST(Interpreter, getattr_and_hasattr_read_descriptors_once)
+{
+    test::FileRunner run(LR"(
+class Descriptor:
+    def __get__(self, obj, owner):
+        return (self, obj, owner)
+
+class Base:
+    x = Descriptor()
+
+class Child(Base):
+    def get_value(self):
+        self.calls = self.calls + 1
+        return None
+
+    value = property(get_value)
+
+obj = Child()
+obj.calls = 0
+obj.slot = 42
+
+desc = Base.x[0]
+assert getattr(obj, "x") == (desc, obj, Child)
+assert getattr(Child, "x") == (desc, None, Child)
+assert getattr(Child, "value") is Child.value
+assert getattr(obj, "slot") == 42
+
+assert getattr(obj, "value", 9) is None
+assert obj.calls == 1
+assert hasattr(obj, "value")
+assert obj.calls == 2
+assert not hasattr(obj, "missing")
+assert getattr(obj, "missing", 9) == 9
+
+obj.x = 7
+assert getattr(obj, "x") == 7
+try:
+    getattr(obj, "value", 1, 2)
+except TypeError:
+    pass
+else:
+    assert False
+assert obj.calls == 2
+)");
+    EXPECT_FALSE(run.return_value.is_exception_marker());
+}
+
+TEST(Interpreter, getattr_and_hasattr_handle_descriptor_exceptions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    CodeObject *code = context.compile_file(LR"(
+class Missing(AttributeError):
+    pass
+
+class C:
+    def get_missing(self):
+        self.calls = self.calls + 1
+        raise Missing("from getter")
+
+    def get_bad(self):
+        raise ValueError("other error")
+
+    missing = property(get_missing)
+    bad = property(get_bad)
+
+obj = C()
+obj.calls = 0
+
+assert getattr(obj, "missing", 42) == 42
+assert obj.calls == 1
+assert not hasattr(obj, "missing")
+assert obj.calls == 2
+
+try:
+    getattr(obj, "missing")
+except Missing as error:
+    assert str(error) == "from getter"
+else:
+    assert False
+assert obj.calls == 3
+
+try:
+    getattr(obj, "bad", 42)
+except ValueError as error:
+    assert str(error) == "other error"
+else:
+    assert False
+
+try:
+    hasattr(obj, "bad")
+except ValueError:
+    pass
+else:
+    assert False
+
+try:
+    hasattr(obj, 42)
+except TypeError:
+    pass
+else:
+    assert False
+)");
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(
+        context.thread()->run_clovervm_code_object(code).is_exception_marker());
+}
+
 TEST(Interpreter, metaclass_descriptor_getter_receives_class_and_metaclass)
 {
     test::VmTestContext context;
@@ -4211,6 +5275,9 @@ descriptor = Descriptor()
 
 def read(obj):
     return obj.x
+
+def read_dynamic(obj):
+    return getattr(obj, "x")
 )");
     ASSERT_FALSE(
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
@@ -4234,14 +5301,21 @@ def read(obj):
                     ->set_own_property(interned_string(L"x"), descriptor)
                     .value());
 
-    Value result = context.thread()->call_clovervm_function(
-        reader, Value::from_oop(cls.get()));
-    ASSERT_TRUE(has_native_layout<Tuple>(result));
-    const Tuple *arguments = native_cast<Tuple>(result);
-    ASSERT_EQ(3u, arguments->size());
-    EXPECT_EQ(descriptor, arguments->item_unchecked(0));
-    EXPECT_EQ(Value::from_oop(cls.get()), arguments->item_unchecked(1));
-    EXPECT_EQ(Value::from_oop(meta.get()), arguments->item_unchecked(2));
+    for(const wchar_t *name: {L"read", L"read_dynamic"})
+    {
+        Value function =
+            load_global_from_module_for_test(code, interned_string(name));
+        ASSERT_TRUE(has_native_layout<Function>(function));
+        Value result = context.thread()->call_clovervm_function(
+            TValue<Function>::from_value_assumed(function),
+            Value::from_oop(cls.get()));
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        const Tuple *arguments = native_cast<Tuple>(result);
+        ASSERT_EQ(3u, arguments->size());
+        EXPECT_EQ(descriptor, arguments->item_unchecked(0));
+        EXPECT_EQ(Value::from_oop(cls.get()), arguments->item_unchecked(1));
+        EXPECT_EQ(Value::from_oop(meta.get()), arguments->item_unchecked(2));
+    }
 
     const auto &caches = reader.extract()
                              ->code_object.extract()
@@ -8642,10 +9716,9 @@ TEST(Interpreter, builtin_implementations_share_an_unpublished_private_module)
                                   ->get_defining_module()
                                   .extract());
     for(const wchar_t *name:
-        {L"_clover_builtin_getattr", L"_clover_builtin_getattr_default",
-         L"_clover_builtin_hasattr", L"_clover_builtin_dir",
-         L"_clover_dict_allocate", L"_clover_dict_next", L"_clover_dict_new",
-         L"_clover_dict_update", L"_clover_min_max",
+        {L"_clover_builtin_getattr", L"_clover_builtin_read_attr",
+         L"_clover_builtin_dir", L"_clover_dict_allocate", L"_clover_dict_next",
+         L"_clover_dict_new", L"_clover_dict_update", L"_clover_min_max",
          L"_clover_selection_keywords", L"_clover_list_eq", L"_clover_tuple_eq",
          L"_clover_iter_membership_fallback"})
     {

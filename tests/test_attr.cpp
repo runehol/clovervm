@@ -927,6 +927,14 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
 
     Instance *instance =
         context.thread()->make_internal_raw<Instance>(owner_cls);
+    AttributeWriteDescriptor missing_slot =
+        resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
+    EXPECT_EQ(AttributeWriteStatus::NotFound, missing_slot.status);
+    EXPECT_EQ(
+        attribute_cache_blocker(AttributeCacheBlocker::MutableDescriptorType),
+        missing_slot.cache_blockers);
+    EXPECT_FALSE(missing_slot.is_cacheable());
+
     instance->set_own_property(attr_name, Value::from_smi(7)).value();
 
     AttributeWriteDescriptor write_descriptor =
@@ -942,7 +950,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
               owner_cls->current_mro_shape_and_contents_validity_cell());
 }
 
-TEST(Attr, AttributeWriteDescriptorRejectsClassDataDescriptor)
+TEST(Attr, AttributeWriteDescriptorCarriesClassDataDescriptorPlan)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -975,8 +983,11 @@ TEST(Attr, AttributeWriteDescriptorRejectsClassDataDescriptor)
     AttributeWriteDescriptor write_descriptor =
         resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
 
-    EXPECT_FALSE(write_descriptor.is_found());
-    EXPECT_EQ(AttributeWriteStatus::Disallowed, write_descriptor.status);
+    EXPECT_TRUE(write_descriptor.is_found());
+    EXPECT_EQ(AttributeMutationPlanKind::DescriptorSet,
+              write_descriptor.plan.kind);
+    EXPECT_EQ(Value::from_oop(descriptor), write_descriptor.plan.descriptor);
+    EXPECT_EQ(Value::from_smi(1), write_descriptor.plan.descriptor_hook);
     EXPECT_FALSE(write_descriptor.is_cacheable());
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(instance), attr_name));

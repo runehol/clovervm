@@ -8,6 +8,7 @@
 #include "object_model/function.h"
 #include "object_model/slot_dict.h"
 #include "runtime/fatal.h"
+#include "runtime/protocol_helper_functions.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 
@@ -137,19 +138,29 @@ namespace cl
         __builtin_unreachable();
     }
 
+    static bool can_change_class(const Object *object)
+    {
+        NativeLayoutId layout = object->native_layout_id();
+        return !object->get_shape()->has_flag(ShapeFlag::IsImmutable) &&
+               (layout == NativeLayoutId::Instance ||
+                layout == NativeLayoutId::ModuleObject);
+    }
+
+    static bool descriptor_type_has_stable_protocol(ClassObject *type)
+    {
+        // The receiver's validity cell cannot see changes in the descriptor
+        // MRO.
+        return type->get_shape()->has_flag(ShapeFlag::IsImmutable) &&
+               type->get_or_create_mro_shape_and_contents_validity_cell()
+                       ->dependency_mutability() ==
+                   ValidityCellDependencyMutability::Immutable;
+    }
+
     static Expected<bool> store_attr_change_class(Value receiver, Value value)
     {
         assert(receiver.is_ptr());
         Object *object = receiver.get_ptr<Object>();
-        if(object->get_shape()->has_flag(ShapeFlag::IsImmutable))
-        {
-            return Expected<bool>::raise_exception(
-                L"TypeError", L"__class__ assignment only supported for "
-                              L"mutable types or ModuleType subclasses");
-        }
-        NativeLayoutId receiver_layout = object->native_layout_id();
-        if(receiver_layout != NativeLayoutId::Instance &&
-           receiver_layout != NativeLayoutId::ModuleObject)
+        if(!can_change_class(object))
         {
             return Expected<bool>::raise_exception(
                 L"TypeError",
@@ -163,7 +174,8 @@ namespace cl
         }
         TValue<ClassObject> new_class =
             TValue<ClassObject>::from_value_assumed(value);
-        if(new_class.extract()->instance_native_layout_id() != receiver_layout)
+        if(new_class.extract()->instance_native_layout_id() !=
+           object->native_layout_id())
         {
             return Expected<bool>::raise_exception(
                 L"TypeError",
@@ -227,8 +239,7 @@ namespace cl
         descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
-           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
+           !descriptor.plan.is_descriptor_get())
         {
             descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_contents_validity_cell();
@@ -243,8 +254,7 @@ namespace cl
         descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
-           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
+           !descriptor.plan.is_descriptor_get())
         {
             descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
@@ -401,9 +411,8 @@ namespace cl
                                     metaclass});
     }
 
-    static DescriptorProtocol lookup_descriptor_protocol(Value value)
+    static DescriptorProtocol lookup_descriptor_protocol(ClassObject *type)
     {
-        ClassObject *type = active_thread()->class_of_value(value);
         TValue<String> get_name(interned_string(L"__get__"));
         TValue<String> set_name(interned_string(L"__set__"));
         TValue<String> delete_name(interned_string(L"__delete__"));
@@ -415,8 +424,16 @@ namespace cl
                 .lookup_value};
     }
 
+    enum class DescriptorReadClassification : uint8_t
+    {
+        General,
+        InstanceAttribute,
+    };
+
     static AttributeReadDescriptor
-    classify_class_read_descriptor(AttributeReadDescriptor descriptor)
+    classify_class_read_descriptor(AttributeReadDescriptor descriptor,
+                                   DescriptorReadClassification classification =
+                                       DescriptorReadClassification::General)
     {
         if(!descriptor.is_found() ||
            descriptor.plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
@@ -424,8 +441,9 @@ namespace cl
             return descriptor;
         }
 
-        DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.lookup_value);
+        ThreadState *thread = active_thread();
+        ClassObject *type = thread->class_of_value(descriptor.lookup_value);
+        DescriptorProtocol protocol = lookup_descriptor_protocol(type);
         if(!protocol.has_get())
         {
             return descriptor;
@@ -435,6 +453,12 @@ namespace cl
             protocol.has_set_or_delete()
                 ? AttributeReadPlanKind::DataDescriptorGet
                 : AttributeReadPlanKind::NonDataDescriptorGet;
+        if(classification == DescriptorReadClassification::InstanceAttribute &&
+           kind == AttributeReadPlanKind::DataDescriptorGet &&
+           type == thread->class_for_native_layout(NativeLayoutId::Property))
+        {
+            kind = AttributeReadPlanKind::ExactPropertyGet;
+        }
         descriptor = with_plan_kind(
             descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
         descriptor.plan.constant_or_getter =
@@ -443,17 +467,48 @@ namespace cl
         return descriptor;
     }
 
-    static bool class_read_descriptor_is_mutating_descriptor(
-        const AttributeReadDescriptor &descriptor)
+    static AttributeReadDescriptor
+    finalize_instance_class_read(AttributeReadDescriptor descriptor,
+                                 ClassObject *receiver_class)
     {
-        if(!descriptor.is_found())
+        if(descriptor.cache_blockers !=
+               attribute_cache_blocker(
+                   AttributeCacheBlocker::UnsupportedDescriptorKind) ||
+           !descriptor.plan.is_descriptor_get() ||
+           descriptor.plan.constant_or_getter.is_not_present())
         {
-            return false;
+            return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                descriptor, receiver_class);
         }
 
-        DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.lookup_value);
-        return protocol.has_set_or_delete();
+        Value value = descriptor.lookup_value;
+        if((value.is_ptr() && can_change_class(value.get_ptr<Object>())) ||
+           !descriptor_type_has_stable_protocol(
+               active_thread()->class_of_value(value)))
+        {
+            return descriptor;
+        }
+
+        descriptor.cache_blockers =
+            attribute_cache_blocker(AttributeCacheBlocker::None);
+        descriptor.lookup_validity_cell =
+            receiver_class
+                ->get_or_create_mro_shape_and_contents_validity_cell();
+        return descriptor;
+    }
+
+    static AttributeCacheBlockers mutation_cache_blockers_for_class_value(
+        const AttributeReadDescriptor &descriptor, ClassObject *type)
+    {
+        Value value = descriptor.lookup_value;
+        if((value.is_ptr() && can_change_class(value.get_ptr<Object>())) ||
+           !descriptor_type_has_stable_protocol(type))
+        {
+            return attribute_cache_blockers(
+                descriptor.cache_blockers,
+                AttributeCacheBlocker::MutableDescriptorType);
+        }
+        return descriptor.cache_blockers;
     }
 
     static AttributeReadDescriptor
@@ -500,13 +555,13 @@ namespace cl
             AttributeReadDescriptor class_descriptor =
                 classify_class_read_descriptor(
                     lookup_instance_attribute_read_descriptor(class_object,
-                                                              name, obj));
+                                                              name, obj),
+                    DescriptorReadClassification::InstanceAttribute);
             if(class_descriptor.is_found() &&
-               class_descriptor.plan.kind ==
-                   AttributeReadPlanKind::DataDescriptorGet)
+               class_descriptor.plan.is_data_descriptor_get())
             {
-                return with_mro_shape_and_contents_validity_cell_if_unblocked(
-                    class_descriptor, class_object);
+                return finalize_instance_class_read(class_descriptor,
+                                                    class_object);
             }
 
             DescriptorLookup own_lookup =
@@ -545,8 +600,7 @@ namespace cl
             }
 
             // Replacing the class slot value can change how the read binds.
-            return with_mro_shape_and_contents_validity_cell_if_unblocked(
-                class_descriptor, class_object);
+            return finalize_instance_class_read(class_descriptor, class_object);
         }
 
         AttributeReadDescriptor inline_shape_descriptor =
@@ -612,6 +666,38 @@ namespace cl
             descriptor, receiver_class);
     }
 
+    Expected<DescriptorGetCall>
+    prepare_descriptor_get_call(Value receiver,
+                                const AttributeReadDescriptor &read)
+    {
+        assert(read.plan.is_descriptor_get());
+        Value getter = read.plan.constant_or_getter;
+        if(getter.is_not_present())
+        {
+            return Expected<DescriptorGetCall>::raise_exception(
+                L"TypeError",
+                L"descriptor __get__ requires interpreter dispatch");
+        }
+
+        auto function = TValue<Function>::from_value_assumed(getter);
+        switch(read.plan.path)
+        {
+            case AttributeReadPlanPath::InstanceClassChain:
+            case AttributeReadPlanPath::MetaclassChain:
+                return Expected<DescriptorGetCall>::ok(
+                    {function, read.lookup_value, receiver,
+                     Value::from_oop(
+                         active_thread()->class_of_value(receiver))});
+            case AttributeReadPlanPath::ClassObjectChain:
+                return Expected<DescriptorGetCall>::ok(
+                    {function, read.lookup_value, Value::None(), receiver});
+            case AttributeReadPlanPath::ReceiverOwnProperty:
+                assert(false && "own slot cannot require descriptor dispatch");
+                __builtin_unreachable();
+        }
+        __builtin_unreachable();
+    }
+
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
     {
         if(plan.kind == AttributeReadPlanKind::ConstantValue)
@@ -631,8 +717,7 @@ namespace cl
             return storage_owner->read_storage_location(plan.storage_location);
         }
 
-        if(plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
-           plan.kind == AttributeReadPlanKind::NonDataDescriptorGet)
+        if(plan.is_descriptor_get())
         {
             fatal("descriptor __get__ requires interpreter dispatch");
         }
@@ -714,13 +799,48 @@ namespace cl
         ClassObject *lookup_class = object->get_shape()->get_class();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
-        if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
+        AttributeCacheBlockers cache_blockers = class_descriptor.cache_blockers;
+        if(class_descriptor.is_found())
         {
-            return AttributeWriteDescriptor::disallowed();
+            Value value = class_descriptor.lookup_value;
+            ThreadState *thread = active_thread();
+            ClassObject *type = thread->class_of_value(value);
+            DescriptorProtocol protocol = lookup_descriptor_protocol(type);
+            if(protocol.has_set_or_delete())
+            {
+                if(protocol.set.is_not_present())
+                {
+                    return AttributeWriteDescriptor::disallowed();
+                }
+                AttributeWriteDescriptor setter =
+                    AttributeWriteDescriptor::found(
+                        AttributeMutationPlan::descriptor_mutation(
+                            AttributeMutationPlanKind::DescriptorSet, value,
+                            protocol.set));
+                if(object->get_shape()->has_flag(ShapeFlag::IsClassObject) ||
+                   !has_native_layout<Function>(protocol.set))
+                {
+                    return setter;
+                }
+                setter.cache_blockers = mutation_cache_blockers_for_class_value(
+                    class_descriptor, type);
+                if(attribute_cache_blockers_are_none(setter.cache_blockers) &&
+                   type == thread->class_for_native_layout(
+                               NativeLayoutId::Property))
+                {
+                    setter.plan.kind =
+                        AttributeMutationPlanKind::ExactPropertySet;
+                }
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    setter, lookup_class);
+            }
+            cache_blockers =
+                mutation_cache_blockers_for_class_value(class_descriptor, type);
         }
 
         AttributeWriteDescriptor own_descriptor =
             object->lookup_own_attribute_write_descriptor(name);
+        own_descriptor.cache_blockers |= cache_blockers;
         if(!own_descriptor.is_found())
         {
             if(string_eq(name, active_vm()->dunder_class_name()))
@@ -731,8 +851,6 @@ namespace cl
             return own_descriptor;
         }
 
-        own_descriptor.cache_blockers |=
-            superseded_class_read_descriptor_cache_blockers(class_descriptor);
         return with_mro_shape_and_contents_validity_cell_if_unblocked(
             own_descriptor, lookup_class);
     }
@@ -749,9 +867,36 @@ namespace cl
         ClassObject *lookup_class = object->get_shape()->get_class();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
-        if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
+        AttributeCacheBlockers cache_blockers = class_descriptor.cache_blockers;
+        if(class_descriptor.is_found())
         {
-            return AttributeDeleteDescriptor::disallowed();
+            Value value = class_descriptor.lookup_value;
+            ClassObject *type = active_thread()->class_of_value(value);
+            DescriptorProtocol protocol = lookup_descriptor_protocol(type);
+            if(protocol.has_set_or_delete())
+            {
+                if(protocol.delete_.is_not_present())
+                {
+                    return AttributeDeleteDescriptor::disallowed();
+                }
+                AttributeDeleteDescriptor deleter =
+                    AttributeDeleteDescriptor::found(
+                        AttributeMutationPlan::descriptor_mutation(
+                            AttributeMutationPlanKind::DescriptorDelete, value,
+                            protocol.delete_));
+                if(object->get_shape()->has_flag(ShapeFlag::IsClassObject) ||
+                   !has_native_layout<Function>(protocol.delete_))
+                {
+                    return deleter;
+                }
+                deleter.cache_blockers =
+                    mutation_cache_blockers_for_class_value(class_descriptor,
+                                                            type);
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    deleter, lookup_class);
+            }
+            cache_blockers =
+                mutation_cache_blockers_for_class_value(class_descriptor, type);
         }
 
         AttributeDeleteDescriptor own_descriptor =
@@ -761,8 +906,7 @@ namespace cl
             return own_descriptor;
         }
 
-        own_descriptor.cache_blockers |=
-            superseded_class_read_descriptor_cache_blockers(class_descriptor);
+        own_descriptor.cache_blockers |= cache_blockers;
         return with_mro_shape_and_contents_validity_cell_if_unblocked(
             own_descriptor, lookup_class);
     }
@@ -777,6 +921,7 @@ namespace cl
         {
             return store_attr_change_class(receiver, value);
         }
+        assert(!plan.is_descriptor_set());
         if(likely(!plan.is_add_own_property()))
         {
             Object *storage_owner = plan.storage_owner;
@@ -901,6 +1046,12 @@ namespace cl
             resolve_attr_write_descriptor(obj, name);
         if(descriptor.is_found())
         {
+            if(descriptor.plan.is_descriptor_set())
+            {
+                CL_TRY(execute_descriptor_mutation(
+                    *active_thread(), descriptor.plan, obj, value));
+                return Expected<bool>::ok(true);
+            }
             return store_attr_from_plan(obj, descriptor.plan, value);
         }
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
@@ -911,14 +1062,21 @@ namespace cl
         return Expected<bool>::ok(false);
     }
 
-    bool delete_attr(Value obj, TValue<String> name)
+    Expected<bool> delete_attr(Value obj, TValue<String> name)
     {
         AttributeDeleteDescriptor descriptor =
             resolve_attr_delete_descriptor(obj, name);
         if(descriptor.is_found())
         {
-            return delete_attr_from_plan(obj, descriptor.plan);
+            if(descriptor.plan.is_descriptor_delete())
+            {
+                CL_TRY(execute_descriptor_mutation(
+                    *active_thread(), descriptor.plan, obj, Value::None()));
+                return Expected<bool>::ok(true);
+            }
+            return Expected<bool>::ok(
+                delete_attr_from_plan(obj, descriptor.plan));
         }
-        return false;
+        return Expected<bool>::ok(false);
     }
 }  // namespace cl

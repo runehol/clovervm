@@ -58,6 +58,7 @@ namespace cl
         HandleChunk,
         Cell,
         TestOnly,
+        Property,
 
         Count,
     };

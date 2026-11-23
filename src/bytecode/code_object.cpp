@@ -167,9 +167,13 @@ namespace cl
                     return repair.state();
                 case AttributeReadPlanKind::ReceiverSlot:
                 case AttributeReadPlanKind::BindFunctionReceiver:
+                    repair.target(cache.plan.storage_owner);
+                    return repair.state();
                 case AttributeReadPlanKind::DataDescriptorGet:
                 case AttributeReadPlanKind::NonDataDescriptorGet:
+                case AttributeReadPlanKind::ExactPropertyGet:
                     repair.target(cache.plan.storage_owner);
+                    repair.value(cache.plan.constant_or_getter);
                     return repair.state();
             }
             assert(false && "invalid attribute read plan kind");
@@ -192,6 +196,12 @@ namespace cl
                     repair.target(cache.plan.next_shape);
                     return repair.state();
                 case AttributeMutationPlanKind::ChangeClass:
+                    return repair.state();
+                case AttributeMutationPlanKind::DescriptorSet:
+                case AttributeMutationPlanKind::DescriptorDelete:
+                case AttributeMutationPlanKind::ExactPropertySet:
+                    repair.value(cache.plan.descriptor);
+                    repair.value(cache.plan.descriptor_hook);
                     return repair.state();
             }
             assert(false && "invalid attribute mutation plan kind");

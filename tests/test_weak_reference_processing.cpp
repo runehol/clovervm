@@ -143,7 +143,9 @@ namespace
                 cache.plan = AttributeReadPlan::from_storage(
                     AttributeReadPlanPath::InstanceClassChain, read_kinds[idx],
                     old_module.get(), {3, StorageKind::Inline});
-                cache.plan.constant_or_getter = old_value.raw_value();
+                cache.plan.constant_or_getter =
+                    idx < 2 ? old_value.raw_value()
+                            : Value::from_oop(old_function.get());
             }
             caches.attribute_mutation_caches.resize(4);
             caches.attribute_mutation_caches[0].plan =
@@ -248,7 +250,9 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
         else
         {
             EXPECT_EQ(new_module.get(), cache.plan.storage_owner);
-            EXPECT_EQ(old_value.raw_value(), cache.plan.constant_or_getter);
+            EXPECT_EQ(idx < 3 ? old_value.raw_value()
+                              : Value::from_oop(new_function.get()),
+                      cache.plan.constant_or_getter);
             EXPECT_EQ(3, cache.plan.storage_location.physical_idx);
         }
     }
@@ -317,6 +321,39 @@ TEST_F(WeakReferenceProcessing, RepairsAllCacheFamiliesWithoutOwnershipChanges)
         owner.get(), [&](HeapObject *object) { return resolve(object, true); });
 }
 
+TEST_F(WeakReferenceProcessing, CachedDescriptorSetterRepairsBothWeakValues)
+{
+    auto &caches = owner.get()->inline_caches.attribute_mutation_caches;
+    caches.resize(1);
+    auto &cache = caches[0];
+    auto populate_setter = [&] {
+        cache.receiver_shape = old_shape.get();
+        cache.lookup_validity_cell = old_cell.get();
+        cache.plan = AttributeMutationPlan::descriptor_mutation(
+            AttributeMutationPlanKind::DescriptorSet, old_value.raw_value(),
+            Value::from_oop(old_function.get()));
+    };
+
+    populate_setter();
+    repair_late_units(owner.get(),
+                      [&](HeapObject *object) { return resolve(object); });
+    EXPECT_EQ(new_shape.get(), cache.receiver_shape);
+    EXPECT_EQ(new_cell.get(), cache.lookup_validity_cell);
+    EXPECT_EQ(new_value.raw_value(), cache.plan.descriptor);
+    EXPECT_EQ(Value::from_oop(new_function.get()), cache.plan.descriptor_hook);
+
+    for(HeapObject *dead:
+        std::array<HeapObject *, 2>{old_value.extract(), old_function.get()})
+    {
+        populate_setter();
+        repair_late_units(owner.get(), [&](HeapObject *object) {
+            return object == dead ? nullptr : resolve(object);
+        });
+        EXPECT_EQ(nullptr, cache.receiver_shape);
+        EXPECT_EQ(nullptr, cache.lookup_validity_cell);
+    }
+}
+
 TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
 {
     for(HeapObject *dead: sources())
@@ -330,9 +367,10 @@ TEST_F(WeakReferenceProcessing, DeadTargetsResetWholeEntriesAcrossAllFamilies)
         bool receiver_dead = dead == old_shape.get() || dead == old_cell.get();
         for(size_t idx = 0; idx < caches.attribute_read_caches.size(); ++idx)
         {
-            bool cleared =
-                receiver_dead || (idx == 0 ? dead == old_value.extract()
-                                           : dead == old_module.get());
+            bool cleared = receiver_dead ||
+                           (idx == 0 ? dead == old_value.extract()
+                                     : dead == old_module.get()) ||
+                           (idx >= 3 && dead == old_function.get());
             const auto &cache = caches.attribute_read_caches[idx];
             EXPECT_EQ(cleared, cache.receiver_shape == nullptr);
             if(cleared)
@@ -514,6 +552,8 @@ TEST_F(WeakReferenceProcessing,
     repair_late_units(child,
                       [&](HeapObject *object) { return resolve(object); });
     EXPECT_EQ(new_shape.get(), child->get_previous_shape());
+    EXPECT_EQ(new_shape.get(),
+              child->lookup_transition(name, ShapeTransitionVerb::Delete));
     EXPECT_EQ(old_refs, old_shape.get()->refcount());
     EXPECT_EQ(new_refs, new_shape.get()->refcount());
     EXPECT_EQ(zct_size, thread->zero_count_table_size());
@@ -532,6 +572,14 @@ TEST_F(WeakReferenceProcessing,
         ADD_FAILURE() << "cleared back-link reached resolver";
         return nullptr;
     });
+    EXPECT_EQ(nullptr,
+              child->lookup_transition(name, ShapeTransitionVerb::Delete));
+    Shape *fallback =
+        child->derive_transition(name, ShapeTransitionVerb::Delete);
+    EXPECT_EQ(child, fallback->get_previous_shape());
+    EXPECT_FALSE(fallback->resolve_present_property(name).is_found());
+    EXPECT_EQ(fallback,
+              child->lookup_transition(name, ShapeTransitionVerb::Delete));
 }
 
 TEST_F(WeakReferenceProcessing,
@@ -611,8 +659,9 @@ TEST_F(WeakReferenceProcessing, PendingFieldsDoNotShortCircuitAnyCacheFamily)
 {
     // Independent counts from populate()'s active arms. Function guards and
     // function targets can be the same object but are distinct weak fields.
-    constexpr std::array<size_t, 7> expected_calls = {3, 6, 7, 11, 3, 15, 1};
-    constexpr std::array<size_t, 7> expected_pending_units = {3, 4,  7, 11,
+    // The data and non-data read plans each also have a weak function field.
+    constexpr std::array<size_t, 7> expected_calls = {3, 8, 7, 11, 3, 15, 1};
+    constexpr std::array<size_t, 7> expected_pending_units = {3, 6,  7, 11,
                                                               3, 15, 1};
     auto targets = sources();
     for(size_t pending = 0; pending < targets.size(); ++pending)

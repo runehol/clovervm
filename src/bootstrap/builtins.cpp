@@ -111,44 +111,33 @@ namespace cl
         return result;
     }
 
-    static Value builtin_getattr_default(ThreadState *thread, Value obj,
-                                         Value name, Value default_tuple)
+    [[nodiscard]] static Value builtin_read_attr(ThreadState *thread, Value obj,
+                                                 Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        assert(has_native_layout<Tuple>(default_tuple));
-        Tuple *defaults = default_tuple.get_ptr<Tuple>();
-        if(defaults->size() > 1)
+        AttributeReadDescriptor read = resolve_attr_read_descriptor(
+            obj, TValue<String>::from_value_assumed(name));
+        if(read.is_found())
         {
-            return active_thread()->set_pending_builtin_exception_none(
-                L"TypeError");
-        }
-
-        Value result = load_attr(obj, TValue<String>::from_value_assumed(name));
-        if(result.is_not_present())
-        {
-            if(defaults->empty())
+            if(read.plan.is_descriptor_get())
             {
-                return active_thread()->set_pending_builtin_exception_string(
-                    L"AttributeError", L"object has no such attribute");
+                DescriptorGetCall call =
+                    CL_TRY(prepare_descriptor_get_call(obj, read));
+                return thread->call_clovervm_function(
+                    call.getter, call.descriptor, call.object, call.owner);
             }
-            return defaults->item_unchecked(0);
+            Value result = load_attr_from_plan(obj, read.plan);
+            if(!result.is_not_present())
+            {
+                return result;
+            }
         }
-        return result;
+        return thread->set_pending_builtin_exception_string(
+            L"AttributeError", L"object has no such attribute");
     }
 
-    static Value builtin_hasattr(ThreadState *thread, Value obj, Value name)
-    {
-        CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        Value result = load_attr(obj, TValue<String>::from_value_assumed(name));
-        if(result.is_exception_marker())
-        {
-            return result;
-        }
-        return result.is_not_present() ? Value::False() : Value::True();
-    }
-
-    static Value builtin_setattr(ThreadState *thread, Value obj, Value name,
-                                 Value value)
+    [[nodiscard]] static Value builtin_setattr(ThreadState *thread, Value obj,
+                                               Value name, Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         if(CL_TRY(store_attr(obj, TValue<String>::from_value_assumed(name),
@@ -156,22 +145,19 @@ namespace cl
         {
             return Value::None();
         }
-        return active_thread()->set_pending_builtin_exception_string(
+        return thread->set_pending_builtin_exception_string(
             L"AttributeError", L"cannot set attribute");
     }
 
-    static Value builtin_delattr(ThreadState *thread, Value obj, Value name)
+    [[nodiscard]] static Value builtin_delattr(ThreadState *thread, Value obj,
+                                               Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
-        if(delete_attr(obj, TValue<String>::from_value_assumed(name)))
+        if(CL_TRY(delete_attr(obj, TValue<String>::from_value_assumed(name))))
         {
             return Value::None();
         }
-        if(active_thread()->has_pending_exception())
-        {
-            return Value::exception_marker();
-        }
-        return active_thread()->set_pending_builtin_exception_string(
+        return thread->set_pending_builtin_exception_string(
             L"AttributeError", L"object has no such attribute");
     }
 
@@ -399,12 +385,8 @@ namespace cl
             vm, implementation_module, L"_clover_builtin_getattr",
             CL_TRY(make_intrinsic_function(vm, builtin_getattr)).raw_value());
         install_builtin_function_binding(
-            vm, implementation_module, L"_clover_builtin_getattr_default",
-            CL_TRY(make_intrinsic_function(vm, builtin_getattr_default))
-                .raw_value());
-        install_builtin_function_binding(
-            vm, implementation_module, L"_clover_builtin_hasattr",
-            CL_TRY(make_intrinsic_function(vm, builtin_hasattr)).raw_value());
+            vm, implementation_module, L"_clover_builtin_read_attr",
+            CL_TRY(make_intrinsic_function(vm, builtin_read_attr)).raw_value());
         install_builtin_function_binding(
             vm, implementation_module, L"_clover_builtin_dir",
             CL_TRY(make_intrinsic_function(vm, builtin_dir)).raw_value());

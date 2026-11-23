@@ -14,9 +14,8 @@ namespace cl
     Expected<TValue<Function>>
     make_os_error_constructor_thunk_function(ClassObject *cls,
                                              TValue<Function> init);
-    Expected<TValue<Function>>
-    make_io_base_constructor_thunk_function(ClassObject *cls,
-                                            TValue<Function> init);
+    Expected<TValue<Function>> make_allocating_constructor_thunk_function(
+        ClassObject *cls, TValue<Function> init, IntrinsicFunction1 allocator);
     Expected<TValue<Function>>
     make_new_only_constructor_thunk_function(ClassObject *cls,
                                              TValue<Function> new_);

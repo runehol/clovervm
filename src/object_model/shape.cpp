@@ -250,7 +250,10 @@ namespace cl
                transition.get_descriptor_flags() == descriptor_flags &&
                string_eq(name, transition.get_name()))
             {
-                return transition.get_next_shape();
+                if(Shape *target = transition.resolve_target(previous_shape))
+                {
+                    return target;
+                }
             }
         }
         return nullptr;
@@ -346,6 +349,14 @@ namespace cl
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
+        }
+        if(get_class()->instance_native_layout_id() ==
+               NativeLayoutId::Instance &&
+           !descriptor.is_latent() &&
+           descriptor_flags == descriptor_flag(DescriptorFlag::None))
+        {
+            next_shape->transitions.push_back(
+                Transition::delete_to_predecessor(name));
         }
         return next_shape;
     }
