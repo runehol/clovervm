@@ -354,6 +354,8 @@ Python-defined and intrinsic functions use CloverVM's `function` type and bind
 through the same `__get__`. Their bound methods share the `method` type exposed
 as `types.MethodType`. CPython uses separate types for C functions and methods.
 CloverVM's method repr uses the function's code name and the receiver's repr.
+Bound methods compare their callables for equality and their receivers by
+identity. Bound methods are unhashable in CloverVM.
 
 ### `staticmethod` and `classmethod` support explicit wrapping and attribute lookup
 

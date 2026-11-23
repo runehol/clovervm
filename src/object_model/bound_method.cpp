@@ -10,6 +10,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <iterator>
+#include <utility>
 
 namespace cl
 {
@@ -102,15 +103,23 @@ namespace cl
                                       vm, cls, methods, std::size(methods)),
                                   "installing method intrinsics");
 
-        Value call = implementation_module->get_own_property(
-            interned_string(L"_clover_method_call"));
+        const std::pair<const wchar_t *, const wchar_t *> python_methods[] = {
+            {L"__call__", L"_clover_method_call"},
+            {L"__eq__", L"_clover_method_eq"},
+        };
         constexpr DescriptorFlags flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
-        if(!has_native_layout<Function>(call) ||
-           !cls->define_own_property(interned_string(L"__call__"), call, flags))
+        for(const auto &[name, helper]: python_methods)
         {
-            fatal("failed to install method.__call__");
+            Value function = implementation_module->get_own_property(
+                interned_string(helper));
+            if(!has_native_layout<Function>(function) ||
+               !cls->define_own_property(interned_string(name), function,
+                                         flags))
+            {
+                fatal("failed to install a method type hook");
+            }
         }
     }
 }  // namespace cl

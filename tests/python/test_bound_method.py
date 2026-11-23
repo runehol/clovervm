@@ -21,6 +21,12 @@ assert m(*(3,), **{"extra": 4}) == (o, 3, 4)
 assert repr(m) == "<bound method f of receiver>"
 
 saved = o.f
+assert saved is not o.f
+assert saved == o.f
+assert not (saved != o.f)
+assert [saved].count(o.f) == 1
+assert saved != Receiver().f
+assert saved.__eq__(None) is NotImplemented
 assert saved.__func__ is Receiver.f
 assert saved.__self__ is o
 assert saved(5, extra=6) == (o, 5, 6)
@@ -155,6 +161,34 @@ class CallSlot:
 
 target = CallSlot()
 assert MethodType(target, o).__func__ is target
+
+
+comparisons = []
+
+
+class EqualCallable:
+    def __call__(self, receiver):
+        return receiver
+
+    def __eq__(self, other):
+        comparisons.append(other)
+        return [True]
+
+
+class EqualReceiver:
+    def __eq__(self, other):
+        raise AssertionError("method equality must use receiver identity")
+
+
+left = EqualCallable()
+right = EqualCallable()
+receiver = EqualReceiver()
+assert MethodType(left, receiver) == MethodType(left, receiver)
+assert comparisons == []
+assert MethodType(left, receiver).__eq__(MethodType(right, receiver)) is True
+assert comparisons == [right]
+assert MethodType(left, receiver) != MethodType(right, EqualReceiver())
+assert len(comparisons) == 2
 
 
 class BadRepr:
