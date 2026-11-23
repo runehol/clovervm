@@ -116,6 +116,7 @@ namespace cl
                native_layout == NativeLayoutId::Slice ||
                native_layout == NativeLayoutId::Property ||
                native_layout == NativeLayoutId::BoundMethod ||
+               native_layout == NativeLayoutId::StaticMethod ||
                native_layout == NativeLayoutId::IOBase ||
                native_layout == NativeLayoutId::RawIOBase ||
                native_layout == NativeLayoutId::BufferedIOBase ||

@@ -44,6 +44,7 @@
 #include "object_model/native_function.h"
 #include "object_model/shape.h"
 #include "object_model/slot_dict.h"
+#include "object_model/static_method.h"
 #include "object_model/typed_value.h"
 #include "runtime/exception_object.h"
 #include "runtime/exception_propagation.h"
@@ -1189,6 +1190,7 @@ namespace cl
         register_builtin_class(make_cell_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_bound_method_class(this));
+        register_builtin_class(make_static_method_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
@@ -1380,6 +1382,7 @@ namespace cl
                 "creating keyword helper"));
         install_slotdict_class_methods(this);
         install_function_class_methods(this);
+        install_static_method_class_methods(this);
         install_slice_class_methods(this);
         install_io_base_methods(this);
         install_file_io_methods(this);

@@ -34,6 +34,7 @@
 #include "object_model/overflow_slots.h"
 #include "object_model/shape.h"
 #include "object_model/slot_dict.h"
+#include "object_model/static_method.h"
 #include "object_model/validity_cell.h"
 #include "object_model/vm_array_backing.h"
 #include "runtime/exception_object.h"
@@ -76,6 +77,7 @@
     V(Slice);                                                                  \
     V(Property);                                                               \
     V(BoundMethod);                                                            \
+    V(StaticMethod);                                                           \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

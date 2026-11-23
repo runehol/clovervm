@@ -60,6 +60,7 @@ namespace cl
         TestOnly,
         Property,
         BoundMethod,
+        StaticMethod,
 
         Count,
     };

@@ -48,6 +48,7 @@ bindings above. Cached descriptor replay currently covers instance access.
 | Instance slot | Read the current instance's slot. |
 | Plain class slot | Read the winning class's slot. |
 | Function in the instance's class or metaclass lookup path | Execute the shared function getter to produce a bound method. |
+| `staticmethod` in the class hierarchy | Execute its non-data descriptor getter to return the wrapped value without binding. |
 | Exact built-in `property` on an instance | Load the current `fget` from the property and call it with the current instance. If absent, call the property's `__get__` to raise the normal error. |
 | General descriptor | Call the selected `__get__` with the binding from lookup. |
 

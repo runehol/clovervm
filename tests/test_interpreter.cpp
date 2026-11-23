@@ -5346,6 +5346,63 @@ def read_dynamic(obj):
     }
 }
 
+TEST(Interpreter,
+     staticmethod_reads_cache_the_getter_and_invalidate_on_replacement)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    OwnedHeapPtr<CodeObject> code{context.compile_file(LR"(
+def make_wrapper():
+    return staticmethod([41])
+
+class C:
+    value = make_wrapper()
+
+o = C()
+replacement = staticmethod(42)
+
+def read(obj):
+    return obj.value
+)")};
+    ASSERT_FALSE(context.thread()
+                     ->run_clovervm_code_object(code.get())
+                     .is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(code.get(),
+                                                interned_string(name));
+    };
+    auto reader = TValue<Function>::from_value_assumed(global(L"read"));
+    Value receiver = global(L"o");
+    auto &cache = reader.extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    const auto getter =
+        context.thread()
+            ->class_for_native_layout(NativeLayoutId::StaticMethod)
+            ->get_own_property(interned_string(L"__get__"));
+    auto read = [&] {
+        return context.thread()->call_clovervm_function(reader, receiver);
+    };
+
+    EXPECT_FALSE(cache.matches(receiver));
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value first = read();
+    ASSERT_TRUE(has_native_layout<List>(first));
+    ASSERT_TRUE(cache.matches(receiver));
+    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    EXPECT_EQ(getter, cache.plan.constant_or_getter);
+    EXPECT_EQ(first, read());
+
+    auto *cls = native_cast<ClassObject>(global(L"C"));
+    ASSERT_TRUE(
+        cls->set_own_property(interned_string(L"value"), global(L"replacement"))
+            .value());
+    EXPECT_FALSE(cache.matches(receiver));
+    EXPECT_EQ(Value::from_smi(42), read());
+    EXPECT_TRUE(cache.matches(receiver));
+}
+
 TEST(Interpreter, instance_descriptor_getter_propagates_call_and_body_errors)
 {
     test::FileRunner run(LR"(
