@@ -1047,6 +1047,26 @@ def _clover_fileio_readall(self, /):
         bytearray.extend(result, chunk)
 
 
+def _clover_io_check_closed(self, /):
+    _clover_io_validate(self)
+    try:
+        closed = self.closed
+    except AttributeError:
+        return
+    if closed:
+        raise ValueError('I/O operation on closed file.')
+
+
+def _clover_io_enter(self, /):
+    _clover_io_check_closed(self)
+    return self
+
+
+def _clover_io_isatty(self, /):
+    _clover_io_check_closed(self)
+    return False
+
+
 # BufferedIOBase's transfer fallbacks contain no buffering policy.
 def _clover_bufferedio_read(self, size=-1, /):
     _clover_bufferedio_validate(self)
@@ -1072,14 +1092,61 @@ def _clover_bufferedio_readinto1(self, buffer, /):
     return _clover_bufferedio_finish_readinto(buffer, data, size)
 
 
+_clover_buffered_detached = object()
+
+
+def _clover_buffered_unattached(raw):
+    if raw is _clover_buffered_detached:
+        raise ValueError('raw stream has been detached')
+    raise ValueError('I/O operation on uninitialized object')
+
+
+def _clover_buffered_require_attachment(raw):
+    if raw is None or raw is _clover_buffered_detached:
+        _clover_buffered_unattached(raw)
+    return raw
+
+
+def _clover_buffered_readonly(getter):
+    # The public property constructor is installed after trusted bootstrap.
+    descriptor = _clover_property_allocate(_clover_bufferedio_property_type)
+    _clover_property_init(descriptor, getter)
+    return descriptor
+
+
 class BufferedReader(BufferedIOBase):
     __module__ = '_io'
+    _clover_bufferedio_attachment = None
+
+    def _property_raw(self):
+        if not isinstance(self, BufferedReader):
+            raise TypeError('BufferedReader property requires a BufferedReader')
+        return self._clover_bufferedio_attachment
+
+    @_clover_buffered_readonly
+    def raw(self):
+        raw = BufferedReader._property_raw(self)
+        if raw is _clover_buffered_detached:
+            return None
+        return raw
+
+    @_clover_buffered_readonly
+    def name(self):
+        return _clover_buffered_require_attachment(BufferedReader._property_raw(self)).name
+
+    @_clover_buffered_readonly
+    def mode(self):
+        return _clover_buffered_require_attachment(BufferedReader._property_raw(self)).mode
+
+    @_clover_buffered_readonly
+    def closed(self):
+        return _clover_buffered_require_attachment(BufferedReader._property_raw(self)).closed
 
     def __init__(self, raw, buffer_size=_clover_bufferedio_default_buffer_size):
         if hasattr(self, '_busy') and self._busy:
             raise RuntimeError('reentrant call inside BufferedReader')
         size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
-        self.raw = None
+        self._clover_bufferedio_attachment = None
         self._busy = True
         self._pos = 0
         self._end = 0
@@ -1091,15 +1158,16 @@ class BufferedReader(BufferedIOBase):
             buffer = bytearray(size)
             self._buffer_size = size
             self._buffer = buffer
-            self.raw = raw
+            self._clover_bufferedio_attachment = raw
             _clover_bufferedio_set_closed(self, False)
         finally:
             self._busy = False
 
     def _check_open(self):
-        if self.raw is None:
-            raise ValueError('raw stream has been detached')
-        if self.closed:
+        raw = self._clover_bufferedio_attachment
+        if raw is None or raw is _clover_buffered_detached:
+            _clover_buffered_unattached(raw)
+        if _clover_bufferedio_is_locally_closed(self):
             raise ValueError('I/O operation on closed file')
 
     def _begin(self):
@@ -1107,7 +1175,7 @@ class BufferedReader(BufferedIOBase):
             raise RuntimeError('reentrant call inside BufferedReader')
         self._check_open()
         self._busy = True
-        return self.raw
+        return self._clover_bufferedio_attachment
 
     def _raw_open(self, raw):
         if raw.closed:
@@ -1354,33 +1422,32 @@ class BufferedReader(BufferedIOBase):
 
     def readable(self):
         self._check_open()
-        return self.raw.readable()
+        return self._clover_bufferedio_attachment.readable()
 
     def writable(self):
         return False
 
     def seekable(self):
         self._check_open()
-        return self.raw.seekable()
+        return self._clover_bufferedio_attachment.seekable()
 
     def fileno(self):
         self._check_open()
-        return self.raw.fileno()
+        return self._clover_bufferedio_attachment.fileno()
 
     def isatty(self):
         self._check_open()
-        return self.raw.isatty()
+        return self._clover_bufferedio_attachment.isatty()
 
     def flush(self):
         # Stateless delegation: IOBase.close invokes this while close owns the
         # operation guard. Reads/seeks remain protected during that callback.
         self._check_open()
-        return self.raw.flush()
+        return self._clover_bufferedio_attachment.flush()
 
     def close(self):
-        if self.raw is None:
-            raise ValueError('raw stream has been detached')
-        if self.closed:
+        _clover_buffered_require_attachment(self._clover_bufferedio_attachment)
+        if _clover_bufferedio_is_locally_closed(self):
             return None
         raw = self._begin()
         try:
@@ -1398,7 +1465,7 @@ class BufferedReader(BufferedIOBase):
         raw = self._begin()
         try:
             self.flush()
-            self.raw = None
+            self._clover_bufferedio_attachment = _clover_buffered_detached
             self._pos = 0
             self._end = 0
             return raw
@@ -1408,12 +1475,37 @@ class BufferedReader(BufferedIOBase):
 
 class BufferedWriter(BufferedIOBase):
     __module__ = '_io'
+    _clover_bufferedio_attachment = None
+
+    def _property_raw(self):
+        if not isinstance(self, BufferedWriter):
+            raise TypeError('BufferedWriter property requires a BufferedWriter')
+        return self._clover_bufferedio_attachment
+
+    @_clover_buffered_readonly
+    def raw(self):
+        raw = BufferedWriter._property_raw(self)
+        if raw is _clover_buffered_detached:
+            return None
+        return raw
+
+    @_clover_buffered_readonly
+    def name(self):
+        return _clover_buffered_require_attachment(BufferedWriter._property_raw(self)).name
+
+    @_clover_buffered_readonly
+    def mode(self):
+        return _clover_buffered_require_attachment(BufferedWriter._property_raw(self)).mode
+
+    @_clover_buffered_readonly
+    def closed(self):
+        return _clover_buffered_require_attachment(BufferedWriter._property_raw(self)).closed
 
     def __init__(self, raw, buffer_size=_clover_bufferedio_default_buffer_size):
         if hasattr(self, '_busy') and self._busy:
             raise RuntimeError('reentrant call inside BufferedWriter')
         size = _clover_rawio_read_size(_clover_rawio_index(buffer_size))
-        self.raw = None
+        self._clover_bufferedio_attachment = None
         self._busy = True
         try:
             if not raw.writable():
@@ -1423,15 +1515,16 @@ class BufferedWriter(BufferedIOBase):
             self._buffer_size = size
             self._buffer = bytearray()
             self._start = 0
-            self.raw = raw
+            self._clover_bufferedio_attachment = raw
             _clover_bufferedio_set_closed(self, False)
         finally:
             self._busy = False
 
     def _check_open(self):
-        if self.raw is None:
-            raise ValueError('raw stream has been detached')
-        if self.closed:
+        raw = self._clover_bufferedio_attachment
+        if raw is None or raw is _clover_buffered_detached:
+            _clover_buffered_unattached(raw)
+        if _clover_bufferedio_is_locally_closed(self):
             raise ValueError('I/O operation on closed file')
 
     def _begin(self):
@@ -1439,7 +1532,7 @@ class BufferedWriter(BufferedIOBase):
             raise RuntimeError('reentrant call inside BufferedWriter')
         self._check_open()
         self._busy = True
-        return self.raw
+        return self._clover_bufferedio_attachment
 
     def _raw_open(self, raw):
         if raw.closed:
@@ -1567,19 +1660,19 @@ class BufferedWriter(BufferedIOBase):
 
     def writable(self):
         self._check_open()
-        return self.raw.writable()
+        return self._clover_bufferedio_attachment.writable()
 
     def seekable(self):
         self._check_open()
-        return self.raw.seekable()
+        return self._clover_bufferedio_attachment.seekable()
 
     def fileno(self):
         self._check_open()
-        return self.raw.fileno()
+        return self._clover_bufferedio_attachment.fileno()
 
     def isatty(self):
         self._check_open()
-        return self.raw.isatty()
+        return self._clover_bufferedio_attachment.isatty()
 
     def detach(self):
         if self._busy:
@@ -1589,7 +1682,7 @@ class BufferedWriter(BufferedIOBase):
         self.flush()
         raw = self._begin()
         try:
-            self.raw = None
+            self._clover_bufferedio_attachment = _clover_buffered_detached
             bytearray.clear(self._buffer)
             self._start = 0
             return raw
@@ -1597,24 +1690,27 @@ class BufferedWriter(BufferedIOBase):
             self._busy = False
 
     def close(self):
-        if self.raw is None:
-            raise ValueError('raw stream has been detached')
-        if self.closed:
+        raw = _clover_buffered_require_attachment(self._clover_bufferedio_attachment)
+        if _clover_bufferedio_is_locally_closed(self):
             return None
         if self._busy:
             raise RuntimeError('reentrant call inside BufferedWriter')
-        if self.raw.closed:
-            _clover_bufferedio_set_closed(self, True)
-            return None
+        self._busy = True
+        try:
+            if raw.closed:
+                _clover_bufferedio_set_closed(self, True)
+                return None
+        finally:
+            self._busy = False
         try:
             # Match the public override boundary: flush takes its own guard.
             self.flush()
         finally:
-            raw = self.raw
+            raw = self._clover_bufferedio_attachment
             self._busy = True
             try:
                 _clover_bufferedio_set_closed(self, True)
-                if raw is not None:
+                if raw is not None and raw is not _clover_buffered_detached:
                     raw.close()
             finally:
                 self._busy = False

@@ -36,13 +36,10 @@ namespace cl
                 TValue<IOBaseObject>::from_value_unchecked(self));
         }
 
-        [[nodiscard]] Value truth(ThreadState *thread, Value value)
+        [[nodiscard]] Value native_io_validate(ThreadState *, Value self)
         {
-            ClassObject *cls = thread->get_machine()->bool_class();
-            return thread->call_clovervm_function(
-                TValue<Function>::from_value_assumed(
-                    cls->get_own_property(interned_string(L"__new__"))),
-                Value::from_oop(cls), value);
+            (void)CL_TRY(io_receiver(self));
+            return Value::None();
         }
 
         Value native_io_new(ThreadState *thread, Value cls, Value args,
@@ -74,32 +71,9 @@ namespace cl
             return Value::None();
         }
 
-        Value native_io_check_closed(ThreadState *thread, Value self)
-        {
-            Owned<Value> retained(self);
-            (void)CL_TRY(io_receiver(self));
-            Owned<Value> closed(load_attr(self, interned_string(L"closed")));
-            CL_PROPAGATE_EXCEPTION(closed.value());
-            if(closed.value().is_not_present())
-                return thread->set_pending_builtin_exception_string(
-                    L"AttributeError", L"closed");
-            Value result = truth(thread, closed.value());
-            CL_PROPAGATE_EXCEPTION(result);
-            if(result == Value::True())
-                return thread->set_pending_builtin_exception_string(
-                    L"ValueError", L"I/O operation on closed file.");
-            return Value::None();
-        }
-
         Value native_io_false(ThreadState *, Value self)
         {
             (void)CL_TRY(io_receiver(self));
-            return Value::False();
-        }
-
-        Value native_io_isatty(ThreadState *thread, Value self)
-        {
-            CL_PROPAGATE_EXCEPTION(native_io_check_closed(thread, self));
             return Value::False();
         }
 
@@ -145,12 +119,6 @@ namespace cl
             return thread->call_clovervm_method(self, interned_string(L"seek"),
                                                 Value::from_smi(0),
                                                 Value::from_smi(1));
-        }
-        Value native_io_enter(ThreadState *thread, Value self)
-        {
-            Owned<Value> retained(self);
-            CL_PROPAGATE_EXCEPTION(native_io_check_closed(thread, self));
-            return self;
         }
         Value native_io_exit(ThreadState *thread, Value self, Value, Value,
                              Value)
@@ -261,6 +229,14 @@ namespace cl
             auto io = CL_TRY(io_receiver(self));
             io.extract()->base_closed = state;
             return Value::None();
+        }
+
+        [[nodiscard]] Value
+        native_buffered_is_locally_closed(ThreadState *thread, Value self)
+        {
+            CL_PROPAGATE_EXCEPTION(native_buffered_validate(thread, self));
+            auto io = CL_TRY(io_receiver(self));
+            return io.extract()->base_closed.raw_value();
         }
 
         Value native_buffered_copy(ThreadState *thread, Value buffer,
@@ -634,7 +610,6 @@ namespace cl
             builtin_intrinsic_method(L"readable", native_io_false),
             builtin_intrinsic_method(L"writable", native_io_false),
             builtin_intrinsic_method(L"seekable", native_io_false),
-            builtin_intrinsic_method(L"isatty", native_io_isatty),
             builtin_intrinsic_method(L"fileno", native_io_fileno),
             with_defaults(builtin_intrinsic_method(L"seek", native_io_seek),
                           zero.value()),
@@ -642,9 +617,7 @@ namespace cl
                 builtin_intrinsic_method(L"truncate", native_io_truncate),
                 none.value()),
             builtin_intrinsic_method(L"tell", native_io_tell),
-            builtin_intrinsic_method(L"__enter__", native_io_enter),
             builtin_intrinsic_method(L"__exit__", native_io_exit),
-            builtin_intrinsic_method(L"_checkClosed", native_io_check_closed),
             builtin_intrinsic_method(L"_checkReadable",
                                      native_io_check<readable>),
             builtin_intrinsic_method(L"_checkWritable",
@@ -693,7 +666,16 @@ namespace cl
             module->set_own_property(interned_string(L"_clover_io_eagain"),
                                      Value::from_smi(EAGAIN)),
             "installing buffered I/O would-block errno");
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(
+                interned_string(L"_clover_bufferedio_property_type"),
+                Value::from_oop(
+                    vm->class_for_native_layout(NativeLayoutId::Property))),
+            "installing buffered I/O property type");
         BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_io_validate",
+                                     native_io_validate),
             builtin_intrinsic_method(L"_clover_bufferedio_write_bytes",
                                      native_buffered_write_bytes),
             builtin_intrinsic_method(L"_clover_bufferedio_write_count",
@@ -702,6 +684,8 @@ namespace cl
                                      native_buffered_seek_whence),
             builtin_intrinsic_method(L"_clover_bufferedio_set_closed",
                                      native_buffered_set_closed),
+            builtin_intrinsic_method(L"_clover_bufferedio_is_locally_closed",
+                                     native_buffered_is_locally_closed),
             builtin_intrinsic_method(L"_clover_bufferedio_copy",
                                      native_buffered_copy),
             builtin_intrinsic_method(L"_clover_bufferedio_copy_into",
@@ -761,6 +745,10 @@ namespace cl
             const wchar_t *helper;
         };
         const Binding bindings[] = {
+            {NativeLayoutId::IOBase, L"_checkClosed",
+             L"_clover_io_check_closed"},
+            {NativeLayoutId::IOBase, L"__enter__", L"_clover_io_enter"},
+            {NativeLayoutId::IOBase, L"isatty", L"_clover_io_isatty"},
             {NativeLayoutId::BufferedIOBase, L"read",
              L"_clover_bufferedio_read"},
             {NativeLayoutId::BufferedIOBase, L"read1",

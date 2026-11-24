@@ -506,6 +506,7 @@ TEST(HeavyPythonSourceFiles, BufferedIOBaseSurvivesEverySafepointReclamation)
     for(const char *path: {"tests/python/buffered_io_base.py",
                            "tests/python/buffered_io_readinto.py",
                            "tests/python/buffered_io_mro.py",
+                           "tests/python/buffered_io_properties.py",
                            "tests/python/buffered_io_resized_buffer.py"})
     {
         SCOPED_TRACE(path);
