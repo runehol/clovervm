@@ -1,5 +1,6 @@
 #include "builtin_types/float.h"
 #include "builtin_types/module_object.h"
+#include "builtin_types/str.h"
 #include "object_model/function.h"
 #include "object_model/shape_key.h"
 
@@ -17,6 +18,47 @@
 
 namespace cl
 {
+    TEST(FloatRuntime, HexFormatsRawBinary64Payloads)
+    {
+        test::VmTestContext context;
+        ThreadState::ActivationScope activation(context.thread());
+        Owned<TValue<Function>> hex(TValue<Function>::from_value_assumed(
+            context.run_file(L"def hex(x): return x.hex()\nhex\n")));
+        struct Case
+        {
+            uint64_t bits;
+            std::wstring_view expected;
+        };
+        const Case cases[] = {
+            {0x8000000000000000, L"-0x0.0p+0"},
+            {0x0000000000000001, L"0x0.0000000000001p-1022"},
+            {0x800abcdef0123456, L"-0x0.abcdef0123456p-1022"},
+            {0x000fffffffffffff, L"0x0.fffffffffffffp-1022"},
+            {0x0010000000000000, L"0x1.0000000000000p-1022"},
+            {0x3ff0123456789abc, L"0x1.0123456789abcp+0"},
+            {0x7fefffffffffffff, L"0x1.fffffffffffffp+1023"},
+            {0x7ff0000000000000, L"inf"},
+            {0xfff0000000000000, L"-inf"},
+            {0x7ff0000000000001, L"nan"},
+            {0xfff0000000000042, L"nan"},
+            {0x7ff8000000000000, L"nan"},
+            {0xfffabcdef0123456, L"nan"},
+        };
+
+        for(const Case &sample: cases)
+        {
+            SCOPED_TRACE(sample.bits);
+            Owned<Value> number(box_float(context.thread(),
+                                          std::bit_cast<double>(sample.bits)));
+            Owned<Value> result(context.thread()->call_clovervm_function(
+                hex.value(), number.value()));
+            ASSERT_TRUE(has_native_layout<String>(result.value()));
+            EXPECT_EQ(sample.expected,
+                      string_view(
+                          TValue<String>::from_value_assumed(result.value())));
+        }
+    }
+
     TEST(FloatRuntime, MixedHeapIntegerArithmeticTrustedReplay)
     {
         test::VmTestContext context;
