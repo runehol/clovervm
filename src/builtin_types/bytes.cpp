@@ -1,5 +1,6 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/binary_case.h"
+#include "builtin_types/binary_hex.h"
 #include "builtin_types/binary_split.h"
 #include "builtin_types/binary_strip.h"
 #include "builtin_types/bytearray.h"
@@ -1065,6 +1066,33 @@ namespace cl
         return result.raw_value();
     }
 
+    [[nodiscard]] static Value native_binary_hex_group(ThreadState *thread,
+                                                       Value value)
+    {
+        if(!is_intlike_value(value))
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"bytes_per_sep must be an integer");
+        SmiViewStorage storage;
+        int64_t group =
+            CL_TRY(bigint_to_int64(intlike_value_bigint_view(value, &storage)));
+        if(group < std::numeric_limits<int32_t>::min() ||
+           group > std::numeric_limits<int32_t>::max())
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"Python int too large to convert to C int");
+        return Value::from_smi(group);
+    }
+
+    [[nodiscard]] static Value native_bytes_hex(ThreadState *thread, Value self,
+                                                Value sep, Value group)
+    {
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"hex"));
+        return format_binary_hex(
+            thread, TValue<Bytes>::from_value_assumed(self), sep,
+            static_cast<int32_t>(
+                TValue<SMI>::from_value_assumed(group).extract()),
+            bytes_view);
+    }
+
     [[nodiscard]] static Value native_bytes_expandtabs(ThreadState *thread,
                                                        Value self,
                                                        Value tabsize_value)
@@ -2071,6 +2099,10 @@ namespace cl
         BuiltinIntrinsicMethod helpers[] = {
             builtin_intrinsic_method(L"_clover_bytes_splitlines_impl",
                                      native_bytes_splitlines),
+            builtin_intrinsic_method(L"_clover_binary_hex_group",
+                                     native_binary_hex_group),
+            builtin_intrinsic_method(L"_clover_bytes_hex_impl",
+                                     native_bytes_hex),
             builtin_intrinsic_method(L"_clover_bytes_join_sequence",
                                      native_bytes_join_sequence),
             builtin_intrinsic_method(L"_clover_bytes_join_finish",
@@ -2091,9 +2123,10 @@ namespace cl
 
     void install_bytes_python_methods(VirtualMachine *vm, ModuleObject *module)
     {
-        const wchar_t *names[] = {L"join", L"splitlines"};
+        const wchar_t *names[] = {L"join", L"splitlines", L"hex"};
         const wchar_t *helpers[] = {L"_clover_bytes_join",
-                                    L"_clover_bytes_splitlines"};
+                                    L"_clover_bytes_splitlines",
+                                    L"_clover_bytes_hex"};
         for(size_t n = 0; n < std::size(names); ++n)
         {
             Value function = module->get_own_property(

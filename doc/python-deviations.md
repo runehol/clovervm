@@ -784,6 +784,24 @@ allocation exhaustion retains the existing VM allocator policy; recoverable
 protocols, object layouts or dispatch changes are introduced.
 
 
+### Binary hex formatting
+
+`bytes.hex(sep, bytes_per_sep=1)` and `bytearray.hex` return an exact string
+and support positional or keyword separator and grouping arguments. Leaving
+out `sep` suppresses separators. Explicit `None` raises `TypeError`. Grouping
+accepts stored int, bool and int-subclass payloads in the signed 32-bit range.
+Custom `__index__` remains unsupported. The methods accept one ASCII character
+or byte as a separator, including NUL. `binascii.hexlify` also accepts Latin-1
+separators because it returns bytes.
+
+As in CPython 3.14.10, grouping conversion precedes the separator's length
+check, which can run a Python `__len__` callback. CloverVM reads bytearray
+storage after the callback returns, so a successful resize or in-place edit
+affects the result. CPython allows in-place edits and raises `BufferError` on
+resize during that callback. Bytearray subclass construction remains
+unsupported. Result sizes above VM string storage limits raise `OverflowError`,
+and actual allocation exhaustion follows the existing VM allocator policy.
+
 ## Base85 subclass normalization
 
 `base64.b85encode` and `base64.b85decode` consume stored bytes payloads,
