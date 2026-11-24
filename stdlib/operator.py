@@ -9,10 +9,6 @@ dispatch exists.
 from builtins import abs as _builtin_abs
 
 
-def _unsupported():
-    raise NotImplementedError
-
-
 def abs(a):
     return _builtin_abs(a)
 
@@ -291,16 +287,63 @@ def xor(a, b):
     return a ^ b
 
 
-def attrgetter(*attrs):
-    _unsupported()
+def _resolve_attr_path(obj, path):
+    for name in path:
+        obj = getattr(obj, name)
+    return obj
 
 
-def itemgetter(*items):
-    _unsupported()
+class attrgetter:
+    """Return a callable that fetches one or more attributes."""
+
+    def __init__(self, attr, /, *attrs):
+        paths = []
+        for name in (attr,) + attrs:
+            if not isinstance(name, str):
+                raise TypeError("attribute name must be a string")
+            parts = str.split(name, ".")
+            paths.append((name,) if len(parts) == 1 else tuple(parts))
+        self._paths = tuple(paths)
+
+    def __call__(self, obj, /):
+        paths = self._paths
+        if len(paths) == 1:
+            return _resolve_attr_path(obj, paths[0])
+        results = []
+        for path in paths:
+            results.append(_resolve_attr_path(obj, path))
+        return tuple(results)
 
 
-def methodcaller(name, *args):
-    _unsupported()
+class itemgetter:
+    """Return a callable that fetches one or more items."""
+
+    def __init__(self, item, /, *items):
+        self._items = (item,) + items
+
+    def __call__(self, obj, /):
+        items = self._items
+        if len(items) == 1:
+            return obj[items[0]]
+        results = []
+        for item in items:
+            results.append(obj[item])
+        return tuple(results)
+
+
+class methodcaller:
+    """Return a callable that invokes a named method with stored arguments."""
+
+    def __init__(self, name, /, *args, **kwargs):
+        if not isinstance(name, str):
+            raise TypeError("method name must be a string")
+        self._name = name
+        self._args = args
+        self._kwargs = kwargs
+
+    def __call__(self, obj, /):
+        method = getattr(obj, self._name)
+        return method(*self._args, **self._kwargs)
 
 
 __abs__ = abs
