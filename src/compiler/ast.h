@@ -365,10 +365,12 @@ namespace cl
 
         int32_t root_node = -1;
 
-        std::span<const int32_t> function_decorators(int32_t node_idx) const
+        std::span<const int32_t> definition_decorators(int32_t node_idx) const
         {
             assert(kinds[node_idx].node_kind ==
-                   AstNodeKind::STATEMENT_FUNCTION_DEF);
+                       AstNodeKind::STATEMENT_FUNCTION_DEF ||
+                   kinds[node_idx].node_kind ==
+                       AstNodeKind::STATEMENT_CLASS_DEF);
             const auto &definition = children[node_idx];
             if(definition.size() == 2)
                 return {};

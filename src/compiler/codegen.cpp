@@ -729,6 +729,39 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<std::optional<TemporaryReg>>
+        emit_decorator_values(std::span<const int32_t> decorators)
+        {
+            std::optional<TemporaryReg> regs;
+            if(!decorators.empty())
+            {
+                regs.emplace(*code_obj, decorators.size());
+                for(size_t i = 0; i < decorators.size(); ++i)
+                {
+                    CL_TRY(codegen_node_into_specific_register(decorators[i],
+                                                               *regs + i));
+                }
+            }
+            return Expected<std::optional<TemporaryReg>>::ok(std::move(regs));
+        }
+
+        Expected<void>
+        emit_decorator_calls(std::span<const int32_t> decorators,
+                             const std::optional<TemporaryReg> &regs)
+        {
+            for(size_t remaining = decorators.size(); remaining > 0;
+                --remaining)
+            {
+                size_t i = remaining - 1;
+                uint32_t decorator_offset = av.source_offsets[decorators[i]];
+                TemporaryReg arg(*code_obj, 1, RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_star(decorator_offset, arg));
+                CL_TRY(code_obj->emit_call_positional(decorator_offset,
+                                                      *regs + i, arg, 1));
+            }
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_function_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -743,17 +776,8 @@ namespace cl
             uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(Value::from_oop(fun_obj)));
 
-            auto decorators = av.function_decorators(node_idx);
-            std::optional<TemporaryReg> decorator_regs;
-            if(!decorators.empty())
-            {
-                decorator_regs.emplace(*code_obj, decorators.size());
-                for(size_t i = 0; i < decorators.size(); ++i)
-                {
-                    CL_TRY(codegen_node_into_specific_register(
-                        decorators[i], *decorator_regs + i));
-                }
-            }
+            auto decorators = av.definition_decorators(node_idx);
+            auto decorator_regs = CL_TRY(emit_decorator_values(decorators));
 
             size_t first_default_idx =
                 first_default_parameter_index(param_children);
@@ -809,16 +833,7 @@ namespace cl
                     RegisterIndex(default_tuple)));
             }
 
-            for(size_t remaining = decorators.size(); remaining > 0;
-                --remaining)
-            {
-                size_t i = remaining - 1;
-                uint32_t decorator_offset = av.source_offsets[decorators[i]];
-                TemporaryReg arg(*code_obj, 1, RegisterAlignment::CallFrame);
-                CL_TRY(code_obj->emit_star(decorator_offset, arg));
-                CL_TRY(code_obj->emit_call_positional(
-                    decorator_offset, *decorator_regs + i, arg, 1));
-            }
+            CL_TRY(emit_decorator_calls(decorators, decorator_regs));
             CL_TRY(emit_variable_store(source_offset, node_idx));
             return Expected<void>::ok();
         }
@@ -853,7 +868,7 @@ namespace cl
             return param_children.size();
         }
 
-        Expected<void> codegen_class_definition(int32_t node_idx)
+        Expected<void> emit_class_creation(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -909,9 +924,16 @@ namespace cl
                 code_obj->emit_mov(source_offset, call_args + 1, bases_tuple));
             CL_TRY(code_obj->emit_create_class(source_offset, body_constant_idx,
                                                call_args));
-
-            CL_TRY(emit_variable_store(source_offset, node_idx));
             return Expected<void>::ok();
+        }
+
+        Expected<void> codegen_class_definition(int32_t node_idx)
+        {
+            auto decorators = av.definition_decorators(node_idx);
+            auto decorator_regs = CL_TRY(emit_decorator_values(decorators));
+            CL_TRY(emit_class_creation(node_idx));
+            CL_TRY(emit_decorator_calls(decorators, decorator_regs));
+            return emit_variable_store(av.source_offsets[node_idx], node_idx);
         }
 
         bool is_variable_reference_named(int32_t node_idx,

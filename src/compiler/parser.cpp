@@ -1991,36 +1991,46 @@ namespace cl
             }
         }
 
-        Expected<int32_t> function_def()
+        Expected<int32_t> decorated_definition()
         {
-            if(peek() != Token::AT)
-            {
-                return function_def_raw();
-            }
-
             uint32_t source_pos = source_pos_for_token();
             AstChildren decorators;
-            while(match(Token::AT))
+            do
             {
+                CL_TRY(consume(Token::AT));
                 decorators.push_back(CL_TRY(named_expression()));
                 CL_TRY(consume(Token::NEWLINE));
             }
-            if(start_rule == StartRule::Interactive &&
-               (peek() == Token::ENDMARKER ||
-                (peek() == Token::DEDENT &&
-                 source_pos_for_token() == token_vec.source_offsets.back())))
+            while(peek() == Token::AT);
+
+            Token next = peek();
+            if(next == Token::DEF || next == Token::CLASS)
             {
-                return raise_parse_error<int32_t>(
-                    {expected_token_message(Token::DEF, peek(),
-                                            source_pos_for_token()),
-                     true, indentation_level});
+                int32_t decorator_sequence = ast.emplace_back(
+                    AstNodeKind::DECORATOR_SEQUENCE, source_pos, decorators);
+                if(next == Token::DEF)
+                    return function_def(decorator_sequence);
+                return class_def(decorator_sequence);
             }
-            int32_t decorator_sequence = ast.emplace_back(
-                AstNodeKind::DECORATOR_SEQUENCE, source_pos, decorators);
-            return function_def_raw(decorator_sequence);
+            uint32_t next_source_pos = source_pos_for_token();
+            if(is_tokenizer_error(next))
+            {
+                return raise_parse_error_for_tokenizer_error<int32_t>(
+                    next, next_source_pos, indentation_level);
+            }
+            // The tokenizer emits any implicit closing dedents at EOF.
+            bool incomplete =
+                start_rule == StartRule::Interactive &&
+                (next == Token::ENDMARKER ||
+                 (next == Token::DEDENT &&
+                  next_source_pos == token_vec.source_offsets.back()));
+            return raise_parse_error<int32_t>(
+                {L"expected 'def' or 'class' after decorator" +
+                     format_error_context(next_source_pos),
+                 incomplete, incomplete ? indentation_level : 0});
         }
 
-        Expected<int32_t> function_def_raw(int32_t decorators = -1)
+        Expected<int32_t> function_def(int32_t decorators = -1)
         {
             int32_t source_pos = source_pos_for_token();
             CL_TRY(consume(Token::DEF));  // todo worry about async later
@@ -2266,7 +2276,7 @@ namespace cl
                 AstNodeKind::STATEMENT_IF, source_pos, children));
         }
 
-        Expected<int32_t> class_def()
+        Expected<int32_t> class_def(int32_t decorators = -1)
         {
             int32_t source_pos = source_pos_for_token();
             CL_TRY(consume(Token::CLASS));
@@ -2288,6 +2298,8 @@ namespace cl
 
             CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
+            if(decorators >= 0)
+                children.push_back(decorators);
             return Expected<int32_t>::ok(
                 ast.emplace_back(AstNodeKind::STATEMENT_CLASS_DEF, source_pos,
                                  children, name_str));
@@ -2490,8 +2502,9 @@ namespace cl
         {
             switch(peek())
             {
-                case Token::DEF:
                 case Token::AT:
+                    return decorated_definition();
+                case Token::DEF:
                 case Token::ASYNC:
                     return function_def();
                 case Token::IF:

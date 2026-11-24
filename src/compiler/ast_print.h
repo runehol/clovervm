@@ -509,6 +509,11 @@ template <> struct fmt::formatter<cl::AstVector>
                             cl::ExpressionPrecedence::Lowest);
                 break;
             case cl::AstNodeKind::STATEMENT_CLASS_DEF:
+                if(children.size() == 3)
+                {
+                    render_node(av, out, children[2], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
                 emit_indent(out, indent);
                 fmt::format_to(out, "class {}",
                                narrow_wstring_view_ast(string_as_wchar_t(
