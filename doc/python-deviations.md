@@ -572,6 +572,25 @@ used by numeric operations where appropriate, and decide per API whether
 non-SMI `BigInt` values should be accepted, rejected with Python-compatible
 overflow behavior, or require a wider backing representation.
 
+### Integer to bytes conversion
+
+`int.to_bytes(self, /, length=1, byteorder='big', *, signed=False)` reads
+stored int, bool and int-subclass payloads for the receiver and length.
+Length objects that require custom `__index__` raise `TypeError`. Byte order
+uses stored string content. Signedness uses ordinary VM truth testing, with
+the VM's existing truth-conversion limits. The managed binder and native
+argument checks can use different error wording from CPython 3.14.10.
+
+Signed index-sized length conversion and byte-order type validation precede
+the signedness callback.
+Byte-order content, nonnegative length and bytes storage limits are checked
+after the callback. The VM raises `OverflowError` for lengths beyond its
+tagged bytes count or native allocation-size bounds. It checks integer fit
+before allocating, whereas CPython allocates before converting the integer.
+Representable allocations use the existing bytes allocator and may terminate
+the VM if slab mapping fails. Recoverable allocation failure is tracked in
+[#157](https://github.com/runehol/clovervm/issues/157).
+
 ### BigInt support is not yet complete Python `int` semantics
 
 Python integers have arbitrary precision across parsing, arithmetic, indexing,

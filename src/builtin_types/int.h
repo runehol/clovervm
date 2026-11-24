@@ -9,6 +9,7 @@
 
 namespace cl
 {
+    class ModuleObject;
     class ThreadState;
     class VirtualMachine;
 
@@ -50,6 +51,8 @@ namespace cl
 
     BuiltinClassDefinition make_int_class(VirtualMachine *vm);
     void install_int_class_methods(VirtualMachine *vm);
+    void install_int_helpers(VirtualMachine *vm, ModuleObject *module);
+    void install_int_python_methods(VirtualMachine *vm, ModuleObject *module);
 
 }  // namespace cl
 
