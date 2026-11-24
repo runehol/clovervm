@@ -131,10 +131,22 @@ TEST(Parser, decorated_function_renders_decorators_in_source_order)
                     L"    def f(): pass\n"));
 }
 
-TEST(Parser, decorator_prefix_requires_a_synchronous_function_definition)
+TEST(Parser, decorated_class_renders_decorators_in_source_order)
+{
+    EXPECT_EQ("@register\n"
+              "@configure(42)\n"
+              "class C(Base):\n"
+              "    pass\n",
+              parse_with_start_rule(L"@register\n"
+                                    L"@configure(42)\n"
+                                    L"class C(Base): pass\n",
+                                    StartRule::Interactive));
+}
+
+TEST(Parser, decorator_prefix_requires_a_function_or_class_definition)
 {
     for(const wchar_t *source:
-        {L"@d\n", L"@d, e\ndef f(): pass\n", L"@d\nclass C: pass\n",
+        {L"@d\n", L"@d, e\ndef f(): pass\n", L"@d\nvalue = 42\n",
          L"@d\nasync def f(): pass\n"})
     {
         CompileContinuationInfo continuation;

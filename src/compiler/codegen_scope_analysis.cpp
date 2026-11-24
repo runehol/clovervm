@@ -788,7 +788,7 @@ namespace cl
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
                             for(int32_t decorator:
-                                av.function_decorators(node_idx))
+                                av.definition_decorators(node_idx))
                             {
                                 CL_TRY(validate_declaration_expression(
                                     state, decorator));
@@ -809,6 +809,12 @@ namespace cl
                         }
 
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                        for(int32_t decorator:
+                            av.definition_decorators(node_idx))
+                        {
+                            CL_TRY(validate_declaration_expression(state,
+                                                                   decorator));
+                        }
                         for(int32_t base_idx: av.children[children[0]])
                         {
                             CL_TRY(validate_declaration_expression(state,
@@ -1003,7 +1009,8 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                        for(int32_t decorator: av.function_decorators(node_idx))
+                        for(int32_t decorator:
+                            av.definition_decorators(node_idx))
                         {
                             collect_code_object_bindings(analysis, decorator);
                         }
@@ -1021,6 +1028,11 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                        for(int32_t decorator:
+                            av.definition_decorators(node_idx))
+                        {
+                            collect_code_object_bindings(analysis, decorator);
+                        }
                         collect_code_object_bindings(analysis, children[0]);
                         ensure_binding(analysis, av.constants[node_idx]);
                         analysis.result.child_definitions.push_back(node_idx);
@@ -1235,7 +1247,8 @@ namespace cl
                 switch(kind.node_kind)
                 {
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                        for(int32_t decorator: av.function_decorators(node_idx))
+                        for(int32_t decorator:
+                            av.definition_decorators(node_idx))
                         {
                             collect_local_touches_into(analysis, decorator,
                                                        touches);
@@ -1254,6 +1267,12 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                        for(int32_t decorator:
+                            av.definition_decorators(node_idx))
+                        {
+                            collect_local_touches_into(analysis, decorator,
+                                                       touches);
+                        }
                         collect_local_touches_into(analysis, children[0],
                                                    touches);
                         mark_touch_assigned(analysis, touches,
@@ -2241,7 +2260,7 @@ namespace cl
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
                             for(int32_t decorator:
-                                av.function_decorators(node_idx))
+                                av.definition_decorators(node_idx))
                             {
                                 analyze_child_as_expression(analysis, decorator,
                                                             state);
@@ -2261,6 +2280,12 @@ namespace cl
                         }
 
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                        for(int32_t decorator:
+                            av.definition_decorators(node_idx))
+                        {
+                            analyze_child_as_expression(analysis, decorator,
+                                                        state);
+                        }
                         for(int32_t base_idx: av.children[children[0]])
                         {
                             analyze_child_as_expression(analysis, base_idx,
