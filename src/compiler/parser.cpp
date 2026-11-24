@@ -399,9 +399,11 @@ namespace cl
     {
     public:
         Parser(VirtualMachine &_vm, const TokenVector &_token_vec,
+               StartRule _start_rule,
                CompileContinuationInfo *_compile_continuation_info)
             : vm(_vm), token_vec(_token_vec), ast(token_vec.compilation_unit),
-              compile_continuation_info(_compile_continuation_info)
+              compile_continuation_info(_compile_continuation_info),
+              start_rule(_start_rule)
         {
             if(compile_continuation_info != nullptr)
             {
@@ -409,7 +411,7 @@ namespace cl
             }
         }
 
-        Expected<AstVector> parse(StartRule start_rule)
+        Expected<AstVector> parse()
         {
             switch(start_rule)
             {
@@ -436,6 +438,7 @@ namespace cl
         const TokenVector &token_vec;
         AstVector ast;
         CompileContinuationInfo *compile_continuation_info;
+        StartRule start_rule;
         size_t token_pos = 0;
         uint32_t indentation_level = 0;
 
@@ -1990,14 +1993,34 @@ namespace cl
 
         Expected<int32_t> function_def()
         {
-            if(peek() == Token::AT)
+            if(peek() != Token::AT)
             {
-                // todo worry about decorators later
+                return function_def_raw();
             }
-            return function_def_raw();
+
+            uint32_t source_pos = source_pos_for_token();
+            AstChildren decorators;
+            while(match(Token::AT))
+            {
+                decorators.push_back(CL_TRY(named_expression()));
+                CL_TRY(consume(Token::NEWLINE));
+            }
+            if(start_rule == StartRule::Interactive &&
+               (peek() == Token::ENDMARKER ||
+                (peek() == Token::DEDENT &&
+                 source_pos_for_token() == token_vec.source_offsets.back())))
+            {
+                return raise_parse_error<int32_t>(
+                    {expected_token_message(Token::DEF, peek(),
+                                            source_pos_for_token()),
+                     true, indentation_level});
+            }
+            int32_t decorator_sequence = ast.emplace_back(
+                AstNodeKind::DECORATOR_SEQUENCE, source_pos, decorators);
+            return function_def_raw(decorator_sequence);
         }
 
-        Expected<int32_t> function_def_raw()
+        Expected<int32_t> function_def_raw(int32_t decorators = -1)
         {
             int32_t source_pos = source_pos_for_token();
             CL_TRY(consume(Token::DEF));  // todo worry about async later
@@ -2019,9 +2042,12 @@ namespace cl
             CL_TRY(consume(Token::COLON));
             // todo worry about func_type_comment later
             int32_t body = CL_TRY(block());
+            AstChildren children{param_seq, body};
+            if(decorators >= 0)
+                children.push_back(decorators);
             return Expected<int32_t>::ok(
                 ast.emplace_back(AstNodeKind::STATEMENT_FUNCTION_DEF,
-                                 source_pos, {param_seq, body}, name_str));
+                                 source_pos, children, name_str));
         }
 
         Expected<int32_t> params() { return parameters(); }
@@ -2574,8 +2600,8 @@ namespace cl
     parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule,
           CompileContinuationInfo *compile_continuation_info)
     {
-        Parser parser(vm, tv, compile_continuation_info);
-        return parser.parse(start_rule);
+        Parser parser(vm, tv, start_rule, compile_continuation_info);
+        return parser.parse();
     }
 
 }  // namespace cl

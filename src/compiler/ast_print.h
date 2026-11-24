@@ -480,7 +480,23 @@ template <> struct fmt::formatter<cl::AstVector>
                                    ast_print_string_constant(av, node_idx))));
                 break;
 
+            case cl::AstNodeKind::DECORATOR_SEQUENCE:
+                for(int32_t decorator: children)
+                {
+                    emit_indent(out, indent);
+                    fmt::format_to(out, "@");
+                    render_node(av, out, decorator, indent,
+                                cl::ExpressionPrecedence::Lowest);
+                    fmt::format_to(out, "\n");
+                }
+                break;
+
             case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
+                if(children.size() == 3)
+                {
+                    render_node(av, out, children[2], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
                 emit_indent(out, indent);
                 fmt::format_to(out, "def {}",
                                narrow_wstring_view_ast(string_as_wchar_t(
