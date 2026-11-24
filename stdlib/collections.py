@@ -1,4 +1,4 @@
-"""A CloverVM collections subset centered on UserDict.
+"""A CloverVM collections subset with UserDict and ChainMap.
 
 Mapping ABCs, view set operations, fromkeys, and subclass-preserving copies
 are deferred. See doc/stdlib-module-bringup-checklist.md for dependencies.
@@ -9,6 +9,7 @@ are deferred. See doc/stdlib-module-bringup-checklist.md for dependencies.
 # Mapping mixins: Copyright 2007 Google, Inc. All Rights Reserved.
 # Licensed to PSF under a Contributor Agreement.
 # The derived portions are licensed under the PSF License Agreement.
+# ChainMap is adapted from Lib/collections/__init__.py in CPython 3.14.10.
 
 
 _sentinel = object()
@@ -301,4 +302,86 @@ class UserDict:
         return UserDict(self.data.copy())
 
 
-__all__ = ["UserDict"]
+def _chainmap_keys(maps, *, allow_early_stop=False):
+    keys = {}
+    for mapping in maps:
+        received_key = False
+        try:
+            for key in mapping:
+                received_key = True
+                keys[key] = None
+        except StopIteration:
+            # CPython's map(dict.fromkeys, ...) stops the iteration snapshot
+            # if acquiring a mapping's iterator raises StopIteration.
+            if allow_early_stop and not received_key:
+                break
+            raise
+    return keys
+
+
+class ChainMap:
+    """A layered mapping with writes and deletions confined to its first map."""
+
+    __hash__ = None
+
+    def __init__(self, *maps):
+        self.maps = list(maps) or [{}]
+
+    def __missing__(self, key):
+        raise KeyError(key)
+
+    def __getitem__(self, key):
+        for mapping in self.maps:
+            try:
+                return mapping[key]
+            except KeyError:
+                pass
+        return self.__missing__(key)
+
+    def __setitem__(self, key, value):
+        self.maps[0][key] = value
+
+    def __delitem__(self, key):
+        try:
+            del self.maps[0][key]
+        except KeyError:
+            raise KeyError("Key not found in the first mapping: " + repr(key))
+
+    def __contains__(self, key):
+        for mapping in self.maps:
+            if key in mapping:
+                return True
+        return False
+
+    def get(self, key, default=None):
+        if key in self:
+            return self[key]
+        return default
+
+    def __bool__(self):
+        for mapping in self.maps:
+            if mapping:
+                return True
+        return False
+
+    def __len__(self):
+        return len(_chainmap_keys(list(self.maps)))
+
+    def __iter__(self):
+        # Earlier mappings shadow values without moving keys from later maps.
+        return iter(_chainmap_keys(self.maps[::-1], allow_early_stop=True))
+
+    def new_child(self, m=None, **kwargs):
+        if m is None:
+            m = kwargs
+        elif kwargs:
+            m.update(kwargs)
+        return self.__class__(m, *self.maps)
+
+    def _get_parents(self):
+        return self.__class__(*self.maps[1:])
+
+    parents = property(_get_parents)
+
+
+__all__ = ["UserDict", "ChainMap"]
