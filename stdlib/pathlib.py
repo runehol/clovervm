@@ -41,6 +41,8 @@ class PurePosixPath:
                     parts.append(part)
 
         self._path = (root + "/".join(parts)) or "."
+        self._root = root
+        self._tail = tuple(parts)
 
     def __str__(self):
         return self._path
@@ -59,6 +61,24 @@ class PurePosixPath:
             return self.__class__(key, self)
         except TypeError:
             return NotImplemented
+
+    @property
+    def parts(self):
+        if self.drive or self.root:
+            return (self.drive + self.root,) + self._tail
+        return self._tail
+
+    @property
+    def anchor(self):
+        return self.drive + self.root
+
+    @property
+    def root(self):
+        return self._root
+
+    @property
+    def drive(self):
+        return ""
 
     @property
     def name(self):
