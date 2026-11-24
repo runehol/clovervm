@@ -31,6 +31,8 @@ def copy(x):
         return list.copy(x)
     if cls is dict:
         return dict.copy(x)
+    if cls is bytearray:
+        return bytearray.copy(x)
     if issubclass(cls, type):
         return x
     copier = getattr(cls, "__copy__", None)
