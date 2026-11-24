@@ -45,7 +45,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [~] | `posix` / platform backend | Low-level OS primitives backing `os`. | Private `_os` native module backs the first POSIX syscall slice for `os`; no public `posix` module yet. |
 | [x] | `errno` | Stable OS error constants. | Complete for supported host platforms. |
 | [~] | `stat` | File mode constants and helpers. | Pure-Python module now covers POSIX `os.stat` tuple indexes, mode constants, `S_IMODE`, `S_IFMT`, `S_IS*` predicates, and `filemode`; `os.path.isdir`/`isfile` now use these helpers. Missing platform-specific file flag constants, named stat result integration, and broader `os`/filesystem semantics. |
-| [ ] | `pathlib` | Modern path abstraction used by tooling and tests. | Deferred: the bounded POSIX `Path` slice needs read-only properties (`name`, `parent`, `suffix`, `suffixes`, `stem`), but builtin `property` and interpreter execution of descriptor `__get__` are not supported yet. Revisit after descriptor/property support; do not substitute writable attributes or an eager parent chain. Existing filesystem limits also include string-only inputs, absent `os.fspath`, plain stat tuples, and `ValueError` for OS failures. |
+| [~] | `pathlib` | Modern path abstraction used by tooling and tests. | Managed lexical `PurePosixPath` supports string construction and rendering, joining, and read-only `name`, `parent`, `suffix`, `suffixes`, and `stem`. Parents are computed on demand. Filesystem `Path`, Windows flavors, and path-like conversion remain deferred. See the suggested first slice below for the remaining limits. |
 
 ## Tier 2: Data Formats and Text Handling
 
@@ -223,7 +223,7 @@ source:
 | [~] | `io` | Native IOBase/RawIOBase/BufferedIOBase and POSIX FileIO exist; BufferedReader and BufferedWriter exist; random/RW-pair streams, text I/O and line fallbacks remain. Native RawIOBase read/readall and FileIO.readall are available. |
 | [x] | `errno` | Complete for supported host platforms. |
 | [~] | `stat` | POSIX mode constants/helpers and `filemode` exist; platform flags and named stat integration remain. |
-| [ ] | `pathlib` | Deferred pending descriptor/property support for read-only path attributes; writable attributes and an eager parent chain are excluded. Existing `os`/`stat` support still lacks path-like input handling and CPython-compatible stat results. |
+| [~] | `pathlib` | Managed lexical `PurePosixPath` supports construction from strings and POSIX path instances, string conversion, `joinpath`, both directions of `/`, and read-only `name`, `parent`, `suffix`, `suffixes`, and `stem`. Parents are computed on demand. POSIX roots, `..`, and trailing-dot behavior follow CPython 3.14.10. String subclasses use stored text. Custom path-like conversion, `os.fspath`, subclass `with_segments` hooks, enforcement of instance slots, value comparison and hashing, `PurePath`, Windows flavors, and filesystem `Path` APIs remain deferred. Existing `os`/`stat` support still lacks path-like input handling and CPython-compatible stat results. |
 | [ ] | `re` | Large but unlocks a lot of parsers and stdlib modules. |
 | [ ] | `enum` | Useful for modern Python APIs; depends on class semantics. |
 | [ ] | `dataclasses` | High payoff after annotations/class mutation behavior is ready. |
