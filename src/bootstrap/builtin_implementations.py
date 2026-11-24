@@ -1805,3 +1805,10 @@ def _clover_bytearray_hex(self, /, sep=_clover_hex_missing_separator,
     return _clover_bytearray_hex_impl(
         self, _clover_hex_checked_separator(sep), group
     )
+
+
+def _clover_int_to_bytes(self, /, length=1, byteorder="big", *, signed=False):
+    """Return the integer as bytes of the given length and byte order."""
+    _clover_int_to_bytes_preflight(self, length, byteorder)
+    is_signed = True if signed else False
+    return _clover_int_to_bytes_impl(self, length, byteorder, is_signed)

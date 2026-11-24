@@ -5,6 +5,7 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/num_parse.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
@@ -15,11 +16,14 @@
 #include "runtime/exception_propagation.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -450,6 +454,163 @@ namespace cl
         }
         return thread->set_pending_builtin_exception_string(
             L"TypeError", L"int.bit_count expects an int receiver");
+    }
+
+    [[nodiscard]] static Expected<int64_t> int_to_bytes_length(Value length)
+    {
+        if(is_smi_or_bool_value(length))
+            return Expected<int64_t>::ok(smi_or_bool_as_int(length));
+        if(!has_native_layout<BigInt>(length))
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"int.to_bytes length must be an integer");
+
+        int64_t count =
+            CL_TRY(bigint_to_int64(length.get_ptr<BigInt>()->view()));
+        if(count < std::numeric_limits<ptrdiff_t>::min() ||
+           count > std::numeric_limits<ptrdiff_t>::max())
+            return Expected<int64_t>::raise_exception(
+                L"OverflowError",
+                L"Python int too large to convert to C ssize_t");
+        return Expected<int64_t>::ok(count);
+    }
+
+    [[nodiscard]] static Expected<int64_t>
+    validate_int_to_bytes_args(Value self, Value length, Value byteorder)
+    {
+        if(!is_intlike_value(self))
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"int.to_bytes expects an int receiver");
+        int64_t count = CL_TRY(int_to_bytes_length(length));
+        if(!has_native_layout<String>(byteorder))
+            return Expected<int64_t>::raise_exception(
+                L"TypeError", L"int.to_bytes byteorder must be str");
+        return Expected<int64_t>::ok(count);
+    }
+
+    [[nodiscard]] static Value int_to_bytes_preflight(ThreadState *, Value self,
+                                                      Value length,
+                                                      Value byteorder)
+    {
+        (void)CL_TRY(validate_int_to_bytes_args(self, length, byteorder));
+        return Value::None();
+    }
+
+    enum class IntByteOrder
+    {
+        Big,
+        Little,
+    };
+
+    enum class IntByteSignedness
+    {
+        Unsigned,
+        Signed,
+    };
+
+    static bool int_fits_in_bytes(ConstBigIntView view, size_t count,
+                                  IntByteSignedness signedness)
+    {
+        if(view.signum == 0)
+            return true;
+        if(count == 0)
+            return false;
+
+        size_t bits = bigint_abs_bit_length(view);
+        if(signedness == IntByteSignedness::Unsigned)
+            return (bits - 1) / 8 < count;
+        if(bits / 8 < count)
+            return true;
+
+        // A negative power of two can use the high bit as both magnitude
+        // and sign, e.g. -128 in one byte. Inspect low limbs only at that edge.
+        return view.signum < 0 && bits / 8 == count && bits % 8 == 0 &&
+               std::has_single_bit(view.digits[view.n_digits - 1]) &&
+               std::all_of(
+                   view.digits, view.digits + view.n_digits - 1,
+                   [](digit_t digit) { return digit == 0; });
+    }
+
+    static void write_int_bytes(ConstBigIntView view, std::span<uint8_t> output,
+                                IntByteOrder order)
+    {
+        constexpr size_t bytes_per_digit = kDigitBits / 8;
+        const bool negative = view.signum < 0;
+        unsigned carry = negative ? 1 : 0;
+        for(size_t i = 0; i < output.size(); ++i)
+        {
+            size_t limb = i / bytes_per_digit;
+            uint8_t byte =
+                limb < view.n_digits
+                    ? static_cast<uint8_t>(view.digits[limb] >>
+                                           (8 * (i % bytes_per_digit)))
+                    : 0;
+            if(negative)
+            {
+                unsigned complemented = (byte ^ 0xffu) + carry;
+                byte = static_cast<uint8_t>(complemented);
+                carry = complemented >> 8;
+            }
+            size_t destination =
+                order == IntByteOrder::Little ? i : output.size() - 1 - i;
+            output[destination] = byte;
+        }
+    }
+
+    [[nodiscard]] static Value int_to_bytes_impl(ThreadState *thread,
+                                                 Value self, Value length,
+                                                 Value byteorder,
+                                                 Value is_signed)
+    {
+        // Preflight runs before the truth callback. Read the same immutable
+        // payloads again here, with no borrowed native view crossing the call.
+        int64_t length_value =
+            CL_TRY(validate_int_to_bytes_args(self, length, byteorder));
+        assert(is_signed.is_bool());
+        const auto *text = byteorder.get_ptr<String>();
+        std::wstring_view order_text(text->data, size_t(text->count.extract()));
+        IntByteOrder order;
+        if(order_text == L"big")
+            order = IntByteOrder::Big;
+        else if(order_text == L"little")
+            order = IntByteOrder::Little;
+        else
+            return thread->set_pending_builtin_exception_string(
+                L"ValueError", L"byteorder must be either 'little' or 'big'");
+        if(length_value < 0)
+            return thread->set_pending_builtin_exception_string(
+                L"ValueError", L"length argument must be non-negative");
+
+        if(length_value > value_smi_max ||
+           static_cast<uint64_t>(length_value) >
+               std::numeric_limits<size_t>::max() - sizeof(Bytes) -
+                   value_ptr_granularity)
+            return thread->set_pending_builtin_exception_string(
+                L"OverflowError", L"byte string is too large");
+        size_t count = static_cast<size_t>(length_value);
+        IntByteSignedness signedness = is_signed == Value::True()
+                                           ? IntByteSignedness::Signed
+                                           : IntByteSignedness::Unsigned;
+        Owned<Value> receiver(self);
+        SmiViewStorage smi_storage;
+        {
+            ConstBigIntView view =
+                intlike_value_bigint_view(receiver.value(), &smi_storage);
+            if(view.signum < 0 && signedness == IntByteSignedness::Unsigned)
+                return thread->set_pending_builtin_exception_string(
+                    L"OverflowError",
+                    L"can't convert negative int to unsigned");
+            if(!int_fits_in_bytes(view, count, signedness))
+                return thread->set_pending_builtin_exception_string(
+                    L"OverflowError", L"int too big to convert");
+        }
+
+        Owned<TValue<Bytes>> output(thread->make_object_value<Bytes>(
+            TValue<SMI>::from_smi(length_value)));
+        // Acquire the payload pointers after allocation and fill synchronously.
+        write_int_bytes(
+            intlike_value_bigint_view(receiver.value(), &smi_storage),
+            {output.extract()->data, count}, order);
+        return output.value().raw_value();
     }
 
     static Value intlike_hash_value(Value self)
@@ -2392,6 +2553,41 @@ namespace cl
             install_builtin_intrinsic_methods(vm, vm->int_class(), methods,
                                               std::size(methods)),
             "installing intrinsic methods");
+    }
+
+    void install_int_helpers(VirtualMachine *vm, ModuleObject *module)
+    {
+        BuiltinIntrinsicMethod helpers[] = {
+            builtin_intrinsic_method(L"_clover_int_to_bytes_preflight",
+                                     int_to_bytes_preflight),
+            builtin_intrinsic_method(L"_clover_int_to_bytes_impl",
+                                     int_to_bytes_impl),
+        };
+        for(const auto &helper: helpers)
+        {
+            auto function = unwrap_bootstrap_expected(
+                vm, make_intrinsic_function(vm, helper), "creating int helper");
+            unwrap_bootstrap_expected(
+                vm,
+                module->set_own_property(
+                    vm->get_or_create_interned_string_value(helper.name),
+                    function.raw_value()),
+                "installing int helper");
+        }
+    }
+
+    void install_int_python_methods(VirtualMachine *vm, ModuleObject *module)
+    {
+        Value function = module->get_own_property(
+            vm->get_or_create_interned_string_value(L"_clover_int_to_bytes"));
+        if(!has_native_layout<Function>(function))
+            fatal("missing int.to_bytes Python method");
+        bool stored = vm->int_class()->define_own_property(
+            vm->get_or_create_interned_string_value(L"to_bytes"), function,
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+                descriptor_flag(DescriptorFlag::StableSlot));
+        assert(stored);
+        (void)stored;
     }
 
 }  // namespace cl
