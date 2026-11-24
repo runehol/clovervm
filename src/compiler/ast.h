@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iosfwd>
+#include <span>
 #include <vector>
 
 namespace cl
@@ -53,6 +54,7 @@ namespace cl
         PARAMETER,
         PARAMETER_VARARGS,
         PARAMETER_KWARGS,
+        DECORATOR_SEQUENCE,
         CALL_ARGUMENT_POSITIONAL,
         CALL_ARGUMENT_STARRED,
         // None name denotes **mapping, matching CPython keyword(arg=None).
@@ -114,6 +116,7 @@ namespace cl
             case AstNodeKind::PARAMETER:
             case AstNodeKind::PARAMETER_VARARGS:
             case AstNodeKind::PARAMETER_KWARGS:
+            case AstNodeKind::DECORATOR_SEQUENCE:
             case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
             case AstNodeKind::CALL_ARGUMENT_STARRED:
             case AstNodeKind::CALL_ARGUMENT_KEYWORD:
@@ -361,6 +364,16 @@ namespace cl
         std::vector<Member<Value>> constants;
 
         int32_t root_node = -1;
+
+        std::span<const int32_t> function_decorators(int32_t node_idx) const
+        {
+            assert(kinds[node_idx].node_kind ==
+                   AstNodeKind::STATEMENT_FUNCTION_DEF);
+            const auto &definition = children[node_idx];
+            if(definition.size() == 2)
+                return {};
+            return children[definition[2]];
+        }
 
         size_t size() const
         {

@@ -787,6 +787,12 @@ namespace cl
 
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
+                            for(int32_t decorator:
+                                av.function_decorators(node_idx))
+                            {
+                                CL_TRY(validate_declaration_expression(
+                                    state, decorator));
+                            }
                             AstChildren param_children =
                                 signature_parameter_nodes(av, children[0]);
                             for(int32_t param_idx: param_children)
@@ -997,6 +1003,10 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                        for(int32_t decorator: av.function_decorators(node_idx))
+                        {
+                            collect_code_object_bindings(analysis, decorator);
+                        }
                         for(int32_t param_idx:
                             signature_parameter_nodes(av, children[0]))
                         {
@@ -1225,6 +1235,11 @@ namespace cl
                 switch(kind.node_kind)
                 {
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                        for(int32_t decorator: av.function_decorators(node_idx))
+                        {
+                            collect_local_touches_into(analysis, decorator,
+                                                       touches);
+                        }
                         for(int32_t param_idx:
                             signature_parameter_nodes(av, children[0]))
                         {
@@ -2225,6 +2240,12 @@ namespace cl
 
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
+                            for(int32_t decorator:
+                                av.function_decorators(node_idx))
+                            {
+                                analyze_child_as_expression(analysis, decorator,
+                                                            state);
+                            }
                             AstChildren param_children =
                                 signature_parameter_nodes(av, children[0]);
                             for(int32_t param_idx: param_children)

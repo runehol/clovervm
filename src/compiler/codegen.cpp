@@ -742,6 +742,19 @@ namespace cl
             const ScopeAnalysis &child = scopes.scopes_by_body.at(children[1]);
             uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(Value::from_oop(fun_obj)));
+
+            auto decorators = av.function_decorators(node_idx);
+            std::optional<TemporaryReg> decorator_regs;
+            if(!decorators.empty())
+            {
+                decorator_regs.emplace(*code_obj, decorators.size());
+                for(size_t i = 0; i < decorators.size(); ++i)
+                {
+                    CL_TRY(codegen_node_into_specific_register(
+                        decorators[i], *decorator_regs + i));
+                }
+            }
+
             size_t first_default_idx =
                 first_default_parameter_index(param_children);
             if(first_default_idx == param_children.size())
@@ -796,6 +809,16 @@ namespace cl
                     RegisterIndex(default_tuple)));
             }
 
+            for(size_t remaining = decorators.size(); remaining > 0;
+                --remaining)
+            {
+                size_t i = remaining - 1;
+                uint32_t decorator_offset = av.source_offsets[decorators[i]];
+                TemporaryReg arg(*code_obj, 1, RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_star(decorator_offset, arg));
+                CL_TRY(code_obj->emit_call_positional(
+                    decorator_offset, *decorator_regs + i, arg, 1));
+            }
             CL_TRY(emit_variable_store(source_offset, node_idx));
             return Expected<void>::ok();
         }
@@ -3795,6 +3818,7 @@ namespace cl
                 case AstNodeKind::PARAMETER_KWARGS:
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER_SIGNATURE:
+                case AstNodeKind::DECORATOR_SEQUENCE:
                     return Expected<void>::raise_exception(
                         L"SystemError",
                         L"should not end here - this is handled by function "

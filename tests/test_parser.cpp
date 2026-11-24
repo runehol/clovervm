@@ -116,6 +116,51 @@ TEST(Parser, interactive_statement)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, decorated_function_renders_decorators_in_source_order)
+{
+    EXPECT_EQ("class C:\n"
+              "    @d.attr\n"
+              "    @(alias := factory(1, 2))\n"
+              "    def f():\n"
+              "        pass\n",
+              parse(L"class C:\n"
+                    L"    @d.attr\n"
+                    L"    # Between decorators\n"
+                    L"    @alias := factory(\n"
+                    L"        1, 2)\n"
+                    L"    def f(): pass\n"));
+}
+
+TEST(Parser, decorator_prefix_requires_a_synchronous_function_definition)
+{
+    for(const wchar_t *source:
+        {L"@d\n", L"@d, e\ndef f(): pass\n", L"@d\nclass C: pass\n",
+         L"@d\nasync def f(): pass\n"})
+    {
+        CompileContinuationInfo continuation;
+        EXPECT_TRUE(
+            parse_ast_with_start_rule(source, StartRule::File, &continuation)
+                .has_exception());
+        EXPECT_FALSE(continuation.incomplete_input);
+    }
+}
+
+TEST(Parser, decorator_prefix_reports_current_interactive_indentation)
+{
+    CompileContinuationInfo continuation;
+    EXPECT_TRUE(parse_ast_with_start_rule(L"@d\n@e\n", StartRule::Interactive,
+                                          &continuation)
+                    .has_exception());
+    EXPECT_TRUE(continuation.incomplete_input);
+    EXPECT_EQ(0u, continuation.next_indentation_level);
+
+    EXPECT_TRUE(parse_ast_with_start_rule(L"if True:\n    @d\n",
+                                          StartRule::Interactive, &continuation)
+                    .has_exception());
+    EXPECT_TRUE(continuation.incomplete_input);
+    EXPECT_EQ(1u, continuation.next_indentation_level);
+}
+
 TEST(Parser, incomplete_interactive_suite_reports_next_indentation_level)
 {
     CompileContinuationInfo compile_continuation_info;
