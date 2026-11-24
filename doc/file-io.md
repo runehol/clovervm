@@ -169,9 +169,9 @@ They require stored bytes results and copy only the returned prefix, preserving
 the destination length and unwritten suffix. Non-bytes results raise TypeError;
 results exceeding the original request or a callback-resized destination raise
 ValueError. No writable span is retained across callbacks or VM allocation.
-General writable-buffer inputs and computed properties remain separate work. The regressions include shared-prefix multiple inheritance,
-constructor cache invalidation, callback failures, subclass hooks, destination
-resizing, and forced reclamation.
+General writable-buffer inputs remain separate work. The regressions include
+shared-prefix multiple inheritance, constructor cache invalidation, callback
+failures, subclass hooks, destination resizing, and forced reclamation.
 
 
 ## BufferedReader
@@ -179,9 +179,9 @@ resizing, and forced reclamation.
 `io.BufferedReader` / `_io.BufferedReader` is a managed Python subclass of
 native BufferedIOBase, defined in the retained trusted bootstrap module. Its
 raw reference, bytearray buffer, cursor/end indices, capacity, and reentry flag
-are ordinary attributes using existing overflow storage. No reader-specific
-native layout, spare inline slots, descriptors, interpreter changes, or cleanup
-hooks are introduced. DEFAULT_BUFFER_SIZE is 128 KiB.
+are ordinary attributes using existing overflow storage. The local close flag
+uses the native base slot. Both buffered classes use managed property getters
+with the existing descriptor implementation. DEFAULT_BUFFER_SIZE is 128 KiB.
 
 Bounded read/readinto operations consume buffered bytes and issue raw.readinto
 calls until satisfied, EOF, or would-block. Large requests bypass the internal
@@ -206,10 +206,15 @@ reader closed. Successful initialization resets the reader's base-close flag.
 detach flushes, returns raw at its current physical position, discards unread
 bytes, and makes the wrapper unusable. Abandonment never closes raw.
 
-Computed properties remain an accepted incompatibility: raw is an ordinary
-writable attribute, closed reflects the reader's own base flag, and name/mode
-are omitted. External raw closure does not change reader.closed; cached data
-can still be consumed, but further raw transfers reject the closed stream.
+The read-only raw property returns the attached stream, or None after detach.
+The name, mode, and closed properties read from the attached raw stream and
+raise ValueError after detach. External raw closure is immediately visible.
+The reader can still consume cached data, and further raw transfers reject the
+closed stream. Buffered operations use the private attachment and close flag,
+so a raw close failure can leave the public closed property false while the
+private flag prevents another close attempt. Attachment uses a reserved
+CloverVM attribute name in ordinary managed storage. Context entry checks the
+public closed property and treats AttributeError during lookup as absence.
 Line methods/iteration, text I/O and builtin open remain deferred.
 
 
@@ -241,8 +246,8 @@ Flush drains queued output; it does not delegate to raw.flush. Tell adds pending
 bytes to the raw position. Seek and detach flush before changing position or
 attachment, preserving the queue when flushing fails. Close invokes the dynamic
 flush override without holding that operation's guard, then attempts raw close
-in finally. Raw callbacks during transfer/flush/seek/close are guarded against
-reentry. Raw-close errors take precedence over flush errors. As with the reader,
-raw is writable, closed uses the local base flag, name/mode are omitted, and
-abandonment does not flush or close raw. Truncate, text streams and builtin open
-remain deferred.
+in finally. The raw closed getter and truth conversion run under the writer's
+guard. The guard is released before invoking the public flush override.
+Raw-close errors take precedence over flush errors. The writer shares
+the reader's property and local close-flag behavior. Abandonment does not flush
+or close raw. Truncate, text streams and builtin open remain deferred.

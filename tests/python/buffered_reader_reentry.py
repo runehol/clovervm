@@ -50,7 +50,7 @@ except ValueError:
 raw.shrink = False
 assert r.read(2) == b'OK'
 r.close()
-# Property incompatibilities accepted for this slice.
+# External closure is reflected through the raw stream.
 class Empty(io.RawIOBase):
     def readable(self):
         return True
@@ -59,7 +59,7 @@ class Empty(io.RawIOBase):
 raw = Empty()
 r = io.BufferedReader(raw, 4)
 raw.close()
-assert not r.closed
+assert r.closed
 try:
     r.read(1)
     assert False
@@ -68,8 +68,8 @@ except ValueError:
 assert not hasattr(r, 'name') and not hasattr(r, 'mode')
 r.close()
 assert r.closed
-# The local closed flag remains set when closing raw fails; the raw-close
-# exception takes precedence if flushing also failed.
+# The raw-close exception takes precedence if flushing also failed. The local
+# guard still prevents a repeated close, even if raw reports itself open.
 class FlushFailure(Exception):
     pass
 class CloseFailure(Exception):
@@ -90,7 +90,7 @@ try:
     assert False
 except CloseFailure as caught:
     assert caught is close_error
-assert r.closed and not raw.closed and raw.closes == 1
+assert not r.closed and not raw.closed and raw.closes == 1
 r.close()
 assert raw.closes == 1
 # No buffer export crosses a raw callback, including for the caller's target.

@@ -6,6 +6,7 @@ with io.FileIO(path, 'w+') as f:
     assert f.write(b'abcdefghijkl') == 12
     f.seek(0)
     r = io.BufferedReader(f, 4)
+    assert r.raw is f and r.name == f.name and r.mode == f.mode
     assert r.fileno() == f.fileno()
     assert r.readable() and r.seekable() and not r.writable()
     assert r.read(1) == b'a'

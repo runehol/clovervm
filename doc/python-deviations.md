@@ -721,14 +721,24 @@ close/flush, capabilities, context management and state checks; generic
 raw read/readall fallbacks and FileIO.readall are available; line iteration remains
 deferred. RawIOBase.read rejects a count exceeding a callback-resized buffer's
 current length rather than copying beyond it. Base subclasses support custom
-Python initializers with the inherited native allocator. Closed
-attributes use native read-only slots rather than getset descriptors. Descriptor
+Python initializers with the inherited native allocator. The native I/O
+classes expose closed through read-only slots. Descriptor
 isatty and truncate remain unsupported; inherited isatty returns False.
-Managed BufferedReader and BufferedWriter provide binary buffering. Their raw
-attributes are writable, closed uses a local base flag rather than following
-external raw closure, and
-name/mode are omitted pending computed properties. Line methods/iteration,
-truncate, text I/O and builtin open remain unimplemented. FileIO.readinto accepts
+Managed BufferedReader and BufferedWriter provide binary buffering. They expose
+read-only Python properties for raw, name, mode, and closed. The latter three
+read from the attached raw stream. After detach, raw is None and the other
+properties raise ValueError. Context entry checks the public closed attribute.
+Buffered operations keep their private attachment and lifecycle checks. If raw
+close fails and the raw stream still reports open, the public closed property
+reflects that result while the private close flag prevents another close
+attempt. CPython can retry the raw close in this case. Class access exposes
+Python property objects with managed getters. Calling a callable returned by a
+property requires reading the attribute before calling the result.
+The managed attachment uses a reserved CloverVM attribute name that remains
+visible to Python. Failed initialization can expose a different raw attachment
+from CPython.
+Line methods and iteration, truncate, text I/O and builtin open remain
+unimplemented. FileIO.readinto accepts
 bytearray destinations using a synchronous
 native borrow; general writable-buffer inputs remain deferred. FileIO accepts
 string paths and stored integer descriptors; bytes

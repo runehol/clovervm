@@ -4,6 +4,7 @@ import os
 path = 'clover-writer-' + str(os.getpid())
 with io.FileIO(path, 'w+') as raw:
     w = io.BufferedWriter(raw, 4)
+    assert w.raw is raw and w.name == raw.name and w.mode == raw.mode
     assert w.fileno() == raw.fileno() and w.seekable()
     assert w.write(b'ab') == 2
     assert w.tell() == 2 and raw.tell() == 0
