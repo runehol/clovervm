@@ -37,10 +37,18 @@ For bounded work that can land independently of this priority order, see
 
 1. **Interpreter-controlled descriptor execution**
 
-   Lookup already classifies descriptor work into plans. The next step is to
-   execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
-   or VM-controlled dispatch so Python-visible execution, allocation, and
-   exceptions are not hidden inside lookup/classification helpers.
+   Interpreter attribute reads, writes, and deletes execute plain-function
+   `__get__`, `__set__`, and `__delete__` hooks through explicit VM dispatch.
+   Eligible lookups have guarded cache plans. Remaining work includes arbitrary
+   callable descriptor hooks, class creation notifications through
+   `__set_name__`, and descriptor-aware native method callbacks
+   ([#149](https://github.com/runehol/clovervm/issues/149)). See
+   [Descriptor Execution](descriptor-execution.md).
+
+   Descriptor-aware direct calls still need a way to resolve the attribute and
+   run its getter before evaluating arguments. The proposed `LoadMethod` would
+   keep the selected callable and optional receiver live across argument
+   evaluation and preserve allocation-free calls where binding permits.
 
    Descriptor plans must carry the guards and binding decisions needed by
    compiled code. A compiled attribute read, write, delete, or method call should
@@ -49,12 +57,17 @@ For bounded work that can land independently of this priority order, see
 
 2. **Generic callable protocol and call-site IC contracts**
 
-   The call-plan model covers ordinary functions, constructor thunks, direct
-   method calls, and instances whose type MRO supplies a plain function for
-   `__call__`. See [Function Call Adaptation](function-call-adaptation.md).
-   Extend it to escaped bound methods, descriptor-produced callables, and
-   instances whose `__call__` needs descriptor binding or resolves to a
-   non-function callable.
+   Guarded call-target ICs cover ordinary functions, constructor thunks, and
+   instances whose type MRO supplies a plain function for `__call__`. Direct
+   method calls have their own lookup plans. Saved bound methods are callable
+   via a managed forwarding function. See
+   [Function Call Adaptation](function-call-adaptation.md).
+
+   Extend call-target resolution to instances whose `__call__` needs
+   descriptor binding or resolves to a non-function callable. Values returned
+   by descriptor hooks can already be saved and called if they fit the
+   supported call forms. Integrate that lookup with direct calls as described
+   above.
 
    Keep call adaptation call-site-shaped, not just callee-shaped. A warmed call
    site should expose enough normalized plan metadata for exact JIT-to-JIT calls
@@ -105,41 +118,33 @@ For bounded work that can land independently of this priority order, see
    contracts are explicit risks rework in every call, exit, and runtime
    transition.
 
-6. **Attribute hooks and escaped bound methods**
+6. **Attribute hooks**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
-    `__delattr__`, and add observable bound-method objects for escaped method
-    values such as `f = obj.m`. Direct method-call fast paths should remain
-    allocation-free when the bound method does not escape.
+    `__delattr__`. Function attribute reads already materialize bound methods
+    for saved values such as `f = obj.m`.
 
-7. **Inner functions with variable capture**
+7. **Class semantics cleanup**
 
-    Implement nested functions that capture variables from enclosing function
-    scopes, following the cell-based design in
-    [Closure Cells](closure-cells.md). This should cover free-variable reads,
-    captured local rebinding, shared cells across multiple closures, and
-    `nonlocal` binding analysis rather than treating captures as copied values
-    or parent-frame lookups.
+    Replace local-slot class scopes with dynamic namespaces backed by a dict
+    that supplies the class attributes once the body finishes. Synchronous
+    function and class decorators are implemented, including `@staticmethod`
+    and `@classmethod` on functions.
 
-    The implementation should keep ordinary uncaptured locals as direct frame
-    slots and introduce cell storage only for bindings that Python semantics
-    require to be shared with nested functions. Captured bindings are heap
-    objects and therefore need explicit lifetime, root visibility, teardown, and
-    pending-exception behavior for uninitialized cell reads.
+    Nested functions share lexical cells for captured bindings and support
+    `nonlocal`. Uncaptured locals remain direct frame slots. Supporting
+    captures across class bodies depends on the class namespace changes above.
+    Extensions must preserve cell lifetime, root visibility, teardown, and
+    exception propagation for uninitialized reads.
+    See [Closure Cells](closure-cells.md).
 
-8. **Class semantics cleanup**
-
-    Class scopes are currently implemented as local scopes, but this is not
-    correct. Instead these should be dynamic scopes backed by a dict that is
-    eventually slurped up into the class object when the initialization is done.
-
-9. **Generators, `yield`, and `yield from`**
+8. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-10. **Slice write/delete support when it becomes the shortest path**
+9. **List slice write/delete support when it becomes the shortest path**
 
     Keep `slice.__new__` and syntax construction validation-free: slice fields
     are raw objects, and `__index__` conversion must happen at consumption time
@@ -147,13 +152,37 @@ For bounded work that can land independently of this priority order, see
 
     List slice `__setitem__` and `__delitem__`, plus any future equality/hash
     decisions, should wait until a concrete benchmark or stdlib bringup task
-    needs them.
+    needs them. Bytearray already supports slice assignment and deletion.
 
-11. **Comprehensions and richer syntax**
+10. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
-    runtime substrate and major semantic protocols are in better shape.
+    runtime substrate and major semantic protocols are in better shape. See
+    [Non-starred unpacking assignment](#non-starred-unpacking-assignment).
+
+### Non-starred unpacking assignment
+
+Implement assignment targets such as `a, b = value` and `[a, b] = value`,
+including nested targets. The parser and AST represent target structure,
+codegen lowers unpacking and left-to-right stores, and the interpreter and
+runtime consume iterables and raise Python-visible exceptions.
+
+The first slice excludes starred targets. It must consume generic iterables,
+detect too few and too many values, and validate each unpack before beginning
+its stores. With nested targets, earlier stores can precede a later nested
+unpack failure. Support ordinary store targets within the unpacking target,
+including attributes and subscripts. Exact tuple/list shortcuts are optional.
+
+Done when parser, structural codegen, and interpreter tests cover tuple and list
+target syntax, generic iterators, nested targets, arity failures, and store
+ordering. Settle any new iteration or cache contract before implementation.
+
+## Parked stdlib follow-ups
+
+- `contextlib.ContextDecorator` and context-form `unittest.TestCase.assertRaises`
+  remain parked pending traceback support.
+- `functools.partial` remains parked pending descriptor-aware direct calls.
 
 ## Revisit Triggers
 
@@ -163,7 +192,8 @@ Revisit this ordering when:
   guarded, and replayable from cache metadata;
 - ordinary functions, constructor thunks, direct methods, escaped bound
   methods, descriptor-produced callables, and arbitrary `__call__` objects all
-  have explicit call-plan outcomes or explicit adapter edges;
+  have explicit call-plan outcomes or explicit adapter edges, with direct calls
+  resolving descriptors before argument evaluation;
 - iteration lowering exposes `__iter__`, `__next__`, `StopIteration`
   consumption, and internal iterator plans as inspectable bytecode/cache
   metadata rather than hidden helper behavior;
