@@ -3,7 +3,7 @@ import builtins
 import functools
 
 
-assert functools.__all__ == ("reduce",)
+assert functools.__all__ == ("reduce", "cmp_to_key")
 assert functools.reduce.__doc__ is not None
 assert not hasattr(functools, "partial")
 assert not hasattr(functools, "wraps")
