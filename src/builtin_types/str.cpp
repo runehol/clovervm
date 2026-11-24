@@ -12,6 +12,7 @@
 #include "builtin_types/string_builder.h"
 #include "builtin_types/string_iterator.h"
 #include "builtin_types/strip_scan.h"
+#include "builtin_types/tail_match.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/unicode.h"
 #include "object_model/class_object.h"
@@ -633,38 +634,26 @@ namespace cl
         return self.get_ptr<String>()->upper().raw_value();
     }
 
-    static Value native_str_startswith(ThreadState *thread, Value self,
-                                       Value prefix_value, Value start_value,
-                                       Value end_value)
+    template <TailMatch Tail>
+    [[nodiscard]] static Value
+    native_str_tailmatch(ThreadState *thread, Value self, Value candidate,
+                         Value start_value, Value end_value)
     {
-        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"startswith"));
-        CL_PROPAGATE_EXCEPTION(require_string_argument(
-            prefix_value, L"startswith first arg must be str"));
-        size_t start = 0;
-        size_t end = 0;
+        constexpr const wchar_t *method =
+            Tail == TailMatch::Prefix ? L"startswith" : L"endswith";
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, method));
+        size_t start, end;
         CL_PROPAGATE_EXCEPTION(
             normalize_string_range(self, start_value, end_value, start, end));
-        return self.get_ptr<String>()->startswith(
-                   prefix_value.get_ptr<String>(), start, end)
-                   ? Value::True()
-                   : Value::False();
-    }
-
-    static Value native_str_endswith(ThreadState *thread, Value self,
-                                     Value suffix_value, Value start_value,
-                                     Value end_value)
-    {
-        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"endswith"));
-        CL_PROPAGATE_EXCEPTION(require_string_argument(
-            suffix_value, L"endswith first arg must be str"));
-        size_t start = 0;
-        size_t end = 0;
-        CL_PROPAGATE_EXCEPTION(
-            normalize_string_range(self, start_value, end_value, start, end));
-        return self.get_ptr<String>()->endswith(suffix_value.get_ptr<String>(),
-                                                start, end)
-                   ? Value::True()
-                   : Value::False();
+        return match_tail_candidates<Tail>(
+            thread, TValue<String>::from_value_assumed(self), candidate, start,
+            end,
+            Tail == TailMatch::Prefix
+                ? L"startswith first arg must be str or a tuple of str"
+                : L"endswith first arg must be str or a tuple of str",
+            Tail == TailMatch::Prefix
+                ? L"tuple for startswith must only contain str"
+                : L"tuple for endswith must only contain str");
     }
 
     static Value native_str_find(ThreadState *thread, Value self,
@@ -1987,16 +1976,18 @@ namespace cl
             builtin_intrinsic_method(L"upper", native_str_upper,
                                      L"Return an uppercase copy."),
             with_keyword_parameter_names(
-                with_defaults(builtin_intrinsic_method(
-                                  L"startswith", native_str_startswith,
-                                  L"Return whether self starts with prefix."),
-                              str_start_end_defaults.value()),
+                with_defaults(
+                    builtin_intrinsic_method(
+                        L"startswith", native_str_tailmatch<TailMatch::Prefix>,
+                        L"Return whether self starts with any given prefix."),
+                    str_start_end_defaults.value()),
                 prefix_start_end_names, 3, 1),
             with_keyword_parameter_names(
-                with_defaults(builtin_intrinsic_method(
-                                  L"endswith", native_str_endswith,
-                                  L"Return whether self ends with suffix."),
-                              str_start_end_defaults.value()),
+                with_defaults(
+                    builtin_intrinsic_method(
+                        L"endswith", native_str_tailmatch<TailMatch::Suffix>,
+                        L"Return whether self ends with any given suffix."),
+                    str_start_end_defaults.value()),
                 suffix_start_end_names, 3, 1),
             with_trusted_handler_resolver(
                 builtin_intrinsic_method(

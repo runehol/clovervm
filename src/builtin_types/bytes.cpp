@@ -15,6 +15,7 @@
 #include "builtin_types/search_range.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
+#include "builtin_types/tail_match.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
 #include "object_model/function.h"
@@ -701,38 +702,26 @@ namespace cl
         return TrustedResolution::no_trusted_handler_call_untrusted();
     }
 
-    static Value native_bytes_startswith(ThreadState *thread, Value self,
-                                         Value prefix_value, Value start_value,
-                                         Value end_value)
+    template <TailMatch Tail>
+    [[nodiscard]] static Value
+    native_bytes_tailmatch(ThreadState *thread, Value self, Value candidate,
+                           Value start_value, Value end_value)
     {
-        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"startswith"));
-        CL_PROPAGATE_EXCEPTION(require_bytes_argument(
-            prefix_value, L"startswith first arg must be bytes"));
-        size_t start = 0;
-        size_t end = 0;
+        constexpr const wchar_t *method =
+            Tail == TailMatch::Prefix ? L"startswith" : L"endswith";
+        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, method));
+        size_t start, end;
         CL_PROPAGATE_EXCEPTION(
             normalize_bytes_range(self, start_value, end_value, start, end));
-        return self.get_ptr<Bytes>()->startswith(prefix_value.get_ptr<Bytes>(),
-                                                 start, end)
-                   ? Value::True()
-                   : Value::False();
-    }
-
-    static Value native_bytes_endswith(ThreadState *thread, Value self,
-                                       Value suffix_value, Value start_value,
-                                       Value end_value)
-    {
-        CL_PROPAGATE_EXCEPTION(require_bytes_receiver(self, L"endswith"));
-        CL_PROPAGATE_EXCEPTION(require_bytes_argument(
-            suffix_value, L"endswith first arg must be bytes"));
-        size_t start = 0;
-        size_t end = 0;
-        CL_PROPAGATE_EXCEPTION(
-            normalize_bytes_range(self, start_value, end_value, start, end));
-        return self.get_ptr<Bytes>()->endswith(suffix_value.get_ptr<Bytes>(),
-                                               start, end)
-                   ? Value::True()
-                   : Value::False();
+        return match_tail_candidates<Tail>(
+            thread, TValue<Bytes>::from_value_assumed(self), candidate, start,
+            end,
+            Tail == TailMatch::Prefix
+                ? L"startswith first arg must be bytes or a tuple of bytes"
+                : L"endswith first arg must be bytes or a tuple of bytes",
+            Tail == TailMatch::Prefix
+                ? L"tuple for startswith must only contain bytes"
+                : L"tuple for endswith must only contain bytes");
     }
 
     static Value native_bytes_find(ThreadState *thread, Value self,
@@ -2029,16 +2018,19 @@ namespace cl
                                          L"Return whether needle is in self."),
                 resolve_trusted_bytes_contains_handler),
             with_keyword_parameter_names(
-                with_defaults(builtin_intrinsic_method(
-                                  L"startswith", native_bytes_startswith,
-                                  L"Return whether self starts with prefix."),
-                              bytes_start_end_defaults.value()),
+                with_defaults(
+                    builtin_intrinsic_method(
+                        L"startswith",
+                        native_bytes_tailmatch<TailMatch::Prefix>,
+                        L"Return whether self starts with any given prefix."),
+                    bytes_start_end_defaults.value()),
                 prefix_start_end_names, 3, 1),
             with_keyword_parameter_names(
-                with_defaults(builtin_intrinsic_method(
-                                  L"endswith", native_bytes_endswith,
-                                  L"Return whether self ends with suffix."),
-                              bytes_start_end_defaults.value()),
+                with_defaults(
+                    builtin_intrinsic_method(
+                        L"endswith", native_bytes_tailmatch<TailMatch::Suffix>,
+                        L"Return whether self ends with any given suffix."),
+                    bytes_start_end_defaults.value()),
                 suffix_start_end_names, 3, 1),
             with_keyword_parameter_names(
                 with_defaults(builtin_intrinsic_method(
