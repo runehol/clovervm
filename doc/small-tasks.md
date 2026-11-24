@@ -12,52 +12,36 @@ when they grow into design work; this is a work queue, not a feature history.
 
 ## Bounded, But Larger
 
-### Tuple construction and subclassing
-
-No public tuple constructor is implemented yet. Revisit native `tuple.__new__`
-with empty construction, exact tuple identity reuse, direct exact-list
-conversion, and fresh native storage for subclass targets. Subclasses must use
-the requested class root shape, zero inline capacity, and common overflow
-attributes; retain element references rather than copying elements.
-
-Iterable materialization is no longer missing infrastructure:
-`ToExactTuple`, `ToExactList`, and VM-owned managed helpers are implemented for
-expanded calls. That does not settle how a native tuple constructor enters the
-helper and allocates the requested subclass. Agree that boundary and the first
-supported input slice before implementation. Subclass iterator overrides must
-still run.
-
-Verify argument/error behavior, exact and subclass result identity, element
-lifetime, iteration overrides, attributes, and constructor invalidation. Tuple
-equality is already implemented separately. This item remains deferred, rather
-than being an immediately ready constructor change.
-
 ### Follow-ups from native constructor work
 
-- **Text/bytes encoding:** implement `str.encode`, `bytes.decode`, and the
-  encoding/errors forms of `bytes(text, encoding, errors)` and
-  `str(data, encoding, errors)`. Choose the first codecs and error policies in a
-  separate readiness sketch.
-- **Integer/bytes conversion:** implement `int.to_bytes` and `int.from_bytes`
-  as separate slices. Cover byte order, signedness, length/range errors, and the
-  applicable integer protocols.
-- **Bytes conversion protocols:** add `__bytes__`, generic iterable input,
-  element `__index__`, and buffer inputs when their dispatch/storage contracts
-  are ready. Bytes subclasses can override `__bytes__`; the current native
-  bytes-input shortcut does not honor this yet. Keep this separate from native
-  subclass allocation.
+- **Text/bytes constructor overloads.** Add the encoding/errors forms of
+  `bytes(text, encoding, errors)` and `str(data, encoding, errors)`. The
+  existing `str.encode` and `bytes.decode` methods cover strict one-shot UTF-8
+  and Latin-1. Settle the constructor input and dispatch rules in a readiness
+  sketch.
+- **Integer/bytes conversion.** `int.to_bytes` and `int.from_bytes` are still
+  candidates for separate slices. Cover byte order, signedness, length/range
+  errors, and the applicable integer protocols.
+- **Bytes conversion protocols.** Construction from list and tuple inputs,
+  including subclasses, currently reads stored elements and accepts exact
+  integers in 0–255. Generic iterables and list/tuple subclass iteration
+  overrides still need support. Track `__bytes__` dispatch (including
+  overrides on bytes subclasses), custom element `__index__`, and general
+  buffer inputs as open work.
 - **Numeric conversion coverage:** user-defined `__float__` / `__index__`
   conversion remains deferred. Int conversion protocols
   and additional constructor forms need their own semantic sketches too.
-- **Correct `sys.maxsize`:** expose INT64_MAX rather than the SMI maximum on the
-  current 64-bit targets and audit consumers such as sequence search defaults.
-  This is separate from truthiness length validation, which uses the native
+- **Correct `sys.maxsize`.** It currently exposes the SMI maximum. Expose
+  INT64_MAX on the current 64-bit targets and audit defaults captured at
+  definition time (`list.index` and `tuple.index`) and workarounds in
+  `operator` and `heapq`. Truthiness length validation already uses the native
   signed 64-bit limit. See the
   [truthiness architecture contract](truthiness-dispatch.md).
-- **Closure capture for builtin helpers:** once
-  [closure cells](closure-cells.md) are implemented, replace persistent private
-  bindings in the builtin implementation module with captured builtin
-  classes/functions where appropriate.
+- **Builtin helper binding audit.** With [closure cells](closure-cells.md)
+  available, audit which private bindings in the builtin implementation module
+  could become lexical captures. Record when each binding resolves and what
+  rebinding it currently observes. Propose captures only where those semantics
+  are preserved.
 - **Combined `__new__` / `__init__`:** retain original call arguments and bind
   the two methods independently, then check the returned type and resolve its
   initializer after allocation. General call unpacking/forwarding is now
@@ -71,39 +55,5 @@ Exception allocation and native initializers are already implemented; their old
 queue entry has been retired. These follow-ups are tracked here, but need a
 readiness sketch before implementation where the owning design is unsettled.
 
-### Non-starred unpacking assignment
-
-Implement assignment targets such as `a, b = value` and `[a, b] = value`,
-including nested non-starred targets. The behavior belongs across the existing
-layers: parser/AST represents target structure, codegen lowers unpacking and
-left-to-right stores, and interpreter/runtime machinery performs iterable
-unpacking with Python-visible exceptions.
-
-The first slice should exclude starred targets. It must still consume a generic
-iterable, detect too few and too many values, avoid partially storing targets
-when unpacking itself fails, and support assignment targets wherever ordinary
-stores are already valid. Exact tuple/list shortcuts are optional optimizations,
-not the semantic implementation.
-
-Done when parser, structural codegen, and interpreter tests cover tuple and list
-target syntax, generic iterators, nested targets, arity failures, and store
-ordering. If the implementation needs a new iteration or cache contract beyond
-the existing special-method call pattern, move it out of this list and settle
-that design first.
-
-### Remove JSON's raw-string separator fallback after string iteration lands
-
-The JSON branch (`origin/codex/json-stdlib`, PR #35) currently special-cases
-strings without `__iter__` in `stdlib/json.py`, `_Encoder.__init__`. Once builtin
-`str.__iter__` is available, delete that raw-payload branch and run all separator
-inputs through the existing `iter(separators)` path. Keep its limit of three
-`next()` calls and the exactly-two-values check; materializing an arbitrary
-separator iterable could exhaust an unbounded iterator. Do not coerce string
-subclasses through `str.__str__`: their custom `__iter__` methods and exceptions
-must remain observable. Inherited builtin iteration reads the string payload
-without invoking subclass `__len__` or `__getitem__` methods.
-
-Validate empty/one/two/three-character strings, astral characters and lone
-surrogates, inherited and custom subclass iteration, iterator exceptions, and
-bounded consumption before removing the fallback. JSON integration stays in
-that branch; the string iterator implementation does not import its changes.
+Non-starred unpacking assignment is tracked in
+[Development Priorities](development-priorities.md#non-starred-unpacking-assignment).
