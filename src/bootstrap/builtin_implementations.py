@@ -1775,3 +1775,33 @@ def _clover_bytearray_splitlines(self, /, keepends=False):
         raise TypeError("bytearray.splitlines expects a bytearray receiver")
     keepends = True if keepends else False
     return _clover_bytearray_splitlines_impl(self, keepends)
+
+
+_clover_hex_missing_separator = object()
+
+
+def _clover_hex_checked_separator(sep):
+    if sep is _clover_hex_missing_separator:
+        return None
+    if len(sep) != 1:
+        raise ValueError("sep must be length 1.")
+    return sep
+
+
+def _clover_bytes_hex(self, /, sep=_clover_hex_missing_separator, bytes_per_sep=1):
+    """Return a lowercase hexadecimal string for the bytes."""
+    if not isinstance(self, bytes):
+        raise TypeError("bytes.hex expects a bytes receiver")
+    group = _clover_binary_hex_group(bytes_per_sep)
+    return _clover_bytes_hex_impl(self, _clover_hex_checked_separator(sep), group)
+
+
+def _clover_bytearray_hex(self, /, sep=_clover_hex_missing_separator,
+                          bytes_per_sep=1):
+    """Return a lowercase hexadecimal string for the bytearray."""
+    if not isinstance(self, bytearray):
+        raise TypeError("bytearray.hex expects a bytearray receiver")
+    group = _clover_binary_hex_group(bytes_per_sep)
+    return _clover_bytearray_hex_impl(
+        self, _clover_hex_checked_separator(sep), group
+    )

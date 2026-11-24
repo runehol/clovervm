@@ -1,5 +1,6 @@
 #include "builtin_types/bytearray.h"
 #include "builtin_types/binary_case.h"
+#include "builtin_types/binary_hex.h"
 #include "builtin_types/binary_split.h"
 #include "builtin_types/binary_strip.h"
 #include "builtin_types/bytes.h"
@@ -786,6 +787,17 @@ namespace cl
         return result.raw_value();
     }
 
+    [[nodiscard]] static Value native_bytearray_hex(ThreadState *thread,
+                                                    Value self, Value sep,
+                                                    Value group)
+    {
+        return format_binary_hex(
+            thread, CL_TRY(receiver(self, L"hex")), sep,
+            static_cast<int32_t>(
+                TValue<SMI>::from_value_assumed(group).extract()),
+            [](TValue<ByteArray> source) { return source.extract()->view(); });
+    }
+
     [[nodiscard]] static Value native_bytearray_expandtabs(ThreadState *thread,
                                                            Value self,
                                                            Value tabsize_value)
@@ -1481,6 +1493,8 @@ namespace cl
         BuiltinIntrinsicMethod helpers[] = {
             builtin_intrinsic_method(L"_clover_bytearray_splitlines_impl",
                                      native_bytearray_splitlines),
+            builtin_intrinsic_method(L"_clover_bytearray_hex_impl",
+                                     native_bytearray_hex),
             builtin_intrinsic_method(L"_clover_bytearray_allocate", allocate),
             builtin_intrinsic_method(L"_clover_bytearray_initialize_native",
                                      initialize_native),
@@ -1506,10 +1520,10 @@ namespace cl
     void install_bytearray_python_methods(VirtualMachine *vm,
                                           ModuleObject *module)
     {
-        const wchar_t *names[] = {L"__new__", L"extend", L"splitlines"};
-        const wchar_t *helpers[] = {L"_clover_bytearray_new",
-                                    L"_clover_bytearray_extend",
-                                    L"_clover_bytearray_splitlines"};
+        const wchar_t *names[] = {L"__new__", L"extend", L"splitlines", L"hex"};
+        const wchar_t *helpers[] = {
+            L"_clover_bytearray_new", L"_clover_bytearray_extend",
+            L"_clover_bytearray_splitlines", L"_clover_bytearray_hex"};
         for(size_t n = 0; n < std::size(names); ++n)
         {
             Value function = module->get_own_property(
