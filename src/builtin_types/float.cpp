@@ -14,14 +14,17 @@
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
 #include <array>
+#include <bit>
 #include <cfloat>
 #include <cmath>
 #include <compare>
 #include <cstdint>
 #include <fmt/format.h>
+#include <fmt/xchar.h>
 #include <iterator>
 #include <limits>
 #include <string>
+#include <string_view>
 
 namespace cl
 {
@@ -285,6 +288,55 @@ namespace cl
         return std::isfinite(value) && std::trunc(value) == value
                    ? Value::True()
                    : Value::False();
+    }
+
+    [[nodiscard]] static Value native_float_hex(ThreadState *thread, Value self)
+    {
+        if(!has_native_layout<Float>(self))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"float.hex expects a float receiver");
+        }
+
+        static_assert(std::numeric_limits<double>::is_iec559 &&
+                      DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024);
+        constexpr int fraction_bits = 52;
+        constexpr int exponent_mask = 0x7ff;
+        constexpr int exponent_bias = 1023;
+        uint64_t bits = std::bit_cast<uint64_t>(self.get_ptr<Float>()->value());
+        bool negative = (bits >> 63) != 0;
+        int biased_exponent =
+            static_cast<int>((bits >> fraction_bits) & exponent_mask);
+        uint64_t fraction = bits & ((uint64_t{1} << fraction_bits) - 1);
+
+        if(biased_exponent == exponent_mask)
+        {
+            const wchar_t *text = L"nan";
+            if(fraction == 0)
+            {
+                text = negative ? L"-inf" : L"inf";
+            }
+            return thread->make_object_value<String>(text).raw_value();
+        }
+        if(biased_exponent == 0 && fraction == 0)
+        {
+            const wchar_t *text = negative ? L"-0x0.0p+0" : L"0x0.0p+0";
+            return thread->make_object_value<String>(text).raw_value();
+        }
+
+        // Subnormals have no implicit leading 1 and use the minimum normal
+        // exponent. The 52 fraction bits give exactly 13 hexadecimal digits.
+        bool normal = biased_exponent != 0;
+        int exponent = (normal ? biased_exponent : 1) - exponent_bias;
+        // The longest form includes both signs and a four-digit exponent.
+        wchar_t text[24];
+        auto result = fmt::format_to_n(
+            text, std::size(text), L"{}0x{}.{:013x}p{:+d}",
+            negative ? L"-" : L"", normal ? 1 : 0, fraction, exponent);
+        assert(result.size <= std::size(text));
+        return thread
+            ->make_object_value<String>(std::wstring_view(text, result.out))
+            .raw_value();
     }
 
     [[nodiscard]] static Value
@@ -1416,6 +1468,9 @@ namespace cl
             builtin_intrinsic_method(
                 L"is_integer", native_float_is_integer,
                 L"Return whether self is a finite integer."),
+            builtin_intrinsic_method(L"hex", native_float_hex,
+                                     L"Return a hexadecimal representation of "
+                                     L"a floating-point number."),
             builtin_intrinsic_method(L"as_integer_ratio",
                                      native_float_as_integer_ratio,
                                      L"Return the exact reduced integer ratio "
