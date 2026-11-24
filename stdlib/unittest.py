@@ -17,9 +17,38 @@ assertSequenceEqual is not provided.
 Subclass and attribute assertions use the existing issubclass/hasattr subset:
 stored classes, class tuples and stored attributes, without subclass or
 attribute-lookup hooks or descriptor execution. As in issubclass, nonclass
-left operands are rejected even with an empty superclass tuple. Diagnostic-only
-tuple rescans, repr calls and attribute reads are omitted.
+left operands are rejected even with an empty superclass tuple.
+
+Prefix and suffix assertions use the receiver's startswith/endswith methods
+and inherit their supported candidate types. On AttributeError or TypeError,
+a text/binary family mismatch is reported as an assertion failure. Diagnostic
+tuple retries after a negative match, repr calls and attribute reads are omitted.
 """
+
+
+def _check_tail_types(case, s, candidate, msg):
+    if not isinstance(candidate, tuple):
+        candidate = (candidate,)
+    for tail in candidate:
+        if isinstance(tail, str):
+            if not isinstance(s, str):
+                case.fail(msg)
+        elif isinstance(tail, (bytes, bytearray)):
+            if not isinstance(s, (bytes, bytearray)):
+                case.fail(msg)
+
+
+def _assert_tail_match(case, s, candidate, method_name, negative, msg):
+    try:
+        matched = bool(getattr(s, method_name)(candidate))
+    except AttributeError:
+        _check_tail_types(case, s, candidate, msg)
+        raise
+    except TypeError:
+        _check_tail_types(case, s, candidate, msg)
+        raise
+    if matched == negative:
+        case.fail(msg)
 
 
 class TestResult:
@@ -232,6 +261,18 @@ class TestCase:
     def assertNotHasAttr(self, obj, name, msg=None):
         if hasattr(obj, name):
             self.fail(msg)
+
+    def assertStartsWith(self, s, prefix, msg=None):
+        _assert_tail_match(self, s, prefix, 'startswith', False, msg)
+
+    def assertNotStartsWith(self, s, prefix, msg=None):
+        _assert_tail_match(self, s, prefix, 'startswith', True, msg)
+
+    def assertEndsWith(self, s, suffix, msg=None):
+        _assert_tail_match(self, s, suffix, 'endswith', False, msg)
+
+    def assertNotEndsWith(self, s, suffix, msg=None):
+        _assert_tail_match(self, s, suffix, 'endswith', True, msg)
 
     def assertRaises(self, expected_exception, *args, **kwargs):
         # Validate before calling the function, including the no-exception path.
