@@ -60,6 +60,39 @@ def check_joining():
         assert Derived(case[0]).parent.segments == (case[1],)
 
 
+def check_lexical_parts():
+    for case in (
+        ((), (), ""),
+        (("",), (), ""),
+        ((".",), (), ""),
+        (("././",), (), ""),
+        (("a//./b/",), ("a", "b"), ""),
+        (("a/../b",), ("a", "..", "b"), ""),
+        (("C:/a",), ("C:", "a"), ""),
+        (("/",), ("/",), "/"),
+        (("/a",), ("/", "a"), "/"),
+        (("//",), ("//",), "//"),
+        (("//a/../b",), ("//", "a", "..", "b"), "//"),
+        (("///a",), ("/", "a"), "/"),
+        (("////",), ("/",), "/"),
+        (("//old", "///new", ".."), ("/", "new", ".."), "/"),
+        (("/old", PurePosixPath("//new"), "a/.."), ("//", "new", "a", ".."), "//"),
+    ):
+        path = PurePosixPath(*case[0])
+        assert path.parts == case[1]
+        assert path.anchor == path.root == case[2]
+        assert path.drive == ""
+
+    class Derived(PurePosixPath):
+        @property
+        def root(self):
+            return "//"
+
+    derived = Derived("a/b")
+    assert derived.anchor == "//"
+    assert derived.parts == ("//", "a", "b")
+
+
 def check_properties():
     for root in ("/", "//"):
         path = PurePosixPath(root)
@@ -92,7 +125,7 @@ def check_properties():
     suffixes = path.suffixes
     suffixes.append(".extra")
     assert path.suffixes == [".tar", ".gz"]
-    for attr in ("name", "parent", "suffix", "suffixes", "stem"):
+    for attr in ("name", "parent", "suffix", "suffixes", "stem", "parts", "anchor", "root", "drive"):
         assert hasattr(path, attr)
         try:
             setattr(path, attr, None)
@@ -153,5 +186,6 @@ def check_invalid_calls():
 
 check_construction()
 check_joining()
+check_lexical_parts()
 check_properties()
 check_invalid_calls()
