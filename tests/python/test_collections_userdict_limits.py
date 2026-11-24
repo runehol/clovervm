@@ -2,7 +2,7 @@
 import collections
 from collections import UserDict
 
-assert collections.__all__ == ['UserDict']
+assert collections.__all__ == ['UserDict', 'ChainMap']
 assert not hasattr(UserDict, 'fromkeys')
 assert not hasattr(collections, 'Counter')
 assert not hasattr(collections, 'defaultdict')
