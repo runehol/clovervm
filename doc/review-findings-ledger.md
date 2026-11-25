@@ -330,7 +330,8 @@ method-call work. Positional, keyword, and expanded attribute calls retain fused
 late lookup. Expanded-call tests pin this behavior; any correction must cover
 all call forms independently of argument expansion. See
 [Function Call Adaptation](function-call-adaptation.md#compatibility-boundaries).
-This is a recorded deviation, not an unapproved fix waiting in the active queue.
+The [split method-call design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+records the intended correction. Implementation remains pending review.
 
 ### CVR-014: Recursive calls overrun the fixed Clover stack
 

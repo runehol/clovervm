@@ -109,126 +109,126 @@ argument span.
 
 ## Direct Method Calls
 
-Direct method calls reserve one extra leading argument slot for a possible
-implicit receiver:
+This section records the agreed design direction ahead of implementation
+review. The current interpreter still uses the fused call opcodes described
+in [Function Call Adaptation](function-call-adaptation.md#methods-constructors-and-runtime-boundaries).
+
+`LoadMethod` saves a pair in adjacent logical registers. The callable is at
+`S`, and the optional receiver is at `S+1`. Bytecode names only `S`. Frame
+offsets descend, so the physical slots are `fp[encoded_S]` and
+`fp[encoded_S - 1]`. Only `Value::not_present()` represents an absent
+receiver. `None` is a valid receiver, and both `None` and `NotImplemented` can
+be ordinary attribute results.
+
+### Managed getter return
 
 ```text
-arg_span[0] = reserved maybe-self slot
-arg_span[1] = explicit argument 0
-arg_span[2] = explicit argument 1
-...
+LoadMethod        base, name, read_ic
+FinishLoadMethod  S
+<evaluate arguments>
+CallMethodPositional S, positional_count, call_ic
 ```
 
-Lowering shape:
+The two encoded opcodes form one semantic load. On a direct lookup,
+`LoadMethod` reads `S` from the following instruction, writes the pair, and
+dispatches directly to argument evaluation. Codegen may place the base in
+`S+1`; the handler reads the base before writing either output.
+
+When lookup selects a Python getter, the interpreter enters it through the
+existing managed call path used by `LoadAttr`, with `FinishLoadMethod` as the
+return PC. Getter arguments use the implicit call window below the caller's
+reserved temporaries. `FinishLoadMethod` reads its own `S` operand, stores the
+accumulator in `S`, writes `not_present` to `S+1`, and dispatches to argument
+evaluation. The accumulator is scratch across the semantic load. This keeps
+recursive getters on the normal threaded managed path.
+
+The pair is defined at successful completion. A missing attribute or a
+failed getter raises at the load, before arguments run. The saved return PC
+must allow exception unwinding to associate a getter failure with
+`LoadMethod`. A safepoint after the getter returns and before the pair is
+written publishes the continuation PC and roots the return value in the
+accumulator. Resuming there commits the pair exactly once.
+
+Sequential decoding and initial JIT fallback treat the two opcodes as one
+operation. The semantic load uses the base, defines both pair slots, and
+invalidates the incoming accumulator state. Standalone decoding at
+`FinishLoadMethod` identifies the accumulator input and pair destination.
+The initial JIT exits before the load, with the base recoverable. Any exit
+after a committed load keeps both pair slots wherever they are live and
+resumes forward. A snapshot at a getter return would instead need the
+continuation PC and return value. See
+[Bytecode Decoding](bytecode-decoding-and-blocks.md#compound-operators) and
+[JIT snapshot state](jit-bytecode-state-tracking.md#complete-state-capture-and-snapshots).
+
+### Positional and keyword calls
+
+Codegen reserves `[callable, receiver-or-not_present, positional args…]` in one
+span, with any padding before `S` so the outgoing argument window starts at
+aligned `S+1`. Explicit positional arguments begin at `S+2`. With zero
+explicit arguments, `S+1` still provides the aligned anchor. For keyword calls,
+codegen reserves the separate keyword value span before this reservation to
+keep it clear of outgoing argument adaptation.
 
 ```text
-arg_span = reserve_call_frame_temps(n_user_args + 1)
-
-receiver_tmp = evaluate receiver
-callable_tmp = LoadMethodAttr(receiver_tmp, name, arg_span[0])
-
-for each explicit positional argument i:
-    evaluate argument into arg_span[i + 1]
-
-CallPreparedMethodPositional callable_tmp, arg_span, n_user_args
-release arg_span and call temps
+CallMethodPositional S, positional_count, call_ic
+CallMethodKeyword    S, positional_count, keyword_values, keyword_count, keyword_names, keyword_ic
 ```
 
-`LoadMethodAttr` is a call-context attribute load. It does not produce a
-Python-visible bound method object. It produces:
+The call uses the selected callable after argument evaluation. A present
+receiver stays in the leading slot. If neither lookup nor callable resolution
+supplies a receiver, explicit positional values move into the aligned span
+starting at `S+1`. The callable stays outside the outgoing parameter window.
+All three method call forms consume the pair, use the existing call adapters,
+and produce their result in the accumulator.
+
+### Expanded calls
 
 ```text
-callable_tmp = function/callable to invoke
-arg_span[0]  = receiver if descriptor binding produced an implicit self,
-               otherwise not_present
+CallMethodExpanded S, containers, outgoing_anchor, expanded_ic
 ```
 
-Plain `LoadAttr` remains Python-visible attribute access and must still produce
-a bound method object when Python semantics require one.
+The pair and the adjacent tuple/dict transport slots survive all argument
+evaluation and expansion. They sit outside the separate aligned outgoing
+window. Codegen passes the saved callable as the context for keyword
+construction errors. The existing expansion order applies, including lone
+star conversion after keyword construction. The expanded binder consumes
+the tuple through its existing optional-prefix view, so passing an implicit
+receiver requires no new tuple. A callee's `*args` collector can still require
+a tuple when its suffix includes the receiver.
 
-`CallPreparedMethodPositional` normalizes the temporary argument span before
-entering the callee:
+Plain calls continue to use `CallPositional`, `CallKeyword`, and
+`CallExpanded`. See [Function Call Adaptation](function-call-adaptation.md#expanded-call-transport)
+for argument construction, binding, and collector rules.
 
-```text
-if arg_span[0] is present:
-    call callable_tmp with arg_span[0..n_user_args]
-else:
-    move arg_span[1..n_user_args] down to arg_span[0..n_user_args-1]
-    call callable_tmp with arg_span[0..n_user_args-1]
-```
+### Lifetimes and verification
 
-The no-self case pays the move. That is acceptable because ordinary class
-function method calls bind `self`; no-self method-call syntax is the less common
-case.
+Both pair slots stay live through argument evaluation, including nested
+calls, expansion callbacks, and safepoints. Reserving the span leaves each
+argument slot undefined until evaluation stores its value. Nested calls have
+their own outgoing windows. After call commit the caller's outgoing span is
+dead. Check the signed register-operand limits with the additional slot and
+alignment padding before choosing an encoding or layout change.
 
-The move is required for CloverVM's frame-entry convention. Starting the
-argument vector at `arg_span[1]` would put the callee frame on the wrong
-16-byte boundary, so the no-self path copies the explicit arguments down before
-entering the callee.
+The implementation review should cover all three compiler-emitted fused call
+forms together. Verify method replacement, missing attributes that an
+argument would install, inherited classmethod owner, receiver presence
+changing at one site, and mutation of the saved object's callability. Cover
+getter and expansion errors, reentry, and forced safepoints. Pin down pair
+alignment and decode lengths in structural tests, run the full debug checks,
+and verify JIT handoff on AArch64.
 
-The callee does not need method-specific bytecode. It receives an ordinary
-contiguous positional argument vector:
-
-```text
-obj.method(1, 2)  -> f(obj, 1, 2)
-f(obj, 1, 2)      -> f(obj, 1, 2)
-```
-
-Only the caller-side call setup differs.
-
-Fixed keyword method calls use the same split. Positional arguments are
-evaluated into the reserved method-call span. Keyword values are evaluated into
-the keyword value span allocated below it. `CallPreparedMethodKeyword` performs
-the same maybe-self normalization before entering the keyword-call path.
-
-## Unpack Calls
-
-Calls that unpack `*args` or `**kwargs` do not need a parallel set of
-prepared-method opcodes. Their argument layout is already dynamic:
-
-```python
-obj.method(*args)
-obj.method(1, *args, **kwargs)
-```
-
-The runtime must expand iterables, merge keyword mappings, compute the final
-argument count, and materialize a final call span. A prepared method receiver is
-just another optional prefix during that expansion.
-
-Method-call lowering for star calls can therefore be:
-
-```text
-receiver_tmp = evaluate receiver
-method_self_tmp = reserve temporary
-callable_tmp = LoadMethodAttr(receiver_tmp, name, method_self_tmp)
-
-evaluate args_iterable / kwargs_mapping
-
-CallUnpack callable_tmp, method_self_tmp, args_iterable
-CallUnpackKeyword callable_tmp, method_self_tmp, args_iterable, kwargs_mapping
-```
-
-For fixed prepared-method calls, the maybe-self value lives directly in the
-reserved leading slot of the argument span. For star calls there is no fixed
-argument span yet, so `LoadMethodAttr` writes the maybe-self value to an
-ordinary temporary. If that temporary is present, unpack-call expansion writes it
-as positional argument 0. If it is `not_present`, expansion starts with the
-explicit expanded arguments. Because the final aligned argument span is built
-dynamically, there is no fixed leading-slot move to optimize.
-
-This keeps the intended call opcode surface to:
-
-```text
-CallPositional
-CallKeyword
-CallPreparedMethodPositional
-CallPreparedMethodKeyword
-CallUnpack
-CallUnpackKeyword
-```
-
-The fixed positional/keyword paths stay specialized for their common layouts,
-while the irregular star paths stay generic and self-aware.
+Compare the fused baseline and split design in matched Release builds on
+the same host, with JIT off and on. Use quiet, warmed, repeated A/B runs under
+the repository's shared build and timing lock. Warmed monomorphic positional
+method calls are the primary workload. Include no-receiver, keyword,
+expanded, polymorphic, and end-to-end workloads and plain-function controls.
+Use separate instrumented runs where needed to distinguish dispatch, lookup,
+receiver staging, and allocation. Check the hot handlers for native stack
+frames and verify that the warmed exact-function path allocates neither a
+bound method nor a prefix tuple. The proposed median slowdown budgets are 5%
+for the primary case and 2% for Pystone and plain-function controls where
+the measurements can resolve that difference. These budgets are open for
+review.
 
 ## Regular Calls
 
@@ -269,8 +269,9 @@ method object. The preferred tradeoff is:
 
 ## Callee `**kwargs`
 
-This note only covers callee-side `**kwargs` collection for existing explicit
-keyword calls. Caller-side `**mapping` unpack remains separate work.
+This section covers callee-side `**kwargs` collection for explicit keyword
+calls. [Expanded-call transport](function-call-adaptation.md#expanded-call-transport)
+covers caller-side `**mapping` unpack and duplicate detection.
 
 The call opcodes should not each learn how to build a `**kwargs` dictionary.
 Instead, keyword collection belongs in the shared callee binding/adaptation
@@ -357,10 +358,9 @@ def f(a, /, **kwargs):
 assert f(1, a=2) == {"a": 2}
 ```
 
-For static explicit `CallKeyword`, parser/codegen already reject repeated
-keyword names at the call site, so dynamic duplicate-name handling can stay out
-of this initial callee-side `**kwargs` work. Runtime duplicate handling belongs
-with future caller-side `**mapping` unpack support.
+For static explicit `CallKeyword`, parser and codegen reject repeated keyword
+names at the call site. Expanded calls detect dynamic duplicate names during
+keyword construction.
 
 ## Alignment Invariant
 
@@ -458,10 +458,6 @@ This plan depends on a few explicit invariants:
 - What live extent is required for frame introspection beyond `f_locals`?
   Copying locals and live temporaries is more complete; copying only locals is
   cheaper but may constrain future debugging features.
-- Should `LoadMethodAttr` plus `CallPreparedMethodPositional` /
-  `CallPreparedMethodKeyword` replace the fused
-  `CallMethodAttrPositional` and `CallMethodAttrKeyword`, or should the fused
-  opcodes remain only as later peephole/JIT shapes proven to preserve ordering?
 - Which opcodes can raise before a callee frame is committed, and what argument
   span state must be preserved or cleaned up in those paths?
 - How should lazy traceback preservation represent per-instruction temporary

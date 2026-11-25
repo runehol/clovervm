@@ -1104,40 +1104,12 @@ the runtime should use a method-call path that carries both:
 This path must not allocate an intermediate bound-method object merely to
 call it immediately.
 
-The preferred opcode shape for this direct-call form is a fused
-attribute-call operation:
-
-```text
-CallMethodAttrPositional receiver_and_arg_span, name, cache_index, argc
-```
-
-The current bytecode encoding keeps the receiver and explicit arguments in one
-register span and uses the code object's read-cache side array:
-
-```text
-receiver, explicit_arg0, explicit_arg1, ...
-```
-
-The opcode performs attribute lookup in call context and then calls the
-resolved target. The inline cache records the lookup result and binding
-convention, so the interpreter does not need to materialize an
-intermediate `(callable, maybe_self)` pair in interpreter-visible
-registers.
-
-Different lookup results decide whether and how an implicit receiver is
-inserted:
-
-- receiver-local callable: call with the explicit arguments only
-- descriptor that binds to the receiver: call with the receiver inserted
-- descriptor that binds to the class: call with the class inserted
-- descriptor that does not bind: call with the explicit arguments only
-- custom lookup fallback: perform the generic lookup, then call the
-  resulting value
-
-At JIT compilation time, a populated `CallMethodAttrPositional` inline cache should
-identify the concrete path selected by the observed lookup. Compiled code
-can then lower directly to that path with the cache's guards, instead of
-emitting a runtime switch over all binding cases.
+The current fused attribute-call opcodes perform lookup after evaluating
+arguments. The [direct method-call design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+moves lookup into `LoadMethod` before arguments and carries the callable and
+optional receiver in adjacent registers. The attribute IC proves the lookup
+and binding decision. A separate call IC selects and adapts the call target
+once the arguments are ready.
 
 For an attribute lookup such as:
 

@@ -46,9 +46,10 @@ For bounded work that can land independently of this priority order, see
    [Descriptor Execution](descriptor-execution.md).
 
    Descriptor-aware direct calls still need a way to resolve the attribute and
-   run its getter before evaluating arguments. The proposed `LoadMethod` would
-   keep the selected callable and optional receiver live across argument
-   evaluation and preserve allocation-free calls where binding permits.
+   run its getter before evaluating arguments. The
+   [LoadMethod design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+   preserves the selected callable and optional receiver in a register pair
+   and uses a managed return continuation for the getter path.
 
    Descriptor plans must carry the guards and binding decisions needed by
    compiled code. A compiled attribute read, write, delete, or method call should

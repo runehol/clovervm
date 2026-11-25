@@ -37,7 +37,9 @@ The resolver chooses how to bind the getter using the winning lookup path.
 | Class namespace | Descriptor, `None`, class being read |
 | Metaclass chain | Descriptor, class being read, metaclass |
 
-Metaclass data descriptors take precedence over the class namespace. Class
+Python gives metaclass data descriptors precedence over the class namespace.
+The current resolver searches the class MRO first. This remains a latent
+limitation while custom metaclasses are unavailable in Python. Class
 namespace and metaclass reads can execute a plain-function getter with the
 bindings above. Cached descriptor replay currently covers instance access.
 
@@ -106,16 +108,48 @@ slot before each deletion. [Shape transitions](object-model.md#transitions)
 describe how eligible add/delete pairs reuse shapes and keep those cache
 sites warm.
 
+## Direct method lookup design
+
+[LoadMethod](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+uses the same attribute resolution and descriptor precedence as `LoadAttr`.
+It resolves the attribute before argument evaluation, then saves its result
+as a callable and optional receiver.
+
+| Winning lookup or binding | Callable | Optional receiver |
+|---|---|---|
+| Exact function in the instance class chain | Function | Current instance |
+| Plain function in the accessed class namespace | Function | Absent |
+| Plain function bound through the metaclass chain | Function | Accessed class |
+| Instance or module slot | Stored value | Absent |
+| Exact `staticmethod` selected as a descriptor | Wrapped value | Absent |
+| Exact `classmethod` selected as a descriptor and wrapping an exact function | Wrapped function | Owner from the lookup binding |
+| General getter, including a classmethod wrapping another callable | Getter result | Absent |
+
+An inherited classmethod in the class namespace binds the accessed class,
+including access through an instance. A classmethod on the metaclass path
+uses the metaclass as owner. Apply the wrapper shortcuts only when lookup
+selects their descriptor behavior. An existing bound method or another
+callable returned by lookup is handled as an ordinary callable by the call
+stage. A value read such as `f = obj.m` still exposes the bound method when
+the descriptor requires one.
+
+Reuse attribute read plans and their existing cacheability rules. Reload
+the selected slot and, for exact instance properties, the current accessor.
+Keep class-object descriptor shortcuts uncached where the existing guards
+cannot prove the binding after a slot write. The lookup cache carries the
+guarded plan. The pair carries the result of this invocation. Getter
+execution uses the managed return described in the call temporary design.
+
+A present saved receiver implies an exact function, whose call target has
+`ReceiverBinding::None`. With an absent saved receiver, the ordinary
+call-target resolver may supply `PrependCallable` for a supported callable
+object. Callability and signature checks happen after argument construction.
+Reentrant lookup or argument code may change later lookups and the saved
+object's own callability. The saved attribute value still belongs to the
+current invocation.
+
 ## Follow-ups
 
-- Split method loading from calling so lookup and getter execution precede
-  argument evaluation. A proposed `LoadMethod` returns a callable and optional
-  receiver. A class-chain function can supply the current receiver, an exact
-  `staticmethod` can supply its wrapped value and an empty receiver, and a
-  general descriptor supplies its getter's result and an empty receiver.
-  Both slots stay live across argument evaluation. Ordinary saved bound
-  methods now use the shared function getter. A `classmethod` value read binds
-  the class through its descriptor getter.
 - Extend descriptor dispatch to additional consumers, including `super`,
   descriptor-backed `__call__`, and operator special methods. Operators must
   preserve their operands and reflected-dispatch continuation across hook

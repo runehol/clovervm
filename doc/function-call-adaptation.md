@@ -169,8 +169,10 @@ result returns in the accumulator.
 
 For a straight call, codegen evaluates and roots the callable before arguments.
 For an attribute call it evaluates and roots the receiver; the fused opcode
-performs lookup after argument construction. This accepted late lookup also
-applies to ordinary method calls and differs from CPython.
+performs lookup after argument construction. This current compatibility
+difference applies to all three method-call forms. The
+[direct method-call design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+moves lookup before argument evaluation and keeps the expansion order below.
 
 Positional expressions, including starred sources, are evaluated before keyword
 expressions even when a starred argument appears textually after a keyword.
@@ -438,10 +440,12 @@ the tables; moves transfer ownership. Retained names follow the same native
 
 ## Methods, constructors, and runtime boundaries
 
-Fused method opcodes combine attribute lookup/binding with call entry. The
-attribute lookup IC and call IC are separate. Lookup produces the callable plus
-an optional implicit receiver; instance-held Functions and module attributes do
-not acquire a receiver merely because they are callable.
+The current fused method opcodes combine attribute lookup and binding with
+call entry. The [split design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+uses separate load and call instructions with the same argument adapters.
+The attribute lookup IC and call IC are separate. Lookup produces the
+callable and optional receiver. Functions stored in instance or module slots
+use only their explicit arguments.
 
 For an expanded attribute call:
 
