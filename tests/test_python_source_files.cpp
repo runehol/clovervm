@@ -316,6 +316,34 @@ TEST(HeavyPythonSourceFiles, IntToBytesSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
+TEST(HeavyPythonSourceFiles, IntFromBytesSurvivesEverySafepointReclamation)
+{
+    std::wstring source = read_source_file("tests/python/int_from_bytes.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
+TEST(PythonSourceFiles, IntFromBytesKeepsTaggedIntegerBoundaries)
+{
+    cl::test::VmTestContext context;
+    for(const wchar_t *source: {
+            LR"(int.from_bytes(b"\xfc\x00\x00\x00\x00\x00\x00\x00", signed=True))",
+            LR"(int.from_bytes(b"\x03\xff\xff\xff\xff\xff\xff\xff"))",
+        })
+    {
+        EXPECT_TRUE(context.run_file(source).is_smi());
+    }
+    for(const wchar_t *source: {
+            LR"(int.from_bytes(b"\xfb\xff\xff\xff\xff\xff\xff\xff", signed=True))",
+            LR"(int.from_bytes(b"\x04\x00\x00\x00\x00\x00\x00\x00"))",
+        })
+    {
+        EXPECT_TRUE(context.run_file(source).is_ptr());
+    }
+}
+
 TEST(HeavyPythonSourceFiles, BytesSplittingSurvivesEverySafepointReclamation)
 {
     std::wstring source = read_source_file("tests/python/bytes_split.py");
