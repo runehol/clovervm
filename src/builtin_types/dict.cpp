@@ -1746,7 +1746,7 @@ namespace cl
                nullptr);
         assert(
             dict_class
-                ->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell() ==
+                ->current_mro_and_metaclass_mro_shape_and_contents_validity_cell() ==
             nullptr);
         assert(
             dict_class->attached_mro_shape_and_contents_validity_cell_count() ==

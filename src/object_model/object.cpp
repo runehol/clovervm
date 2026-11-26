@@ -334,8 +334,7 @@ namespace cl
            new_shape != nullptr &&
            new_shape->has_flag(ShapeFlag::IsClassObject))
         {
-            native_cast<ClassObject>(this)
-                ->invalidate_lookup_validity_cells_for_shape_change();
+            native_cast<ClassObject>(this)->invalidate_lookup_validity_cells();
         }
         if(old_shape != nullptr && old_shape != new_shape &&
            new_shape != nullptr &&

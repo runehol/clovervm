@@ -1939,7 +1939,7 @@ TEST(ClassObject, FrozenBuiltinMroProducesImmutableValidityCell)
     ValidityCell *combined_cell =
         context.vm()
             .float_class()
-            ->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
+            ->get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, combined_cell);
     EXPECT_EQ(ValidityCellDependencyMutability::Immutable,
               combined_cell->dependency_mutability());
@@ -2118,47 +2118,67 @@ TEST(ClassObject,
     EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
 
-TEST(ClassObject,
-     MroShapeAndMetaclassMroShapeAndContentsValidityCellAttachesToMetaclassMro)
+TEST(ClassObject, CombinedMroValidityCellAttachesToBothMros)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
-        context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
-        context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
-        context.vm().get_or_create_interned_string_value(L"attr"));
-    ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name,
-        ClassObject::class_inline_storage_slot_count, context.vm().type_class(),
+    auto make_name = [&](const wchar_t *name) {
+        return context.vm().get_or_create_interned_string_value(name);
+    };
+    ClassObject *type = context.vm().type_class();
+    ClassObject *root = context.vm().object_class();
+    ClassObject *meta_base = context.thread()->make_internal_raw<ClassObject>(
+        type, make_name(L"MetaBase"),
+        ClassObject::class_inline_storage_slot_count, type,
         NativeLayoutId::ClassObject);
+    ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
+        type, make_name(L"Meta"), ClassObject::class_inline_storage_slot_count,
+        meta_base, NativeLayoutId::ClassObject);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class(),
-        NativeLayoutId::Instance);
+        meta, make_name(L"Cls"), 2, root, NativeLayoutId::Instance);
+    TValue<String> attr_name = make_name(L"attr");
+    ASSERT_TRUE(meta->set_own_property(attr_name, Value::from_smi(1)).value());
+    ASSERT_TRUE(
+        meta_base->set_own_property(attr_name, Value::from_smi(1)).value());
 
+    ValidityCell *single_mro =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
+    uint32_t root_attachments =
+        root->attached_mro_shape_and_contents_validity_cell_count();
     EXPECT_EQ(
         nullptr,
-        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
-    EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
+        cls->current_mro_and_metaclass_mro_shape_and_contents_validity_cell());
+    ValidityCell *combined =
+        cls->get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell();
 
-    ValidityCell *cell =
-        cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
-
-    ASSERT_NE(nullptr, cell);
-    EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(ValidityCellDependencyMutability::Mutable,
-              cell->dependency_mutability());
+    ASSERT_TRUE(combined->is_valid());
     EXPECT_EQ(
-        cell,
-        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+        combined,
+        cls->current_mro_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(ValidityCellDependencyMutability::Mutable,
+              combined->dependency_mutability());
     EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
+    EXPECT_EQ(1u,
+              meta_base->attached_mro_shape_and_contents_validity_cell_count());
+    EXPECT_EQ(root_attachments + 1,
+              root->attached_mro_shape_and_contents_validity_cell_count());
 
-    EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(1)).value());
+    Shape *meta_shape = meta->get_shape();
+    EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(2)).value());
+    EXPECT_EQ(meta_shape, meta->get_shape());
+    EXPECT_FALSE(combined->is_valid());
+    EXPECT_TRUE(single_mro->is_valid());
 
-    EXPECT_FALSE(cell->is_valid());
-    EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
+    combined =
+        cls->get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell();
+    ASSERT_TRUE(combined->is_valid());
+    Shape *meta_base_shape = meta_base->get_shape();
+    EXPECT_TRUE(
+        meta_base->set_own_property(attr_name, Value::from_smi(2)).value());
+    EXPECT_EQ(meta_base_shape, meta_base->get_shape());
+    EXPECT_FALSE(combined->is_valid());
+    EXPECT_TRUE(single_mro->is_valid());
 }
 
 TEST(ClassObject, TypeCombinedValidityCellSkipsMetaclassSelfLoop)
@@ -2170,17 +2190,17 @@ TEST(ClassObject, TypeCombinedValidityCellSkipsMetaclassSelfLoop)
 
     EXPECT_EQ(
         nullptr,
-        type->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+        type->current_mro_and_metaclass_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(0u, type->attached_mro_shape_and_contents_validity_cell_count());
 
     ValidityCell *cell =
-        type->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
+        type->get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell();
 
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(
         cell,
-        type->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+        type->current_mro_and_metaclass_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(0u, type->attached_mro_shape_and_contents_validity_cell_count());
 }
 
@@ -2322,7 +2342,7 @@ TEST(ConstructorAllocatorSelection, OSErrorRebuildsDoNotAllocateImmortalHelpers)
     for(int i = 0; i < 100; ++i)
     {
         // Python initializer reassignment uses this same invalidation path.
-        cls.extract()->invalidate_lookup_validity_cells_for_contents_change();
+        cls.extract()->invalidate_lookup_validity_cells();
         auto lookup = cls.extract()->get_or_create_constructor_thunk();
         ASSERT_FALSE(lookup.has_exception());
         ASSERT_TRUE(lookup.value().is_found());
@@ -2365,7 +2385,7 @@ TEST(ConstructorAllocatorSelection, IOBaseRebuildsUseReclaimableAllocator)
     uint64_t before = heap.count_valid_objects_slow();
     for(int i = 0; i < 100; ++i)
     {
-        cls.extract()->invalidate_lookup_validity_cells_for_contents_change();
+        cls.extract()->invalidate_lookup_validity_cells();
         auto lookup = cls.extract()->get_or_create_constructor_thunk();
         ASSERT_FALSE(lookup.has_exception());
         ASSERT_TRUE(lookup.value().is_found());

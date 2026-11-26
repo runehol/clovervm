@@ -4111,6 +4111,33 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     expect_thread_python_error(test_context.thread(), L"AttributeError", L"");
 }
 
+TEST(Interpreter, cached_class_read_reclassifies_replaced_class_attribute)
+{
+    test::FileRunner run(LR"(
+class Base:
+    value = 7
+
+class Child(Base):
+    pass
+
+class Descriptor:
+    def __get__(self, obj, owner):
+        assert obj is None
+        assert owner is Child
+        return 42
+
+def read():
+    return Child.value
+
+assert read() == 7
+Base.value = Descriptor()
+assert read() == 42
+Base.value = 8
+read()
+)");
+    EXPECT_EQ(Value::from_smi(8), run.return_value);
+}
+
 TEST(Interpreter, cached_instance_read_reclassifies_replaced_class_attribute)
 {
     test::FileRunner run(LR"(

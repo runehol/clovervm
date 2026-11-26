@@ -34,7 +34,7 @@ namespace cl
         if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
         {
             native_cast<ClassObject>(object)
-                ->invalidate_lookup_validity_cells_for_contents_change();
+                ->invalidate_lookup_validity_cells();
         }
     }
 
@@ -248,7 +248,7 @@ namespace cl
     }
 
     static AttributeReadDescriptor
-    with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+    with_mro_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeReadDescriptor descriptor, ClassObject *cls)
     {
         descriptor.lookup_validity_cell = nullptr;
@@ -257,7 +257,7 @@ namespace cl
            !descriptor.plan.is_descriptor_get())
         {
             descriptor.lookup_validity_cell =
-                cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
+                cls->get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell();
         }
         return descriptor;
     }
@@ -526,7 +526,7 @@ namespace cl
                 lookup_class_attribute_read_descriptor(cls, name));
         if(class_descriptor.is_found())
         {
-            return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+            return with_mro_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
                 class_descriptor, cls);
         }
 
@@ -540,7 +540,7 @@ namespace cl
             classify_class_read_descriptor(
                 lookup_metaclass_attribute_read_descriptor(metaclass, name,
                                                            cls));
-        return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+        return with_mro_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
             metaclass_descriptor, cls);
     }
 
