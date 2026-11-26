@@ -5181,11 +5181,16 @@ namespace cl
         bool copy_source = shape == thread->get_exact_dict_string_key_shape();
         if(exact_general)
         {
-            copy_source = true;
+            // Rebuild valid transports in string-keyed storage. A general
+            // source with non-string keys can still be copied if no string
+            // subclass key needs normalization.
             for(Dict::EntryView entry: *accumulator.get_ptr<Dict>())
             {
-                if(has_native_layout<String>(entry.key) &&
-                   !is_exact_string(thread, entry.key))
+                if(!has_native_layout<String>(entry.key))
+                {
+                    copy_source = true;
+                }
+                else if(!is_exact_string(thread, entry.key))
                 {
                     copy_source = false;
                     break;

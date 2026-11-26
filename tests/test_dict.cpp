@@ -2949,6 +2949,44 @@ assert len(__clover_build_call_keywords__(target, {})) == 0
                context.thread()->pending_exception_object()));
 }
 
+TEST(CallKeywordConstruction, BuildsStringKeyedStorageForValidGeneralSources)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<Value> result(run_trusted_keyword_test(context, LR"(
+def target(): pass
+value = []
+populated = {42: 0, 'flag': value, 'next': 2}
+del populated[42]
+empty = {42: 0}
+del empty[42]
+invalid = {42: 0}
+populated_result = __clover_build_call_keywords__(target, populated)
+empty_result = __clover_build_call_keywords__(target, empty)
+invalid_result = __clover_build_call_keywords__(target, invalid)
+assert __clover_to_exact_tuple__(populated_result.keys()) == ('flag', 'next')
+assert populated_result['flag'] is value
+assert len(empty_result) == 0 and invalid_result[42] == 0
+((populated, populated_result), (empty, empty_result), (invalid, invalid_result))
+)"));
+    ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
+    const auto *cases = native_cast<Tuple>(result.value());
+    ASSERT_EQ(3u, cases->size());
+    for(uint32_t i = 0; i < cases->size(); ++i)
+    {
+        const auto *pair = native_cast<Tuple>(cases->item_unchecked(i));
+        const auto *source = native_cast<Dict>(pair->item_unchecked(0));
+        const auto *prepared = native_cast<Dict>(pair->item_unchecked(1));
+        EXPECT_NE(source, prepared);
+        EXPECT_EQ(thread->get_exact_dict_general_shape(), source->get_shape());
+        Shape *expected_shape = i == 2
+                                    ? thread->get_exact_dict_general_shape()
+                                    : thread->get_exact_dict_string_key_shape();
+        EXPECT_EQ(expected_shape, prepared->get_shape());
+    }
+}
+
 TEST(CallKeywordConstruction, GeneralBuildAndMergeNormalizeStringSubclassKeys)
 {
     test::VmTestContext context;
