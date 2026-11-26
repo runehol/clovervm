@@ -1646,6 +1646,7 @@ namespace cl
         install_unicode_error_helpers(this, implementation_module);
         install_bytearray_helpers(this, implementation_module);
         install_bytes_helpers(this, implementation_module);
+        install_float_helpers(this, implementation_module);
         install_int_helpers(this, implementation_module);
         install_str_helpers(this, implementation_module);
         install_enumerate_helpers(this, implementation_module);
@@ -1660,6 +1661,7 @@ namespace cl
                                        L"bytearray",
                                        L"bytes",
                                        L"dict",
+                                       L"float",
                                        L"int",
                                        L"str",
                                        L"object",
@@ -1787,6 +1789,7 @@ namespace cl
         install_unicode_error_methods(this, implementation_module);
         install_bytearray_python_methods(this, implementation_module);
         install_bytes_python_methods(this, implementation_module);
+        install_float_python_methods(this, implementation_module);
         install_int_python_methods(this, implementation_module);
         install_str_python_methods(this, implementation_module);
         install_dict_python_methods(this, implementation_module);

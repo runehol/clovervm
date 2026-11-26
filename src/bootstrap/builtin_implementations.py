@@ -1813,3 +1813,11 @@ def _clover_int_to_bytes(self, /, length=1, byteorder="big", *, signed=False):
     _clover_int_to_bytes_preflight(self, length, byteorder)
     is_signed = True if signed else False
     return _clover_int_to_bytes_impl(self, length, byteorder, is_signed)
+
+
+def _clover_float_fromhex(cls, string, /):
+    """Create a floating-point number from a hexadecimal string."""
+    value = _clover_float_fromhex_impl(string)
+    if cls is float:
+        return value
+    return cls(value)

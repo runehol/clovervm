@@ -3,9 +3,12 @@
 #include "builtin_types/bytes.h"
 #include "builtin_types/hash.h"
 #include "builtin_types/int.h"
+#include "builtin_types/module_object.h"
 #include "builtin_types/num_parse.h"
 #include "builtin_types/str.h"
+#include "builtin_types/text_codec.h"
 #include "builtin_types/tuple.h"
+#include "object_model/class_method.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
 #include "object_model/shape_key.h"
@@ -13,6 +16,7 @@
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include "util/fixed_wide_string.h"
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cfloat>
@@ -23,6 +27,7 @@
 #include <fmt/xchar.h>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -337,6 +342,212 @@ namespace cl
         return thread
             ->make_object_value<String>(std::wstring_view(text, result.out))
             .raw_value();
+    }
+
+    static int float_hex_digit(wchar_t ch)
+    {
+        if(ch >= L'0' && ch <= L'9')
+            return ch - L'0';
+        ch |= 0x20;
+        return ch >= L'a' && ch <= L'f' ? ch - L'a' + 10 : -1;
+    }
+
+    static bool float_hex_space(wchar_t ch)
+    {
+        return ch == L' ' || (ch >= L'\t' && ch <= L'\r');
+    }
+
+    static bool consume_float_hex_word(std::wstring_view &text,
+                                       std::wstring_view word)
+    {
+        if(text.size() < word.size())
+            return false;
+        for(size_t i = 0; i < word.size(); ++i)
+            if((text[i] | 0x20) != word[i])
+                return false;
+        text.remove_prefix(word.size());
+        return true;
+    }
+
+    // 'leading' contains at least the first 54 bits whenever there are bits
+    // beyond it. 'sticky' records whether any of those omitted bits are set.
+    static std::optional<uint64_t>
+    round_float_hex_magnitude(uint64_t leading, bool sticky, int64_t top)
+    {
+        if(leading == 0 || top < -1075)
+            return uint64_t{0};
+        if(top > 1023)
+            return std::nullopt;
+
+        constexpr uint64_t hidden_bit = uint64_t{1} << 52;
+        const int width = static_cast<int>(std::bit_width(leading));
+        // Keep 53 bits for a normal result. Subnormals round to units of
+        // 2**-1074, including keeping zero bits at the midpoint below it.
+        const int keep = static_cast<int>(std::min<int64_t>(53, top + 1075));
+        uint64_t significand;
+        if(width <= keep)
+        {
+            significand = leading << (keep - width);
+        }
+        else
+        {
+            const int discard = width - keep;
+            const uint64_t halfway = uint64_t{1} << (discard - 1);
+            const uint64_t remainder = leading & ((halfway << 1) - 1);
+            significand = leading >> discard;
+            if(remainder > halfway ||
+               (remainder == halfway && (sticky || (significand & 1))))
+                ++significand;
+        }
+
+        // The subnormal carry into the hidden bit encodes the smallest
+        // normal directly. Normal carries advance the biased exponent.
+        if(top < -1022)
+            return significand;
+        if(significand == (hidden_bit << 1))
+        {
+            significand >>= 1;
+            if(++top > 1023)
+                return std::nullopt;
+        }
+        return (uint64_t(top + 1023) << 52) | (significand - hidden_bit);
+    }
+
+    [[nodiscard]] static Value float_fromhex_error(ThreadState *thread,
+                                                   TValue<String> source,
+                                                   const wchar_t *type,
+                                                   const wchar_t *message)
+    {
+        // CPython checks UTF-8 encodability before syntax or range errors.
+        // A successful parse consumes only ASCII, so check only on failure.
+        for(wchar_t ch: string_view(source))
+            if(ch >= 0xd800 && ch <= 0xdfff)
+                return encode_string(thread, source, CL_CODEC_UTF8);
+        return thread->set_pending_builtin_exception_string(type, message);
+    }
+
+    [[nodiscard]] static Value native_float_fromhex(ThreadState *thread,
+                                                    Value input)
+    {
+        auto source = CL_TRY(TValue<String>::from_value_or_raise(
+            input, L"TypeError", L"bad argument type for built-in operation"));
+        auto invalid = [&]() -> Value {
+            return float_fromhex_error(
+                thread, source, L"ValueError",
+                L"invalid hexadecimal floating-point string");
+        };
+        std::wstring_view text = string_view(source);
+        // Saturation must leave enough room for the coefficient's entire
+        // radix-point adjustment, even for long, nearly cancelling inputs.
+        static_assert(std::numeric_limits<double>::is_iec559 &&
+                      DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024);
+        static_assert(value_smi_max <= (INT64_MAX - 2048) / 8);
+        const int64_t exponent_limit = 4 * int64_t(text.size()) + 2048;
+        while(!text.empty() && float_hex_space(text.front()))
+            text.remove_prefix(1);
+        const bool negative = text.starts_with(L'-');
+        if(negative || text.starts_with(L'+'))
+            text.remove_prefix(1);
+
+        uint64_t magnitude;
+        if(consume_float_hex_word(text, L"infinity") ||
+           consume_float_hex_word(text, L"inf"))
+        {
+            magnitude = std::bit_cast<uint64_t>(
+                std::numeric_limits<double>::infinity());
+        }
+        else if(consume_float_hex_word(text, L"nan"))
+        {
+            magnitude = std::bit_cast<uint64_t>(
+                std::numeric_limits<double>::quiet_NaN());
+        }
+        else
+        {
+            if(text.starts_with(L"0x") || text.starts_with(L"0X"))
+                text.remove_prefix(2);
+
+            bool point_seen = false;
+            int64_t digits = 0;
+            int64_t integer_digits = 0;
+            int64_t leading_zeros = 0;
+            uint64_t leading = 0;
+            bool sticky = false;
+            int first_digit_width = 0;
+            while(!text.empty())
+            {
+                wchar_t ch = text.front();
+                if(ch == L'.' && !point_seen)
+                {
+                    point_seen = true;
+                    text.remove_prefix(1);
+                    continue;
+                }
+                int digit = float_hex_digit(ch);
+                if(digit < 0)
+                    break;
+                text.remove_prefix(1);
+                ++digits;
+                if(!point_seen)
+                    ++integer_digits;
+                if(leading == 0)
+                {
+                    if(digit == 0)
+                        ++leading_zeros;
+                    else
+                    {
+                        leading = uint64_t(digit);
+                        first_digit_width =
+                            static_cast<int>(std::bit_width(leading));
+                    }
+                }
+                else if(leading < (uint64_t{1} << 53))
+                    leading = (leading << 4) | uint64_t(digit);
+                else
+                    sticky |= digit != 0;
+            }
+            if(digits == 0)
+                return invalid();
+
+            int64_t exponent = 0;
+            if(text.starts_with(L'p') || text.starts_with(L'P'))
+            {
+                text.remove_prefix(1);
+                const bool negative_exponent = text.starts_with(L'-');
+                if(negative_exponent || text.starts_with(L'+'))
+                    text.remove_prefix(1);
+                if(text.empty() || text.front() < L'0' || text.front() > L'9')
+                    return invalid();
+                while(!text.empty() && text.front() >= L'0' &&
+                      text.front() <= L'9')
+                {
+                    int digit = text.front() - L'0';
+                    exponent = exponent > (exponent_limit - digit) / 10
+                                   ? exponent_limit
+                                   : 10 * exponent + digit;
+                    text.remove_prefix(1);
+                }
+                if(negative_exponent)
+                    exponent = -exponent;
+            }
+            const int64_t top = exponent +
+                                4 * (integer_digits - leading_zeros - 1) +
+                                first_digit_width - 1;
+            auto rounded = round_float_hex_magnitude(leading, sticky, top);
+            if(!rounded)
+                return float_fromhex_error(
+                    thread, source, L"OverflowError",
+                    L"hexadecimal value too large to represent as a float");
+            magnitude = *rounded;
+        }
+
+        while(!text.empty() && float_hex_space(text.front()))
+            text.remove_prefix(1);
+        if(!text.empty())
+            return invalid();
+        const uint64_t sign = uint64_t(negative) << 63;
+        return box_float(
+            thread,
+            std::bit_cast<double>((magnitude & ~(uint64_t{1} << 63)) | sign));
     }
 
     [[nodiscard]] static Value
@@ -1573,6 +1784,35 @@ namespace cl
             install_builtin_intrinsic_methods(vm, vm->float_class(), methods,
                                               std::size(methods)),
             "installing intrinsic methods");
+    }
+
+    void install_float_helpers(VirtualMachine *vm, ModuleObject *module)
+    {
+        auto helper = builtin_intrinsic_method(L"_clover_float_fromhex_impl",
+                                               native_float_fromhex);
+        auto function = unwrap_bootstrap_expected(
+            vm, make_intrinsic_function(vm, helper), "creating float helper");
+        unwrap_bootstrap_expected(
+            vm,
+            module->set_own_property(interned_string(helper.name),
+                                     function.raw_value()),
+            "installing float helper");
+    }
+
+    void install_float_python_methods(VirtualMachine *vm, ModuleObject *module)
+    {
+        Value function =
+            module->get_own_property(interned_string(L"_clover_float_fromhex"));
+        if(!has_native_layout<Function>(function))
+            fatal("missing float.fromhex Python method");
+        Owned<TValue<ClassMethod>> method(
+            active_thread()->make_object_value<ClassMethod>(function));
+        constexpr DescriptorFlags flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
+        if(!vm->float_class()->define_own_property(interned_string(L"fromhex"),
+                                                   method.raw_value(), flags))
+            fatal("failed to install float.fromhex");
     }
 
 }  // namespace cl
