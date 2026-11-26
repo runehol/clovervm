@@ -63,6 +63,14 @@ site, vary whether lookup supplies a receiver. Also cover a saved callable
 whose own `__call__` supplies the only receiver. Check that the physical span
 and the adapter's positional count agree on each path.
 
+## Prerequisite for expanded method calls
+
+Normalize string-subclass names in the existing keyword preparation
+opcodes, with duplicate checks on the exact string names. Keep non-string
+validation at call entry. Then simplify the expanded binder shared by the
+ordinary and fused call opcodes. See
+[Function Call Adaptation](function-call-adaptation.md#keyword-construction).
+
 ## 3. Add expanded method calls
 
 Add `CallMethodExpanded` using the existing tuple-plus-prefix binder. Keep
@@ -70,9 +78,10 @@ the pair and both transport registers outside the outgoing window. Reuse the
 existing cache guards and keep the selected function and prefix live across
 callback-capable binding.
 
-Verify reentry, including a nested call that replaces the site's live cache.
-Check that supplying a receiver uses the positional view without allocating a
-prefix tuple, and that a callee collector still packs its suffix when needed.
+Verify reentry during keyword preparation, where managed mappings can
+invoke the same call site. Check that supplying a receiver uses the
+positional view without allocating a prefix tuple, and that a callee
+collector still packs its suffix when needed.
 
 ## 4. Switch source lowering and retire fused calls
 

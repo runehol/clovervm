@@ -275,7 +275,7 @@ max(iterable, /, *, key=None, default=...) or max(arg1, arg2, /, *args, key=None
 
 
 def _clover_selection_keywords(kwargs, name, second_name, second_default):
-    # Builtin keyword matching uses string payloads, unlike Python call binding.
+    # Match option names by their string payloads.
     # Read stored entries without invoking keyword hash/equality hooks again.
     if len(kwargs) > 2:
         raise TypeError(
@@ -668,9 +668,10 @@ def _clover_merge_call_keyword_mapping(callable, destination, source):
         _clover_raise_call_mapping_error(callable, source)
     keys = __clover_to_exact_list__(keys)
     for key in keys:
-        if key in destination:
-            _clover_raise_duplicate_keyword(callable, key)
-        destination[key] = source[key]
+        name = str.__str__(key) if isinstance(key, str) else key
+        if name in destination:
+            _clover_raise_duplicate_keyword(callable, name)
+        destination[name] = source[key]
     return None
 
 

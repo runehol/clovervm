@@ -6377,7 +6377,7 @@ assert v(*(1, 2), **{"x": 3}) == ((v, 1, 2), {"x": 3})
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
-TEST(Interpreter, instance_expanded_call_preserves_target_across_reentry)
+TEST(Interpreter, instance_expanded_call_reenters_during_keyword_preparation)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
@@ -6400,20 +6400,22 @@ def replacement(self, *, key):
 
 events = []
 class Keyword(str):
-    def __hash__(self):
-        return 37
-    def __eq__(self, other):
-        if other != "key":
-            return False
-        events.append(other)
+    def __eq__(self, other): raise AssertionError("keyword equality hook")
+
+key = Keyword("key")
+class Mapping:
+    def keys(self): return [key]
+    def __getitem__(self, original):
+        assert original is key
+        events.append(original)
         assert invoke(inner, {"key": 5}) == 10
         Outer.__call__ = replacement
-        return True
+        return 4
 
 outer = Outer()
 outer.marker = 100
 assert invoke(outer, {"key": 2}) == 102
-assert invoke(outer, {Keyword("key"): 4}) == 104
+assert invoke(outer, Mapping()) == -4
 assert len(events) == 1
 assert invoke(outer, {"key": 3}) == -3
 assert invoke(inner, {"key": 6}) == 12

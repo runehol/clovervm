@@ -1031,11 +1031,13 @@ True
 )");
 }
 
-TEST_F(ExpandedCallSyntax, GenericMappingAndStringSubclassKeysArePreserved)
+TEST_F(ExpandedCallSyntax, GenericMappingFetchesOriginalKeysAndStoresExactNames)
 {
     run(LR"(
 class S(str):
-    def __hash__(self): return str.__hash__(self)
+    def __str__(self): raise AssertionError('keyword str hook')
+    def __hash__(self): raise AssertionError('keyword hash hook')
+    def __eq__(self, other): raise AssertionError('keyword equality hook')
 key = S('extra')
 events = []
 class Mapping:
@@ -1043,13 +1045,80 @@ class Mapping:
         events.append('keys')
         return ['a', key]
     def __getitem__(self, name):
-        events.append(name)
-        return 1 if name == 'a' else 2
+        if name is key:
+            events.append('original')
+            return 2
+        assert name == 'a'
+        events.append('a')
+        return 1
 def f(a, **rest): return a, rest
 result = f(**Mapping())
-assert result[0] == 1 and result[1][key] == 2
-assert next(iter(result[1].keys())) is key
-assert events == ['keys', 'a', key]
+assert result[0] == 1 and result[1]['extra'] == 2
+assert next(iter(result[1])).__class__ is str
+assert events == ['keys', 'a', 'original']
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, ExactDictKeywordNamesNormalizeInBuildAndMerge)
+{
+    run(LR"(
+armed = False
+class S(str):
+    def __hash__(self):
+        assert not armed
+        return 173
+    def __eq__(self, other): raise AssertionError('keyword equality hook')
+    def __str__(self): raise AssertionError('keyword str hook')
+key = S('flag')
+source = {key: 7}
+armed = True
+def named(*, flag): return flag
+def collect(**kw): return kw
+assert named(**source) == 7
+for result in (collect(**source), collect(other=3, **source)):
+    assert result['flag'] == 7
+    for name in result:
+        assert name.__class__ is str and name is not key
+assert next(iter(source)) is key
+True
+)");
+}
+
+TEST_F(ExpandedCallSyntax, NormalizedKeywordDuplicatesFailDuringPreparation)
+{
+    run(LR"(
+events = []
+class First(str):
+    def __hash__(self): return 11
+class Second(str):
+    def __hash__(self): return 22
+first = First('flag')
+second = Second('flag')
+source = {first: 1, second: 2}
+assert len(source) == 2
+class Mapping:
+    def keys(self): return [first, second]
+    def __getitem__(self, key):
+        assert key is first
+        events.append('first value')
+        return 1
+def later():
+    events.append('later source')
+    return {}
+def f(**kw): raise AssertionError('callee entered')
+def first_source(): f(**source, **later())
+def two_sources(): f(**{first: 1}, **{second: 2}, **later())
+def explicit_name(): f(**{first: 1}, flag=2, **later())
+def generic_source(): f(**Mapping(), **later())
+for call in (first_source, two_sources, explicit_name, generic_source):
+    try:
+        call()
+    except TypeError as caught:
+        assert "multiple values for keyword argument 'flag'" in str(caught)
+    else:
+        assert False
+assert events == ['first value']
 True
 )");
 }
@@ -1387,26 +1456,25 @@ True
 )");
 }
 
-TEST_F(ExpandedCallSyntax,
-       MethodBindingCallbacksRetainTheSelectedFunctionAndReceiver)
+TEST_F(ExpandedCallSyntax, MethodKeywordPreparationCanReenterTheSameSite)
 {
     run(LR"(
 class C:
-    def __init__(self): self.offset = 10
+    def __init__(self, offset): self.offset = offset
     def m(self, a): return a + self.offset
-class Helper:
-    def m(self, a): return a + 1
-helper = Helper()
-obj = C()
-def replacement(self, a): return a + 100
+outer = C(10)
+inner = C(100)
+def invoke(obj, keywords): return obj.m(**keywords)
 class S(str):
-    def __hash__(self): return 123
-    def __eq__(self, other):
-        assert helper.m(*(8,)) == 9
-        C.m = replacement
-        return str.__eq__(self, other)
-assert obj.m(**{S('a'): 3}) == 13
-assert obj.m(*(3,)) == 103
+    def __eq__(self, other): raise AssertionError('keyword equality hook')
+key = S('a')
+class Mapping:
+    def keys(self): return [key]
+    def __getitem__(self, name):
+        assert name is key
+        assert invoke(inner, {'a': 8}) == 108
+        return 3
+assert invoke(outer, Mapping()) == 13
 True
 )");
 }
@@ -1415,18 +1483,18 @@ TEST_F(ExpandedCallSyntax, MethodExceptionsUnwindWithoutEnteringTheCalleeEarly)
 {
     run(LR"(
 entered = False
-error = ValueError('comparison failed')
+error = ValueError('keyword lookup failed')
 class C:
     def m(self, a):
         global entered
         entered = True
         raise KeyError('callee failed')
-class S(str):
-    def __hash__(self): return 123
-    def __eq__(self, other): raise error
+class Mapping:
+    def keys(self): return ['a']
+    def __getitem__(self, key): raise error
 obj = C()
 try:
-    obj.m(**{S('a'): 3})
+    obj.m(**Mapping())
 except ValueError as caught:
     assert caught is error
 else:

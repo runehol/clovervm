@@ -5176,8 +5176,23 @@ namespace cl
                            ? accumulator.get_ptr<Object>()->get_shape()
                            : nullptr;
         int8_t callable_reg = pc[1], dict_reg = pc[2];
-        if(shape == thread->get_exact_dict_string_key_shape() ||
-           shape == thread->get_exact_dict_general_shape())
+        const bool exact_general =
+            shape == thread->get_exact_dict_general_shape();
+        bool copy_source = shape == thread->get_exact_dict_string_key_shape();
+        if(exact_general)
+        {
+            copy_source = true;
+            for(Dict::EntryView entry: *accumulator.get_ptr<Dict>())
+            {
+                if(has_native_layout<String>(entry.key) &&
+                   !is_exact_string(thread, entry.key))
+                {
+                    copy_source = false;
+                    break;
+                }
+            }
+        }
+        if(copy_source)
         {
             fp[dict_reg] = accumulator.get_ptr<Dict>()->copy().raw_value();
             accumulator = Value::None();
@@ -5192,7 +5207,9 @@ namespace cl
         fp[args - 1] = fp[dict_reg];
         fp[args - 2] = accumulator;
         TValue<Function> function =
-            thread->get_machine()->call_keyword_mapping_function();
+            exact_general
+                ? thread->get_machine()->call_keyword_merge_function()
+                : thread->get_machine()->call_keyword_mapping_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
             accumulator, thread, fp, pc, dispatch, code_object, function, args,
             3, 3, FunctionCallAdaptation::FixedArity);

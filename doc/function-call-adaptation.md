@@ -304,11 +304,25 @@ reuse `r4` because the explicit value stored there is dead after insertion.
 The callable and transport pair remain outside that window. Positional-versus-
 keyword parameter conflicts are detected later by binding.
 
-**Exact dict sources.** The first mapping uses `Dict::copy()`, preserving key
-identity, order, values, and stored hashes without callbacks. String-subclass
-and non-string keys use general dict storage. A later exact-dict merge uses
-native string-keyed uniqueness operations when possible; general storage uses
-managed known-hash insertion with rich equality and restartable probes.
+String-subclass keyword keys are copied to exact strings using their stored
+contents. This deliberately ignores subclass equality and hashing when
+matching keyword names, and collectors receive the exact string instead of
+the original subclass object. Equal normalized names are duplicates during
+construction, including two entries in the first source.
+
+**Exact dict sources.** The first mapping uses `Dict::copy()` when it has no
+string-subclass keys, preserving key identity, order, values, and stored
+hashes without callbacks. Otherwise it builds a fresh destination via the
+same insertion path as a later merge. Exact string-keyed merges use native
+uniqueness operations. General storage uses managed known-hash insertion
+with rich equality and restartable probes. A normalized key uses the exact
+string's hash instead of the source entry's stored hash.
+
+Rebuilding the first exact dict when it contains a string-subclass key can
+invoke equality on its other keys, including non-strings. An exception from
+that comparison can stop evaluation before a later keyword source runs.
+This difference from CPython's exception order is intentional. Non-string
+keyword validation itself still happens at call entry.
 
 General-storage merge retains the current key/value/hash in managed registers
 and traverses native entries by numeric index, never holding an entry pointer
@@ -326,8 +340,9 @@ probe-generation checks restart invalidated probes.
    including its body, into a contextual mapping `TypeError`.
 2. Applies `ToExactList` before fetching any values. An exact list is reused;
    other iterables are fully materialized into a fresh list.
-3. Uses an ordinary iterator over the live list. For each key, checks for a
-   duplicate before fetching `source[key]`, then inserts the value.
+3. Uses an ordinary iterator over the live list. For each key, normalizes
+   the name and checks for a duplicate before fetching `source[original_key]`.
+   It inserts the value under the normalized name.
 
 Materialization, value lookup, hashing, and equality are outside the
 `AttributeError` translation boundary; their exceptions propagate unchanged.
@@ -358,10 +373,11 @@ This gives keyword errors precedence over excess positional arguments, then
 missing arguments. Construction errors in precode occur before all these
 checks. An invalid plan is neither applied nor installed.
 
-Exact-string keys use native `string_eq`. Subclass keys use
-`ThreadState::test_equal`, including reflected rich comparison, truth conversion,
-and exception propagation. This uncommon path permits C++-to-managed interpreter
-reentry. Matching does not hash keys or probe once per formal parameter.
+Prepared keyword names use native `string_eq`. The binder still has a
+subclass fallback for direct internal calls that bypass preparation. It uses
+`ThreadState::test_equal`, including reflected rich comparison, truth
+conversion, and exception propagation. Matching does not hash keys or probe
+once per formal parameter.
 The builder's filled-slot scratch uses `absl::InlinedVector<bool, 16>`.
 
 ```cpp

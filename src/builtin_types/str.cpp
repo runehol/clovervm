@@ -163,6 +163,24 @@ namespace cl
         return value_to_str_string(obj);
     }
 
+    TValue<String> exact_string_from_contents(ThreadState *thread,
+                                              TValue<String> text)
+    {
+        if(is_exact_string(thread, text.raw_value()))
+        {
+            return text;
+        }
+        Owned<TValue<String>> source(text);
+        TValue<SMI> count = source.extract()->count.value();
+        TValue<String> result = thread->make_object_value<String>(count);
+        if(count.extract() != 0)
+        {
+            std::memcpy(result.extract()->data, source.extract()->data,
+                        size_t(count.extract()) * sizeof(cl_wchar));
+        }
+        return result;
+    }
+
     static Value native_str_str(ThreadState *thread, Value self)
     {
         if(!has_native_layout<String>(self))
@@ -170,13 +188,8 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__str__ expects a str receiver");
         }
-        if(is_exact_string(thread, self))
-        {
-            return self;
-        }
-        return thread
-            ->make_object_value<String>(
-                string_view(TValue<String>::from_value_assumed(self)))
+        return exact_string_from_contents(
+                   thread, TValue<String>::from_value_assumed(self))
             .raw_value();
     }
 

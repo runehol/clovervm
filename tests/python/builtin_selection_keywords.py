@@ -1,5 +1,5 @@
 # Self-checking builtin keyword parsing cases compared with CPython 3.14.5.
-# Ordinary Python functions intentionally retain rich keyword-name comparison.
+# Expanded call preparation normalizes string-subclass keyword names.
 
 
 def raises_keyword(error, function, args, kwargs):
@@ -50,10 +50,10 @@ for function in (min, max):
     assert function([], **{name("key", 11): 42, name("default", 12): None}) is None
     assert function(2, 1, **{name("key", 11): None}) == (1 if function is min else 2)
     raises_keyword(TypeError, function, (2, 1), {name('default', 12): None})
-    raises_keyword(AssertionError, function, ([],), {name('bogus', 13): None})
+    raises_keyword(TypeError, function, ([],), {name('bogus', 13): None})
     raises_keyword(TypeError, function, (), {name('bogus', 13): None})
-    raises_keyword(AssertionError, function, ([],), {name('key', 11): None, name('key', 12): None})
-    raises_keyword(AssertionError, function, ([],), {name('default', 11): None, name('default', 12): None})
+    raises_keyword(TypeError, function, ([],), {name('key', 11): None, name('key', 12): None})
+    raises_keyword(TypeError, function, ([],), {name('default', 11): None, name('default', 12): None})
     raises_keyword(TypeError, function, ([],), {name('key', 11): None, name('default', 12): None, name('bogus', 13): None})
 
 calls.clear()
@@ -61,10 +61,10 @@ assert sorted([1, 3, 2], **{name("key", 11): key}) == [3, 2, 1]
 assert calls == [1, 3, 2]
 assert sorted([1, 3, 2], **{name("reverse", 12): True}) == [3, 2, 1]
 assert sorted([1, 3, 2], **{name("key", 11): key, name("reverse", 12): True}) == [1, 2, 3]
-raises_keyword(AssertionError, sorted, ([],), {name('bogus', 13): None})
+raises_keyword(TypeError, sorted, ([],), {name('bogus', 13): None})
 raises_keyword(TypeError, sorted, (), {name('bogus', 13): None})
-raises_keyword(AssertionError, sorted, ([],), {name('key', 11): None, name('key', 12): None})
-raises_keyword(AssertionError, sorted, ([],), {name('reverse', 11): False, name('reverse', 12): False})
+raises_keyword(TypeError, sorted, ([],), {name('key', 11): None, name('key', 12): None})
+raises_keyword(TypeError, sorted, ([],), {name('reverse', 11): False, name('reverse', 12): False})
 raises_keyword(TypeError, sorted, ([],), {name('key', 11): None, name('reverse', 12): False, name('bogus', 13): None})
 
 
@@ -93,14 +93,14 @@ for function in (min, max, sorted):
     function([2, 1], **{RejectName("key"): None})
 
 
-# This behavior belongs to ordinary Python call binding and must not change.
+# The same preparation applies to ordinary Python call binding.
 def ordinary(*, key=None):
     return key
 
 
 marker = []
-assert ordinary(**{ForgedName("bogus"): marker}) is marker
-raises_keyword(TypeError, ordinary, (), {RejectName('key'): None})
+raises_keyword(TypeError, ordinary, (), {ForgedName("bogus"): marker})
+assert ordinary(**{RejectName("key"): marker}) is marker
 
 
 class Source:
@@ -126,14 +126,14 @@ class Reverse:
 
 
 calls.clear()
-raises_keyword(AssertionError, sorted, (Source(),), {name('bogus', 13): None})
+raises_keyword(TypeError, sorted, (Source(),), {name('bogus', 13): None})
 assert calls == ["iter", 0, 1, 2]
 calls.clear()
 assert sorted(Source(), **{name("reverse", 12): Reverse()}) == [2, 1]
 assert calls == ["iter", 0, 1, 2, "reverse"]
 for function in (min, max):
     calls.clear()
-    raises_keyword(AssertionError, function, (Source(),), {name('bogus', 13): None})
+    raises_keyword(TypeError, function, (Source(),), {name('bogus', 13): None})
     raises_keyword(TypeError, function, (Source(), 0), {name('default', 12): None})
     assert calls == []
 
@@ -146,15 +146,15 @@ for function in (min, max, sorted):
     })
 
 
-# Formatting an invalid name has the same callback behavior as CPython.
+# Diagnostics use the normalized name, even if the source key overrides str().
 class BadDiagnostic(str):
     def __str__(self):
         raise RuntimeError("keyword diagnostic conversion")
 
 
 for function in (min, max, sorted):
-    error = raises_keyword(RuntimeError, function, ([],), {BadDiagnostic("bogus"): None})
-    assert str(error) == "keyword diagnostic conversion"
+    error = raises_keyword(TypeError, function, ([],), {BadDiagnostic("bogus"): None})
+    assert "bogus" in str(error)
 
 
 # sorted must not hash the keyword object again after consuming its source.
@@ -181,8 +181,7 @@ class ConsumptionSource:
 assert sorted(ConsumptionSource(), **{HashBeforeConsumption("key"): None}) == []
 
 
-# Error formatting consumes the __str__ result's payload, without arithmetic
-# dispatch through an overridden __radd__ on a returned string subclass.
+# The normalized name also bypasses conversions that would return a subclass.
 class DiagnosticText(str):
     def __radd__(self, other):
         raise AssertionError("diagnostic result addition hook")
@@ -195,4 +194,4 @@ class DiagnosticName(str):
 
 for function in (min, max, sorted):
     error = raises_keyword(TypeError, function, ([],), {DiagnosticName("bogus"): None})
-    assert "shown name" in str(error)
+    assert "bogus" in str(error)
