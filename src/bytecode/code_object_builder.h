@@ -34,6 +34,7 @@ namespace cl
     {
         None,
         CallFrame,
+        MethodCallFrame,  // Align the receiver slot at the second register.
     };
 
     enum class OperatorBytecodeFormat

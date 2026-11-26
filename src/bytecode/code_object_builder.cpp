@@ -1873,10 +1873,13 @@ namespace cl
         sync_temporary_reg_base();
         uint32_t allocated_reg = temporary_reg;
         uint32_t semantic_reg = temporary_reg;
-        if(alignment == RegisterAlignment::CallFrame &&
-           !is_call_frame_aligned_register(semantic_reg))
+        if(alignment != RegisterAlignment::None)
         {
-            ++semantic_reg;
+            uint32_t anchor_reg =
+                semantic_reg +
+                (alignment == RegisterAlignment::MethodCallFrame ? 1 : 0);
+            if(!is_call_frame_aligned_register(anchor_reg))
+                ++semantic_reg;
         }
         uint32_t allocated_n_regs = semantic_reg - allocated_reg + n_regs;
         temporary_reg += allocated_n_regs;

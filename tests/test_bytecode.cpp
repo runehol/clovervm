@@ -885,6 +885,47 @@ TEST(BytecodeInstruction, call_keyword_builders_and_traversal_effects)
     EXPECT_EQ(1u, source.extract()->size());
 }
 
+TEST(BytecodeBuilder, method_call_reservation_aligns_receiver_slot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    TValue<String> name = context.vm().get_or_create_interned_string_value(
+        L"<method-call-reservation-test>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+
+    auto check_reservation = [&] {
+        uint32_t first_free;
+        {
+            CodeObjectBuilder::TemporaryReg probe(builder);
+            first_free = probe;
+        }
+        bool needs_padding = builder.is_call_frame_aligned_register(first_free);
+        {
+            CodeObjectBuilder::TemporaryReg span(
+                builder, 3, RegisterAlignment::MethodCallFrame);
+            uint32_t callable = span;
+            EXPECT_EQ(first_free + uint32_t(needs_padding), callable);
+            EXPECT_FALSE(builder.is_call_frame_aligned_register(callable));
+            EXPECT_TRUE(builder.is_call_frame_aligned_register(callable + 1));
+            CodeObjectBuilder::TemporaryReg next(builder);
+            EXPECT_EQ(callable + 3, uint32_t(next));
+        }
+        CodeObjectBuilder::TemporaryReg restored(builder);
+        EXPECT_EQ(first_free, uint32_t(restored));
+    };
+    check_reservation();
+    {
+        CodeObjectBuilder::TemporaryReg prefix(builder);
+        check_reservation();
+    }
+    builder.emit_return(0).value();
+    builder.finalize().value();
+}
+
 TEST(BytecodeInstruction, enter_patches_even_count_without_moving_body_or_jumps)
 {
     test::VmTestContext context;
