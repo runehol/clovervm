@@ -1343,27 +1343,71 @@ True
 )");
 }
 
-TEST_F(ExpandedCallSyntax, ExpandedMethodsPreserveAcceptedLateLookupTiming)
+TEST_F(ExpandedCallSyntax, MethodLookupPrecedesAllArgumentForms)
 {
     run(LR"(
 events = []
-class C:
-    def m(self): return 'old'
+class C: pass
+class Inner:
+    def m(self, value): return value + 1
 obj = C()
-def replacement(self): return 'new'
+inner = Inner()
+def original(self, value): return ('old', value)
+def replacement(self, value): return ('new', value)
 def arguments():
     events.append('arguments')
     C.m = replacement
-    return ()
-# Accepted mismatch: lookup follows expansion, as for ordinary method calls.
-assert obj.m(*arguments()) == 'new'
-try:
-    obj.missing(*arguments())
-except AttributeError:
-    pass
-else:
-    assert False
-assert events == ['arguments', 'arguments']
+    return 4
+def positional(target, arg): return target.m(arg())
+def keyword(target, arg): return target.m(value=arg())
+def expanded(target, arg): return target.m(*(arg(),))
+def inner_arg(): return 8
+def selected(value): return ('getter', value)
+def getter(self):
+    events.append('getter')
+    assert invoke(inner, inner_arg) == 9
+    return selected
+def failing_getter(self): raise ValueError('getter failed')
+
+for invoke in (positional, keyword, expanded):
+    try:
+        invoke(obj, arguments)
+    except AttributeError:
+        pass
+    else:
+        assert False
+    assert events == []
+
+    C.m = original
+    assert invoke(obj, arguments) == ('old', 4)
+    assert invoke(obj, arguments) == ('new', 4)
+    assert events == ['arguments', 'arguments']
+    events.clear()
+
+    C.m = property(getter)
+    assert invoke(obj, arguments) == ('getter', 4)
+    assert events == ['getter', 'arguments']
+    events.clear()
+
+    C.m = property(failing_getter)
+    try:
+        invoke(obj, arguments)
+    except ValueError:
+        pass
+    else:
+        assert False
+    assert events == []
+
+    C.m = None
+    try:
+        invoke(obj, arguments)
+    except TypeError:
+        pass
+    else:
+        assert False
+    assert events == ['arguments']
+    events.clear()
+    del C.m
 True
 )");
 }

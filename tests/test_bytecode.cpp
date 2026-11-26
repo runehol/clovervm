@@ -215,7 +215,21 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
 TEST(BytecodeInstruction, two_cache_instruction_preserves_both_typed_operands)
 {
     test::VmTestContext context;
-    CodeObject *code_object = context.compile_file(L"x.bit_length()\n");
+    ThreadState::ActivationScope activation(context.thread());
+    auto name = context.vm().get_or_create_interned_string_value(L"bit_length");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    {
+        CodeObjectBuilder::TemporaryReg args(builder, 1,
+                                             RegisterAlignment::CallFrame);
+        auto name_idx = builder.allocate_constant(name).value();
+        builder.emit_call_method_attr_positional(0, args, name_idx, 0).value();
+    }
+    builder.emit_return(0).value();
+    CodeObject *code_object = builder.finalize().value();
 
     BytecodeInstruction instruction =
         find_instruction(*code_object, Bytecode::CallMethodAttrPositional);
