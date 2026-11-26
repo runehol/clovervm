@@ -24,19 +24,22 @@ together so source calls acquire the same lookup timing in one change.
 
 Add `LoadMethod` and `FinishLoadMethod S` to the builder, decoder, printer, and
 interpreter. Decode the pair as one semantic load and support standalone
-decoding at the continuation PC. Reuse guarded attribute lookup and the
-managed getter call path. Direct lookup writes the pair and skips the
-continuation. A getter returns to the continuation, which commits the result
-to `S` and the absent receiver to `S+1`.
+decoding at the continuation PC. Share the `LoadAttr` resolver, cache
+eligibility, read plans, and getter call path. At execution, split binding
+for function plans and unwrap exact staticmethod plans. Direct lookup writes
+the pair and skips the continuation. A getter returns to the continuation,
+which commits the result to `S` and the absent receiver to `S+1`.
 
 Reuse the combined MRO validity cell for cached class-object reads,
 including plain-slot reads. It guards shape and contents on the class and
 metaclass MROs.
 At one warmed load site, replace an inherited plain function with a
 `classmethod`, then restore the plain function. Verify invalidation on the
-same-shape writes and check the pair after each lookup. The receiver should
-be absent for the plain function and the accessed derived class for the
-`classmethod`.
+same-shape writes and check the pair after each lookup. Both reads have an
+absent receiver. The `classmethod` getter returns a bound method whose
+receiver is the accessed derived class. Exercise the shared plain-slot
+cache guard by adding `__get__` to a stored value's type after both load
+forms have read the slot.
 
 Use hand-built bytecode to inspect the pair for direct binding, absent
 receivers, and inherited classmethods. Check base aliasing with `S+1`, the

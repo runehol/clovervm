@@ -49,6 +49,8 @@ CL_BYTECODE(DelGlobal, Constant, Sequential, None)
 CL_BYTECODE(DelLocal, Register, Sequential, None)
 
 CL_BYTECODE(LoadAttr, RegisterConstantAttributeReadCache, Sequential, None)
+CL_BYTECODE(LoadMethod, MethodLoad, Sequential, MethodLoad)
+CL_BYTECODE(FinishLoadMethod, Register, Sequential, MethodLoadContinuation)
 CL_BYTECODE(StoreAttr, RegisterConstantAttributeMutationCache, Sequential,
             None)
 CL_BYTECODE(DelAttr, RegisterConstantAttributeMutationCache, Sequential, None)

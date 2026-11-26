@@ -28,6 +28,7 @@
 #include "object_model/instance.h"
 #include "object_model/refcount.h"
 #include "object_model/slot_dict.h"
+#include "object_model/static_method.h"
 #include "object_model/validity_cell.h"
 #include "object_model/value.h"
 #include "runtime/call_target.h"
@@ -2762,9 +2763,59 @@ namespace cl
         return true;
     }
 
+    enum class AttributeReadMode : uint8_t
+    {
+        Value,
+        Method,
+    };
+
+    template <AttributeReadMode Mode>
+    static constexpr uint32_t attribute_read_length =
+        bytecode_length(Mode == AttributeReadMode::Method ? Bytecode::LoadMethod
+                                                          : Bytecode::LoadAttr);
+    static constexpr uint32_t method_load_continuation_offset =
+        bytecode_info(Bytecode::LoadMethod).format_info().continuation_offset;
+    static_assert(method_load_continuation_offset ==
+                  bytecode_length(Bytecode::LoadAttr));
+
+    static ALWAYSINLINE int8_t method_pair_operand(const uint8_t *pc)
+    {
+        return int8_t(pc[method_load_continuation_offset + 1]);
+    }
+
+    static ALWAYSINLINE void write_method_pair(Value *fp, int32_t pair,
+                                               Value callable, Value receiver)
+    {
+        fp[pair] = callable;
+        fp[pair - 1] = receiver;
+    }
+
+    static ALWAYSINLINE bool
+    splits_method_binding(const AttributeReadPlan &plan)
+    {
+        return plan.kind == AttributeReadPlanKind::BindFunctionReceiver ||
+               plan.kind == AttributeReadPlanKind::StaticMethodGet;
+    }
+
+    static ALWAYSINLINE void
+    write_split_method_pair(Value *fp, const uint8_t *pc, Value base,
+                            const AttributeReadPlan &plan, Value selected)
+    {
+        if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
+        {
+            write_method_pair(fp, method_pair_operand(pc), selected, base);
+            return;
+        }
+
+        assert(plan.kind == AttributeReadPlanKind::StaticMethodGet);
+        write_method_pair(fp, method_pair_operand(pc),
+                          native_cast<StaticMethod>(selected)->wrapped(),
+                          Value::not_present());
+    }
+
     NOINLINE static INTERP_CC Value op_load_attr_descriptor_hit(PARAMS)
     {
-        constexpr uint32_t call_instr_len = 4;
+        constexpr uint32_t call_instr_len = bytecode_length(Bytecode::LoadAttr);
         Value receiver = fp[int8_t(pc[1])];
         const AttributeReadPlan &plan =
             code_object->inline_caches.attribute_read_caches[pc[3]].plan;
@@ -2818,9 +2869,10 @@ namespace cl
         COMPLETE();
     }
 
+    template <AttributeReadMode Mode>
     NOINLINE static INTERP_CC Value op_load_attr_cache_miss(PARAMS)
     {
-        START(4);
+        START(attribute_read_length<Mode>);
         int8_t reg = pc[1];
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
@@ -2834,6 +2886,19 @@ namespace cl
         if(!descriptor.is_found())
         {
             MUSTTAIL return attribute_error(ARGS);
+        }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(splits_method_binding(descriptor.plan))
+            {
+                if(descriptor.is_cacheable())
+                {
+                    cache.populate(receiver, descriptor);
+                }
+                write_split_method_pair(fp, pc, receiver, descriptor.plan,
+                                        descriptor.lookup_value);
+                COMPLETE();
+            }
         }
         AttributeLoadPlanStatus plan_status =
             load_attr_from_plan_inline(receiver, descriptor.plan, accumulator);
@@ -2879,7 +2944,8 @@ namespace cl
                     fp[first_arg_reg - 2] = call.owner;
                     auto entry = enter_uncached_resolved_positional_call(
                         thread, fp, pc, dispatch, code_object, accumulator,
-                        call.getter.raw_value(), first_arg_reg, 3, instr_len);
+                        call.getter.raw_value(), first_arg_reg, 3,
+                        bytecode_length(Bytecode::LoadAttr));
                     has_exception = entry.has_exception();
                     if(!has_exception)
                     {
@@ -2903,6 +2969,15 @@ namespace cl
 
             START(0);
             COMPLETE();
+        }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(unlikely(accumulator.is_not_present()))
+            {
+                MUSTTAIL return attribute_error(ARGS);
+            }
+            write_method_pair(fp, method_pair_operand(pc), accumulator,
+                              Value::not_present());
         }
         if(descriptor.is_cacheable())
         {
@@ -3419,9 +3494,10 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_load_attr(PARAMS)
+    template <AttributeReadMode Mode>
+    static ALWAYSINLINE INTERP_CC Value op_load_attribute(PARAMS)
     {
-        START(4);
+        START(attribute_read_length<Mode>);
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
@@ -3429,7 +3505,18 @@ namespace cl
             code_object->inline_caches.attribute_read_caches[cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
-            MUSTTAIL return op_load_attr_cache_miss(ARGS);
+            MUSTTAIL return op_load_attr_cache_miss<Mode>(ARGS);
+        }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(splits_method_binding(cache.plan))
+            {
+                Value selected =
+                    read_plan_storage_owner(receiver, cache.plan)
+                        ->read_storage_location(cache.plan.storage_location);
+                write_split_method_pair(fp, pc, receiver, cache.plan, selected);
+                COMPLETE();
+            }
         }
         AttributeLoadPlanStatus plan_status =
             load_attr_from_plan_inline(receiver, cache.plan, accumulator);
@@ -3440,8 +3527,34 @@ namespace cl
         }
         if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
         {
-            MUSTTAIL return op_load_attr_cache_miss(ARGS);
+            MUSTTAIL return op_load_attr_cache_miss<Mode>(ARGS);
         }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(unlikely(accumulator.is_not_present()))
+            {
+                MUSTTAIL return attribute_error(ARGS);
+            }
+            write_method_pair(fp, method_pair_operand(pc), accumulator,
+                              Value::not_present());
+        }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_load_attr(PARAMS)
+    {
+        MUSTTAIL return op_load_attribute<AttributeReadMode::Value>(ARGS);
+    }
+
+    static INTERP_CC Value op_load_method(PARAMS)
+    {
+        MUSTTAIL return op_load_attribute<AttributeReadMode::Method>(ARGS);
+    }
+
+    static INTERP_CC Value op_finish_load_method(PARAMS)
+    {
+        START(2);
+        write_method_pair(fp, int8_t(pc[1]), accumulator, Value::not_present());
         COMPLETE();
     }
 
@@ -7241,6 +7354,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
         SET_TABLE_ENTRY(Bytecode::DelLocal, op_del_local);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
+        SET_TABLE_ENTRY(Bytecode::LoadMethod, op_load_method);
+        SET_TABLE_ENTRY(Bytecode::FinishLoadMethod, op_finish_load_method);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
         SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);
         SET_TABLE_ENTRY(Bytecode::GetItem, op_get_item);

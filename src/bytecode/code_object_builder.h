@@ -413,6 +413,9 @@ namespace cl
         Expected<uint32_t> emit_create_class(uint32_t source_offset,
                                              uint8_t body_constant_idx,
                                              uint32_t first_arg_reg);
+        Expected<uint32_t> emit_load_method(uint32_t source_offset,
+                                            uint32_t base_reg, uint8_t name_idx,
+                                            uint32_t pair_reg);
         Expected<uint32_t> emit_load_attr(uint32_t source_offset,
                                           uint32_t receiver_reg,
                                           uint8_t name_idx);

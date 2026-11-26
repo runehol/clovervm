@@ -422,13 +422,27 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_constant(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::FinishLoadMethod:
+                fmt::format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::LoadAttr:
+            case cl::Bytecode::LoadMethod:
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 fmt::format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
                 fmt::format_to(out, ", ");
                 disassemble_read_cache(code_obj, out, pc++);
+                if(bc == cl::Bytecode::LoadMethod)
+                {
+                    assert(cl::Bytecode(code_obj.code[pc]) ==
+                           cl::Bytecode::FinishLoadMethod);
+                    ++pc;
+                    fmt::format_to(out, ", ");
+                    disassemble_reg(code_obj, out, pc++);
+                }
                 break;
 
             case cl::Bytecode::StoreAttr:

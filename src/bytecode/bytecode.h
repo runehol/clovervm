@@ -77,6 +77,7 @@ namespace cl
         PositionalCall,
         KeywordCall,
         ExpandedCall,
+        MethodLoad,
         NativeTarget,
         RuntimeIntrinsic,
         CodeObjectCall,
@@ -107,6 +108,8 @@ namespace cl
         TruthinessContinuation,
         ConditionalTruthiness,
         ConditionalTruthinessContinuation,
+        MethodLoad,
+        MethodLoadContinuation,
     };
 
     enum class Bytecode : uint8_t
@@ -224,6 +227,15 @@ namespace cl
                 return make_bytecode_format_info(Operand::Register,
                                                  Operand::Constant,
                                                  Operand::AttributeReadCache);
+            case BytecodeFormat::MethodLoad:
+                {
+                    BytecodeFormatInfo info = make_bytecode_format_info(
+                        Operand::Register, Operand::Constant,
+                        Operand::AttributeReadCache, Operand::Register);
+                    info.continuation_offset = info.operand_offset(3);
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::RegisterConstantAttributeMutationCache:
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Constant,

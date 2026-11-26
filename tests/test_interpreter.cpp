@@ -9,6 +9,7 @@
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
+#include "bytecode/bytecode_decoder.h"
 #include "bytecode/code_object_builder.h"
 #include "bytecode/code_object_print.h"
 #include "compiler/codegen.h"
@@ -10856,6 +10857,394 @@ TEST(Interpreter, to_bool_disassembly_hides_embedded_finisher)
     EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
     EXPECT_NE(std::string::npos, printed.find("    8 Return"));
     EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
+}
+
+struct MethodLoadTestCode
+{
+    CodeObject *code;
+    uint32_t load_pc;
+    uint32_t pair_reg;
+};
+
+static MethodLoadTestCode
+make_method_load_test_code(test::VmTestContext &context,
+                           const wchar_t *attribute = L"method")
+{
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<method-load>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr, context.vm().global_builtins_module(),
+        context.thread()->make_internal_raw<Scope>(nullptr), name);
+    builder.configure_positional_function(2);
+    uint32_t load_pc;
+    uint32_t pair_reg;
+    {
+        CodeObjectBuilder::TemporaryReg pair(builder, 2);
+        pair_reg = pair;
+        uint8_t attr =
+            builder.allocate_constant(interned_string(attribute)).value();
+        builder.emit_mov(0, pair + 1, 0).value();
+
+        JumpTarget handler(&builder);
+        ExceptionTableRangeBuilder protected_load(&builder, handler);
+        load_pc = builder.emit_load_method(0, pair + 1, attr, pair).value();
+        protected_load.close();
+
+        JumpTarget return_receiver(&builder);
+        builder.emit_ldar(0, 1).value();
+        builder.emit_jump_if_true(0, return_receiver).value();
+        builder.emit_ldar(0, pair).value();
+        builder.emit_return(0).value();
+        return_receiver.resolve().value();
+        builder.emit_ldar(0, pair + 1).value();
+        builder.emit_return(0).value();
+
+        handler.resolve().value();
+        builder.emit_drain_active_exception_into(0, pair).value();
+        builder.emit_ldar(0, pair).value();
+        builder.emit_return(0).value();
+    }
+    return {builder.finalize().value(), load_pc, pair_reg};
+}
+
+TEST(Interpreter, load_method_pair_decodes_as_one_instruction)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    BytecodeInstruction load = decode_instruction(*test.code, test.load_pc);
+    ASSERT_EQ(Bytecode::LoadMethod, load.semantic_opcode());
+    ASSERT_EQ(test.load_pc + 4, load.continuation_pc_offset());
+    EXPECT_EQ(test.load_pc + 6, load.next_pc_offset());
+    ASSERT_EQ(4u, load.operands().size());
+    EXPECT_EQ(test.pair_reg + 1, load.operands()[0].value);
+    EXPECT_EQ(test.pair_reg, load.operands()[3].value);
+    int32_t pair_offset = test.code->encode_reg(test.pair_reg);
+    ASSERT_EQ(1u, load.sources().size());
+    EXPECT_EQ(pair_offset - 1, load.sources()[0].frame_offset);
+    ASSERT_EQ(3u, load.destinations().size());
+    EXPECT_EQ(pair_offset, load.destinations()[0].frame_offset);
+    EXPECT_EQ(pair_offset - 1, load.destinations()[1].frame_offset);
+    EXPECT_TRUE(load.destinations()[2].is_accumulator());
+
+    BytecodeInstruction finish =
+        decode_instruction(*test.code, test.load_pc + 4);
+    EXPECT_EQ(Bytecode::FinishLoadMethod, finish.semantic_opcode());
+    EXPECT_EQ(load.next_pc_offset(), finish.next_pc_offset());
+    ASSERT_EQ(1u, finish.sources().size());
+    EXPECT_TRUE(finish.sources()[0].is_accumulator());
+    ASSERT_EQ(2u, finish.destinations().size());
+    EXPECT_EQ(pair_offset, finish.destinations()[0].frame_offset);
+    EXPECT_EQ(pair_offset - 1, finish.destinations()[1].frame_offset);
+
+    std::string printed = fmt::to_string(*test.code);
+    EXPECT_NE(std::string::npos, printed.find("LoadMethod"));
+    EXPECT_EQ(std::string::npos, printed.find("FinishLoadMethod"));
+    BytecodeDecoder decoder(*test.code);
+    const BytecodeBlock &block = decoder.blocks().front();
+    size_t load_count = 0;
+    for(const BytecodeInstruction &instruction: block.instructions())
+    {
+        load_count += instruction.encoded_opcode() == Bytecode::LoadMethod;
+        EXPECT_NE(Bytecode::FinishLoadMethod, instruction.encoded_opcode());
+    }
+    EXPECT_EQ(1u, load_count);
+}
+
+TEST(Interpreter, load_method_pair_replays_binding_and_class_slot_replacement)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def function(*args):
+    pass
+
+class Base:
+    method = function
+
+class Child(Base):
+    pass
+
+static_wrapper = staticmethod(function)
+class Static:
+    method = static_wrapper
+
+class Candidate:
+    pass
+
+candidate = Candidate()
+class MutableProtocol:
+    method = candidate
+
+def getter(self, obj, owner):
+    return 42
+
+def install_getter():
+    Candidate.__get__ = getter
+
+def read_property(obj):
+    return 7
+
+def new_property_getter(obj):
+    return 8
+
+prop = property(read_property)
+class WithProperty:
+    method = prop
+
+def replace_property_getter():
+    prop.__init__(new_property_getter)
+
+instance = Child()
+shadow = Child()
+shadow.method = function
+own_wrapper = Child()
+own_wrapper.method = static_wrapper
+static = Static()
+wrapped = classmethod(function)
+with_property = WithProperty()
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    Owned<TValue<Function>> load(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(test.code),
+        Optional<TValue<String>>::none()));
+    auto check_pair = [&](Value base, Value callable, Value receiver) {
+        EXPECT_EQ(callable, thread->call_clovervm_function(load.value(), base,
+                                                           Value::False()));
+        EXPECT_EQ(receiver, thread->call_clovervm_function(load.value(), base,
+                                                           Value::True()));
+    };
+
+    Value function = global(L"function");
+    Value instance = global(L"instance");
+    Value child = global(L"Child");
+    check_pair(instance, function, instance);
+    EXPECT_TRUE(
+        test.code->inline_caches.attribute_read_caches[0].matches(instance));
+    check_pair(global(L"shadow"), function, Value::not_present());
+    check_pair(global(L"own_wrapper"), global(L"static_wrapper"),
+               Value::not_present());
+    Value static_base = global(L"static");
+    check_pair(static_base, function, Value::not_present());
+
+    auto &cache = test.code->inline_caches.attribute_read_caches[0];
+    ASSERT_TRUE(cache.matches(static_base));
+    EXPECT_EQ(AttributeReadPlanKind::StaticMethodGet, cache.plan.kind);
+    check_pair(child, function, Value::not_present());
+
+    ASSERT_TRUE(cache.matches(child));
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    Shape *shape = base->get_shape();
+    auto method_name = interned_string(L"method");
+    ASSERT_TRUE(
+        base->set_own_property(method_name, global(L"wrapped")).value());
+    EXPECT_EQ(shape, base->get_shape());
+    EXPECT_FALSE(cache.matches(child));
+    for(Value receiver: {child, instance})
+    {
+        Value result = thread->call_clovervm_function(load.value(), receiver,
+                                                      Value::False());
+        ASSERT_TRUE(has_native_layout<BoundMethod>(result));
+        auto *bound = native_cast<BoundMethod>(result);
+        EXPECT_EQ(function, bound->callable());
+        EXPECT_EQ(child, bound->receiver());
+        EXPECT_EQ(Value::not_present(),
+                  thread->call_clovervm_function(load.value(), receiver,
+                                                 Value::True()));
+    }
+    EXPECT_FALSE(cache.matches(child));
+
+    ASSERT_TRUE(base->set_own_property(method_name, Value::None()).value());
+    check_pair(child, Value::None(), Value::not_present());
+    ASSERT_TRUE(
+        base->set_own_property(method_name, Value::NotImplemented()).value());
+    check_pair(child, Value::NotImplemented(), Value::not_present());
+
+    ASSERT_TRUE(base->set_own_property(method_name, function).value());
+    check_pair(child, function, Value::not_present());
+    EXPECT_TRUE(cache.matches(child));
+
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<attribute-load>");
+    CodeObjectBuilder attr_builder(
+        &context.vm(), nullptr, context.vm().global_builtins_module(),
+        thread->make_internal_raw<Scope>(nullptr), name);
+    attr_builder.configure_positional_function(1);
+    uint8_t attr_name = attr_builder.allocate_constant(method_name).value();
+    attr_builder.emit_load_attr(0, 0, attr_name).value();
+    attr_builder.emit_return(0).value();
+    CodeObject *attr_code = attr_builder.finalize().value();
+    Owned<TValue<Function>> load_attr(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(attr_code),
+        Optional<TValue<String>>::none()));
+
+    Value mutable_protocol = global(L"MutableProtocol");
+    Value candidate = global(L"candidate");
+    check_pair(mutable_protocol, candidate, Value::not_present());
+    EXPECT_FALSE(cache.matches(mutable_protocol));
+    for(int i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(candidate, thread->call_clovervm_function(load_attr.value(),
+                                                            mutable_protocol));
+    }
+    EXPECT_FALSE(attr_code->inline_caches.attribute_read_caches[0].matches(
+        mutable_protocol));
+    EXPECT_EQ(Value::None(), thread->call_clovervm_function(
+                                 TValue<Function>::from_value_assumed(
+                                     global(L"install_getter"))));
+    check_pair(mutable_protocol, Value::from_smi(42), Value::not_present());
+    EXPECT_EQ(Value::from_smi(42), thread->call_clovervm_function(
+                                       load_attr.value(), mutable_protocol));
+
+    Value with_property = global(L"with_property");
+    check_pair(with_property, Value::from_smi(7), Value::not_present());
+    ASSERT_TRUE(cache.matches(with_property));
+    EXPECT_EQ(Value::None(), thread->call_clovervm_function(
+                                 TValue<Function>::from_value_assumed(
+                                     global(L"replace_property_getter"))));
+    EXPECT_TRUE(cache.matches(with_property));
+    check_pair(with_property, Value::from_smi(8), Value::not_present());
+
+    MethodLoadTestCode none_test =
+        make_method_load_test_code(context, L"__str__");
+    Owned<TValue<Function>> load_none(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(none_test.code),
+        Optional<TValue<String>>::none()));
+    EXPECT_EQ(Value::None(),
+              thread->call_clovervm_function(load_none.value(), Value::None(),
+                                             Value::True()));
+}
+
+struct MethodLoadReturnCheck
+{
+    CodeObject *caller;
+    uint32_t continuation_pc;
+    unsigned observations = 0;
+};
+
+static void check_method_load_return_safepoint(
+    void *opaque, ThreadState *thread, Value accumulator, Value *,
+    CodeObject *code, uint32_t pc_offset, const SafepointScanRecord &record)
+{
+    auto &check = *static_cast<MethodLoadReturnCheck *>(opaque);
+    if(code != check.caller || pc_offset != check.continuation_pc)
+    {
+        return;
+    }
+    ++check.observations;
+    EXPECT_EQ(Bytecode::FinishLoadMethod, Bytecode(code->code[pc_offset]));
+    EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
+    EXPECT_EQ(accumulator, record.accumulator_or_not_present);
+    ASSERT_TRUE(accumulator.is_refcounted_ptr());
+    EXPECT_EQ(0u, accumulator.as.ptr->refcount());
+    for(Value *slot = record.lowest_live_stack_slot;
+        slot < thread->clover_frame_sentinel(); ++slot)
+    {
+        EXPECT_NE(accumulator, *slot);
+    }
+    ReclamationRootSet roots;
+    collect_reclamation_roots_from_thread(roots, *thread);
+    EXPECT_TRUE(roots.contains(accumulator.as.ptr));
+}
+
+TEST(Interpreter, load_method_getter_returns_to_finisher_with_rooted_result)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    Value base = context.run_file(LR"(
+class Descriptor:
+    def __get__(self, obj, owner):
+        return [42]
+
+class C:
+    method = Descriptor()
+
+C()
+)");
+    Owned<Value> rooted_base(base);
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    Owned<TValue<Function>> load(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(test.code),
+        Optional<TValue<String>>::none()));
+    MethodLoadReturnCheck check{test.code, test.load_pc + 4};
+    context.vm().set_safepoint_callback_for_testing(
+        check_method_load_return_safepoint, &check);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = thread->call_clovervm_function(
+        load.value(), rooted_base.value(), Value::False());
+    context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+    EXPECT_EQ(1u, check.observations);
+    ASSERT_TRUE(has_native_layout<List>(result));
+    TValue<List> list = TValue<List>::from_value_assumed(result);
+    EXPECT_EQ(Value::from_smi(42), list.extract()->item_unchecked(0));
+    EXPECT_EQ(Value::not_present(),
+              thread->call_clovervm_function(load.value(), rooted_base.value(),
+                                             Value::True()));
+}
+
+TEST(Interpreter, load_method_getter_reenters_and_unwinds_to_caller)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+failure = ValueError("getter failed")
+
+class InnerDescriptor:
+    def __get__(self, obj, owner):
+        return 42
+
+class Inner:
+    method = InnerDescriptor()
+
+class OuterDescriptor:
+    def __get__(self, obj, owner):
+        return load(inner, False)
+
+class Outer:
+    method = OuterDescriptor()
+
+class FailingDescriptor:
+    def __get__(self, obj, owner):
+        raise failure
+
+class Failing:
+    method = FailingDescriptor()
+
+inner = Inner()
+outer = Outer()
+failing = Failing()
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    Owned<TValue<Function>> load(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(test.code),
+        Optional<TValue<String>>::none()));
+    store_global_to_module_for_test(context, module.get(), L"load",
+                                    load.value().raw_value());
+    EXPECT_EQ(Value::from_smi(42),
+              thread->call_clovervm_function(load.value(), global(L"outer"),
+                                             Value::False()));
+    EXPECT_EQ(global(L"failure"),
+              thread->call_clovervm_function(load.value(), global(L"failing"),
+                                             Value::False()));
+    EXPECT_FALSE(thread->has_pending_exception());
 }
 
 struct ReturnContinuationSafepointCheck

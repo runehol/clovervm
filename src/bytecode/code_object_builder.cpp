@@ -788,6 +788,20 @@ namespace cl
                                             body_constant_idx, first_arg_reg);
     }
 
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_load_method(uint32_t source_offset,
+                                        uint32_t base_reg, uint8_t name_idx,
+                                        uint32_t pair_reg)
+    {
+        uint8_t cache_idx = CL_TRY(allocate_attribute_read_cache());
+        uint32_t offset = CL_TRY(emit_opcode_reg_constant_idx_cache_idx(
+            source_offset, Bytecode::LoadMethod, base_reg, name_idx,
+            cache_idx));
+        CL_TRY(emit_opcode_reg(source_offset, Bytecode::FinishLoadMethod,
+                               pair_reg));
+        return Expected<uint32_t>::ok(offset);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_load_attr(uint32_t source_offset,
                                                          uint32_t receiver_reg,
                                                          uint8_t name_idx)

@@ -122,8 +122,7 @@ as a callable and optional receiver.
 | Plain function bound through the metaclass chain | Function | Accessed class |
 | Instance or module slot | Stored value | Absent |
 | Exact `staticmethod` selected as a descriptor | Wrapped value | Absent |
-| Exact `classmethod` selected as a descriptor and wrapping an exact function | Wrapped function | Owner from the lookup binding |
-| General getter, including a classmethod wrapping another callable | Getter result | Absent |
+| General getter, including `classmethod` | Getter result | Absent |
 
 An inherited classmethod in the class namespace binds the accessed class,
 including access through an instance. A classmethod on the metaclass path
@@ -139,7 +138,10 @@ Class-object `LoadMethod` entries use the same combined validity cell as
 its metaclass's MRO. This includes a cached plain-slot read. A
 same-shape write that replaces an inherited plain function with a
 `classmethod` must invalidate the plan before replay, so the next lookup
-can select the new binding and supply the accessed class as owner.
+can run the getter with the accessed class as owner. A class-chain plain
+slot also needs a stable descriptor protocol on the stored value's type.
+Both opcodes check this before admitting the plan to the cache, since a type
+can gain `__get__` without a write to the selected slot.
 
 Reload the selected slot and, for exact instance properties, the current
 accessor. The lookup cache carries the guarded plan. The pair carries the
