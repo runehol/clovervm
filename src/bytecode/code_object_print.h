@@ -197,7 +197,7 @@ template <> struct fmt::formatter<cl::CodeObject>
 
     template <typename Out>
     void print_reg_span(Out &out, const cl::CodeObject &code_obj,
-                        int8_t first_reg, uint8_t n_regs) const
+                        int8_t first_reg, uint32_t n_regs) const
     {
         fmt::format_to(out, "{{");
         print_reg(out, code_obj, first_reg);
@@ -808,6 +808,18 @@ template <> struct fmt::formatter<cl::CodeObject>
                                code_obj.code[pc++]);
                 break;
 
+            case cl::Bytecode::CallMethodPositional:
+                {
+                    fmt::format_to(out, " ");
+                    int8_t pair_reg = code_obj.code[pc++];
+                    uint8_t n_args = code_obj.code[pc++];
+                    print_reg_span(out, code_obj, pair_reg,
+                                   uint32_t(n_args) + 2);
+                    fmt::format_to(out, ", ");
+                    disassemble_function_call_cache(code_obj, out, pc++);
+                }
+                break;
+
             case cl::Bytecode::CallPositional:
                 {
                     fmt::format_to(out, " ");
@@ -825,18 +837,30 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::CallKeyword:
+            case cl::Bytecode::CallMethodKeyword:
                 {
                     fmt::format_to(out, " ");
                     int8_t callable_reg = code_obj.code[pc++];
-                    int8_t first_arg_reg = code_obj.code[pc++];
+                    bool method_call = bc == cl::Bytecode::CallMethodKeyword;
+                    int8_t first_arg_reg =
+                        method_call ? callable_reg : code_obj.code[pc++];
                     uint8_t n_pos_args = code_obj.code[pc++];
                     int8_t first_kw_value_reg = code_obj.code[pc++];
                     uint8_t n_kw_args = code_obj.code[pc++];
                     uint32_t keyword_names_idx = pc++;
                     uint32_t cache_idx_offset = pc++;
-                    print_reg(out, code_obj, callable_reg);
-                    fmt::format_to(out, ", ");
-                    print_reg_span(out, code_obj, first_arg_reg, n_pos_args);
+                    if(method_call)
+                    {
+                        print_reg_span(out, code_obj, callable_reg,
+                                       uint32_t(n_pos_args) + 2);
+                    }
+                    else
+                    {
+                        print_reg(out, code_obj, callable_reg);
+                        fmt::format_to(out, ", ");
+                        print_reg_span(out, code_obj, first_arg_reg,
+                                       n_pos_args);
+                    }
                     fmt::format_to(out, ", kw_values=");
                     print_reg_span(out, code_obj, first_kw_value_reg,
                                    n_kw_args);

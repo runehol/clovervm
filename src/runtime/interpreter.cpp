@@ -6215,6 +6215,139 @@ namespace cl
         COMPLETE();
     }
 
+    template <Bytecode Op>
+    NOINLINE static INTERP_CC Value op_call_method_slow(PARAMS)
+    {
+        constexpr uint32_t call_instr_len = bytecode_length(Op);
+        int32_t pair_reg = int8_t(pc[1]);
+        int32_t first_arg_reg = pair_reg - 1;
+        uint32_t n_user_args = pc[2];
+        Value callable = fp[pair_reg];
+        Value self = fp[first_arg_reg];
+        uint32_t n_args = n_user_args + !self.is_not_present();
+
+        DispatchTableEntry jit_entry;
+        if constexpr(Op == Bytecode::CallMethodPositional)
+        {
+            FunctionCallInlineCache &cache =
+                code_object->inline_caches.function_call_caches[pc[3]];
+            if(unlikely(cache.n_args != n_args ||
+                        !cache.guard.matches(callable)))
+            {
+                INTERP_TRY(populate_positional_call_cache_from_callable(
+                    callable, n_args, cache));
+            }
+            self = call_receiver(callable, cache.receiver_binding, self);
+            prepare_method_call_argument_slots(fp, first_arg_reg, n_user_args,
+                                               self);
+            jit_entry = enter_positional_call_from_cache(
+                accumulator, thread, fp, pc, dispatch, code_object, cache,
+                first_arg_reg, n_user_args + !self.is_not_present(),
+                call_instr_len);
+        }
+        else
+        {
+            static_assert(Op == Bytecode::CallMethodKeyword);
+            int32_t first_kw_value_reg = int8_t(pc[3]);
+            uint8_t n_kw_args = pc[4];
+            uint8_t keyword_names_idx = pc[5];
+            KeywordCallInlineCache &cache =
+                code_object->inline_caches.keyword_call_caches[pc[6]];
+            if(unlikely(cache.n_pos_args != n_args ||
+                        !cache.guard.matches(callable)))
+            {
+                Value keyword_names =
+                    code_object->constant_table[keyword_names_idx].value();
+                INTERP_TRY(populate_keyword_call_cache_from_callable(
+                    callable, keyword_names, n_args, n_kw_args, cache));
+            }
+            self = call_receiver(callable, cache.receiver_binding, self);
+            prepare_method_call_argument_slots(fp, first_arg_reg, n_user_args,
+                                               self);
+            jit_entry = enter_function_frame_from_keyword_args(
+                accumulator, thread, fp, pc, dispatch, code_object, cache,
+                first_arg_reg, n_user_args + !self.is_not_present(),
+                first_kw_value_reg, n_kw_args, keyword_names_idx,
+                call_instr_len);
+        }
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_method_positional(PARAMS)
+    {
+        constexpr Bytecode op = Bytecode::CallMethodPositional;
+        int32_t pair_reg = int8_t(pc[1]);
+        int32_t first_arg_reg = pair_reg - 1;
+        uint32_t n_args = uint32_t(pc[2]) + 1;
+        FunctionCallInlineCache &cache =
+            code_object->inline_caches.function_call_caches[pc[3]];
+        if(unlikely(
+               fp[first_arg_reg].is_not_present() ||
+               !cache.guard.matches_exact(fp[pair_reg], n_args, cache.n_args) ||
+               cache.adaptation != FunctionCallAdaptation::FixedArity))
+        {
+            MUSTTAIL return op_call_method_slow<op>(ARGS);
+        }
+        assert(cache.receiver_binding == ReceiverBinding::None);
+        DispatchTableEntry jit_entry = enter_fixed_positional_call_from_cache(
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, bytecode_length(op));
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_method_keyword(PARAMS)
+    {
+        constexpr Bytecode op = Bytecode::CallMethodKeyword;
+        int32_t pair_reg = int8_t(pc[1]);
+        int32_t first_arg_reg = pair_reg - 1;
+        uint32_t n_pos_args = uint32_t(pc[2]) + 1;
+        KeywordCallInlineCache &cache =
+            code_object->inline_caches.keyword_call_caches[pc[6]];
+        if(unlikely(fp[first_arg_reg].is_not_present() ||
+                    !cache.guard.matches_exact(fp[pair_reg], n_pos_args,
+                                               cache.n_pos_args,
+                                               cache.function != nullptr)))
+        {
+            MUSTTAIL return op_call_method_slow<op>(ARGS);
+        }
+        assert(cache.receiver_binding == ReceiverBinding::None);
+        DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, n_pos_args, int8_t(pc[3]), pc[4], pc[5],
+            bytecode_length(op));
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     template <uint32_t NUserArgs>
     static constexpr TrustedHandlerArity special_method_trusted_handler_arity()
     {
@@ -7453,6 +7586,9 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::CallPositional, op_call_positional);
         SET_TABLE_ENTRY(Bytecode::CallKeyword, op_call_keyword);
+        SET_TABLE_ENTRY(Bytecode::CallMethodPositional,
+                        op_call_method_positional);
+        SET_TABLE_ENTRY(Bytecode::CallMethodKeyword, op_call_method_keyword);
         SET_TABLE_ENTRY(Bytecode::CallExpanded, op_call_expanded);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);

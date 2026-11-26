@@ -553,6 +553,20 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::CallMethodPositional:
+                effects.source_register(0, effects.operand(1) + 2);
+                effects.destination_accumulator();
+                break;
+
+            case Bytecode::CallMethodKeyword:
+                effects.source_register(0, effects.operand(1) + 2);
+                if(effects.operand(3) != 0)
+                {
+                    effects.source_register(2, effects.operand(3));
+                }
+                effects.destination_accumulator();
+                break;
+
             case Bytecode::CallPositional:
                 effects.source_register(0);
                 if(effects.operand(2) != 0)

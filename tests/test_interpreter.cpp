@@ -11247,6 +11247,299 @@ failing = Failing()
     EXPECT_FALSE(thread->has_pending_exception());
 }
 
+struct MethodCallTestCode
+{
+    CodeObject *code;
+    uint32_t call_pc;
+    uint32_t pair_reg;
+    uint32_t keyword_reg;
+};
+
+static MethodCallTestCode
+make_method_call_test_code(test::VmTestContext &context, Bytecode opcode,
+                           uint8_t n_pos_args,
+                           std::optional<const wchar_t *> attribute)
+{
+    ThreadState *thread = context.thread();
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<method-call>");
+    CodeObjectBuilder builder(&context.vm(), nullptr,
+                              context.vm().global_builtins_module(),
+                              thread->make_internal_raw<Scope>(nullptr), name);
+    builder.configure_positional_function(attribute.has_value() ? 1 : 2);
+
+    uint32_t call_pc;
+    uint32_t pair_reg;
+    uint32_t keyword_reg;
+    {
+        // The slot preceding the pair aligns S+1 and can hold the keyword.
+        CodeObjectBuilder::TemporaryReg keyword(builder, 1,
+                                                RegisterAlignment::CallFrame);
+        CodeObjectBuilder::TemporaryReg pair(builder, uint32_t(n_pos_args) + 2);
+        keyword_reg = keyword;
+        pair_reg = pair;
+        if(attribute.has_value())
+        {
+            uint8_t attr =
+                builder.allocate_constant(interned_string(*attribute)).value();
+            builder.emit_load_method(0, 0, attr, pair).value();
+        }
+        else
+        {
+            builder.emit_mov(0, pair, 0).value();
+            builder.emit_mov(0, pair + 1, 1).value();
+        }
+        for(uint32_t i = 0; i < n_pos_args; ++i)
+        {
+            builder.emit_lda_smi(0, int8_t(7 + i)).value();
+            builder.emit_star(0, pair + 2 + i).value();
+        }
+        if(opcode == Bytecode::CallMethodKeyword)
+        {
+            Owned<TValue<Tuple>> names(thread->make_object_value<Tuple>(1));
+            names.extract()->initialize_item_unchecked(
+                0, interned_string(L"flag").raw_value());
+            uint8_t names_idx =
+                builder.allocate_constant(names.value().raw_value()).value();
+            builder.emit_lda_smi(0, 13).value();
+            builder.emit_star(0, keyword).value();
+            call_pc = builder
+                          .emit_call_method_keyword(0, pair, n_pos_args,
+                                                    keyword, 1, names_idx)
+                          .value();
+        }
+        else
+        {
+            call_pc = builder.emit_call_method_positional(0, pair, n_pos_args)
+                          .value();
+        }
+        builder.emit_return(0).value();
+    }
+    return {builder.finalize().value(), call_pc, pair_reg, keyword_reg};
+}
+
+TEST(Interpreter, call_method_reuses_call_cache_with_dynamic_receiver)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def target(first, second=99, *, flag=0):
+    return (first, second, flag)
+
+class Receiver:
+    method = target
+
+bound = Receiver()
+plain = Receiver()
+plain.method = target
+
+class Callable:
+    def __call__(self, value, *, flag=0):
+        return (self, value, flag)
+
+class Holder:
+    pass
+
+callable_value = Callable()
+holder = Holder()
+holder.method = callable_value
+
+class ClassMethod:
+    method = classmethod(target)
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    for(Bytecode opcode:
+        {Bytecode::CallMethodPositional, Bytecode::CallMethodKeyword})
+    {
+        bool keyword = opcode == Bytecode::CallMethodKeyword;
+        MethodCallTestCode test =
+            make_method_call_test_code(context, opcode, 1, L"method");
+        Owned<TValue<Function>> call(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(test.code),
+            Optional<TValue<String>>::none()));
+        BytecodeInstruction instruction =
+            decode_instruction(*test.code, test.call_pc);
+        ASSERT_EQ(opcode, instruction.semantic_opcode());
+        EXPECT_EQ(test.call_pc + (keyword ? 7 : 4),
+                  instruction.next_pc_offset());
+        ASSERT_EQ(keyword ? 4u : 3u, instruction.sources().size());
+        int32_t pair_offset = test.code->encode_reg(test.pair_reg);
+        for(int32_t i = 0; i < 3; ++i)
+        {
+            EXPECT_EQ(pair_offset - i, instruction.sources()[i].frame_offset);
+        }
+        if(keyword)
+        {
+            EXPECT_EQ(test.code->encode_reg(test.keyword_reg),
+                      instruction.sources()[3].frame_offset);
+        }
+        ASSERT_EQ(1u, instruction.destinations().size());
+        EXPECT_TRUE(instruction.destinations()[0].is_accumulator());
+        EXPECT_NE(
+            std::string::npos,
+            fmt::to_string(*test.code)
+                .find(keyword ? "CallMethodKeyword" : "CallMethodPositional"));
+
+        auto check_call = [&](Value base, Value first, int32_t second,
+                              uint32_t cache_count) {
+            Value result = thread->call_clovervm_function(call.value(), base);
+            ASSERT_TRUE(has_native_layout<Tuple>(result));
+            auto *tuple = native_cast<Tuple>(result);
+            ASSERT_EQ(3u, tuple->size());
+            EXPECT_EQ(first, tuple->item_unchecked(0));
+            EXPECT_EQ(Value::from_smi(second), tuple->item_unchecked(1));
+            EXPECT_EQ(Value::from_smi(keyword ? 13 : 0),
+                      tuple->item_unchecked(2));
+            uint32_t cached_count =
+                keyword
+                    ? test.code->inline_caches.keyword_call_caches[0].n_pos_args
+                    : test.code->inline_caches.function_call_caches[0].n_args;
+            EXPECT_EQ(cache_count, cached_count);
+        };
+        Value bound = global(L"bound");
+        Value plain = global(L"plain");
+        Value holder = global(L"holder");
+        Value cls = global(L"ClassMethod");
+        check_call(bound, bound, 7, 2);
+        check_call(bound, bound, 7, 2);
+        check_call(plain, Value::from_smi(7), 99, 1);
+        check_call(plain, Value::from_smi(7), 99, 1);
+        check_call(bound, bound, 7, 2);
+        check_call(holder, global(L"callable_value"), 7, 1);
+        check_call(holder, global(L"callable_value"), 7, 1);
+        check_call(cls, cls, 7, 1);
+    }
+}
+
+TEST(Interpreter, call_method_zero_explicit_positional_arguments)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def bound_positional(receiver):
+    return receiver
+
+def plain_positional():
+    return 11
+
+def bound_keyword(receiver, *, flag):
+    return (receiver, flag)
+
+def plain_keyword(*, flag):
+    return flag
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    for(Bytecode opcode:
+        {Bytecode::CallMethodPositional, Bytecode::CallMethodKeyword})
+    {
+        bool keyword = opcode == Bytecode::CallMethodKeyword;
+        MethodCallTestCode test =
+            make_method_call_test_code(context, opcode, 0, std::nullopt);
+        Owned<TValue<Function>> call(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(test.code),
+            Optional<TValue<String>>::none()));
+        Value bound = global(keyword ? L"bound_keyword" : L"bound_positional");
+        Value plain = global(keyword ? L"plain_keyword" : L"plain_positional");
+        for(int i = 0; i < 2; ++i)
+        {
+            Value result = thread->call_clovervm_function(call.value(), bound,
+                                                          Value::None());
+            if(keyword)
+            {
+                ASSERT_TRUE(has_native_layout<Tuple>(result));
+                auto *tuple = native_cast<Tuple>(result);
+                ASSERT_EQ(2u, tuple->size());
+                EXPECT_EQ(Value::None(), tuple->item_unchecked(0));
+                EXPECT_EQ(Value::from_smi(13), tuple->item_unchecked(1));
+            }
+            else
+            {
+                EXPECT_EQ(Value::None(), result);
+            }
+        }
+        EXPECT_EQ(Value::from_smi(keyword ? 13 : 11),
+                  thread->call_clovervm_function(call.value(), plain,
+                                                 Value::not_present()));
+    }
+}
+
+TEST(Interpreter, call_method_keyword_replays_default_and_collector_adaptation)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+class Receiver:
+    def defaulted(self, first, second, missing=99, *, flag):
+        return (self, first, second, flag, missing)
+
+    def collected(self, *args, **kwargs):
+        return (self, args[0], args[1], kwargs["flag"], len(args) + len(kwargs))
+
+first = Receiver()
+second = Receiver()
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    Value first = load_global_from_module_for_test(module.get(),
+                                                   interned_string(L"first"));
+    Value second = load_global_from_module_for_test(module.get(),
+                                                    interned_string(L"second"));
+
+    struct TestCase
+    {
+        const wchar_t *attribute;
+        FunctionCallAdaptation adaptation;
+        int32_t last_value;
+    };
+    const TestCase cases[] = {
+        {L"defaulted", FunctionCallAdaptation::Defaultable, 99},
+        {L"collected", FunctionCallAdaptation::Full, 3},
+    };
+    for(const TestCase &test_case: cases)
+    {
+        MethodCallTestCode test = make_method_call_test_code(
+            context, Bytecode::CallMethodKeyword, 2, test_case.attribute);
+        Owned<TValue<Function>> call(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(test.code),
+            Optional<TValue<String>>::none()));
+        const KeywordCallInlineCache &cache =
+            test.code->inline_caches.keyword_call_caches[0];
+        for(Value receiver: {first, second, first})
+        {
+            Value result =
+                thread->call_clovervm_function(call.value(), receiver);
+            ASSERT_TRUE(has_native_layout<Tuple>(result));
+            auto *tuple = native_cast<Tuple>(result);
+            ASSERT_EQ(5u, tuple->size());
+            EXPECT_EQ(receiver, tuple->item_unchecked(0));
+            EXPECT_EQ(Value::from_smi(7), tuple->item_unchecked(1));
+            EXPECT_EQ(Value::from_smi(8), tuple->item_unchecked(2));
+            EXPECT_EQ(Value::from_smi(13), tuple->item_unchecked(3));
+            EXPECT_EQ(Value::from_smi(test_case.last_value),
+                      tuple->item_unchecked(4));
+            EXPECT_EQ(test_case.adaptation, cache.adaptation);
+            EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard.kind);
+            EXPECT_EQ(ReceiverBinding::None, cache.receiver_binding);
+            EXPECT_EQ(3u, cache.n_pos_args);
+        }
+    }
+}
+
 struct ReturnContinuationSafepointCheck
 {
     BytecodeCompoundRole role;

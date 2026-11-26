@@ -1352,6 +1352,38 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_positional(
+        uint32_t source_offset, uint32_t pair_reg, uint8_t n_pos_args)
+    {
+        assert_call_args_are_topmost(pair_reg + 1, uint32_t(n_pos_args) + 1);
+        uint8_t cache_idx = CL_TRY(allocate_function_call_cache());
+        uint32_t result = emplace_back(source_offset,
+                                       uint8_t(Bytecode::CallMethodPositional));
+        emplace_back(source_offset, encode_reg(pair_reg));
+        emplace_back(source_offset, n_pos_args);
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_keyword(
+        uint32_t source_offset, uint32_t pair_reg, uint8_t n_pos_args,
+        uint32_t first_kw_value_reg, uint8_t n_kw_args,
+        uint8_t keyword_names_idx)
+    {
+        assert_call_args_are_topmost(pair_reg + 1, uint32_t(n_pos_args) + 1);
+        assert(n_kw_args == 0 || first_kw_value_reg + n_kw_args <= pair_reg);
+        uint8_t cache_idx = CL_TRY(allocate_keyword_call_cache());
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::CallMethodKeyword));
+        emplace_back(source_offset, encode_reg(pair_reg));
+        emplace_back(source_offset, n_pos_args);
+        emplace_back(source_offset, encode_reg(first_kw_value_reg));
+        emplace_back(source_offset, n_kw_args);
+        emplace_back(source_offset, keyword_names_idx);
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
+    }
+
     Expected<uint8_t> CodeObjectBuilder::allocate_constant(Value val)
     {
         uint64_t raw_value = uint64_t(val.as.integer);

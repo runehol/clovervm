@@ -76,6 +76,8 @@ namespace cl
         SixRegisters,
         PositionalCall,
         KeywordCall,
+        MethodPositionalPairCall,
+        MethodKeywordPairCall,
         ExpandedCall,
         MethodLoad,
         NativeTarget,
@@ -343,6 +345,15 @@ namespace cl
                     Operand::Register, Operand::Register,
                     Operand::ArgumentCount, Operand::Register,
                     Operand::KeywordCount, Operand::Constant,
+                    Operand::KeywordCallCache);
+            case BytecodeFormat::MethodPositionalPairCall:
+                return make_bytecode_format_info(Operand::Register,
+                                                 Operand::ArgumentCount,
+                                                 Operand::FunctionCallCache);
+            case BytecodeFormat::MethodKeywordPairCall:
+                return make_bytecode_format_info(
+                    Operand::Register, Operand::ArgumentCount,
+                    Operand::Register, Operand::KeywordCount, Operand::Constant,
                     Operand::KeywordCallCache);
             case BytecodeFormat::NativeTarget:
                 return make_bytecode_format_info(Operand::NativeTarget);
