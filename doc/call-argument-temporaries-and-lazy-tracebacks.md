@@ -67,9 +67,6 @@ evaluate explicit arguments
 call callable with maybe-self prepended if present
 ```
 
-Fused direct method-call opcodes that resolve the attribute at call execution
-time do not preserve this ordering if arguments have already been evaluated.
-
 ## Call Argument Spans
 
 A call argument span is an ordinary temporary-register reservation with
@@ -108,10 +105,6 @@ values out of the area that call adaptation may extend above the positional
 argument span.
 
 ## Direct Method Calls
-
-This section records the agreed design direction ahead of implementation
-review. The current interpreter still uses the fused call opcodes described
-in [Function Call Adaptation](function-call-adaptation.md#methods-constructors-and-runtime-boundaries).
 
 `LoadMethod` saves a pair in adjacent logical registers. The callable is at
 `S`, and the optional receiver is at `S+1`. Bytecode names only `S`. Frame
@@ -163,9 +156,9 @@ continuation PC and return value. See
 ### Positional and keyword calls
 
 Codegen reserves `[callable, receiver-or-not_present, positional args…]` in one
-span, with any padding before `S` so the outgoing argument window starts at
-aligned `S+1`. Explicit positional arguments begin at `S+2`. With zero
-explicit arguments, `S+1` still provides the aligned anchor. For keyword calls,
+`MethodCallFrame` span, with any padding before `S` so the outgoing argument
+window starts at aligned `S+1`. Explicit positional arguments begin at `S+2`.
+With zero explicit arguments, `S+1` still provides the aligned anchor. For keyword calls,
 codegen reserves the separate keyword value span before this reservation to
 keep it clear of outgoing argument adaptation.
 
@@ -209,26 +202,10 @@ their own outgoing windows. After call commit the caller's outgoing span is
 dead. Check the signed register-operand limits with the additional slot and
 alignment padding before choosing an encoding or layout change.
 
-The implementation review should cover all three compiler-emitted fused call
-forms together. Verify method replacement, missing attributes that an
-argument would install, inherited classmethod owner, receiver presence
-changing at one site, and mutation of the saved object's callability. Cover
-getter and expansion errors, reentry, and forced safepoints. Pin down pair
-alignment and decode lengths in structural tests, run the full debug checks,
-and verify JIT handoff on AArch64.
-
-Compare the fused baseline and split design in matched Release builds on
-the same host, with JIT off and on. Use quiet, warmed, repeated A/B runs under
-the repository's shared build and timing lock. Warmed monomorphic positional
-method calls are the primary workload. Include no-receiver, keyword,
-expanded, polymorphic, and end-to-end workloads and plain-function controls.
-Use separate instrumented runs where needed to distinguish dispatch, lookup,
-receiver staging, and allocation. Check the hot handlers for native stack
-frames and verify that the warmed exact-function path allocates neither a
-bound method nor a prefix tuple. The proposed median slowdown budgets are 5%
-for the primary case and 2% for Pystone and plain-function controls where
-the measurements can resolve that difference. These budgets are open for
-review.
+The regression suite checks lookup timing across all three call forms,
+including argument-side method replacement, missing attributes, getter
+failure and reentry, and deferred callability checks. Hand-built bytecode
+tests cover getter return, safepoints, pair alignment, and call adaptation.
 
 ## Regular Calls
 

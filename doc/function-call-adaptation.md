@@ -75,8 +75,9 @@ freeze them.
 
 ## Positional and explicit-keyword calls
 
-Calls without expansion use `CallPositional` or `CallKeyword`, with fused
-attribute-method counterparts. Positional values are staged in an aligned
+Calls without expansion use `CallPositional` or `CallKeyword`. Attribute
+calls use `LoadMethod` followed by `CallMethodPositional` or
+`CallMethodKeyword`. Positional values are staged in an aligned
 outgoing argument span. Explicit keyword values occupy a separate temporary
 span so reordering cannot overwrite unread values. Names are a constant tuple
 of interned strings fixed by the instruction.
@@ -161,19 +162,20 @@ resolving the target and before binding arguments.
 
 Two adjacent logical registers hold the tuple and dict. With the current
 register encoding they are `fp[containers_reg]` and `fp[containers_reg - 1]`.
-The callable/receiver and both inputs stay outside the outgoing window. The
-expanded-call instructions encode the first register of the pair and a separate
-outgoing anchor; runtime container sizes provide the argument counts. The call
-result returns in the accumulator.
+The callable, optional receiver, and both containers stay outside the outgoing
+window. Both instructions encode a target register, the first transport
+register, a separate aligned outgoing anchor, and an expanded-call IC.
+`CallExpanded` reads the callable from the target register. `CallMethodExpanded`
+also reads the receiver from the next logical register. The shared handler uses
+the container sizes for the argument counts and returns in the accumulator.
 
 ### Evaluation and positional construction
 
 For a straight call, codegen evaluates and roots the callable before arguments.
-For an attribute call it evaluates and roots the receiver; the fused opcode
-performs lookup after argument construction. This current compatibility
-difference applies to all three method-call forms. The
-[direct method-call design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
-moves lookup before argument evaluation and keeps the expansion order below.
+For an attribute call, `LoadMethod` resolves the attribute before argument
+evaluation. Codegen keeps the callable and optional receiver live through
+argument construction. See
+[direct method calls](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls).
 
 Positional expressions, including starred sources, are evaluated before keyword
 expressions even when a starred argument appears textually after a keyword.
@@ -265,10 +267,9 @@ Explicit values use `AddCallKeyword`. Build and Merge read their source from
 the accumulator; Add reads its value from a register. They leave the destination
 dict in its register and return `None` in the accumulator.
 
-Merges and additions reject an equal existing key without overwriting its value.
-The context register supplies duplicate-keyword and mapping-error context
-without signature resolution. In expanded method precode this is the receiver,
-because lookup has not happened yet.
+Preparation rejects duplicate names without overwriting existing values.
+The context register holds the saved callable and supplies duplicate-keyword and
+mapping-error context without signature resolution.
 
 #### Multiple mappings and an explicit keyword run
 
@@ -449,12 +450,11 @@ the tables; moves transfer ownership. Retained names follow the same native
 
 ## Methods, constructors, and runtime boundaries
 
-The current fused method opcodes combine attribute lookup and binding with
-call entry. The [split design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
-uses separate load and call instructions with the same argument adapters.
-The attribute lookup IC and call IC are separate. Lookup produces the
-callable and optional receiver. Functions stored in instance or module slots
-use only their explicit arguments.
+`LoadMethod` has an attribute-read IC and saves the callable and optional
+receiver. Each `CallMethod*` instruction uses the corresponding call IC
+and the same argument adapters as plain calls. Functions stored in
+instance or module slots use only their explicit arguments. See
+[direct method calls](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls).
 
 For an expanded attribute call:
 
@@ -463,16 +463,20 @@ def caller(obj, args, kwargs):
     return obj.m(*args, **kwargs)
 ```
 
-codegen emits the same transport construction as the combined expansion example,
-with `obj` in `r0`, and ends with:
+codegen resolves the method and saves its pair in `r0` and `r1`, builds
+the tuple and dict in `r2` and `r3`, and uses `r4` as the outgoing anchor:
 
 ```text
-CallMethodAttrExpanded r0, "m", lookup_cache[0], expanded_call_cache[0], containers=r1, first_arg=r4
+Mov r0, p0
+LoadMethod r0, c[0], read_ic[0], r0
+Mov r2, p1
+Ldar p2
+BuildCallKeywords r0, r3
+ToExactTuple r2
+Star2
+CallMethodExpanded {r0..r1}, containers=r2, first_arg=r4, expanded_call_cache[0]
 Return
 ```
-
-This instruction performs lookup and receiver binding after expansion; no early
-method lookup is emitted.
 
 Expanded methods pass an `ExpandedCallPositionalArguments` view containing the
 tuple and optional self prefix. `not_present` means no prefix, keeping `None` a
@@ -503,7 +507,7 @@ ordinary accumulator convention or propagate exceptions through normal
 unwinding. Sources, builders, destinations, and iterator state remain rooted
 in managed registers/helper locals across callbacks.
 
-Expanded handlers publish the caller's live frame frontier. The resolved
+The expanded-call handler publishes the caller's live frame frontier. The resolved
 Function and optional receiver remain owned through collector allocation.
 Keyword matching and collector insertion use exact strings and execute no
 Python callbacks. Mapping preparation can still reenter the interpreter.
@@ -517,8 +521,6 @@ protocol.
 
 These are existing behavior boundaries, not unfinished expanded-call stages:
 
-- Method lookup happens after argument evaluation/construction for fused method
-  calls. Correcting it requires work shared across all argument forms.
 - Keyword preparation normalizes string-subclass keys by contents. Named
   binding and collector insertion use those normalized names without
   invoking subclass callbacks.

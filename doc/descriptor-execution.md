@@ -108,7 +108,7 @@ slot before each deletion. [Shape transitions](object-model.md#transitions)
 describe how eligible add/delete pairs reuse shapes and keep those cache
 sites warm.
 
-## Direct method lookup design
+## Direct method lookup
 
 [LoadMethod](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
 uses the same attribute resolution and descriptor precedence as `LoadAttr`.

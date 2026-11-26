@@ -266,7 +266,7 @@ Open.
 ### CVR-013: Fused method calls resolve attributes after arguments
 
 - Severity: P1
-- Status: accepted
+- Status: resolved
 - Review unit: R6
 - Found at: `477e1af`
 - Affected code: `src/compiler/codegen.cpp:1204`,
@@ -280,58 +280,20 @@ argument expression. For `obj.method(arg())`, attribute lookup and binding must
 therefore complete before `arg()` runs, and the resolved callable must remain
 the target even if argument evaluation mutates `obj` or its class.
 
-Reachable path:
-
-The direct-method lowering saves only the receiver, evaluates every positional
-or keyword argument, and then emits `CallMethodAttrPositional` or
-`CallMethodAttrKeyword`. The interpreter performs the attribute lookup for the
-first time when that fused opcode executes, after all argument side effects.
-
-Observable impact:
-
-Argument evaluation can replace the method and make the call invoke the new
-function rather than the one Python already resolved. It can also install an
-attribute that was absent when the call expression began, turning a call that
-must raise `AttributeError` before evaluating arguments into a successful call.
-
 Evidence and reproduction:
 
-With `C.m` initially returning `1`, an argument function that replaces `C.m`
-with a method returning `2` makes `c.m(arg())` return `2` in CloverVM; CPython
-returns `1`. With no `c.m` initially present, an argument function that installs
-`c.m` makes the CloverVM call succeed, while CPython raises `AttributeError`
-without evaluating the argument. The replacement result also reproduces on the
-keyword-call path.
-
-Disproof attempts:
-
-Direct method caches correctly reload class slots and adapt binding after
-ordinary mutations between calls. The defect is independent of cache warmth:
-the callable has not been resolved at all when arguments begin. Non-attribute
-call lowering already evaluates and stores the callable before its arguments.
-
-Recommended fix boundary:
-
-Resolve the attribute in call context before evaluating arguments and preserve
-the resulting callable plus optional receiver binding across argument
-evaluation. Keep descriptor execution and escaped bound-method construction as
-their separately documented contracts. Add positional and keyword differential
-tests with mutation and missing-attribute side effects.
-
-Original review verification:
-
-Confirmed with direct CloverVM and CPython reproductions for replacement and
-missing-method cases. No fix had been implemented at that review.
+In the [issue #15 reproducer](https://github.com/runehol/clovervm/issues/15),
+argument evaluation replaces the selected method. The current call uses the
+original function and the next lookup sees the replacement. If lookup fails,
+the argument that would install the missing attribute never runs.
 
 Disposition:
 
-Accepted compatibility difference, explicitly reaffirmed during expanded
-method-call work. Positional, keyword, and expanded attribute calls retain fused
-late lookup. Expanded-call tests pin this behavior; any correction must cover
-all call forms independently of argument expansion. See
-[Function Call Adaptation](function-call-adaptation.md#compatibility-boundaries).
-The [split method-call design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
-records the intended correction. Implementation remains pending review.
+Resolved by `4dd2671b` for [issue #15](https://github.com/runehol/clovervm/issues/15).
+All three method call forms save the lookup result before argument evaluation.
+`MethodLookupPrecedesAllArgumentForms` covers method replacement, missing
+attributes, getter failure and reentry, and deferred callability checks.
+See [direct method calls](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls).
 
 ### CVR-014: Recursive calls overrun the fixed Clover stack
 
