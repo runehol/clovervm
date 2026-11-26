@@ -1856,3 +1856,11 @@ def _clover_int_from_bytes(cls, /, bytes, byteorder="big", *, signed=False):
     if cls is int:
         return result
     return cls(result)
+
+
+def _clover_float_fromhex(cls, string, /):
+    """Create a floating-point number from a hexadecimal string."""
+    value = _clover_float_fromhex_impl(string)
+    if cls is float:
+        return value
+    return cls(value)
