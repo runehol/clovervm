@@ -2,6 +2,7 @@
 
 #include "builtin_types/int_base_format.h"
 
+#include "builtin_types/bytearray.h"
 #include "builtin_types/bytes.h"
 #include "builtin_types/float.h"
 #include "builtin_types/hash.h"
@@ -9,11 +10,14 @@
 #include "builtin_types/num_parse.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
+#include "object_model/attr.h"
+#include "object_model/class_method.h"
 #include "object_model/class_object.h"
 #include "object_model/native_function.h"
 #include "object_model/owned.h"
 #include "object_model/value.h"
 #include "runtime/exception_propagation.h"
+#include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
 #include <algorithm>
@@ -611,6 +615,108 @@ namespace cl
             intlike_value_bigint_view(receiver.value(), &smi_storage),
             {output.extract()->data, count}, order);
         return output.value().raw_value();
+    }
+
+    [[nodiscard]] static Value
+    int_from_bytes_is_little_endian(ThreadState *thread, Value byteorder)
+    {
+        auto text = CL_TRY(TValue<String>::from_value_or_raise(
+            byteorder, L"TypeError", L"int.from_bytes byteorder must be str"));
+        std::wstring_view order = string_view(text);
+        if(order == L"big")
+            return Value::False();
+        if(order == L"little")
+            return Value::True();
+        return thread->set_pending_builtin_exception_string(
+            L"ValueError", L"byteorder must be either 'little' or 'big'");
+    }
+
+    static Value int_from_bytes_has_bytes_hook(ThreadState *thread,
+                                               Value source)
+    {
+        if(thread->class_of_value(source) ==
+           thread->get_machine()->bytes_class())
+            return Value::False();
+        bool has_hook = resolve_special_method_read_descriptor(
+                            source, interned_string(L"__bytes__"))
+                            .is_found();
+        return has_hook ? Value::True() : Value::False();
+    }
+
+    [[nodiscard]] static Value read_int_bytes(ThreadState *thread,
+                                              std::span<const uint8_t> input,
+                                              IntByteOrder order,
+                                              IntByteSignedness signedness)
+    {
+        if(input.empty())
+            return Value::from_smi(0);
+
+        auto byte_at = [&input, order](size_t from_low) {
+            return input[order == IntByteOrder::Little
+                             ? from_low
+                             : input.size() - 1 - from_low];
+        };
+        size_t count = input.size();
+        const bool negative = signedness == IntByteSignedness::Signed &&
+                              (byte_at(count - 1) & 0x80u) != 0;
+        if(negative)
+        {
+            while(count > 1 && byte_at(count - 1) == 0xff &&
+                  (byte_at(count - 2) & 0x80u) != 0)
+                --count;
+        }
+        else
+        {
+            while(count > 0 && byte_at(count - 1) == 0)
+                --count;
+        }
+
+        constexpr size_t bytes_per_digit = kDigitBits / 8;
+        BigIntScratch scratch((count + bytes_per_digit - 1) / bytes_per_digit);
+        MutableBigIntView magnitude = scratch.mutable_view();
+        magnitude.n_digits = magnitude.capacity;
+        magnitude.signum = negative ? -1 : 1;
+        std::fill_n(magnitude.digits, magnitude.n_digits, digit_t{0});
+        unsigned carry = negative ? 1 : 0;
+        for(size_t i = 0; i < count; ++i)
+        {
+            unsigned byte = byte_at(i);
+            if(negative)
+            {
+                byte = (byte ^ 0xffu) + carry;
+                carry = byte >> 8;
+                byte &= 0xffu;
+            }
+            magnitude.digits[i / bytes_per_digit] |=
+                static_cast<digit_t>(byte) << (8 * (i % bytes_per_digit));
+        }
+        // Drop the borrowed payload view before allocating the result.
+        input = {};
+        return CL_TRY(
+            finalize_bigint(thread, normalize_bigint_view(magnitude)));
+    }
+
+    [[nodiscard]] static Value int_from_bytes_impl(ThreadState *thread,
+                                                   Value source,
+                                                   Value little_endian,
+                                                   Value is_signed)
+    {
+        assert(little_endian.is_bool() && is_signed.is_bool());
+        IntByteOrder order = little_endian == Value::True()
+                                 ? IntByteOrder::Little
+                                 : IntByteOrder::Big;
+        IntByteSignedness signedness = is_signed == Value::True()
+                                           ? IntByteSignedness::Signed
+                                           : IntByteSignedness::Unsigned;
+        if(has_native_layout<Bytes>(source))
+            return read_int_bytes(
+                thread, bytes_view(TValue<Bytes>::from_value_assumed(source)),
+                order, signedness);
+        auto array = CL_TRY(TValue<ByteArray>::from_value_or_raise(
+            source, L"TypeError",
+            L"int.from_bytes expects bytes or bytearray storage"));
+        return read_int_bytes(thread, array.extract()->view(), order,
+                              signedness);
     }
 
     static Value intlike_hash_value(Value self)
@@ -2562,6 +2668,12 @@ namespace cl
                                      int_to_bytes_preflight),
             builtin_intrinsic_method(L"_clover_int_to_bytes_impl",
                                      int_to_bytes_impl),
+            builtin_intrinsic_method(L"_clover_int_from_bytes_is_little_endian",
+                                     int_from_bytes_is_little_endian),
+            builtin_intrinsic_method(L"_clover_int_from_bytes_has_bytes_hook",
+                                     int_from_bytes_has_bytes_hook),
+            builtin_intrinsic_method(L"_clover_int_from_bytes_impl",
+                                     int_from_bytes_impl),
         };
         for(const auto &helper: helpers)
         {
@@ -2578,15 +2690,29 @@ namespace cl
 
     void install_int_python_methods(VirtualMachine *vm, ModuleObject *module)
     {
+        constexpr DescriptorFlags flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
         Value function = module->get_own_property(
             vm->get_or_create_interned_string_value(L"_clover_int_to_bytes"));
         if(!has_native_layout<Function>(function))
             fatal("missing int.to_bytes Python method");
         bool stored = vm->int_class()->define_own_property(
             vm->get_or_create_interned_string_value(L"to_bytes"), function,
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-                descriptor_flag(DescriptorFlag::StableSlot));
+            flags);
         assert(stored);
+
+        Value from_bytes = module->get_own_property(
+            vm->get_or_create_interned_string_value(L"_clover_int_from_bytes"));
+        if(!has_native_layout<Function>(from_bytes))
+            fatal("missing int.from_bytes Python method");
+        Owned<TValue<ClassMethod>> descriptor(
+            vm->get_default_thread()->make_object_value<ClassMethod>(
+                from_bytes));
+        if(!vm->int_class()->define_own_property(
+               vm->get_or_create_interned_string_value(L"from_bytes"),
+               descriptor.value().raw_value(), flags))
+            fatal("installing int.from_bytes classmethod");
         (void)stored;
     }
 

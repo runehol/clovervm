@@ -1815,6 +1815,49 @@ def _clover_int_to_bytes(self, /, length=1, byteorder="big", *, signed=False):
     return _clover_int_to_bytes_impl(self, length, byteorder, is_signed)
 
 
+def _clover_int_from_bytes_source(source):
+    if _clover_int_from_bytes_has_bytes_hook(source):
+        result = __clover_call_special__(
+            source, "__bytes__", TypeError, "object has no __bytes__"
+        )
+        if not isinstance(result, bytes):
+            raise TypeError("__bytes__ returned non-bytes")
+        return result
+    if isinstance(source, bytes) or isinstance(source, bytearray):
+        return source
+    if isinstance(source, str):
+        raise TypeError("cannot convert string to bytes")
+    try:
+        iterator = iter(source)
+    except TypeError:
+        raise TypeError("cannot convert object to bytes")
+    result = _clover_bytearray_allocate(bytearray)
+    while True:
+        try:
+            item = next(iterator)
+        except StopIteration:
+            return result
+        if not isinstance(item, int):
+            item = __clover_call_special__(
+                item, "__index__", TypeError,
+                "object cannot be interpreted as an integer"
+            )
+        _clover_bytearray_append(result, item)
+
+
+def _clover_int_from_bytes(cls, /, bytes, byteorder="big", *, signed=False):
+    """Return the integer represented by the given array of bytes."""
+    if not isinstance(byteorder, str):
+        raise TypeError("int.from_bytes byteorder must be str")
+    is_signed = True if signed else False
+    little_endian = _clover_int_from_bytes_is_little_endian(byteorder)
+    source = _clover_int_from_bytes_source(bytes)
+    result = _clover_int_from_bytes_impl(source, little_endian, is_signed)
+    if cls is int:
+        return result
+    return cls(result)
+
+
 def _clover_float_fromhex(cls, string, /):
     """Create a floating-point number from a hexadecimal string."""
     value = _clover_float_fromhex_impl(string)
