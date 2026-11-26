@@ -8,6 +8,7 @@
 
 namespace cl
 {
+    class ModuleObject;
     class ThreadState;
     class VirtualMachine;
 
@@ -38,6 +39,8 @@ namespace cl
     [[nodiscard]] Value box_float(ThreadState *thread, double value);
     BuiltinClassDefinition make_float_class(VirtualMachine *vm);
     void install_float_class_methods(VirtualMachine *vm);
+    void install_float_helpers(VirtualMachine *vm, ModuleObject *module);
+    void install_float_python_methods(VirtualMachine *vm, ModuleObject *module);
 
 }  // namespace cl
 
