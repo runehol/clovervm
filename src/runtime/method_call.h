@@ -98,6 +98,7 @@ namespace cl
 
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::StaticMethodGet:
             case AttributeReadPlanKind::ExactPropertyGet:
                 callable_out = Value::not_present();
                 return MethodCallTargetStatus::RequiresDescriptorDispatch;

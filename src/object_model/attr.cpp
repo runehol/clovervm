@@ -466,6 +466,11 @@ namespace cl
         {
             kind = AttributeReadPlanKind::ExactPropertyGet;
         }
+        else if(type ==
+                thread->class_for_native_layout(NativeLayoutId::StaticMethod))
+        {
+            kind = AttributeReadPlanKind::StaticMethodGet;
+        }
         descriptor = with_plan_kind(
             descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
         descriptor.plan.constant_or_getter =
@@ -630,20 +635,23 @@ namespace cl
     {
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(obj, name);
-        if(!descriptor.is_found() ||
-           descriptor.plan.kind != AttributeReadPlanKind::BindFunctionReceiver)
+        if(descriptor.plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
         {
-            return descriptor;
+            ClassObject *function_class =
+                active_thread()->class_for_native_layout(
+                    NativeLayoutId::Function);
+            descriptor.plan.constant_or_getter =
+                function_class->get_own_property(interned_string(L"__get__"));
+            assert(has_native_layout<Function>(
+                descriptor.plan.constant_or_getter));
         }
-
-        // A call target can carry the function and receiver separately.
-        // A value read instead executes the function's descriptor getter.
-        ClassObject *function_class =
-            active_thread()->class_for_native_layout(NativeLayoutId::Function);
-        descriptor.plan.kind = AttributeReadPlanKind::NonDataDescriptorGet;
-        descriptor.plan.constant_or_getter =
-            function_class->get_own_property(interned_string(L"__get__"));
-        assert(has_native_layout<Function>(descriptor.plan.constant_or_getter));
+        else if(descriptor.plan.path == AttributeReadPlanPath::MetaclassChain &&
+                descriptor.plan.is_descriptor_get() &&
+                has_native_layout<Function>(descriptor.lookup_value))
+        {
+            // The metaclass lookup already supplied the function getter.
+            descriptor.plan.kind = AttributeReadPlanKind::BindFunctionReceiver;
+        }
         return descriptor;
     }
 
@@ -711,7 +719,7 @@ namespace cl
     prepare_descriptor_get_call(Value receiver,
                                 const AttributeReadDescriptor &read)
     {
-        assert(read.plan.is_descriptor_get());
+        assert(read.plan.needs_getter_for_value_read());
         Value getter = read.plan.constant_or_getter;
         if(getter.is_not_present())
         {

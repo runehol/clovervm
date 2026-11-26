@@ -5359,6 +5359,11 @@ def read_dynamic(obj):
     ASSERT_TRUE(meta.get()
                     ->set_own_property(interned_string(L"x"), meta_method)
                     .value());
+    AttributeReadDescriptor binding = resolve_attr_value_read_descriptor(
+        Value::from_oop(cls.get()), interned_string(L"x"));
+    EXPECT_EQ(AttributeReadPlanKind::BindFunctionReceiver, binding.plan.kind);
+    EXPECT_EQ(AttributeReadPlanPath::MetaclassChain, binding.plan.path);
+    EXPECT_FALSE(binding.is_cacheable());
     for(const wchar_t *name: {L"read", L"read_dynamic"})
     {
         Value function =
@@ -5370,6 +5375,50 @@ def read_dynamic(obj):
         auto *bound = native_cast<BoundMethod>(result);
         EXPECT_EQ(meta_method, bound->callable());
         EXPECT_EQ(Value::from_oop(cls.get()), bound->receiver());
+    }
+}
+
+TEST(Interpreter, function_reads_cache_binding_and_return_bound_methods)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def original(self):
+    return self
+
+class C:
+    f = original
+
+first = C()
+second = C()
+
+def read(obj):
+    return obj.f
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+    auto reader = TValue<Function>::from_value_assumed(global(L"read"));
+    auto &cache = reader.extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    Value first = global(L"first");
+    Value second = global(L"second");
+    EXPECT_FALSE(cache.matches(first));
+    for(Value receiver: {first, second})
+    {
+        Value value = thread->call_clovervm_function(reader, receiver);
+        ASSERT_TRUE(has_native_layout<BoundMethod>(value));
+        auto *bound = native_cast<BoundMethod>(value);
+        EXPECT_EQ(global(L"original"), bound->callable());
+        EXPECT_EQ(receiver, bound->receiver());
+        EXPECT_TRUE(cache.matches(second));
+        EXPECT_EQ(AttributeReadPlanKind::BindFunctionReceiver, cache.plan.kind);
+        EXPECT_TRUE(has_native_layout<Function>(cache.plan.constant_or_getter));
     }
 }
 
@@ -5417,7 +5466,7 @@ def read(obj):
     Value first = read();
     ASSERT_TRUE(has_native_layout<List>(first));
     ASSERT_TRUE(cache.matches(receiver));
-    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    EXPECT_EQ(AttributeReadPlanKind::StaticMethodGet, cache.plan.kind);
     EXPECT_EQ(getter, cache.plan.constant_or_getter);
     EXPECT_EQ(first, read());
 

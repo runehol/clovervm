@@ -2707,25 +2707,9 @@ namespace cl
                 }
 
             case AttributeReadPlanKind::BindFunctionReceiver:
-                {
-                    if(unlikely(plan.storage_location.kind !=
-                                StorageKind::Inline))
-                    {
-                        value_out =
-                            read_plan_storage_owner(receiver, plan)
-                                ->read_storage_location(plan.storage_location);
-                        return AttributeLoadPlanStatus::Ready;
-                    }
-                    const Object *storage_owner =
-                        read_plan_storage_owner(receiver, plan);
-                    value_out =
-                        storage_owner->inline_slot_base()[plan.storage_location
-                                                              .physical_idx];
-                    return AttributeLoadPlanStatus::Ready;
-                }
-
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::StaticMethodGet:
             case AttributeReadPlanKind::ExactPropertyGet:
                 value_out = Value::not_present();
                 return AttributeLoadPlanStatus::RequiresDescriptorDispatch;
