@@ -5765,10 +5765,19 @@ namespace cl
         COMPLETE();
     }
 
+    template <Bytecode Op>
     NOINLINE static INTERP_CC Value op_call_expanded(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 5;
-        Value callable = fp[int8_t(pc[1])];
+        static_assert(Op == Bytecode::CallExpanded ||
+                      Op == Bytecode::CallMethodExpanded);
+        constexpr uint32_t call_instr_len = bytecode_length(Op);
+        int32_t target_reg = int8_t(pc[1]);
+        Value callable = fp[target_reg];
+        Value receiver = Value::not_present();
+        if constexpr(Op == Bytecode::CallMethodExpanded)
+        {
+            receiver = fp[target_reg - 1];
+        }
         int32_t containers_reg = int8_t(pc[2]);
         int32_t first_arg_reg = int8_t(pc[3]);
         TValue<Tuple> positional =
@@ -5787,7 +5796,7 @@ namespace cl
         DispatchTableEntry jit_entry = nullptr;
         INTERP_TRY(enter_function_frame_from_expanded_args(
             accumulator, thread, fp, pc, dispatch, code_object, cache, callable,
-            ExpandedCallPositionalArguments{positional}, keywords,
+            ExpandedCallPositionalArguments{positional, receiver}, keywords,
             first_arg_reg, call_instr_len, jit_entry));
         if(jit_entry != nullptr)
         {
@@ -7610,7 +7619,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallMethodPositional,
                         op_call_method_positional);
         SET_TABLE_ENTRY(Bytecode::CallMethodKeyword, op_call_method_keyword);
-        SET_TABLE_ENTRY(Bytecode::CallExpanded, op_call_expanded);
+        SET_TABLE_ENTRY(Bytecode::CallExpanded,
+                        op_call_expanded<Bytecode::CallExpanded>);
+        SET_TABLE_ENTRY(Bytecode::CallMethodExpanded,
+                        op_call_expanded<Bytecode::CallMethodExpanded>);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic2, op_call_intrinsic2);

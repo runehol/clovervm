@@ -798,8 +798,13 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::CallExpanded:
+            case cl::Bytecode::CallMethodExpanded:
                 fmt::format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
+                if(bc == cl::Bytecode::CallMethodExpanded)
+                    print_reg_span(out, code_obj, int8_t(code_obj.code[pc++]),
+                                   2);
+                else
+                    disassemble_reg(code_obj, out, pc++);
                 fmt::format_to(out, ", containers=");
                 disassemble_reg(code_obj, out, pc++);
                 fmt::format_to(out, ", first_arg=");

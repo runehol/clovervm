@@ -73,15 +73,17 @@ ordinary and fused call opcodes. See
 
 ## 3. Add expanded method calls
 
-Add `CallMethodExpanded` using the existing tuple-plus-prefix binder. Keep
-the pair and both transport registers outside the outgoing window. Reuse the
-existing cache guards and keep the selected function and prefix live across
-callback-capable binding.
+Add `CallMethodExpanded` using the five-byte expanded-call format and the
+ordinary expanded handler. Its first operand names the saved callable and
+receiver pair. Keep that pair and both transport registers outside the
+separate aligned outgoing window. Use the existing tuple-plus-prefix binder,
+which checks keyword storage at call entry and binds without Python callbacks.
 
-Verify reentry during keyword preparation, where managed mappings can
-invoke the same call site. Check that supplying a receiver uses the
-positional view without allocating a prefix tuple, and that a callee
-collector still packs its suffix when needed.
+Use hand-built bytecode to exercise bound and unbound calls at one site,
+callable instances, deferred non-string-key errors, and positional tuple
+reuse when only the receiver is consumed before a collector. Keep the
+existing reentry coverage in keyword preparation, where managed mappings
+can invoke the same call site.
 
 ## 4. Switch source lowering and retire fused calls
 

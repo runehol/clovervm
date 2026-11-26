@@ -12,6 +12,7 @@
 #include "runtime/exception_object.h"
 #include "runtime/thread_state.h"
 #include "test_helpers.h"
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -346,7 +347,181 @@ namespace
         Owned<Optional<TValue<Function>>> caller;
         Owned<Value> inputs{Value::None()};
     };
+    class ExpandedMethodCallExecution : public ExpandedCallExecution
+    {
+    protected:
+        void SetUp() override
+        {
+            auto name = context.vm().get_or_create_interned_string_value(
+                L"<expanded-method-test>");
+            Scope *scope =
+                context.vm().make_immortal_internal_raw<Scope>(nullptr);
+            CodeObjectBuilder code(&context.vm(), nullptr,
+                                   context.vm().global_builtins_module(), scope,
+                                   name);
+            code.configure_positional_function(3);
+            uint8_t method =
+                code.allocate_constant(interned_string(L"method")).value();
+            {
+                CodeObjectBuilder::TemporaryReg pair(code, 2);
+                CodeObjectBuilder::TemporaryReg outgoing(
+                    code, 1, RegisterAlignment::CallFrame);
+                pair_reg = pair;
+                outgoing_reg = outgoing;
+                ASSERT_TRUE(code.emit_load_method(0, 0, method, pair));
+                auto emitted =
+                    code.emit_call_method_expanded(0, pair, 1, outgoing);
+                ASSERT_FALSE(emitted.has_exception());
+                call_pc = emitted.value();
+            }
+            ASSERT_TRUE(code.emit_return(0));
+            auto function = code.finalize_immortal_function(&context.vm());
+            ASSERT_FALSE(function.has_exception());
+            caller = Optional<TValue<Function>>::some(function.value());
+        }
+
+        uint32_t pair_reg;
+        uint32_t outgoing_reg;
+        uint32_t call_pc;
+    };
 }  // namespace
+
+TEST_F(ExpandedMethodCallExecution, BytecodeDescribesPairAndTransportInputs)
+{
+    CodeObject *code = caller.value().value().extract()->code_object.extract();
+    BytecodeDecoder decoder(*code);
+    const auto &instructions = decoder.blocks().front().instructions();
+    auto found = std::find_if(instructions.begin(), instructions.end(),
+                              [&](const BytecodeInstruction &instruction) {
+                                  return instruction.pc_offset() == call_pc;
+                              });
+    ASSERT_NE(instructions.end(), found);
+    const BytecodeInstruction &call = *found;
+    ASSERT_EQ(Bytecode::CallMethodExpanded, call.semantic_opcode());
+    EXPECT_EQ(call_pc + 5, call.next_pc_offset());
+    ASSERT_EQ(4u, call.operands().size());
+    EXPECT_EQ(pair_reg, call.operands()[0].value);
+    EXPECT_EQ(1u, call.operands()[1].value);
+    EXPECT_EQ(outgoing_reg, call.operands()[2].value);
+    EXPECT_EQ(BytecodeOperandKind::ExpandedCallCache, call.operands()[3].kind);
+    ASSERT_EQ(4u, call.sources().size());
+    EXPECT_EQ(code->encode_reg(pair_reg), call.sources()[0].frame_offset);
+    EXPECT_EQ(code->encode_reg(pair_reg + 1), call.sources()[1].frame_offset);
+    EXPECT_EQ(code->encode_reg(1), call.sources()[2].frame_offset);
+    EXPECT_EQ(code->encode_reg(2), call.sources()[3].frame_offset);
+    ASSERT_EQ(1u, call.destinations().size());
+    EXPECT_TRUE(call.destinations()[0].is_accumulator());
+    EXPECT_NE(nullptr, call.expanded_call_cache());
+    EXPECT_NE(std::string::npos,
+              fmt::format("{}", *code).find("CallMethodExpanded"));
+}
+
+TEST_F(ExpandedMethodCallExecution, BindsSavedOrCallableReceiverExactlyOnce)
+{
+    load(LR"(
+def target(*args, flag): return args, flag
+
+class Bound:
+    method = target
+
+class Plain: pass
+plain = Plain()
+plain.method = target
+
+class Callable:
+    def __call__(self, *args, flag): return (self, args, flag)
+
+callable_value = Callable()
+holder = Plain()
+holder.method = callable_value
+
+(Bound(), (7,), {'flag': 13}, plain, holder, callable_value, target)
+)");
+    auto invoke = [&](Value base) {
+        return context.thread()->call_clovervm_function(
+            caller.value().value(), base, input(1), input(2));
+    };
+    Value bound = input(0);
+    for(Value base: {bound, bound, input(3), input(3), bound})
+    {
+        Value result = invoke(base);
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        auto *values = native_cast<Tuple>(result);
+        ASSERT_EQ(2u, values->size());
+        EXPECT_EQ(Value::from_smi(13), values->item_unchecked(1));
+        Value collected = values->item_unchecked(0);
+        ASSERT_TRUE(has_native_layout<Tuple>(collected));
+        auto *args = native_cast<Tuple>(collected);
+        if(base == bound)
+        {
+            ASSERT_EQ(2u, args->size());
+            EXPECT_EQ(bound, args->item_unchecked(0));
+            EXPECT_EQ(Value::from_smi(7), args->item_unchecked(1));
+        }
+        else
+        {
+            EXPECT_EQ(input(1), collected);
+        }
+        EXPECT_EQ(input(6), Value::from_oop(cache().function));
+        EXPECT_EQ(ReceiverBinding::None, cache().receiver_binding);
+        ASSERT_NE(nullptr, cache().binding_plan);
+        EXPECT_EQ(base == bound ? 2u : 1u,
+                  cache().binding_plan->positional_count);
+    }
+
+    for(int i = 0; i < 2; ++i)
+    {
+        Value result = invoke(input(4));
+        ASSERT_TRUE(has_native_layout<Tuple>(result));
+        auto *values = native_cast<Tuple>(result);
+        ASSERT_EQ(3u, values->size());
+        EXPECT_EQ(input(5), values->item_unchecked(0));
+        EXPECT_EQ(input(1), values->item_unchecked(1));
+        EXPECT_EQ(Value::from_smi(13), values->item_unchecked(2));
+        EXPECT_EQ(ReceiverBinding::PrependCallable, cache().receiver_binding);
+        ASSERT_NE(nullptr, cache().binding_plan);
+        EXPECT_EQ(2u, cache().binding_plan->positional_count);
+    }
+}
+
+TEST_F(ExpandedMethodCallExecution, ReusesTransportAfterBindingOnlySelf)
+{
+    load(LR"(
+class C:
+    def method(self, *args, **kwargs): return self, args, kwargs
+base = C()
+args = (7, 8)
+keywords = {'flag': 13}
+def check(result):
+    return result[0] is base and result[1] is args and result[2] is keywords
+(base, args, keywords, check)
+)");
+    check();
+    check();
+}
+
+TEST_F(ExpandedMethodCallExecution, RejectsNonStringKeywordTransportAtCallEntry)
+{
+    load(LR"(
+entered = False
+class C:
+    def method(self, **kwargs):
+        global entered
+        entered = True
+def check(): return not entered
+(C(), (), {42: 1}, check)
+)");
+    ASSERT_TRUE(call().is_exception_marker());
+    auto exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(std::wstring(L"keywords must be strings"),
+              string_as_wchar_t(test::native_exception_message(exception)));
+    context.thread()->clear_pending_exception();
+    EXPECT_EQ(Value::True(),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(input(3))));
+}
 
 TEST_F(ExpandedCallExecution, AppliesPositionalsKeywordsDefaultsAndCollectors)
 {

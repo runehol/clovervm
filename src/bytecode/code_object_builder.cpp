@@ -1303,13 +1303,30 @@ namespace cl
         uint32_t source_offset, uint32_t callable_reg, uint32_t containers_reg,
         uint32_t first_arg_reg)
     {
-        assert_call_args_are_topmost(first_arg_reg, 1);
         assert(callable_reg < first_arg_reg);
+        return emit_expanded_call(Bytecode::CallExpanded, source_offset,
+                                  callable_reg, containers_reg, first_arg_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_expanded(
+        uint32_t source_offset, uint32_t pair_reg, uint32_t containers_reg,
+        uint32_t first_arg_reg)
+    {
+        assert(pair_reg + 1 < first_arg_reg);
+        assert(pair_reg + 1 < containers_reg || containers_reg + 1 < pair_reg);
+        return emit_expanded_call(Bytecode::CallMethodExpanded, source_offset,
+                                  pair_reg, containers_reg, first_arg_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_expanded_call(
+        Bytecode opcode, uint32_t source_offset, uint32_t target_reg,
+        uint32_t containers_reg, uint32_t first_arg_reg)
+    {
+        assert_call_args_are_topmost(first_arg_reg, 1);
         assert(containers_reg + 1 < first_arg_reg);
         uint8_t cache_idx = CL_TRY(allocate_expanded_call_cache());
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::CallExpanded));
-        emplace_back(source_offset, encode_reg(callable_reg));
+        uint32_t result = emplace_back(source_offset, uint8_t(opcode));
+        emplace_back(source_offset, encode_reg(target_reg));
         emplace_back(source_offset, encode_reg(containers_reg));
         emplace_back(source_offset, encode_reg(first_arg_reg));
         emplace_back(source_offset, cache_idx);

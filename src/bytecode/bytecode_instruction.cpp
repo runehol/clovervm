@@ -582,6 +582,12 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::CallMethodExpanded:
+                effects.source_register(0, 2);
+                effects.source_register(1, 2);
+                effects.destination_accumulator();
+                break;
+
             case Bytecode::CallExpanded:
                 effects.source_register(0);
                 effects.source_register(1, 2);

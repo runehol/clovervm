@@ -542,6 +542,10 @@ namespace cl
                                               uint32_t callable_reg,
                                               uint32_t containers_reg,
                                               uint32_t first_arg_reg);
+        Expected<uint32_t> emit_call_method_expanded(uint32_t source_offset,
+                                                     uint32_t pair_reg,
+                                                     uint32_t containers_reg,
+                                                     uint32_t first_arg_reg);
         Expected<uint32_t> emit_call_positional(uint32_t source_offset,
                                                 uint32_t callable_reg,
                                                 uint32_t first_arg_reg,
@@ -635,6 +639,11 @@ namespace cl
             uint32_t source_offset, Bytecode c, uint32_t reg,
             uint8_t constant_idx, uint8_t read_cache_idx,
             uint8_t call_cache_idx, uint8_t argc);
+        Expected<uint32_t> emit_expanded_call(Bytecode opcode,
+                                              uint32_t source_offset,
+                                              uint32_t target_reg,
+                                              uint32_t containers_reg,
+                                              uint32_t first_arg_reg);
         Expected<uint32_t> emit_opcode_reg_reg(uint32_t source_offset,
                                                Bytecode c, uint32_t first_reg,
                                                uint32_t second_reg);
