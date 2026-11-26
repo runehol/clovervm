@@ -135,9 +135,19 @@ semantics. Comparison does not normalize indices. See the
 - `stdlib/collections.py` exports `UserDict` and `ChainMap`. `Counter`, `defaultdict`,
   `namedtuple`, `deque`, `OrderedDict`, `UserList`, and `UserString`
   remain absent. `collections.abc` is not supplied by this module.
-- `UserDict.fromkeys` is absent until classmethod binding exists. Union operators,
-  `__copy__`, pickling, generic aliases, ABC inheritance/registration, and
-  hashability parity with arbitrary user classes are outside this slice.
+- `UserDict.fromkeys(iterable, value=None)` is a managed classmethod checked
+  against CPython 3.14.10. It constructs the bound class before iterating and
+  assigns the shared value through ordinary subscription for every yielded key.
+  It uses the VM's existing argument diagnostics, iteration (without sequence-only
+  `__getitem__` fallback), and class construction (with limited support for
+  combining custom `__new__` and `__init__`). It also inherits the VM's
+  special-method dispatch limitation: descriptor-backed `__iter__`, `__next__`,
+  and `__setitem__` hooks, such as those defined with `@staticmethod`, can raise
+  `TypeError`. The same limitation applies to ordinary loops and subscription
+  assignment.
+- Union operators, `__copy__`, pickling, generic aliases, ABC
+  inheritance/registration, and hashability parity with arbitrary user classes
+  are outside this slice.
 - `copy()` returns an independent shallow copy for exact `UserDict` instances.
   Subclass calls explicitly raise `NotImplementedError`; preserving subclass
   instance state and avoiding constructor/descriptor effects needs `copy` and

@@ -1,6 +1,6 @@
 """A CloverVM collections subset with UserDict and ChainMap.
 
-Mapping ABCs, view set operations, fromkeys, and subclass-preserving copies
+Mapping ABCs, view set operations, and subclass-preserving copies
 are deferred. See doc/stdlib-module-bringup-checklist.md for dependencies.
 """
 
@@ -9,7 +9,8 @@ are deferred. See doc/stdlib-module-bringup-checklist.md for dependencies.
 # Mapping mixins: Copyright 2007 Google, Inc. All Rights Reserved.
 # Licensed to PSF under a Contributor Agreement.
 # The derived portions are licensed under the PSF License Agreement.
-# ChainMap is adapted from Lib/collections/__init__.py in CPython 3.14.10.
+# ChainMap and UserDict.fromkeys are adapted from Lib/collections/__init__.py
+# in CPython 3.14.10.
 
 
 _sentinel = object()
@@ -300,6 +301,13 @@ class UserDict:
         if self.__class__ is not UserDict:
             raise NotImplementedError("UserDict subclass copies require copy support")
         return UserDict(self.data.copy())
+
+    @classmethod
+    def fromkeys(cls, iterable, value=None):
+        result = cls()
+        for key in iterable:
+            result[key] = value
+        return result
 
 
 def _chainmap_keys(maps, *, allow_early_stop=False):
