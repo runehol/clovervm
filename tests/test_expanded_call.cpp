@@ -48,7 +48,7 @@ namespace
         Expected<ExpandedCallBindingPlan> build(uint32_t positional_count)
         {
             return build_expanded_call_binding_plan(
-                context.thread(), function(), positional_count, keywords());
+                function(), positional_count, keywords());
         }
 
         void expect_type_error(const Expected<ExpandedCallBindingPlan> &result,
@@ -62,13 +62,6 @@ namespace
             EXPECT_EQ(
                 std::wstring(message),
                 string_as_wchar_t(test::native_exception_message(exception)));
-        }
-
-        void check_python_state()
-        {
-            EXPECT_EQ(Value::True(),
-                      context.thread()->call_clovervm_function(
-                          TValue<Function>::from_value_assumed(input(2))));
         }
 
         test::VmTestContext context;
@@ -115,51 +108,27 @@ def f(a=1, b=2): return a + b
 )");
     auto result = build(0);
     ASSERT_FALSE(result.has_exception());
-    auto cached = convert_to_expanded_call_cache_entry(
-        context.thread(), 0, keywords(), result.value());
+    auto cached = make_expanded_call_cache_entry(0, keywords(), result.value());
     ASSERT_NE(nullptr, cached);
-    EXPECT_TRUE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
-                                                  keywords()));
-    EXPECT_FALSE(expanded_call_cached_plan_matches(context.thread(), *cached, 1,
-                                                   keywords()));
+    EXPECT_TRUE(expanded_call_cached_plan_matches(*cached, 0, keywords()));
+    EXPECT_FALSE(expanded_call_cached_plan_matches(*cached, 1, keywords()));
     // Releasing the original inputs must not release the cached names.
     load(LR"(
 def f(a=1, b=2): return a + b
 # Slicing produces equal names without relying on interning or key identity.
 (f, {'xa'[1:]: 8, 'xb'[1:]: 9})
 )");
-    EXPECT_TRUE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
-                                                  keywords()));
+    EXPECT_TRUE(expanded_call_cached_plan_matches(*cached, 0, keywords()));
     load(LR"(
 def f(a=1, b=2): return a + b
 (f, {'b': 4, 'a': 3})
 )");
-    EXPECT_FALSE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
-                                                   keywords()));
+    EXPECT_FALSE(expanded_call_cached_plan_matches(*cached, 0, keywords()));
     load(LR"(
 def f(a=1, b=2): return a + b
 (f, {'a': 3})
 )");
-    EXPECT_FALSE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
-                                                   keywords()));
-}
-
-TEST_F(ExpandedCallBinding, GeneralDictWithOnlyExactKeysCanCache)
-{
-    load(LR"(
-class S(str): pass
-keys = {S('removed'): 1, 'a': 3}
-del keys['removed']
-def f(a): return a
-(f, keys)
-)");
-    auto result = build(0);
-    ASSERT_FALSE(result.has_exception());
-    auto cached = convert_to_expanded_call_cache_entry(
-        context.thread(), 0, keywords(), result.value());
-    ASSERT_NE(nullptr, cached);
-    EXPECT_TRUE(expanded_call_cached_plan_matches(context.thread(), *cached, 0,
-                                                  keywords()));
+    EXPECT_FALSE(expanded_call_cached_plan_matches(*cached, 0, keywords()));
 }
 
 TEST_F(ExpandedCallBinding, ReusesTransportWhenNoKeywordsMatch)
@@ -242,98 +211,20 @@ def f(a=1, *, b, c=3): pass
     EXPECT_EQ(KwargsAction::None, result.value().kwargs_action);
 }
 
-TEST_F(ExpandedCallBinding, TraversesGeneralStorageAndSkipsDeletedEntries)
+TEST_F(ExpandedCallBinding, TraversesStringKeyedStorageAndSkipsDeletedEntries)
 {
     load(LR"(
 def f(a, b): pass
-d = {42: 0, 'b': 2, 'a': 1}
-del d[42]
+d = {'removed': 0, 'b': 2, 'a': 1}
+del d['removed']
 (f, d)
 )");
-    ASSERT_EQ(context.thread()->get_exact_dict_general_shape(),
+    ASSERT_EQ(context.thread()->get_exact_dict_string_key_shape(),
               keywords().extract()->get_shape());
     auto result = build(0);
     ASSERT_FALSE(result.has_exception());
     EXPECT_EQ((std::vector<uint32_t>{1, 0}),
               result.value().keyword_destinations);
-}
-
-TEST_F(ExpandedCallBinding,
-       SubclassComparisonsUseDeclarationOrderAndTruthConversion)
-{
-    load(LR"(
-events = []
-armed = False
-class Truth:
-    def __init__(self, result): self.result = result
-    def __bool__(self):
-        events.append('truth')
-        return self.result
-class S(str):
-    def __hash__(self):
-        if armed: raise AssertionError('binder hashed key')
-        return 10
-    def __eq__(self, other):
-        events.append(other)
-        return Truth(other == 'b')
-def f(a=1, b=2): pass
-d = {S('ignored'): 5}
-armed = True
-def check():
-    return len(events) == 4 and events[0] == 'a' and events[1] == 'truth' and events[2] == 'b' and events[3] == 'truth'
-(f, d, check)
-)");
-    auto result = build(0);
-    ASSERT_FALSE(result.has_exception());
-    EXPECT_EQ((std::vector<uint32_t>{1}), result.value().keyword_destinations);
-    EXPECT_EQ((std::vector<uint32_t>{0}), result.value().default_slots);
-    check_python_state();
-}
-
-TEST_F(ExpandedCallBinding, SubclassComparisonsRunInIncomingOrderOnEveryBuild)
-{
-    load(LR"(
-events = []
-class S(str):
-    def __hash__(self): return 10 if self == 'b' else 11
-    def __eq__(self, other):
-        events.append(other)
-        return str.__eq__(self, other)
-def f(a, b): pass
-d = {S('b'): 2, S('a'): 1}
-events.clear()
-def check():
-    return len(events) == 6 and events[0] == 'a' and events[1] == 'b' and events[2] == 'a' and events[3] == 'a' and events[4] == 'b' and events[5] == 'a'
-(f, d, check)
-)");
-    for(int idx = 0; idx < 2; ++idx)
-    {
-        auto result = build(0);
-        ASSERT_FALSE(result.has_exception());
-        EXPECT_EQ((std::vector<uint32_t>{1, 0}),
-                  result.value().keyword_destinations);
-    }
-    check_python_state();
-}
-
-TEST_F(ExpandedCallBinding, SubclassNotImplementedFallsBackToStringEquality)
-{
-    load(LR"(
-events = []
-class S(str):
-    def __hash__(self): return 10
-    def __eq__(self, other):
-        events.append(other)
-        return NotImplemented
-def f(a, b=2): pass
-def check(): return len(events) == 1 and events[0] == 'a'
-(f, {S('a'): 5}, check)
-)");
-    auto result = build(0);
-    ASSERT_FALSE(result.has_exception());
-    EXPECT_EQ((std::vector<uint32_t>{0}), result.value().keyword_destinations);
-    EXPECT_EQ((std::vector<uint32_t>{1}), result.value().default_slots);
-    check_python_state();
 }
 
 TEST_F(ExpandedCallBinding,
@@ -362,45 +253,6 @@ def f(a): pass
               rebuilt.value().keyword_destinations);
 }
 
-TEST_F(ExpandedCallBinding,
-       AllKeysValidatedBeforeComparisonEvenForPureCollectors)
-{
-    load(LR"(
-events = []
-class S(str):
-    def __hash__(self): return 10
-    def __eq__(self, other):
-        events.append(other)
-        raise AssertionError('comparison before validation')
-def f(a): pass
-def collector(*args, **rest): pass
-def check(): return len(events) == 0
-(f, {S('a'): 1, 42: 2}, check, collector)
-)");
-    expect_type_error(build(10), L"keywords must be strings");
-    context.thread()->clear_pending_exception();
-    expect_type_error(build_expanded_call_binding_plan(
-                          context.thread(),
-                          TValue<Function>::from_value_assumed(input(3)), 0,
-                          keywords()),
-                      L"keywords must be strings");
-    context.thread()->clear_pending_exception();
-    check_python_state();
-}
-
-TEST_F(ExpandedCallBinding, DistinctSubclassKeysCannotFillSameParameter)
-{
-    load(LR"(
-class S(str):
-    def __hash__(self): return 10 if str.__eq__(self, 'x') else 11
-    def __eq__(self, other): return other == 'a'
-def f(a): pass
-(f, {S('x'): 1, S('y'): 2})
-)");
-    ASSERT_EQ(2u, keywords().extract()->size());
-    expect_type_error(build(0), L"invalid keyword argument");
-}
-
 TEST_F(ExpandedCallBinding, KeywordErrorsPrecedeExcessAndMissingPositions)
 {
     load(LR"(
@@ -413,41 +265,6 @@ def f(a, *, required): pass
     expect_type_error(build(2), L"wrong number of arguments");
     context.thread()->clear_pending_exception();
     expect_type_error(build(0), L"wrong number of arguments");
-}
-
-TEST_F(ExpandedCallBinding,
-       ComparisonExceptionPrecedesExcessAndMissingArguments)
-{
-    load(LR"(
-error = ValueError('comparison failed')
-class S(str):
-    def __hash__(self): return 10
-    def __eq__(self, other): raise error
-def f(a, *, required): pass
-(f, {S('a'): 5}, error)
-)");
-    auto result = build(2);
-    ASSERT_TRUE(result.has_exception());
-    EXPECT_EQ(input(2),
-              context.thread()->pending_exception_object().raw_value());
-}
-
-TEST_F(ExpandedCallBinding, TruthConversionExceptionPropagatesUnchanged)
-{
-    load(LR"(
-error = KeyError('truth failed')
-class Truth:
-    def __bool__(self): raise error
-class S(str):
-    def __hash__(self): return 10
-    def __eq__(self, other): return Truth()
-def f(a): pass
-(f, {S('a'): 5}, error)
-)");
-    auto result = build(0);
-    ASSERT_TRUE(result.has_exception());
-    EXPECT_EQ(input(2),
-              context.thread()->pending_exception_object().raw_value());
 }
 
 namespace
@@ -586,9 +403,7 @@ def check(result): return result[0] == 1 and result[1] == 9 and result[2] is key
 TEST_F(ExpandedCallExecution, BuildsFreshLeftoversPreservingKeysAndOrder)
 {
     load(LR"(
-class S(str):
-    def __hash__(self): return str.__hash__(self)
-key = S('extra')
+key = 'xextra'[1:]
 keys = {'a': 1, key: 2, 'last': 3}
 def f(a, **rest): return a, rest
 def check(result):
@@ -691,45 +506,16 @@ def verify(value): return value.value == 14
     EXPECT_TRUE(cache.guard.validity_cell->is_valid());
 }
 
-TEST_F(ExpandedCallExecution,
-       NestedExpandedCallsDuringComparisonPreserveCallerRegisters)
-{
-    load(LR"(
-class S(str):
-    def __hash__(self): return 123
-    def __eq__(self, other):
-        def nested(x): return x + 1
-        assert expanded(nested, (40,), {}) == 41
-        return str.__eq__(self, other)
-def target(a, *, b=2): return a + b
-keys = {S('a'): 3}
-def outer():
-    live = [10, 20]
-    result = expanded(target, (), keys)
-    assert live[0] == 10 and live[1] == 20
-    return result
-def check(result): return result == 5
-(outer, (), {}, check)
-)");
-    install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
-    check();
-    check();
-}
-
 TEST_F(ExpandedCallExecution, BindingAndCalleeExceptionsUnwindToPythonCaller)
 {
     load(LR"(
-error = ValueError('comparison failed')
-class S(str):
-    def __hash__(self): return 123
-    def __eq__(self, other): raise error
 def target(a): raise KeyError('callee failed')
 def outer():
     live = [10, 20]
     try:
-        expanded(target, (), {S('a'): 3})
-    except ValueError as caught:
-        assert caught is error
+        expanded(target, (), {'wrong': 3})
+    except TypeError as caught:
+        assert str(caught) == 'invalid keyword argument'
     else:
         assert False
     try:
@@ -744,36 +530,6 @@ def check(result): return result == 30
 )");
     install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
     check();
-}
-
-TEST_F(ExpandedCallExecution,
-       CollectorFailurePrecedesEntryAndPreservesTransport)
-{
-    load(LR"(
-armed = False
-entered = False
-error = ValueError('collector hash failed')
-class S(str):
-    def __hash__(self):
-        if armed: raise error
-        return 123
-    def __eq__(self, other): return False
-key = S('extra')
-keys = {'a': 1, key: 2}
-armed = True
-def target(a, **rest):
-    global entered
-    entered = True
-def check(): return not entered and len(keys) == 2
-(target, (), keys, check, error)
-)");
-    EXPECT_TRUE(call().is_exception_marker());
-    EXPECT_EQ(input(4),
-              context.thread()->pending_exception_object().raw_value());
-    context.thread()->clear_pending_exception();
-    EXPECT_EQ(Value::True(),
-              context.thread()->call_clovervm_function(
-                  TValue<Function>::from_value_assumed(input(3))));
 }
 
 TEST_F(ExpandedCallExecution, BytecodeMetadataDescribesAdjacentInputsAndCache)
@@ -853,8 +609,7 @@ def f(a): return a
     code->inline_caches.clear();
     EXPECT_EQ(nullptr, cache().binding_plan);
     EXPECT_TRUE(expanded_call_cached_plan_matches(
-        context.thread(), *clone.binding_plan, 0,
-        TValue<Dict>::from_value_assumed(input(2))));
+        *clone.binding_plan, 0, TValue<Dict>::from_value_assumed(input(2))));
     for(const auto &block: decoder.blocks())
     {
         for(const auto &instruction: block.instructions())
@@ -871,48 +626,34 @@ def f(a): return a
     EXPECT_EQ(Value::from_smi(3), call());
 }
 
-TEST_F(ExpandedCallExecution, SubclassAndInvalidKeysPreserveTheCachedPlan)
+TEST_F(ExpandedCallExecution, InvalidKeywordsPreserveTheCachedPlan)
 {
     load(LR"(
-events = []
-class S(str):
-    def __eq__(self, other):
-        events.append('eq')
-        return str.__eq__(self, other)
-    def __hash__(self): return str.__hash__(self)
 def f(a): return a
-def count(): return len(events)
-(f, (), {'a': 3}, {S('a'): 7}, {1: 9}, count, {'wrong': 8})
+(f, (), {'a': 3}, {1: 9}, {'wrong': 8}, {'xa'[1:]: 7})
 )");
     EXPECT_EQ(Value::from_smi(3), call());
     auto *installed = cache().binding_plan.get();
     ASSERT_NE(nullptr, installed);
-    for(int idx = 0; idx < 2; ++idx)
-    {
-        EXPECT_EQ(Value::from_smi(7),
-                  context.thread()->call_clovervm_function(
-                      caller.value().value(), input(0), input(1), input(3)));
-        EXPECT_EQ(installed, cache().binding_plan.get());
-    }
-    EXPECT_EQ(Value::from_smi(2),
-              context.thread()->call_clovervm_function(
-                  TValue<Function>::from_value_assumed(input(5))));
-    for(size_t idx: {4u, 6u})
+    const wchar_t *messages[] = {L"keywords must be strings",
+                                 L"invalid keyword argument"};
+    for(size_t i = 0; i < 2; ++i)
     {
         EXPECT_TRUE(context.thread()
                         ->call_clovervm_function(caller.value().value(),
-                                                 input(0), input(1), input(idx))
+                                                 input(0), input(1),
+                                                 input(3 + i))
                         .is_exception_marker());
+        EXPECT_EQ(std::wstring(messages[i]),
+                  string_as_wchar_t(test::native_exception_message(
+                      context.thread()->pending_exception_object())));
         context.thread()->clear_pending_exception();
         EXPECT_EQ(installed, cache().binding_plan.get());
     }
-    EXPECT_EQ(Value::from_smi(3), call());
-    EXPECT_EQ(installed, cache().binding_plan.get());
-    cache().binding_plan.reset();
     EXPECT_EQ(Value::from_smi(7),
               context.thread()->call_clovervm_function(
-                  caller.value().value(), input(0), input(1), input(3)));
-    EXPECT_EQ(nullptr, cache().binding_plan);
+                  caller.value().value(), input(0), input(1), input(5)));
+    EXPECT_EQ(installed, cache().binding_plan.get());
 }
 
 TEST_F(ExpandedCallExecution, TargetReplacementDropsPlanBeforePureCollectorCall)
@@ -950,28 +691,6 @@ def f(a=1, b=2): return a + b
               context.thread()->call_clovervm_function(
                   caller.value().value(), input(0), positional.raw_value(),
                   keywords.raw_value()));
-}
-
-TEST_F(ExpandedCallExecution, CollectorCallbacksCanMakeNestedExpandedCalls)
-{
-    load(LR"(
-armed = False
-class S(str):
-    def __hash__(self):
-        if armed:
-            def nested(*args, **rest): return args[0]
-            assert expanded(nested, (41,), {}) == 41
-        return 123
-    def __eq__(self, other): return False
-keys = {'b': 9, S('extra'): 2}
-armed = True
-def target(a, *args, b, **rest): return a, args, b, rest
-def actual(): return expanded(target, (1, 2, 3), keys)
-def check(result): return result[0] == 1 and result[1] == (2, 3) and result[2] == 9 and len(result[3]) == 1
-(actual, (), {}, check)
-)");
-    install_expanded_binding(TValue<Function>::from_value_assumed(input(0)));
-    check();
 }
 
 namespace
@@ -1221,18 +940,36 @@ def later():
     events.append('later')
     return 1
 def failure(): raise ValueError('later mapping error')
-def f(**kw): pass
+def collect(*args, **kw): pass
+def named(a=1, **kw): pass
+class C:
+    def m(self, **kw): pass
+obj = C()
 try:
-    f(**{42: 0}, b=later())
-except TypeError:
-    pass
+    collect(**{42: 0}, b=later())
+except TypeError as error:
+    assert str(error) == 'keywords must be strings'
 else:
     assert False
 assert events == ['later']
 try:
-    f(**{42: 0}, **failure())
+    named(**{42: 0}, **failure())
 except ValueError:
     pass
+else:
+    assert False
+try:
+    obj.m(**{42: 0}, b=later())
+except TypeError as error:
+    assert str(error) == 'keywords must be strings'
+else:
+    assert False
+assert events == ['later', 'later']
+target = 1
+try:
+    target(**{42: 0})
+except TypeError as error:
+    assert str(error) == 'object is not callable'
 else:
     assert False
 True

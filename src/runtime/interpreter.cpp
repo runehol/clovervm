@@ -1771,8 +1771,14 @@ namespace cl
                              ? ExpandedCallMode::PureCollector
                              : ExpandedCallMode::General;
         }
-        // Capture the target before callbacks: a nested call at this same site
-        // may replace the live cache or invalidate constructor lookup.
+        if(unlikely(keywords.extract()->get_shape() !=
+                    thread->get_exact_dict_string_key_shape()))
+        {
+            return Expected<void>::raise_exception(L"TypeError",
+                                                   L"keywords must be strings");
+        }
+
+        // Keep the target and receiver alive through collector allocation.
         Owned<TValue<Function>> function(
             TValue<Function>::from_oop(cache.function));
         ExpandedCallMode mode = cache.mode;
@@ -1784,33 +1790,26 @@ namespace cl
         Owned<Value> live_prefix(positional.prefix);
         if(mode == ExpandedCallMode::PureCollector && !positional.has_prefix())
         {
-            CL_TRY(validate_expanded_call_keywords(keywords));
             new_fp[target_code->encode_reg(0)] = positional.tuple.raw_value();
             new_fp[target_code->encode_reg(1)] = keywords.raw_value();
         }
         else if(cache.binding_plan != nullptr &&
-                expanded_call_cached_plan_matches(thread, *cache.binding_plan,
-                                                  uint32_t(positional.size()),
-                                                  keywords))
+                expanded_call_cached_plan_matches(
+                    *cache.binding_plan, uint32_t(positional.size()), keywords))
         {
-            CL_TRY(apply_expanded_call_binding_plan(
-                thread, function.value(), positional, keywords,
-                cache.binding_plan->plan, new_fp));
+            apply_expanded_call_binding_plan(thread, function.value(),
+                                             positional, keywords,
+                                             cache.binding_plan->plan, new_fp);
         }
         else
         {
             ExpandedCallBindingPlan plan =
                 CL_TRY(build_expanded_call_binding_plan(
-                    thread, function.value(), uint32_t(positional.size()),
-                    keywords));
-            CL_TRY(apply_expanded_call_binding_plan(
-                thread, function.value(), positional, keywords, plan, new_fp));
-            if(auto cached = convert_to_expanded_call_cache_entry(
-                   thread, uint32_t(positional.size()), keywords,
-                   std::move(plan)))
-            {
-                cache.binding_plan = std::move(cached);
-            }
+                    function.value(), uint32_t(positional.size()), keywords));
+            apply_expanded_call_binding_plan(
+                thread, function.value(), positional, keywords, plan, new_fp);
+            cache.binding_plan = make_expanded_call_cache_entry(
+                uint32_t(positional.size()), keywords, std::move(plan));
         }
         jit_entry = invoke_function_at_new_fp(
             accumulator, thread, fp, pc, dispatch, code_object,

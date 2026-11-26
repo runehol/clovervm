@@ -154,9 +154,10 @@ argument expressions and expansion callbacks
 ```
 
 Both containers are always present, including a fresh empty keyword dict for
-`f(*args)`. Exact dict means the builtin dict type; either string-keyed or general
-storage is valid. String-subclass key objects are preserved, and non-string
-keys survive construction until call-entry validation.
+`f(*args)`. Keyword preparation copies string-subclass keys to exact strings.
+Valid calls carry an exact dict with string-keyed storage. Non-string keys
+survive construction in general storage, which call entry rejects after
+resolving the target and before binding arguments.
 
 Two adjacent logical registers hold the tuple and dict. With the current
 register encoding they are `fp[containers_reg]` and `fp[containers_reg - 1]`.
@@ -310,10 +311,12 @@ matching keyword names, and collectors receive the exact string instead of
 the original subclass object. Equal normalized names are duplicates during
 construction, including two entries in the first source.
 
-**Exact dict sources.** The first mapping uses `Dict::copy()` when it has no
-string-subclass keys, preserving key identity, order, values, and stored
-hashes without callbacks. Otherwise it builds a fresh destination via the
-same insertion path as a later merge. Exact string-keyed merges use native
+**Exact dict sources.** The first mapping uses `Dict::copy()` for a
+string-keyed source, or for a general source with non-string keys and no
+string-subclass keys. This preserves key identity, order, values, and stored
+hashes without callbacks. Other general sources are rebuilt through the
+same insertion path as a later merge, which gives valid transports
+string-keyed storage. Exact string-keyed merges use native
 uniqueness operations. General storage uses managed known-hash insertion
 with rich equality and restartable probes. A normalized key uses the exact
 string's hash instead of the source entry's stored hash.
@@ -357,27 +360,25 @@ successfully appended/inserted entries until normal lifetime cleanup.
 
 ## Expanded binding and collectors
 
-`build_expanded_call_binding_plan(thread, function, positional_count, keywords)`
-returns a fallible native plan. It operates on an already-resolved Function and
-rooted inputs, with no writes to the outgoing parameter window:
+After resolving the target, shared call entry checks for exact string-keyed
+dict storage. General storage raises `TypeError("keywords must be strings")`.
+The check happens before collector reuse or plan lookup. Preparation has
+already evaluated all argument sources.
 
-1. Validate every keyword key is a string, accepting subclasses, before any
-   comparison callback can run.
-2. Mark positional formal slots filled. Process incoming keywords in insertion
-   order, scanning keyword-bindable parameters in declaration order. Reject
-   duplicate formal fills and unmatched names without a collector.
-3. Reject excess positional arguments unless `*args` is present.
-4. Record defaults for unfilled slots; reject missing required arguments.
+`build_expanded_call_binding_plan(function, positional_count, keywords)`
+asserts string-keyed storage and operates on rooted inputs without writing
+outgoing parameters:
 
-This gives keyword errors precedence over excess positional arguments, then
-missing arguments. Construction errors in precode occur before all these
-checks. An invalid plan is neither applied nor installed.
+1. Mark positional formal slots filled. Visit keywords in insertion order
+   and match formal names with native `string_eq`. Reject duplicate formal
+   fills and unmatched names without a collector.
+2. Reject excess positional arguments unless `*args` is present.
+3. Record defaults for unfilled slots and reject missing required arguments.
 
-Prepared keyword names use native `string_eq`. The binder still has a
-subclass fallback for direct internal calls that bypass preparation. It uses
-`ThreadState::test_equal`, including reflected rich comparison, truth
-conversion, and exception propagation. Matching does not hash keys or probe
-once per formal parameter.
+This gives keyword errors precedence over excess and then missing arguments.
+Earlier argument construction and target resolution can raise first. Only a
+successful plan is applied and installed.
+
 The builder's filled-slot scratch uses `absl::InlinedVector<bool, 16>`.
 
 ```cpp
@@ -395,8 +396,8 @@ entries use `UnmatchedKeyword`. Default slots identify values to read from the
 Function's current defaults tuple.
 
 `apply_expanded_call_binding_plan` constructs and roots collectors before
-writing outgoing parameters, so nested callbacks cannot overwrite partially
-prepared arguments. It then copies positional and keyword values, current
+writing outgoing parameters. It inserts leftover keywords with native
+string-keyed insertion, then copies positional and keyword values, current
 defaults, and collectors into the target's parameter slots.
 
 | Collector action | Behavior |
@@ -412,8 +413,8 @@ exactly the required suffix, otherwise packs a new tuple of the remaining
 positional values.
 
 A signature exactly `(*args, **kwargs)` with no implicit receiver prefix takes
-the pure-collector path: validate keys and install both original containers
-directly, without a binding plan or another dict.
+the pure-collector path after the same call-entry shape check. It installs
+both original containers directly without a binding plan or another dict.
 
 ## Expanded-call IC
 
@@ -435,19 +436,11 @@ retain their own references; keyword values and default values are never cached.
 Function code/signature immutability means no separate signature-version
 mechanism is needed.
 
-For general binding:
-
-1. A hit requires matching total positional count, keyword count, and ordered
-   exact-string key contents. `string_eq` accepts equal noninterned names, not
-   just identical objects. A successful guard also proves key validity.
-2. On a hit, apply the stored plan directly. Guarding and application for these
-   exact-string inputs do not invoke Python callbacks.
-3. On a miss, build and apply a local plan. After success,
-   `convert_to_expanded_call_cache_entry` checks eligibility, retains names, and
-   moves the existing plan into a new entry. It does not bind again.
-4. Any subclass key prevents both a hit and installation. Such calls run their
-   comparison protocols every time and do not evict an existing plan for the
-   same target. Non-string keys fall through to normal validation and fail.
+For general binding, a hit requires matching total positional count,
+keyword count, and ordered key contents. `string_eq` accepts equal
+noninterned names. On a hit, apply the stored plan directly. On a miss,
+build and apply a local plan, then move it into a cache entry that retains
+the keyword names. The call-entry shape check covers both cases.
 
 Replacement, cache clearing, and CodeObject destruction release the native entry
 and its names. IC copies deep-copy entries because `BytecodeDecoder` snapshots
@@ -510,13 +503,10 @@ ordinary accumulator convention or propagate exceptions through normal
 unwinding. Sources, builders, destinations, and iterator state remain rooted
 in managed registers/helper locals across callbacks.
 
-Before callback-capable native binding, expanded handlers publish the caller's
-live frame frontier. The resolved Function and optional receiver are retained
-independently of the live cache: recursive calls can replace it. Uncached plans
-stay local across callbacks; cache hits borrow a plan only on the callback-free
-exact-string path. Failures during collector construction do not enter the
-callee. Pending-exception propagation is explicit in the native helper return
-types.
+Expanded handlers publish the caller's live frame frontier. The resolved
+Function and optional receiver remain owned through collector allocation.
+Keyword matching and collector insertion use exact strings and execute no
+Python callbacks. Mapping preparation can still reenter the interpreter.
 
 Expanded calls currently resume in the interpreter from JIT code. Bytecode
 metadata describes transport inputs and accumulator results for safe fallback;
@@ -529,11 +519,9 @@ These are existing behavior boundaries, not unfinished expanded-call stages:
 
 - Method lookup happens after argument evaluation/construction for fused method
   calls. Correcting it requires work shared across all argument forms.
-- Collector construction does not reproduce CPython's additional subclass-key
-  hash/equality callbacks or their interleaving with binding. Transport reuse
-  can skip reinsertion entirely; leftovers are built only after successful
-  planning. Named-parameter matching still runs rich comparison on subclass
-  keys every call.
+- Keyword preparation normalizes string-subclass keys by contents. Named
+  binding and collector insertion use those normalized names without
+  invoking subclass callbacks.
 - Generic mapping error translation is limited to the direct `source.keys()`
   call. Later callback exceptions retain their original types.
 - Binding `TypeError` messages remain generic in several paths.

@@ -13,11 +13,12 @@
 
 namespace cl
 {
-    bool expanded_call_cached_plan_matches(ThreadState *thread,
-                                           const ExpandedCallCachedPlan &cached,
+    bool expanded_call_cached_plan_matches(const ExpandedCallCachedPlan &cached,
                                            uint32_t positional_count,
                                            TValue<Dict> keywords)
     {
+        assert(keywords.extract()->get_shape() ==
+               active_thread()->get_exact_dict_string_key_shape());
         if(cached.positional_count != positional_count ||
            cached.keyword_names.size() != keywords.extract()->size())
         {
@@ -26,8 +27,7 @@ namespace cl
         size_t idx = 0;
         for(Dict::EntryView entry: *keywords.extract())
         {
-            if(!is_exact_string(thread, entry.key) ||
-               !string_eq(cached.keyword_names[idx++].value(),
+            if(!string_eq(cached.keyword_names[idx++].value(),
                           TValue<String>::from_value_unchecked(entry.key)))
             {
                 return false;
@@ -37,18 +37,12 @@ namespace cl
     }
 
     std::unique_ptr<ExpandedCallCachedPlan>
-    convert_to_expanded_call_cache_entry(ThreadState *thread,
-                                         uint32_t positional_count,
-                                         TValue<Dict> keywords,
-                                         ExpandedCallBindingPlan &&plan)
+    make_expanded_call_cache_entry(uint32_t positional_count,
+                                   TValue<Dict> keywords,
+                                   ExpandedCallBindingPlan &&plan)
     {
-        for(Dict::EntryView entry: *keywords.extract())
-        {
-            if(!is_exact_string(thread, entry.key))
-            {
-                return nullptr;
-            }
-        }
+        assert(keywords.extract()->get_shape() ==
+               active_thread()->get_exact_dict_string_key_shape());
         auto cached = std::make_unique<ExpandedCallCachedPlan>();
         cached->positional_count = positional_count;
         cached->keyword_names.reserve(keywords.extract()->size());
@@ -61,30 +55,13 @@ namespace cl
         return cached;
     }
 
-    Expected<void> validate_expanded_call_keywords(TValue<Dict> keywords)
-    {
-        for(Dict::EntryView entry: *keywords.extract())
-        {
-            if(!has_native_layout<String>(entry.key))
-            {
-                return Expected<void>::raise_exception(
-                    L"TypeError", L"keywords must be strings");
-            }
-        }
-        return Expected<void>::ok();
-    }
-
-    Expected<ExpandedCallBindingPlan> build_expanded_call_binding_plan(
-        ThreadState *thread, TValue<Function> function,
-        uint32_t positional_count, TValue<Dict> keywords)
+    Expected<ExpandedCallBindingPlan>
+    build_expanded_call_binding_plan(TValue<Function> function,
+                                     uint32_t positional_count,
+                                     TValue<Dict> keywords)
     {
         assert(keywords.extract()->get_shape() ==
-                   thread->get_exact_dict_string_key_shape() ||
-               keywords.extract()->get_shape() ==
-                   thread->get_exact_dict_general_shape());
-
-        // Validate the whole transport before any equality callback can run.
-        CL_TRY(validate_expanded_call_keywords(keywords));
+               active_thread()->get_exact_dict_string_key_shape());
 
         ExpandedCallBindingPlan plan;
         plan.keyword_destinations.reserve(keywords.extract()->size());
@@ -101,28 +78,15 @@ namespace cl
         const FunctionKeywordRemap &remap =
             function.extract()->code_object.extract()->function_keyword_remap;
         bool matched_keyword = false;
-        // Retain only a numeric traversal position across callbacks, never a
-        // pointer into dict storage. Keep the current key alive independently.
-        for(size_t entry_idx = 0;
-            entry_idx < keywords.extract()->entry_storage_size(); ++entry_idx)
+        for(Dict::EntryView entry: *keywords.extract())
         {
-            Dict::EntryView entry;
-            if(!keywords.extract()->entry_at(entry_idx, entry))
-            {
-                continue;
-            }
-            Owned<TValue<String>> key(
-                TValue<String>::from_value_assumed(entry.key));
-            const bool exact = is_exact_string(thread, key.raw_value());
+            auto key = TValue<String>::from_value_unchecked(entry.key);
             uint32_t destination = ExpandedCallBindingPlan::UnmatchedKeyword;
             for(size_t idx = 0; idx < remap.size(); ++idx)
             {
                 TValue<String> name =
                     TValue<String>::from_value_assumed(remap.name_at(idx));
-                bool equal = exact ? string_eq(name, key.value())
-                                   : CL_TRY(thread->test_equal(
-                                         name.raw_value(), key.raw_value()));
-                if(equal)
+                if(string_eq(name, key))
                 {
                     destination = remap.parameter_index_at(idx);
                     break;
@@ -183,11 +147,13 @@ namespace cl
         return Expected<ExpandedCallBindingPlan>::ok(std::move(plan));
     }
 
-    Expected<void> apply_expanded_call_binding_plan(
+    void apply_expanded_call_binding_plan(
         ThreadState *thread, TValue<Function> function,
         ExpandedCallPositionalArguments positional, TValue<Dict> keywords,
         const ExpandedCallBindingPlan &plan, Value *destination_fp)
     {
+        assert(keywords.extract()->get_shape() ==
+               thread->get_exact_dict_string_key_shape());
         const FunctionSignature signature =
             function.extract()->call_signature.function;
         const size_t positional_fills = std::min(
@@ -227,32 +193,21 @@ namespace cl
             collector =
                 Optional<TValue<Dict>>::some(thread->make_object_value<Dict>());
             size_t keyword_idx = 0;
-            for(size_t entry_idx = 0;
-                entry_idx < keywords.extract()->entry_storage_size();
-                ++entry_idx)
+            for(Dict::EntryView entry: *keywords.extract())
             {
-                Dict::EntryView entry;
-                if(!keywords.extract()->entry_at(entry_idx, entry))
-                {
-                    continue;
-                }
                 assert(keyword_idx < plan.keyword_destinations.size());
                 if(plan.keyword_destinations[keyword_idx++] ==
                    ExpandedCallBindingPlan::UnmatchedKeyword)
                 {
-                    // Insertion may call subclass protocols; the dict and
-                    // current entry must survive nested interpreter entry.
-                    Owned<Value> key(entry.key);
-                    Owned<Value> value(entry.value);
-                    CL_TRY(collector.value().value().extract()->set_item(
-                        thread, key.value(), value.value()));
+                    collector.value().value().extract()->string_keyed_insert(
+                        TValue<String>::from_value_unchecked(entry.key),
+                        entry.value);
                 }
             }
             assert(keyword_idx == plan.keyword_destinations.size());
         }
 
-        // All callback-capable work is complete. The outgoing window can now
-        // be populated without a nested call overwriting partial arguments.
+        // Finish allocating collectors before populating the outgoing window.
         CodeObject *code = function.extract()->code_object.extract();
         for(uint32_t idx = 0; idx < positional_fills; ++idx)
         {
@@ -290,6 +245,5 @@ namespace cl
             destination_fp[code->encode_reg(signature.n_parameters - 1)] =
                 collector.value().value().raw_value();
         }
-        return Expected<void>::ok();
     }
 }  // namespace cl

@@ -65,31 +65,24 @@ namespace cl
         ExpandedCallBindingPlan plan;
     };
 
-    bool expanded_call_cached_plan_matches(ThreadState *thread,
-                                           const ExpandedCallCachedPlan &cached,
+    // The keyword transport must have exact string-keyed dict storage.
+    bool expanded_call_cached_plan_matches(const ExpandedCallCachedPlan &cached,
                                            uint32_t positional_count,
                                            TValue<Dict> keywords);
 
-    // Returns null for non-exact-string keys without consuming the local plan.
     std::unique_ptr<ExpandedCallCachedPlan>
-    convert_to_expanded_call_cache_entry(ThreadState *thread,
-                                         uint32_t positional_count,
-                                         TValue<Dict> keywords,
-                                         ExpandedCallBindingPlan &&plan);
+    make_expanded_call_cache_entry(uint32_t positional_count,
+                                   TValue<Dict> keywords,
+                                   ExpandedCallBindingPlan &&plan);
 
-    // keywords is an exact, call-owned transport dict. The caller keeps it and
-    // function rooted throughout construction and subsequent plan application.
+    // The caller roots the transport and function during binding.
     [[nodiscard]] Expected<ExpandedCallBindingPlan>
-    build_expanded_call_binding_plan(ThreadState *thread,
-                                     TValue<Function> function,
+    build_expanded_call_binding_plan(TValue<Function> function,
                                      uint32_t positional_count,
                                      TValue<Dict> keywords);
 
-    [[nodiscard]] Expected<void>
-    validate_expanded_call_keywords(TValue<Dict> keywords);
-
     // Construct collectors before writing any outgoing parameter slots.
-    [[nodiscard]] Expected<void> apply_expanded_call_binding_plan(
+    void apply_expanded_call_binding_plan(
         ThreadState *thread, TValue<Function> function,
         ExpandedCallPositionalArguments positional, TValue<Dict> keywords,
         const ExpandedCallBindingPlan &plan, Value *destination_fp);
