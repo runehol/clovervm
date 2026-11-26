@@ -63,9 +63,6 @@ namespace cl
         RegisterOperatorCacheWithContinuation,
         RegisterRegisterOperatorCache,
         RegisterRegisterOperatorCacheWithContinuation,
-        RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
-        MethodKeywordCall,
-        MethodExpandedCall,
         SpecialMethodCall,
         Smi8OperatorCache,
         Smi8OperatorCacheWithContinuation,
@@ -282,23 +279,6 @@ namespace cl
                     ++info.byte_length;
                     return info;
                 }
-            case BytecodeFormat::
-                RegisterConstantAttributeReadCacheFunctionCallCacheArgCount:
-                return make_bytecode_format_info(
-                    Operand::Register, Operand::Constant,
-                    Operand::AttributeReadCache, Operand::FunctionCallCache,
-                    Operand::ArgumentCount);
-            case BytecodeFormat::MethodExpandedCall:
-                return make_bytecode_format_info(
-                    Operand::Register, Operand::Constant,
-                    Operand::AttributeReadCache, Operand::ExpandedCallCache,
-                    Operand::Register, Operand::Register);
-            case BytecodeFormat::MethodKeywordCall:
-                return make_bytecode_format_info(
-                    Operand::Register, Operand::Constant,
-                    Operand::AttributeReadCache, Operand::KeywordCallCache,
-                    Operand::ArgumentCount, Operand::Register,
-                    Operand::KeywordCount, Operand::Constant);
             case BytecodeFormat::SpecialMethodCall:
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Constant,

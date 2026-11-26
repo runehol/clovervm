@@ -6,7 +6,6 @@ op_add_smi
 op_call_positional
 op_call_positional_shape
 op_call_keyword_shape
-op_call_method_attr_positional
 op_call_method_positional
 op_call_special_method0
 op_call_special_method1

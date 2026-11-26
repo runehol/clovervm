@@ -1679,20 +1679,14 @@ namespace cl::jit
                                    name);
             CompilationSession session(*context.thread());
             GraphBuilder graph_builder(session, IRLevel::Core);
-            code.configure_positional_function(3);
+            code.configure_positional_function(method_call ? 4 : 3);
             uint32_t call_pc;
             {
                 CodeObjectBuilder::TemporaryReg outgoing(
                     code, 1, RegisterAlignment::CallFrame);
                 if(method_call)
                 {
-                    uint8_t method =
-                        code.allocate_constant(
-                                context.vm()
-                                    .get_or_create_interned_string_value(L"m"))
-                            .value();
-                    call_pc = code.emit_call_method_attr_expanded(0, 0, method,
-                                                                  1, outgoing)
+                    call_pc = code.emit_call_method_expanded(0, 0, 2, outgoing)
                                   .value();
                 }
                 else

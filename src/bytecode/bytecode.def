@@ -57,21 +57,12 @@ CL_BYTECODE(DelAttr, RegisterConstantAttributeMutationCache, Sequential, None)
 CL_BYTECODE(GetItem, RegisterOperatorCache, Sequential, None)
 CL_BYTECODE(SetItem, RegisterRegisterOperatorCache, Sequential, None)
 CL_BYTECODE(DelItem, RegisterOperatorCache, Sequential, None)
-CL_BYTECODE(CallMethodAttrPositional,
-            RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
-            Sequential, None)
-CL_BYTECODE(CallMethodAttrKeyword, MethodKeywordCall, Sequential, None)
-CL_BYTECODE(CallMethodAttrExpanded, MethodExpandedCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod0, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod3, SpecialMethodCall, Sequential, None)
 
-// Keep the paired arithmetic blocks even-aligned. Ternary pow is unpaired.
-CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
-            Sequential,
-            TernaryOperator)
-
+// Keep the paired arithmetic blocks even-aligned.
 CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(InPlaceAdd, RegisterOperatorCacheWithContinuation, Sequential,
@@ -169,6 +160,10 @@ CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(InPlaceXorSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
+
+CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
+            Sequential,
+            TernaryOperator)
 
 CL_BYTECODE(TestEqual, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)

@@ -372,20 +372,6 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
-            case Bytecode::CallMethodAttrPositional:
-                effects.source_register(0, effects.operand(4) + 1);
-                effects.destination_accumulator();
-                break;
-
-            case Bytecode::CallMethodAttrKeyword:
-                effects.source_register(0, effects.operand(4) + 1);
-                if(effects.operand(6) != 0)
-                {
-                    effects.source_register(5, effects.operand(6));
-                }
-                effects.destination_accumulator();
-                break;
-
             case Bytecode::Add:
             case Bytecode::InPlaceAdd:
             case Bytecode::Sub:
@@ -573,12 +559,6 @@ namespace cl
                 {
                     effects.source_register(1, effects.operand(2));
                 }
-                effects.destination_accumulator();
-                break;
-
-            case Bytecode::CallMethodAttrExpanded:
-                effects.source_register(0);
-                effects.source_register(4, 2);
                 effects.destination_accumulator();
                 break;
 

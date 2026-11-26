@@ -93,8 +93,6 @@ TEST(BytecodeFormat, representative_operand_formats_have_expected_lengths)
     EXPECT_EQ(2, bytecode_length(Bytecode::LdaConstant));
     EXPECT_EQ(3, bytecode_length(Bytecode::Mov));
     EXPECT_EQ(4, bytecode_length(Bytecode::LoadAttr));
-    EXPECT_EQ(6, bytecode_length(Bytecode::CallMethodAttrPositional));
-    EXPECT_EQ(9, bytecode_length(Bytecode::CallMethodAttrKeyword));
     EXPECT_EQ(8, bytecode_length(Bytecode::CallKeyword));
     EXPECT_EQ(7, bytecode_length(Bytecode::DictInsertNew));
     EXPECT_EQ(4, bytecode_length(Bytecode::LShiftSmi));
@@ -210,66 +208,6 @@ TEST(BytecodeInstruction, compound_operator_exposes_continuation)
               continuation.encoded_opcode());
     EXPECT_FALSE(continuation.continuation_pc_offset().has_value());
     EXPECT_EQ(continuation.pc_offset() + 1, continuation.next_pc_offset());
-}
-
-TEST(BytecodeInstruction, two_cache_instruction_preserves_both_typed_operands)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation(context.thread());
-    auto name = context.vm().get_or_create_interned_string_value(L"bit_length");
-    CodeObjectBuilder builder(
-        &context.vm(), nullptr,
-        TValue<ModuleObject>::from_oop(context.make_test_module_object(
-            name, context.vm().global_builtins_module().raw_value())),
-        nullptr, name);
-    {
-        CodeObjectBuilder::TemporaryReg args(builder, 1,
-                                             RegisterAlignment::CallFrame);
-        auto name_idx = builder.allocate_constant(name).value();
-        builder.emit_call_method_attr_positional(0, args, name_idx, 0).value();
-    }
-    builder.emit_return(0).value();
-    CodeObject *code_object = builder.finalize().value();
-
-    BytecodeInstruction instruction =
-        find_instruction(*code_object, Bytecode::CallMethodAttrPositional);
-    EXPECT_EQ(nullptr, instruction.attribute_read_cache());
-    EXPECT_EQ(nullptr, instruction.function_call_cache());
-    bool has_attribute_read_cache = false;
-    bool has_function_call_cache = false;
-    for(const BytecodeOperand &operand: instruction.operands())
-    {
-        has_attribute_read_cache |=
-            operand.kind == BytecodeOperandKind::AttributeReadCache;
-        has_function_call_cache |=
-            operand.kind == BytecodeOperandKind::FunctionCallCache;
-    }
-    EXPECT_TRUE(has_attribute_read_cache);
-    EXPECT_TRUE(has_function_call_cache);
-    ASSERT_EQ(1, instruction.sources().size());
-    EXPECT_EQ(BytecodeValueLocationKind::StackSlot,
-              instruction.sources()[0].kind);
-    ASSERT_EQ(1, instruction.destinations().size());
-    EXPECT_EQ(BytecodeValueLocationKind::Accumulator,
-              instruction.destinations()[0].kind);
-
-    BytecodeDecoder decoder(*code_object);
-    bool found_decoded_call = false;
-    for(const BytecodeBlock &block: decoder.blocks())
-    {
-        for(BytecodeInstruction decoded: block.instructions())
-        {
-            if(decoded.encoded_opcode() == Bytecode::CallMethodAttrPositional)
-            {
-                found_decoded_call = true;
-                EXPECT_NE(nullptr, decoded.attribute_read_cache());
-                EXPECT_NE(nullptr, decoded.function_call_cache());
-                EXPECT_EQ(nullptr, decoded.keyword_call_cache());
-                EXPECT_EQ(nullptr, decoded.operator_cache());
-            }
-        }
-    }
-    EXPECT_TRUE(found_decoded_call);
 }
 
 TEST(BytecodeInstruction, range_loop_effects_are_uniform_and_rmw)

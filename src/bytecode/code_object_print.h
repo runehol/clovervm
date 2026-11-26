@@ -478,59 +478,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_operator_cache(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::CallMethodAttrPositional:
-                fmt::format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
-                fmt::format_to(out, ", ");
-                disassemble_constant(code_obj, out, pc++);
-                fmt::format_to(out, ", ");
-                disassemble_read_cache(code_obj, out, pc++);
-                fmt::format_to(out, ", ");
-                disassemble_function_call_cache(code_obj, out, pc++);
-                fmt::format_to(out, ", ");
-                fmt::format_to(out, "{}", code_obj.code[pc++]);
-                break;
-
-            case cl::Bytecode::CallMethodAttrKeyword:
-                {
-                    fmt::format_to(out, " ");
-                    int8_t first_arg_reg = code_obj.code[pc++];
-                    uint32_t name_idx = pc++;
-                    uint32_t read_cache_idx = pc++;
-                    uint32_t call_cache_idx = pc++;
-                    uint8_t n_pos_args = code_obj.code[pc++];
-                    int8_t first_kw_value_reg = code_obj.code[pc++];
-                    uint8_t n_kw_args = code_obj.code[pc++];
-                    uint32_t keyword_names_idx = pc++;
-                    print_reg(out, code_obj, first_arg_reg);
-                    fmt::format_to(out, ", ");
-                    disassemble_constant(code_obj, out, name_idx);
-                    fmt::format_to(out, ", ");
-                    disassemble_read_cache(code_obj, out, read_cache_idx);
-                    fmt::format_to(out, ", ");
-                    disassemble_keyword_call_cache(code_obj, out,
-                                                   call_cache_idx);
-                    fmt::format_to(out, ", ");
-                    print_reg_span(out, code_obj, first_arg_reg, n_pos_args);
-                    fmt::format_to(out, ", kw_values=");
-                    print_reg_span(out, code_obj, first_kw_value_reg,
-                                   n_kw_args);
-                    fmt::format_to(out, ", kw=");
-                    uint8_t constant_idx = code_obj.code[keyword_names_idx];
-                    cl::Value constant =
-                        code_obj.constant_table[constant_idx].value();
-                    if(cl::has_native_layout<cl::Tuple>(constant))
-                    {
-                        cl::format_tuple_constant(
-                            out, constant.get_ptr<cl::Tuple>());
-                    }
-                    else
-                    {
-                        disassemble_constant(code_obj, out, keyword_names_idx);
-                    }
-                }
-                break;
-
             case cl::Bytecode::CallSpecialMethod0:
             case cl::Bytecode::CallSpecialMethod1:
             case cl::Bytecode::CallSpecialMethod2:
@@ -779,21 +726,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 fmt::format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 fmt::format_to(out, ", hash_index=");
-                disassemble_reg(code_obj, out, pc++);
-                break;
-
-            case cl::Bytecode::CallMethodAttrExpanded:
-                fmt::format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
-                fmt::format_to(out, ", ");
-                disassemble_constant(code_obj, out, pc++);
-                fmt::format_to(
-                    out,
-                    ", lookup_cache[{}], expanded_call_cache[{}], containers=",
-                    code_obj.code[pc], code_obj.code[pc + 1]);
-                pc += 2;
-                disassemble_reg(code_obj, out, pc++);
-                fmt::format_to(out, ", first_arg=");
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
