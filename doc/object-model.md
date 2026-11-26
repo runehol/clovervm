@@ -928,138 +928,39 @@ Together these rules cover the descriptor-precedence hazards:
 
 ## Lookup Validity Cells
 
-A lookup validity cell represents one or more lookup dependency paths that are
-still valid. Each class object may own two current cells:
+Each class object may own two lazily created lookup validity cells.
 
-- `mro_shape_and_contents_validity_cell`: protects lookup through this class's
-  own materialized MRO, including class-member contents that can change
-  descriptor precedence.
-- `mro_shape_and_metaclass_mro_shape_and_contents_validity_cell`: protects class
-  attribute reads through this class's own materialized MRO shape and through
-  its metaclass's materialized MRO shape and contents.
-
-The MRO-shape-and-contents cell is reused across caches whose assumptions are
-rooted in class MRO membership and class-member descriptor behavior.
-Receiver-own-slot reads and instance write descriptors use this cell for the
-receiver class. Class attribute writes use the written class's metaclass
-MRO-shape-and-contents cell, because only the metaclass MRO can affect default
-assignment behavior.
-
-Class-object attribute read caches use the combined MRO/metaclass cell.
-A cached class read can be invalidated by changes to `Class.__mro__`, by changes to
-`Class.__class__.__mro__`, or by contents writes along the metaclass path
-because metaclass data descriptors take precedence over class-path results.
-Ordinary contents writes along the class path do not invalidate this cell;
-cached class-path reads reload from the cached storage location.
-
-Two descriptor classification dependencies need separate work. A class-object
-read can still reuse its cached plan when a write changes descriptor behavior
-without changing the shape of the class namespace. A direct read of a class
-slot can also depend on the selected value's type: adding `__get__` to that
-type can change the plan while leaving the lookup MRO and slot contents intact.
-
-Getting or creating either owned cell is responsible for maintaining the
-attachment invariant. Callers must not separately allocate a cell and then
-remember to attach it. The hot path is the inline check that returns the
-current cell when the pointer is non-null and the cell still says it is valid.
-The cold path creates a fresh cell, stores it in the appropriate owned field,
-and installs it along the relevant MRO path or paths.
-
-Any class-object Shape transition invalidates all lookup validity attached to
-that class, because lookup membership facts may have changed. Stored class
-attribute updates invalidate only contents-sensitive lookup validity. This keeps
-class attribute read caches alive for ordinary class-path value changes while
-still invalidating instance lookup and metaclass-path assumptions that depend on
-descriptor behavior.
-
----
-
-## Class Object State
-
-| Field | Meaning |
+| Field | Lookup dependencies |
 |---|---|
-| `mro_shape_and_contents_validity_cell` | shared validity cell for lookups rooted in this class's MRO |
-| `mro_shape_and_metaclass_mro_shape_and_contents_validity_cell` | shared validity cell for class-attribute reads rooted in this class's MRO and metaclass MRO |
-| `attached_mro_shape_validity_cells` | dependent cells invalidated by Shape/MRO changes in this class |
-| `attached_mro_shape_and_contents_validity_cells` | dependent cells invalidated by Shape/MRO changes or class-member contents writes in this class |
+| `mro_shape_and_contents_validity_cell` | Shape and contents of the class's own materialized MRO |
+| `mro_and_metaclass_mro_shape_and_contents_validity_cell` | Shape and contents of the class's own MRO and its metaclass's MRO |
 
----
+Instance attribute access, special-method lookup, and constructor thunk
+guards use the single-MRO cell for the class whose MRO they search. Class
+attribute stores and deletes use the single-MRO cell on the metaclass for
+cacheable lookups that determine assignment or deletion behavior.
 
-## Registration
+Class-object reads use the combined cell because either MRO can affect
+descriptor binding. A same-slot class or metaclass write invalidates the
+cache, including when it replaces a plain value with a descriptor. Shape
+changes also invalidate lookup plans. A separate descriptor cacheability
+requirement concerns mutations on the selected value's type. Adding
+`__get__` there can change binding while leaving both lookup chains and the
+slot contents unchanged.
 
-Lookup cells are registered in classes whose mutation can invalidate the
-protected dependency. MRO installation uses an explicit mode:
+The getter for either cell returns the owned cell when it is valid. On a
+miss it creates a cell and registers it in the
+`attached_mro_shape_and_contents_validity_cells` list of each dependency
+other than the owner. The single-MRO cell attaches to the owner's bases.
+The combined cell also attaches to the metaclass and its bases. Shared
+ancestors are registered once. When `type.__class__ is type`, the owner's
+MRO already covers the metaclass dependency.
 
-- `SkipSelf`: start at `__mro__[1]`. The class that owns the cell invalidates
-  that owned cell directly, so it does not need to attach the same cell to
-  itself.
-- `IncludeSelf`: start at `__mro__[0]`. This is used when installing a cell
-  into a different root's MRO, where the root class should invalidate the
-  attached dependent cell on mutation.
-
-The MRO-shape-and-contents cell is attached along the owner's MRO, skipping
-itself, as contents-sensitive:
-
-```text
-cell = C.mro_shape_and_contents_validity_cell
-for K in C.__mro__[1:]:
-    K.attached_mro_shape_and_contents_validity_cells.add(cell)
-```
-
-The combined MRO/metaclass cell is attached along the owner's MRO, skipping
-itself, as shape-only. It is attached along the metaclass MRO, including the
-metaclass, as shape-and-contents:
-
-```text
-cell = C.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell
-for K in C.__mro__[1:]:
-    K.attached_mro_shape_validity_cells.add(cell)
-
-M = C.__class__
-if M != C:
-    for K in M.__mro__[0:]:
-        K.attached_mro_shape_and_contents_validity_cells.add(cell)
-```
-
-The `M != C` guard handles the `type.__class__ is type` loop. The owned cell is
-still invalidated directly by `type`; attaching it back to `type` through its
-own metaclass path would be redundant.
-
----
-
-## Invalidation
-
-On Shape/MRO mutation:
-
-```text
-for cell in self.attached_mro_shape_validity_cells:
-    cell.valid = false
-self.attached_mro_shape_validity_cells.clear()
-
-for cell in self.attached_mro_shape_and_contents_validity_cells:
-    cell.valid = false
-self.attached_mro_shape_and_contents_validity_cells.clear()
-
-if self.mro_shape_and_contents_validity_cell != nullptr:
-    self.mro_shape_and_contents_validity_cell.valid = false
-self.mro_shape_and_contents_validity_cell = nullptr
-
-if self.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell != nullptr:
-    self.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell.valid = false
-self.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell = nullptr
-```
-
-On class-member contents mutation without a Shape change:
-
-```text
-for cell in self.attached_mro_shape_and_contents_validity_cells:
-    cell.valid = false
-self.attached_mro_shape_and_contents_validity_cells.clear()
-
-if self.mro_shape_and_contents_validity_cell != nullptr:
-    self.mro_shape_and_contents_validity_cell.valid = false
-self.mro_shape_and_contents_validity_cell = nullptr
-```
+A class shape or MRO change and a class-member contents write use the
+same invalidation path. It invalidates and clears both owned cells and
+the attached dependents, and clears the cached constructor thunk.
+Invalidation through a dependency can leave an invalid cell in another
+class's owned field until lookup replaces it.
 
 ---
 
@@ -1104,40 +1005,12 @@ the runtime should use a method-call path that carries both:
 This path must not allocate an intermediate bound-method object merely to
 call it immediately.
 
-The preferred opcode shape for this direct-call form is a fused
-attribute-call operation:
-
-```text
-CallMethodAttrPositional receiver_and_arg_span, name, cache_index, argc
-```
-
-The current bytecode encoding keeps the receiver and explicit arguments in one
-register span and uses the code object's read-cache side array:
-
-```text
-receiver, explicit_arg0, explicit_arg1, ...
-```
-
-The opcode performs attribute lookup in call context and then calls the
-resolved target. The inline cache records the lookup result and binding
-convention, so the interpreter does not need to materialize an
-intermediate `(callable, maybe_self)` pair in interpreter-visible
-registers.
-
-Different lookup results decide whether and how an implicit receiver is
-inserted:
-
-- receiver-local callable: call with the explicit arguments only
-- descriptor that binds to the receiver: call with the receiver inserted
-- descriptor that binds to the class: call with the class inserted
-- descriptor that does not bind: call with the explicit arguments only
-- custom lookup fallback: perform the generic lookup, then call the
-  resulting value
-
-At JIT compilation time, a populated `CallMethodAttrPositional` inline cache should
-identify the concrete path selected by the observed lookup. Compiled code
-can then lower directly to that path with the cache's guards, instead of
-emitting a runtime switch over all binding cases.
+The current fused attribute-call opcodes perform lookup after evaluating
+arguments. The [direct method-call design](call-argument-temporaries-and-lazy-tracebacks.md#direct-method-calls)
+moves lookup into `LoadMethod` before arguments and carries the callable and
+optional receiver in adjacent registers. The attribute IC proves the lookup
+and binding decision. A separate call IC selects and adapts the call target
+once the arguments are ready.
 
 For an attribute lookup such as:
 

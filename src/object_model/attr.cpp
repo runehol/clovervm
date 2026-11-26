@@ -34,7 +34,7 @@ namespace cl
         if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
         {
             native_cast<ClassObject>(object)
-                ->invalidate_lookup_validity_cells_for_contents_change();
+                ->invalidate_lookup_validity_cells();
         }
     }
 
@@ -52,25 +52,6 @@ namespace cl
         // Ordinary lookup hits are cached as storage loads, including hits
         // on the metaclass chain.
         return AttributeReadPlanKind::ReceiverSlot;
-    }
-
-    static AttributeCacheBlockers
-    attribute_cache_blockers_for_class_value(Value value)
-    {
-        if(!value.is_ptr())
-        {
-            return attribute_cache_blocker(AttributeCacheBlocker::None);
-        }
-
-        Object *object = value.get_ptr<Object>();
-        Shape *type_shape = object->get_shape()->get_class()->get_shape();
-        if(type_shape->has_flag(ShapeFlag::IsImmutable))
-        {
-            return attribute_cache_blocker(AttributeCacheBlocker::None);
-        }
-
-        return attribute_cache_blocker(
-            AttributeCacheBlocker::MutableDescriptorType);
     }
 
     static AttributeReadDescriptor
@@ -154,6 +135,21 @@ namespace cl
                type->get_or_create_mro_shape_and_contents_validity_cell()
                        ->dependency_mutability() ==
                    ValidityCellDependencyMutability::Immutable;
+    }
+
+    static AttributeCacheBlockers
+    attribute_cache_blockers_for_class_value(Value value)
+    {
+        // A change to the stored value's descriptor protocol need not write
+        // the selected class slot or invalidate its lookup cell.
+        if(value.is_ptr() && (can_change_class(value.get_ptr<Object>()) ||
+                              !descriptor_type_has_stable_protocol(
+                                  active_thread()->class_of_value(value))))
+        {
+            return attribute_cache_blocker(
+                AttributeCacheBlocker::MutableDescriptorType);
+        }
+        return attribute_cache_blocker(AttributeCacheBlocker::None);
     }
 
     static Expected<bool> store_attr_change_class(Value receiver, Value value)
@@ -248,7 +244,7 @@ namespace cl
     }
 
     static AttributeReadDescriptor
-    with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+    with_mro_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeReadDescriptor descriptor, ClassObject *cls)
     {
         descriptor.lookup_validity_cell = nullptr;
@@ -257,7 +253,7 @@ namespace cl
            !descriptor.plan.is_descriptor_get())
         {
             descriptor.lookup_validity_cell =
-                cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
+                cls->get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell();
         }
         return descriptor;
     }
@@ -466,6 +462,11 @@ namespace cl
         {
             kind = AttributeReadPlanKind::ExactPropertyGet;
         }
+        else if(type ==
+                thread->class_for_native_layout(NativeLayoutId::StaticMethod))
+        {
+            kind = AttributeReadPlanKind::StaticMethodGet;
+        }
         descriptor = with_plan_kind(
             descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
         descriptor.plan.constant_or_getter =
@@ -519,6 +520,19 @@ namespace cl
     }
 
     static AttributeReadDescriptor
+    guard_plain_class_slot(AttributeReadDescriptor descriptor)
+    {
+        if(descriptor.is_found() &&
+           descriptor.plan.kind == AttributeReadPlanKind::ReceiverSlot)
+        {
+            descriptor.cache_blockers |=
+                attribute_cache_blockers_for_class_value(
+                    descriptor.lookup_value);
+        }
+        return descriptor;
+    }
+
+    static AttributeReadDescriptor
     resolve_class_attr_read_descriptor(ClassObject *cls, TValue<String> name)
     {
         AttributeReadDescriptor class_descriptor =
@@ -526,8 +540,8 @@ namespace cl
                 lookup_class_attribute_read_descriptor(cls, name));
         if(class_descriptor.is_found())
         {
-            return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
-                class_descriptor, cls);
+            return with_mro_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+                guard_plain_class_slot(class_descriptor), cls);
         }
 
         ClassObject *metaclass = cls->get_shape()->get_class();
@@ -540,8 +554,8 @@ namespace cl
             classify_class_read_descriptor(
                 lookup_metaclass_attribute_read_descriptor(metaclass, name,
                                                            cls));
-        return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
-            metaclass_descriptor, cls);
+        return with_mro_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+            guard_plain_class_slot(metaclass_descriptor), cls);
     }
 
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
@@ -596,18 +610,9 @@ namespace cl
                     class_object);
             }
 
-            if(class_descriptor.is_found() &&
-               class_descriptor.plan.kind ==
-                   AttributeReadPlanKind::ReceiverSlot)
-            {
-                // The value's type can gain __get__ without a class-slot write.
-                class_descriptor.cache_blockers |=
-                    attribute_cache_blockers_for_class_value(
-                        class_descriptor.lookup_value);
-            }
-
             // Replacing the class slot value can change how the read binds.
-            return finalize_instance_class_read(class_descriptor, class_object);
+            return finalize_instance_class_read(
+                guard_plain_class_slot(class_descriptor), class_object);
         }
 
         AttributeReadDescriptor inline_shape_descriptor =
@@ -630,20 +635,23 @@ namespace cl
     {
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(obj, name);
-        if(!descriptor.is_found() ||
-           descriptor.plan.kind != AttributeReadPlanKind::BindFunctionReceiver)
+        if(descriptor.plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
         {
-            return descriptor;
+            ClassObject *function_class =
+                active_thread()->class_for_native_layout(
+                    NativeLayoutId::Function);
+            descriptor.plan.constant_or_getter =
+                function_class->get_own_property(interned_string(L"__get__"));
+            assert(has_native_layout<Function>(
+                descriptor.plan.constant_or_getter));
         }
-
-        // A call target can carry the function and receiver separately.
-        // A value read instead executes the function's descriptor getter.
-        ClassObject *function_class =
-            active_thread()->class_for_native_layout(NativeLayoutId::Function);
-        descriptor.plan.kind = AttributeReadPlanKind::NonDataDescriptorGet;
-        descriptor.plan.constant_or_getter =
-            function_class->get_own_property(interned_string(L"__get__"));
-        assert(has_native_layout<Function>(descriptor.plan.constant_or_getter));
+        else if(descriptor.plan.path == AttributeReadPlanPath::MetaclassChain &&
+                descriptor.plan.is_descriptor_get() &&
+                has_native_layout<Function>(descriptor.lookup_value))
+        {
+            // The metaclass lookup already supplied the function getter.
+            descriptor.plan.kind = AttributeReadPlanKind::BindFunctionReceiver;
+        }
         return descriptor;
     }
 
@@ -711,7 +719,7 @@ namespace cl
     prepare_descriptor_get_call(Value receiver,
                                 const AttributeReadDescriptor &read)
     {
-        assert(read.plan.is_descriptor_get());
+        assert(read.plan.needs_getter_for_value_read());
         Value getter = read.plan.constant_or_getter;
         if(getter.is_not_present())
         {

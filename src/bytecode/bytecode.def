@@ -49,27 +49,20 @@ CL_BYTECODE(DelGlobal, Constant, Sequential, None)
 CL_BYTECODE(DelLocal, Register, Sequential, None)
 
 CL_BYTECODE(LoadAttr, RegisterConstantAttributeReadCache, Sequential, None)
+CL_BYTECODE(LoadMethod, MethodLoad, Sequential, MethodLoad)
+CL_BYTECODE(FinishLoadMethod, Register, Sequential, MethodLoadContinuation)
 CL_BYTECODE(StoreAttr, RegisterConstantAttributeMutationCache, Sequential,
             None)
 CL_BYTECODE(DelAttr, RegisterConstantAttributeMutationCache, Sequential, None)
 CL_BYTECODE(GetItem, RegisterOperatorCache, Sequential, None)
 CL_BYTECODE(SetItem, RegisterRegisterOperatorCache, Sequential, None)
 CL_BYTECODE(DelItem, RegisterOperatorCache, Sequential, None)
-CL_BYTECODE(CallMethodAttrPositional,
-            RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
-            Sequential, None)
-CL_BYTECODE(CallMethodAttrKeyword, MethodKeywordCall, Sequential, None)
-CL_BYTECODE(CallMethodAttrExpanded, MethodExpandedCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod0, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod1, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod2, SpecialMethodCall, Sequential, None)
 CL_BYTECODE(CallSpecialMethod3, SpecialMethodCall, Sequential, None)
 
-// Keep the paired arithmetic blocks even-aligned. Ternary pow is unpaired.
-CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
-            Sequential,
-            TernaryOperator)
-
+// Keep the paired arithmetic blocks even-aligned.
 CL_BYTECODE(Add, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(InPlaceAdd, RegisterOperatorCacheWithContinuation, Sequential,
@@ -168,6 +161,10 @@ CL_BYTECODE(XorSmi, Smi8OperatorCacheWithContinuation, Sequential,
 CL_BYTECODE(InPlaceXorSmi, Smi8OperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 
+CL_BYTECODE(TernaryPow, RegisterRegisterOperatorCacheWithContinuation,
+            Sequential,
+            TernaryOperator)
+
 CL_BYTECODE(TestEqual, RegisterOperatorCacheWithContinuation, Sequential,
             BinaryOperator)
 CL_BYTECODE(TestNotEqual, RegisterOperatorCacheWithContinuation, Sequential,
@@ -220,7 +217,10 @@ CL_BYTECODE(Nop, NoOperands, Sequential, None)
 
 CL_BYTECODE(CallPositional, PositionalCall, Sequential, None)
 CL_BYTECODE(CallKeyword, KeywordCall, Sequential, None)
+CL_BYTECODE(CallMethodPositional, MethodPositionalPairCall, Sequential, None)
+CL_BYTECODE(CallMethodKeyword, MethodKeywordPairCall, Sequential, None)
 CL_BYTECODE(CallExpanded, ExpandedCall, Sequential, None)
+CL_BYTECODE(CallMethodExpanded, ExpandedCall, Sequential, None)
 CL_BYTECODE(CallIntrinsic0, NativeTarget, Sequential, None)
 CL_BYTECODE(CallIntrinsic1, NativeTarget, Sequential, None)
 CL_BYTECODE(CallIntrinsic2, NativeTarget, Sequential, None)

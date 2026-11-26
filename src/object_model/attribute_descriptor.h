@@ -75,6 +75,7 @@ namespace cl
         BindFunctionReceiver,
         DataDescriptorGet,
         NonDataDescriptorGet,
+        StaticMethodGet,
         ExactPropertyGet,
     };
 
@@ -139,7 +140,14 @@ namespace cl
         constexpr bool is_descriptor_get() const
         {
             return is_data_descriptor_get() ||
-                   kind == AttributeReadPlanKind::NonDataDescriptorGet;
+                   kind == AttributeReadPlanKind::NonDataDescriptorGet ||
+                   kind == AttributeReadPlanKind::StaticMethodGet;
+        }
+
+        constexpr bool needs_getter_for_value_read() const
+        {
+            return is_descriptor_get() ||
+                   kind == AttributeReadPlanKind::BindFunctionReceiver;
         }
 
         static AttributeReadPlan from_storage(AttributeReadPlanPath path,

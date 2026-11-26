@@ -34,6 +34,7 @@ namespace cl
     {
         None,
         CallFrame,
+        MethodCallFrame,  // Align the receiver slot at the second register.
     };
 
     enum class OperatorBytecodeFormat
@@ -413,6 +414,9 @@ namespace cl
         Expected<uint32_t> emit_create_class(uint32_t source_offset,
                                              uint8_t body_constant_idx,
                                              uint32_t first_arg_reg);
+        Expected<uint32_t> emit_load_method(uint32_t source_offset,
+                                            uint32_t base_reg, uint8_t name_idx,
+                                            uint32_t pair_reg);
         Expected<uint32_t> emit_load_attr(uint32_t source_offset,
                                           uint32_t receiver_reg,
                                           uint8_t name_idx);
@@ -422,17 +426,6 @@ namespace cl
         Expected<uint32_t> emit_del_attr(uint32_t source_offset,
                                          uint32_t receiver_reg,
                                          uint8_t name_idx);
-        Expected<uint32_t>
-        emit_call_method_attr_positional(uint32_t source_offset,
-                                         uint32_t first_arg_reg,
-                                         uint8_t name_idx, uint8_t argc);
-        Expected<uint32_t> emit_call_method_attr_expanded(
-            uint32_t source_offset, uint32_t receiver_reg, uint8_t name_idx,
-            uint32_t containers_reg, uint32_t first_arg_reg);
-        Expected<uint32_t> emit_call_method_attr_keyword(
-            uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
-            uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,
-            uint8_t keyword_names_idx);
         Expected<uint32_t>
         emit_call_special_method(uint32_t source_offset, uint32_t first_arg_reg,
                                  uint8_t name_idx, uint8_t argc,
@@ -539,6 +532,10 @@ namespace cl
                                               uint32_t callable_reg,
                                               uint32_t containers_reg,
                                               uint32_t first_arg_reg);
+        Expected<uint32_t> emit_call_method_expanded(uint32_t source_offset,
+                                                     uint32_t pair_reg,
+                                                     uint32_t containers_reg,
+                                                     uint32_t first_arg_reg);
         Expected<uint32_t> emit_call_positional(uint32_t source_offset,
                                                 uint32_t callable_reg,
                                                 uint32_t first_arg_reg,
@@ -548,6 +545,15 @@ namespace cl
                           uint32_t first_arg_reg, uint8_t n_pos_args,
                           uint32_t first_kw_value_reg, uint8_t n_kw_args,
                           uint8_t keyword_names_idx);
+        Expected<uint32_t> emit_call_method_positional(uint32_t source_offset,
+                                                       uint32_t pair_reg,
+                                                       uint8_t n_pos_args);
+        Expected<uint32_t> emit_call_method_keyword(uint32_t source_offset,
+                                                    uint32_t pair_reg,
+                                                    uint8_t n_pos_args,
+                                                    uint32_t first_kw_value_reg,
+                                                    uint8_t n_kw_args,
+                                                    uint8_t keyword_names_idx);
         uint32_t add_exception_table_entry(JumpTarget &start, JumpTarget &end,
                                            JumpTarget &handler);
         uint32_t add_exception_table_entry(uint32_t start_pc, uint32_t end_pc,
@@ -619,10 +625,11 @@ namespace cl
         Expected<uint32_t> emit_opcode_reg_constant_idx_cache_idx(
             uint32_t source_offset, Bytecode c, uint32_t reg,
             uint8_t constant_idx, uint8_t cache_idx);
-        Expected<uint32_t> emit_opcode_reg_constant_idx_cache_idx_argc(
-            uint32_t source_offset, Bytecode c, uint32_t reg,
-            uint8_t constant_idx, uint8_t read_cache_idx,
-            uint8_t call_cache_idx, uint8_t argc);
+        Expected<uint32_t> emit_expanded_call(Bytecode opcode,
+                                              uint32_t source_offset,
+                                              uint32_t target_reg,
+                                              uint32_t containers_reg,
+                                              uint32_t first_arg_reg);
         Expected<uint32_t> emit_opcode_reg_reg(uint32_t source_offset,
                                                Bytecode c, uint32_t first_reg,
                                                uint32_t second_reg);

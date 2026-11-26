@@ -119,7 +119,7 @@ namespace cl
             obj, TValue<String>::from_value_assumed(name));
         if(read.is_found())
         {
-            if(read.plan.is_descriptor_get())
+            if(read.plan.needs_getter_for_value_read())
             {
                 DescriptorGetCall call =
                     CL_TRY(prepare_descriptor_get_call(obj, read));

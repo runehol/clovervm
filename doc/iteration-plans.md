@@ -674,7 +674,9 @@ Star state[1]
 ForPrepIterablePlan state_base, loop_start
 Ldar state[1]
 Star a0
-CallMethodAttrPositional a0, "__iter__", iter_read_ic, iter_call_ic, 0
+LoadMethod a0, "__iter__", iter_read_ic
+FinishLoadMethod a0
+CallMethodPositional a0, 0, iter_call_ic
 Star state[1]
 ForPrepIteratorPlan state_base
 
@@ -682,7 +684,9 @@ loop_start:
 ForIterPlan state_base, exit, body
 Ldar state[1]
 Star a0
-CallMethodAttrPositional a0, "__next__", next_read_ic, next_call_ic, 0
+LoadMethod a0, "__next__", next_read_ic
+FinishLoadMethod a0
+CallMethodPositional a0, 0, next_call_ic
 
 body:
   # accumulator contains yielded item
@@ -725,7 +729,7 @@ PythonIteratorPlan   -> fall through to explicit __next__ call
 Codegen must preserve the accumulator contract at `body`: every predecessor of
 `body` must arrive with the yielded item in the accumulator. Internal plans
 provide that value directly before jumping to `body`; the Python protocol path
-gets it from the explicit `CallMethodAttrPositional "__next__"` return. This invariant is
+gets it from the explicit `CallMethodPositional` return for `__next__`. This invariant is
 part of the bytecode contract and should be pinned by codegen/disassembly tests
 when implemented.
 
@@ -745,13 +749,13 @@ The two prep opcodes are not accidental duplication: they correspond to two
 different observations, before and after the Python-visible `__iter__` call.
 
 The main advantage of this shape is that Python protocol method and function
-calls remain explicit bytecode. `__iter__` and `__next__` use ordinary
-`CallMethodAttrPositional` instructions, so they get the existing attribute-read and
+calls remain explicit bytecode. `__iter__` and `__next__` use `LoadMethod`
+and `CallMethodPositional` with the existing attribute-read and
 function-call inline caches, the existing call-window encoding, ordinary
 exception-table coverage, and future JIT call handling without a separate cache
 system hidden inside the `for` opcodes.
 
-Using ordinary `CallMethodAttrPositional` for `__iter__` and `__next__` is an intentional
+Using ordinary attribute lookup for `__iter__` and `__next__` is an intentional
 temporary deviation from Python's special-method lookup rules. It keeps the
 first lowering aligned with CloverVM's current call machinery, but the public
 iterator protocol should later move to proper special-method lookup or slot
@@ -759,8 +763,8 @@ lookup semantics. Direct builtin plans are not a substitute for that fix; they
 are valid only for exact immutable builtin types whose iteration behavior is
 known internally.
 
-The explicit `__next__` call must be covered by a synthetic exception-table
-range. The range should cover the `CallMethodAttrPositional "__next__"` instruction. It is
+The explicit `__next__` lookup and call must be covered by a synthetic
+exception-table range from `LoadMethod` through `CallMethodPositional`. It is
 also harmless if non-raising setup bytecodes such as `Ldar` / `Star` are inside
 the same protected range, but the range should not cover `ForIterPlan` or the
 loop body. Its handler should route public `StopIteration` to loop exhaustion,
@@ -772,7 +776,9 @@ ForIterPlan state_base, exit, body
 Ldar state[1]
 Star a0
 protected_start:
-CallMethodAttrPositional a0, "__next__", next_read_ic, next_call_ic, 0
+LoadMethod a0, "__next__", next_read_ic
+FinishLoadMethod a0
+CallMethodPositional a0, 0, next_call_ic
 protected_end:
 
 body:
@@ -827,8 +833,8 @@ Implement this in narrow, testable slices:
 
 5. Lower ordinary `for` loops through the explicit protocol-call shape.
 
-   Keep `__iter__` and `__next__` as ordinary `CallMethodAttrPositional` instructions with
-   the existing read and call ICs. Cover the explicit `__next__` call with the
+   Use `LoadMethod` and `CallMethodPositional` for `__iter__` and `__next__`
+   with the existing read and call ICs. Cover the explicit `__next__` lookup and call with the
    synthetic `StopIteration` handler that clears the active exception before
    jumping to loop exit.
 

@@ -1315,6 +1315,27 @@ namespace cl
                 code_object, Optional<TValue<String>>::none(), defaults));
     }
 
+    static Value normalize_call_keyword_key(ThreadState *thread, Value,
+                                            Value key)
+    {
+        if(auto *text = try_native_cast<String>(key))
+        {
+            return exact_string_from_contents(thread,
+                                              TValue<String>::from_oop(text))
+                .raw_value();
+        }
+        return key;
+    }
+
+    static Value normalized_call_keyword_hash(ThreadState *thread, Value,
+                                              Value key)
+    {
+        assert(is_exact_string(thread, key));
+        (void)thread;
+        return string_hash_normalized(TValue<String>::from_value_unchecked(key))
+            .raw_value();
+    }
+
     Expected<TValue<Function>>
     make_dict_insert_if_absent_known_hash_function(VirtualMachine *vm)
     {
@@ -1322,14 +1343,34 @@ namespace cl
         CodeObjectBuilder code(vm, nullptr, vm->global_builtins_module(), scope,
                                vm->get_or_create_interned_string_value(
                                    L"<dict.insert_if_absent_known_hash>"));
-        // destination, key, value, canonical hash
+        // destination, call keyword key, value, stored hash
         code.configure_positional_function(4);
+        NativeFunctionTarget normalize_target;
+        normalize_target.fixed2 = normalize_call_keyword_key;
+        uint8_t normalize_idx =
+            CL_TRY(code.add_native_function_target(normalize_target));
+        NativeFunctionTarget hash_target;
+        hash_target.fixed2 = normalized_call_keyword_hash;
+        uint8_t hash_idx_target =
+            CL_TRY(code.add_native_function_target(hash_target));
         {
             CodeObjectBuilder::TemporaryReg scratch(code, 7);
             uint32_t hash_idx = scratch + 1;
             uint32_t first_tombstone = scratch + 5;
             uint32_t string_result = scratch + 6;
-            JumpTarget general(&code), missing(&code), found(&code);
+            JumpTarget insert(&code), general(&code), missing(&code),
+                found(&code);
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2,
+                                            normalize_idx));
+            CL_TRY(code.emit_star(0, string_result));
+            CL_TRY(code.emit_operator_reg(0, Bytecode::TestIs, 1,
+                                          OperatorBytecodeFormat::Plain));
+            CL_TRY(code.emit_jump_if_true(0, insert));
+            CL_TRY(code.emit_mov(0, 1, string_result));
+            CL_TRY(code.emit_call_intrinsic(0, Bytecode::CallIntrinsic2,
+                                            hash_idx_target));
+            CL_TRY(code.emit_star(0, 3));
+            CL_TRY(insert.resolve());
             CL_TRY(code.emit_dict_try_string_keyed_insert_if_absent(
                 0, 0, 1, 2, string_result));
             CL_TRY(code.emit_jump_if_false(0, general));
@@ -1425,9 +1466,7 @@ namespace cl
     static Value call_keyword_add_hash(ThreadState *thread, Value, Value,
                                        Value key, Value)
     {
-        assert(is_exact_string(thread, key));
-        return string_hash_normalized(TValue<String>::from_value_unchecked(key))
-            .raw_value();
+        return normalized_call_keyword_hash(thread, Value::None(), key);
     }
 
     Expected<TValue<Function>>
@@ -1746,7 +1785,7 @@ namespace cl
                nullptr);
         assert(
             dict_class
-                ->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell() ==
+                ->current_mro_and_metaclass_mro_shape_and_contents_validity_cell() ==
             nullptr);
         assert(
             dict_class->attached_mro_shape_and_contents_validity_cell_count() ==

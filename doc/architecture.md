@@ -96,10 +96,10 @@ share call paths and frame metadata.
 
 Argument adaptation has separate positional, explicit-keyword, and expanded-call
 paths, with matching fused attribute-method opcodes. Expanded calls build an
-exact positional tuple and fresh keyword dict before native binding. Stable
-exact-string keyword sequences reuse an out-of-line binding plan; string-subclass
-keys retain their comparison callbacks through uncached binding. All paths use
-the same parameter layout and managed frame-entry convention.
+exact positional tuple and fresh keyword dict before native binding. Keyword
+preparation copies string-subclass keys to exact strings. Stable keyword
+sequences reuse an out-of-line binding plan. All paths use the same parameter
+layout and managed frame-entry convention.
 
 The Clover stack is managed frame storage, not a general native call stack. The
 interpreter and native C++ functions execute on the native machine stack while

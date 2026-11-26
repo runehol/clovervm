@@ -2949,7 +2949,45 @@ assert len(__clover_build_call_keywords__(target, {})) == 0
                context.thread()->pending_exception_object()));
 }
 
-TEST(CallKeywordConstruction, GeneralCopyMergePreserveKeysAndReuseStoredHashes)
+TEST(CallKeywordConstruction, BuildsStringKeyedStorageForValidGeneralSources)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    Owned<Value> result(run_trusted_keyword_test(context, LR"(
+def target(): pass
+value = []
+populated = {42: 0, 'flag': value, 'next': 2}
+del populated[42]
+empty = {42: 0}
+del empty[42]
+invalid = {42: 0}
+populated_result = __clover_build_call_keywords__(target, populated)
+empty_result = __clover_build_call_keywords__(target, empty)
+invalid_result = __clover_build_call_keywords__(target, invalid)
+assert __clover_to_exact_tuple__(populated_result.keys()) == ('flag', 'next')
+assert populated_result['flag'] is value
+assert len(empty_result) == 0 and invalid_result[42] == 0
+((populated, populated_result), (empty, empty_result), (invalid, invalid_result))
+)"));
+    ASSERT_TRUE(has_native_layout<Tuple>(result.value()));
+    const auto *cases = native_cast<Tuple>(result.value());
+    ASSERT_EQ(3u, cases->size());
+    for(uint32_t i = 0; i < cases->size(); ++i)
+    {
+        const auto *pair = native_cast<Tuple>(cases->item_unchecked(i));
+        const auto *source = native_cast<Dict>(pair->item_unchecked(0));
+        const auto *prepared = native_cast<Dict>(pair->item_unchecked(1));
+        EXPECT_NE(source, prepared);
+        EXPECT_EQ(thread->get_exact_dict_general_shape(), source->get_shape());
+        Shape *expected_shape = i == 2
+                                    ? thread->get_exact_dict_general_shape()
+                                    : thread->get_exact_dict_string_key_shape();
+        EXPECT_EQ(expected_shape, prepared->get_shape());
+    }
+}
+
+TEST(CallKeywordConstruction, GeneralBuildAndMergeNormalizeStringSubclassKeys)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
@@ -2960,7 +2998,7 @@ class Key(str):
     def __hash__(self):
         global hash_calls
         hash_calls += 1
-        return str.__hash__(self)
+        return 173
 key = Key('custom')
 item = []
 source = {key: item, 42: 9}
@@ -2971,9 +3009,10 @@ builder = {}
 assert __clover_merge_call_keywords__(target, builder, source) is None
 assert hash_calls == before
 keys = __clover_to_exact_tuple__(builder.keys())
-assert keys[0] is key and keys[1] == 42
-assert builder[key] is item
-assert copy[key] is item
+assert keys[0].__class__ is str and keys[0] == 'custom' and keys[1] == 42
+assert __clover_to_exact_tuple__(source.keys())[0] is key
+assert builder['custom'] is item
+assert copy['custom'] is item
 assert __clover_add_call_keyword__(target, builder, 'ordinary', 7) is None
 assert builder['ordinary'] == 7
 assert __clover_merge_call_keywords__(target, builder, {'later': item}) is None
@@ -2984,7 +3023,8 @@ except TypeError:
     pass
 else:
     raise AssertionError
-assert __clover_to_exact_tuple__(builder.keys())[0] is key and builder[key] is item
+assert __clover_to_exact_tuple__(builder.keys())[0] == 'custom' and builder['custom'] is item
+assert hash_calls == before
 )");
     ASSERT_FALSE(result.is_exception_marker())
         << string_as_wchar_t(test::native_exception_message(
@@ -3037,8 +3077,10 @@ TEST(CallKeywordConstruction, SourceMutationAndErrorPrecedence)
 def target(): pass
 source = {}
 mode = 0
-class Key(str):
+class Key:
     armed = False
+    def __init__(self, label): self.label = label
+    def __str__(self): return self.label
     def __hash__(self): return 7
     def __eq__(self, other):
         if self.armed:
@@ -3486,6 +3528,7 @@ class Mapping:
         assert nested['nested'] is item
         return [key, 42]
     def __getitem__(self, requested):
+        assert requested is key or requested == 42
         nested = {}
         assert __clover_merge_call_keywords__(target, nested, Empty()) is None
         assert __clover_add_call_keyword__(target, nested, 'inner', item) is None
@@ -3495,14 +3538,14 @@ class Empty:
     def keys(self): return []
 source = Mapping()
 builder = __clover_build_call_keywords__(target, source)
-assert builder[key] is item and builder[42] is item
-assert __clover_to_exact_tuple__(builder.keys())[0] is key
+assert builder['custom'] is item and builder[42] is item
+assert __clover_to_exact_tuple__(builder.keys())[0].__class__ is str
 keep = []
 def check(a, b, c):
     assert a is keep and c is keep and b is None
 other = {}
 check(keep, __clover_merge_call_keywords__(target, other, source), keep)
-assert other[key] is item and other[42] is item
+assert other['custom'] is item and other[42] is item
 assert __clover_add_call_keyword__(target, other, 'later', item) is None
 assert other['later'] is item
 )");

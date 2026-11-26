@@ -62,6 +62,13 @@ when it follows its operator. Standalone decoding directly at the continuation
 offset remains valid and produces an ordinary one-byte instruction without a
 further continuation.
 
+The proposed [method load protocol](call-argument-temporaries-and-lazy-tracebacks.md#managed-getter-return)
+uses the same distinction between sequential decoding and a standalone
+continuation PC. Its `FinishLoadMethod` continuation carries a register
+operand. The method load's semantic length includes the continuation opcode
+and its operand. Standalone decoding at the managed return PC exposes the
+continuation's own accumulator input and register-pair destination.
+
 ## Inline-Cache Snapshots
 
 `BytecodeDecoder` is compilation-scoped. Its first action is to copy all inline

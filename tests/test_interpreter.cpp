@@ -9,6 +9,7 @@
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
+#include "bytecode/bytecode_decoder.h"
 #include "bytecode/code_object_builder.h"
 #include "bytecode/code_object_print.h"
 #include "compiler/codegen.h"
@@ -4111,6 +4112,33 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     expect_thread_python_error(test_context.thread(), L"AttributeError", L"");
 }
 
+TEST(Interpreter, cached_class_read_reclassifies_replaced_class_attribute)
+{
+    test::FileRunner run(LR"(
+class Base:
+    value = 7
+
+class Child(Base):
+    pass
+
+class Descriptor:
+    def __get__(self, obj, owner):
+        assert obj is None
+        assert owner is Child
+        return 42
+
+def read():
+    return Child.value
+
+assert read() == 7
+Base.value = Descriptor()
+assert read() == 42
+Base.value = 8
+read()
+)");
+    EXPECT_EQ(Value::from_smi(8), run.return_value);
+}
+
 TEST(Interpreter, cached_instance_read_reclassifies_replaced_class_attribute)
 {
     test::FileRunner run(LR"(
@@ -5332,6 +5360,11 @@ def read_dynamic(obj):
     ASSERT_TRUE(meta.get()
                     ->set_own_property(interned_string(L"x"), meta_method)
                     .value());
+    AttributeReadDescriptor binding = resolve_attr_value_read_descriptor(
+        Value::from_oop(cls.get()), interned_string(L"x"));
+    EXPECT_EQ(AttributeReadPlanKind::BindFunctionReceiver, binding.plan.kind);
+    EXPECT_EQ(AttributeReadPlanPath::MetaclassChain, binding.plan.path);
+    EXPECT_FALSE(binding.is_cacheable());
     for(const wchar_t *name: {L"read", L"read_dynamic"})
     {
         Value function =
@@ -5343,6 +5376,50 @@ def read_dynamic(obj):
         auto *bound = native_cast<BoundMethod>(result);
         EXPECT_EQ(meta_method, bound->callable());
         EXPECT_EQ(Value::from_oop(cls.get()), bound->receiver());
+    }
+}
+
+TEST(Interpreter, function_reads_cache_binding_and_return_bound_methods)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def original(self):
+    return self
+
+class C:
+    f = original
+
+first = C()
+second = C()
+
+def read(obj):
+    return obj.f
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+    auto reader = TValue<Function>::from_value_assumed(global(L"read"));
+    auto &cache = reader.extract()
+                      ->code_object.extract()
+                      ->inline_caches.attribute_read_caches.at(0);
+    Value first = global(L"first");
+    Value second = global(L"second");
+    EXPECT_FALSE(cache.matches(first));
+    for(Value receiver: {first, second})
+    {
+        Value value = thread->call_clovervm_function(reader, receiver);
+        ASSERT_TRUE(has_native_layout<BoundMethod>(value));
+        auto *bound = native_cast<BoundMethod>(value);
+        EXPECT_EQ(global(L"original"), bound->callable());
+        EXPECT_EQ(receiver, bound->receiver());
+        EXPECT_TRUE(cache.matches(second));
+        EXPECT_EQ(AttributeReadPlanKind::BindFunctionReceiver, cache.plan.kind);
+        EXPECT_TRUE(has_native_layout<Function>(cache.plan.constant_or_getter));
     }
 }
 
@@ -5390,7 +5467,7 @@ def read(obj):
     Value first = read();
     ASSERT_TRUE(has_native_layout<List>(first));
     ASSERT_TRUE(cache.matches(receiver));
-    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet, cache.plan.kind);
+    EXPECT_EQ(AttributeReadPlanKind::StaticMethodGet, cache.plan.kind);
     EXPECT_EQ(getter, cache.plan.constant_or_getter);
     EXPECT_EQ(first, read());
 
@@ -6300,7 +6377,7 @@ assert v(*(1, 2), **{"x": 3}) == ((v, 1, 2), {"x": 3})
         context.thread()->run_clovervm_code_object(code).is_exception_marker());
 }
 
-TEST(Interpreter, instance_expanded_call_preserves_target_across_reentry)
+TEST(Interpreter, instance_expanded_call_reenters_during_keyword_preparation)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation(context.thread());
@@ -6323,20 +6400,22 @@ def replacement(self, *, key):
 
 events = []
 class Keyword(str):
-    def __hash__(self):
-        return 37
-    def __eq__(self, other):
-        if other != "key":
-            return False
-        events.append(other)
+    def __eq__(self, other): raise AssertionError("keyword equality hook")
+
+key = Keyword("key")
+class Mapping:
+    def keys(self): return [key]
+    def __getitem__(self, original):
+        assert original is key
+        events.append(original)
         assert invoke(inner, {"key": 5}) == 10
         Outer.__call__ = replacement
-        return True
+        return 4
 
 outer = Outer()
 outer.marker = 100
 assert invoke(outer, {"key": 2}) == 102
-assert invoke(outer, {Keyword("key"): 4}) == 104
+assert invoke(outer, Mapping()) == -4
 assert len(events) == 1
 assert invoke(outer, {"key": 3}) == -3
 assert invoke(inner, {"key": 6}) == 12
@@ -10780,6 +10859,687 @@ TEST(Interpreter, to_bool_disassembly_hides_embedded_finisher)
     EXPECT_EQ(std::string::npos, printed.find("FinishTruthiness"));
     EXPECT_NE(std::string::npos, printed.find("    8 Return"));
     EXPECT_EQ(Value::True(), context.thread()->run_clovervm_code_object(code));
+}
+
+struct MethodLoadTestCode
+{
+    CodeObject *code;
+    uint32_t load_pc;
+    uint32_t pair_reg;
+};
+
+static MethodLoadTestCode
+make_method_load_test_code(test::VmTestContext &context,
+                           const wchar_t *attribute = L"method")
+{
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<method-load>");
+    CodeObjectBuilder builder(
+        &context.vm(), nullptr, context.vm().global_builtins_module(),
+        context.thread()->make_internal_raw<Scope>(nullptr), name);
+    builder.configure_positional_function(2);
+    uint32_t load_pc;
+    uint32_t pair_reg;
+    {
+        CodeObjectBuilder::TemporaryReg pair(builder, 2);
+        pair_reg = pair;
+        uint8_t attr =
+            builder.allocate_constant(interned_string(attribute)).value();
+        builder.emit_mov(0, pair + 1, 0).value();
+
+        JumpTarget handler(&builder);
+        ExceptionTableRangeBuilder protected_load(&builder, handler);
+        load_pc = builder.emit_load_method(0, pair + 1, attr, pair).value();
+        protected_load.close();
+
+        JumpTarget return_receiver(&builder);
+        builder.emit_ldar(0, 1).value();
+        builder.emit_jump_if_true(0, return_receiver).value();
+        builder.emit_ldar(0, pair).value();
+        builder.emit_return(0).value();
+        return_receiver.resolve().value();
+        builder.emit_ldar(0, pair + 1).value();
+        builder.emit_return(0).value();
+
+        handler.resolve().value();
+        builder.emit_drain_active_exception_into(0, pair).value();
+        builder.emit_ldar(0, pair).value();
+        builder.emit_return(0).value();
+    }
+    return {builder.finalize().value(), load_pc, pair_reg};
+}
+
+TEST(Interpreter, load_method_pair_decodes_as_one_instruction)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    BytecodeInstruction load = decode_instruction(*test.code, test.load_pc);
+    ASSERT_EQ(Bytecode::LoadMethod, load.semantic_opcode());
+    ASSERT_EQ(test.load_pc + 4, load.continuation_pc_offset());
+    EXPECT_EQ(test.load_pc + 6, load.next_pc_offset());
+    ASSERT_EQ(4u, load.operands().size());
+    EXPECT_EQ(test.pair_reg + 1, load.operands()[0].value);
+    EXPECT_EQ(test.pair_reg, load.operands()[3].value);
+    int32_t pair_offset = test.code->encode_reg(test.pair_reg);
+    ASSERT_EQ(1u, load.sources().size());
+    EXPECT_EQ(pair_offset - 1, load.sources()[0].frame_offset);
+    ASSERT_EQ(3u, load.destinations().size());
+    EXPECT_EQ(pair_offset, load.destinations()[0].frame_offset);
+    EXPECT_EQ(pair_offset - 1, load.destinations()[1].frame_offset);
+    EXPECT_TRUE(load.destinations()[2].is_accumulator());
+
+    BytecodeInstruction finish =
+        decode_instruction(*test.code, test.load_pc + 4);
+    EXPECT_EQ(Bytecode::FinishLoadMethod, finish.semantic_opcode());
+    EXPECT_EQ(load.next_pc_offset(), finish.next_pc_offset());
+    ASSERT_EQ(1u, finish.sources().size());
+    EXPECT_TRUE(finish.sources()[0].is_accumulator());
+    ASSERT_EQ(2u, finish.destinations().size());
+    EXPECT_EQ(pair_offset, finish.destinations()[0].frame_offset);
+    EXPECT_EQ(pair_offset - 1, finish.destinations()[1].frame_offset);
+
+    std::string printed = fmt::to_string(*test.code);
+    EXPECT_NE(std::string::npos, printed.find("LoadMethod"));
+    EXPECT_EQ(std::string::npos, printed.find("FinishLoadMethod"));
+    BytecodeDecoder decoder(*test.code);
+    const BytecodeBlock &block = decoder.blocks().front();
+    size_t load_count = 0;
+    for(const BytecodeInstruction &instruction: block.instructions())
+    {
+        load_count += instruction.encoded_opcode() == Bytecode::LoadMethod;
+        EXPECT_NE(Bytecode::FinishLoadMethod, instruction.encoded_opcode());
+    }
+    EXPECT_EQ(1u, load_count);
+}
+
+TEST(Interpreter, load_method_pair_replays_binding_and_class_slot_replacement)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def function(*args):
+    pass
+
+class Base:
+    method = function
+
+class Child(Base):
+    pass
+
+static_wrapper = staticmethod(function)
+class Static:
+    method = static_wrapper
+
+class Candidate:
+    pass
+
+candidate = Candidate()
+class MutableProtocol:
+    method = candidate
+
+def getter(self, obj, owner):
+    return 42
+
+def install_getter():
+    Candidate.__get__ = getter
+
+def read_property(obj):
+    return 7
+
+def new_property_getter(obj):
+    return 8
+
+prop = property(read_property)
+class WithProperty:
+    method = prop
+
+def replace_property_getter():
+    prop.__init__(new_property_getter)
+
+instance = Child()
+shadow = Child()
+shadow.method = function
+own_wrapper = Child()
+own_wrapper.method = static_wrapper
+static = Static()
+wrapped = classmethod(function)
+with_property = WithProperty()
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    Owned<TValue<Function>> load(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(test.code),
+        Optional<TValue<String>>::none()));
+    auto check_pair = [&](Value base, Value callable, Value receiver) {
+        EXPECT_EQ(callable, thread->call_clovervm_function(load.value(), base,
+                                                           Value::False()));
+        EXPECT_EQ(receiver, thread->call_clovervm_function(load.value(), base,
+                                                           Value::True()));
+    };
+
+    Value function = global(L"function");
+    Value instance = global(L"instance");
+    Value child = global(L"Child");
+    check_pair(instance, function, instance);
+    EXPECT_TRUE(
+        test.code->inline_caches.attribute_read_caches[0].matches(instance));
+    check_pair(global(L"shadow"), function, Value::not_present());
+    check_pair(global(L"own_wrapper"), global(L"static_wrapper"),
+               Value::not_present());
+    Value static_base = global(L"static");
+    check_pair(static_base, function, Value::not_present());
+
+    auto &cache = test.code->inline_caches.attribute_read_caches[0];
+    ASSERT_TRUE(cache.matches(static_base));
+    EXPECT_EQ(AttributeReadPlanKind::StaticMethodGet, cache.plan.kind);
+    check_pair(child, function, Value::not_present());
+
+    ASSERT_TRUE(cache.matches(child));
+    auto *base = native_cast<ClassObject>(global(L"Base"));
+    Shape *shape = base->get_shape();
+    auto method_name = interned_string(L"method");
+    ASSERT_TRUE(
+        base->set_own_property(method_name, global(L"wrapped")).value());
+    EXPECT_EQ(shape, base->get_shape());
+    EXPECT_FALSE(cache.matches(child));
+    for(Value receiver: {child, instance})
+    {
+        Value result = thread->call_clovervm_function(load.value(), receiver,
+                                                      Value::False());
+        ASSERT_TRUE(has_native_layout<BoundMethod>(result));
+        auto *bound = native_cast<BoundMethod>(result);
+        EXPECT_EQ(function, bound->callable());
+        EXPECT_EQ(child, bound->receiver());
+        EXPECT_EQ(Value::not_present(),
+                  thread->call_clovervm_function(load.value(), receiver,
+                                                 Value::True()));
+    }
+    EXPECT_FALSE(cache.matches(child));
+
+    ASSERT_TRUE(base->set_own_property(method_name, Value::None()).value());
+    check_pair(child, Value::None(), Value::not_present());
+    ASSERT_TRUE(
+        base->set_own_property(method_name, Value::NotImplemented()).value());
+    check_pair(child, Value::NotImplemented(), Value::not_present());
+
+    ASSERT_TRUE(base->set_own_property(method_name, function).value());
+    check_pair(child, function, Value::not_present());
+    EXPECT_TRUE(cache.matches(child));
+
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<attribute-load>");
+    CodeObjectBuilder attr_builder(
+        &context.vm(), nullptr, context.vm().global_builtins_module(),
+        thread->make_internal_raw<Scope>(nullptr), name);
+    attr_builder.configure_positional_function(1);
+    uint8_t attr_name = attr_builder.allocate_constant(method_name).value();
+    attr_builder.emit_load_attr(0, 0, attr_name).value();
+    attr_builder.emit_return(0).value();
+    CodeObject *attr_code = attr_builder.finalize().value();
+    Owned<TValue<Function>> load_attr(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(attr_code),
+        Optional<TValue<String>>::none()));
+
+    Value mutable_protocol = global(L"MutableProtocol");
+    Value candidate = global(L"candidate");
+    check_pair(mutable_protocol, candidate, Value::not_present());
+    EXPECT_FALSE(cache.matches(mutable_protocol));
+    for(int i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(candidate, thread->call_clovervm_function(load_attr.value(),
+                                                            mutable_protocol));
+    }
+    EXPECT_FALSE(attr_code->inline_caches.attribute_read_caches[0].matches(
+        mutable_protocol));
+    EXPECT_EQ(Value::None(), thread->call_clovervm_function(
+                                 TValue<Function>::from_value_assumed(
+                                     global(L"install_getter"))));
+    check_pair(mutable_protocol, Value::from_smi(42), Value::not_present());
+    EXPECT_EQ(Value::from_smi(42), thread->call_clovervm_function(
+                                       load_attr.value(), mutable_protocol));
+
+    Value with_property = global(L"with_property");
+    check_pair(with_property, Value::from_smi(7), Value::not_present());
+    ASSERT_TRUE(cache.matches(with_property));
+    EXPECT_EQ(Value::None(), thread->call_clovervm_function(
+                                 TValue<Function>::from_value_assumed(
+                                     global(L"replace_property_getter"))));
+    EXPECT_TRUE(cache.matches(with_property));
+    check_pair(with_property, Value::from_smi(8), Value::not_present());
+
+    MethodLoadTestCode none_test =
+        make_method_load_test_code(context, L"__str__");
+    Owned<TValue<Function>> load_none(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(none_test.code),
+        Optional<TValue<String>>::none()));
+    EXPECT_EQ(Value::None(),
+              thread->call_clovervm_function(load_none.value(), Value::None(),
+                                             Value::True()));
+}
+
+struct MethodLoadReturnCheck
+{
+    CodeObject *caller;
+    uint32_t continuation_pc;
+    unsigned observations = 0;
+};
+
+static void check_method_load_return_safepoint(
+    void *opaque, ThreadState *thread, Value accumulator, Value *,
+    CodeObject *code, uint32_t pc_offset, const SafepointScanRecord &record)
+{
+    auto &check = *static_cast<MethodLoadReturnCheck *>(opaque);
+    if(code != check.caller || pc_offset != check.continuation_pc)
+    {
+        return;
+    }
+    ++check.observations;
+    EXPECT_EQ(Bytecode::FinishLoadMethod, Bytecode(code->code[pc_offset]));
+    EXPECT_EQ(code->interpreted_pc_for_offset(pc_offset), record.resume_pc);
+    EXPECT_EQ(accumulator, record.accumulator_or_not_present);
+    ASSERT_TRUE(accumulator.is_refcounted_ptr());
+    EXPECT_EQ(0u, accumulator.as.ptr->refcount());
+    for(Value *slot = record.lowest_live_stack_slot;
+        slot < thread->clover_frame_sentinel(); ++slot)
+    {
+        EXPECT_NE(accumulator, *slot);
+    }
+    ReclamationRootSet roots;
+    collect_reclamation_roots_from_thread(roots, *thread);
+    EXPECT_TRUE(roots.contains(accumulator.as.ptr));
+}
+
+TEST(Interpreter, load_method_getter_returns_to_finisher_with_rooted_result)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    Value base = context.run_file(LR"(
+class Descriptor:
+    def __get__(self, obj, owner):
+        return [42]
+
+class C:
+    method = Descriptor()
+
+C()
+)");
+    Owned<Value> rooted_base(base);
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    Owned<TValue<Function>> load(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(test.code),
+        Optional<TValue<String>>::none()));
+    MethodLoadReturnCheck check{test.code, test.load_pc + 4};
+    context.vm().set_safepoint_callback_for_testing(
+        check_method_load_return_safepoint, &check);
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    Value result = thread->call_clovervm_function(
+        load.value(), rooted_base.value(), Value::False());
+    context.vm().set_safepoint_callback_for_testing(nullptr, nullptr);
+    EXPECT_EQ(1u, check.observations);
+    ASSERT_TRUE(has_native_layout<List>(result));
+    TValue<List> list = TValue<List>::from_value_assumed(result);
+    EXPECT_EQ(Value::from_smi(42), list.extract()->item_unchecked(0));
+    EXPECT_EQ(Value::not_present(),
+              thread->call_clovervm_function(load.value(), rooted_base.value(),
+                                             Value::True()));
+}
+
+TEST(Interpreter, load_method_getter_reenters_and_unwinds_to_caller)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation(context.thread());
+    ThreadState *thread = context.thread();
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+failure = ValueError("getter failed")
+
+class InnerDescriptor:
+    def __get__(self, obj, owner):
+        return 42
+
+class Inner:
+    method = InnerDescriptor()
+
+class OuterDescriptor:
+    def __get__(self, obj, owner):
+        return load(inner, False)
+
+class Outer:
+    method = OuterDescriptor()
+
+class FailingDescriptor:
+    def __get__(self, obj, owner):
+        raise failure
+
+class Failing:
+    method = FailingDescriptor()
+
+inner = Inner()
+outer = Outer()
+failing = Failing()
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    MethodLoadTestCode test = make_method_load_test_code(context);
+    Owned<TValue<Function>> load(thread->make_object_value<Function>(
+        TValue<CodeObject>::from_oop(test.code),
+        Optional<TValue<String>>::none()));
+    store_global_to_module_for_test(context, module.get(), L"load",
+                                    load.value().raw_value());
+    EXPECT_EQ(Value::from_smi(42),
+              thread->call_clovervm_function(load.value(), global(L"outer"),
+                                             Value::False()));
+    EXPECT_EQ(global(L"failure"),
+              thread->call_clovervm_function(load.value(), global(L"failing"),
+                                             Value::False()));
+    EXPECT_FALSE(thread->has_pending_exception());
+}
+
+struct MethodCallTestCode
+{
+    CodeObject *code;
+    uint32_t call_pc;
+    uint32_t pair_reg;
+    uint32_t keyword_reg;
+};
+
+static MethodCallTestCode
+make_method_call_test_code(test::VmTestContext &context, Bytecode opcode,
+                           uint8_t n_pos_args,
+                           std::optional<const wchar_t *> attribute)
+{
+    ThreadState *thread = context.thread();
+    auto name =
+        context.vm().get_or_create_interned_string_value(L"<method-call>");
+    CodeObjectBuilder builder(&context.vm(), nullptr,
+                              context.vm().global_builtins_module(),
+                              thread->make_internal_raw<Scope>(nullptr), name);
+    builder.configure_positional_function(attribute.has_value() ? 1 : 2);
+
+    uint32_t call_pc;
+    uint32_t pair_reg;
+    uint32_t keyword_reg;
+    {
+        // The slot preceding the pair aligns S+1 and can hold the keyword.
+        CodeObjectBuilder::TemporaryReg keyword(builder, 1,
+                                                RegisterAlignment::CallFrame);
+        CodeObjectBuilder::TemporaryReg pair(builder, uint32_t(n_pos_args) + 2);
+        keyword_reg = keyword;
+        pair_reg = pair;
+        if(attribute.has_value())
+        {
+            uint8_t attr =
+                builder.allocate_constant(interned_string(*attribute)).value();
+            builder.emit_load_method(0, 0, attr, pair).value();
+        }
+        else
+        {
+            builder.emit_mov(0, pair, 0).value();
+            builder.emit_mov(0, pair + 1, 1).value();
+        }
+        for(uint32_t i = 0; i < n_pos_args; ++i)
+        {
+            builder.emit_lda_smi(0, int8_t(7 + i)).value();
+            builder.emit_star(0, pair + 2 + i).value();
+        }
+        if(opcode == Bytecode::CallMethodKeyword)
+        {
+            Owned<TValue<Tuple>> names(thread->make_object_value<Tuple>(1));
+            names.extract()->initialize_item_unchecked(
+                0, interned_string(L"flag").raw_value());
+            uint8_t names_idx =
+                builder.allocate_constant(names.value().raw_value()).value();
+            builder.emit_lda_smi(0, 13).value();
+            builder.emit_star(0, keyword).value();
+            call_pc = builder
+                          .emit_call_method_keyword(0, pair, n_pos_args,
+                                                    keyword, 1, names_idx)
+                          .value();
+        }
+        else
+        {
+            call_pc = builder.emit_call_method_positional(0, pair, n_pos_args)
+                          .value();
+        }
+        builder.emit_return(0).value();
+    }
+    return {builder.finalize().value(), call_pc, pair_reg, keyword_reg};
+}
+
+TEST(Interpreter, call_method_reuses_call_cache_with_dynamic_receiver)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def target(first, second=99, *, flag=0):
+    return (first, second, flag)
+
+class Receiver:
+    method = target
+
+bound = Receiver()
+plain = Receiver()
+plain.method = target
+
+class Callable:
+    def __call__(self, value, *, flag=0):
+        return (self, value, flag)
+
+class Holder:
+    pass
+
+callable_value = Callable()
+holder = Holder()
+holder.method = callable_value
+
+class ClassMethod:
+    method = classmethod(target)
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    for(Bytecode opcode:
+        {Bytecode::CallMethodPositional, Bytecode::CallMethodKeyword})
+    {
+        bool keyword = opcode == Bytecode::CallMethodKeyword;
+        MethodCallTestCode test =
+            make_method_call_test_code(context, opcode, 1, L"method");
+        Owned<TValue<Function>> call(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(test.code),
+            Optional<TValue<String>>::none()));
+        BytecodeInstruction instruction =
+            decode_instruction(*test.code, test.call_pc);
+        ASSERT_EQ(opcode, instruction.semantic_opcode());
+        EXPECT_EQ(test.call_pc + (keyword ? 7 : 4),
+                  instruction.next_pc_offset());
+        ASSERT_EQ(keyword ? 4u : 3u, instruction.sources().size());
+        int32_t pair_offset = test.code->encode_reg(test.pair_reg);
+        for(int32_t i = 0; i < 3; ++i)
+        {
+            EXPECT_EQ(pair_offset - i, instruction.sources()[i].frame_offset);
+        }
+        if(keyword)
+        {
+            EXPECT_EQ(test.code->encode_reg(test.keyword_reg),
+                      instruction.sources()[3].frame_offset);
+        }
+        ASSERT_EQ(1u, instruction.destinations().size());
+        EXPECT_TRUE(instruction.destinations()[0].is_accumulator());
+        EXPECT_NE(
+            std::string::npos,
+            fmt::to_string(*test.code)
+                .find(keyword ? "CallMethodKeyword" : "CallMethodPositional"));
+
+        auto check_call = [&](Value base, Value first, int32_t second,
+                              uint32_t cache_count) {
+            Value result = thread->call_clovervm_function(call.value(), base);
+            ASSERT_TRUE(has_native_layout<Tuple>(result));
+            auto *tuple = native_cast<Tuple>(result);
+            ASSERT_EQ(3u, tuple->size());
+            EXPECT_EQ(first, tuple->item_unchecked(0));
+            EXPECT_EQ(Value::from_smi(second), tuple->item_unchecked(1));
+            EXPECT_EQ(Value::from_smi(keyword ? 13 : 0),
+                      tuple->item_unchecked(2));
+            uint32_t cached_count =
+                keyword
+                    ? test.code->inline_caches.keyword_call_caches[0].n_pos_args
+                    : test.code->inline_caches.function_call_caches[0].n_args;
+            EXPECT_EQ(cache_count, cached_count);
+        };
+        Value bound = global(L"bound");
+        Value plain = global(L"plain");
+        Value holder = global(L"holder");
+        Value cls = global(L"ClassMethod");
+        check_call(bound, bound, 7, 2);
+        check_call(bound, bound, 7, 2);
+        check_call(plain, Value::from_smi(7), 99, 1);
+        check_call(plain, Value::from_smi(7), 99, 1);
+        check_call(bound, bound, 7, 2);
+        check_call(holder, global(L"callable_value"), 7, 1);
+        check_call(holder, global(L"callable_value"), 7, 1);
+        check_call(cls, cls, 7, 1);
+    }
+}
+
+TEST(Interpreter, call_method_zero_explicit_positional_arguments)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+def bound_positional(receiver):
+    return receiver
+
+def plain_positional():
+    return 11
+
+def bound_keyword(receiver, *, flag):
+    return (receiver, flag)
+
+def plain_keyword(*, flag):
+    return flag
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    auto global = [&](const wchar_t *name) {
+        return load_global_from_module_for_test(module.get(),
+                                                interned_string(name));
+    };
+
+    for(Bytecode opcode:
+        {Bytecode::CallMethodPositional, Bytecode::CallMethodKeyword})
+    {
+        bool keyword = opcode == Bytecode::CallMethodKeyword;
+        MethodCallTestCode test =
+            make_method_call_test_code(context, opcode, 0, std::nullopt);
+        Owned<TValue<Function>> call(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(test.code),
+            Optional<TValue<String>>::none()));
+        Value bound = global(keyword ? L"bound_keyword" : L"bound_positional");
+        Value plain = global(keyword ? L"plain_keyword" : L"plain_positional");
+        for(int i = 0; i < 2; ++i)
+        {
+            Value result = thread->call_clovervm_function(call.value(), bound,
+                                                          Value::None());
+            if(keyword)
+            {
+                ASSERT_TRUE(has_native_layout<Tuple>(result));
+                auto *tuple = native_cast<Tuple>(result);
+                ASSERT_EQ(2u, tuple->size());
+                EXPECT_EQ(Value::None(), tuple->item_unchecked(0));
+                EXPECT_EQ(Value::from_smi(13), tuple->item_unchecked(1));
+            }
+            else
+            {
+                EXPECT_EQ(Value::None(), result);
+            }
+        }
+        EXPECT_EQ(Value::from_smi(keyword ? 13 : 11),
+                  thread->call_clovervm_function(call.value(), plain,
+                                                 Value::not_present()));
+    }
+}
+
+TEST(Interpreter, call_method_keyword_replays_default_and_collector_adaptation)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation(thread);
+    OwnedHeapPtr<CodeObject> module{context.compile_file(LR"(
+class Receiver:
+    def defaulted(self, first, second, missing=99, *, flag):
+        return (self, first, second, flag, missing)
+
+    def collected(self, *args, **kwargs):
+        return (self, args[0], args[1], kwargs["flag"], len(args) + len(kwargs))
+
+first = Receiver()
+second = Receiver()
+)")};
+    ASSERT_FALSE(
+        thread->run_clovervm_code_object(module.get()).is_exception_marker());
+    Value first = load_global_from_module_for_test(module.get(),
+                                                   interned_string(L"first"));
+    Value second = load_global_from_module_for_test(module.get(),
+                                                    interned_string(L"second"));
+
+    struct TestCase
+    {
+        const wchar_t *attribute;
+        FunctionCallAdaptation adaptation;
+        int32_t last_value;
+    };
+    const TestCase cases[] = {
+        {L"defaulted", FunctionCallAdaptation::Defaultable, 99},
+        {L"collected", FunctionCallAdaptation::Full, 3},
+    };
+    for(const TestCase &test_case: cases)
+    {
+        MethodCallTestCode test = make_method_call_test_code(
+            context, Bytecode::CallMethodKeyword, 2, test_case.attribute);
+        Owned<TValue<Function>> call(thread->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(test.code),
+            Optional<TValue<String>>::none()));
+        const KeywordCallInlineCache &cache =
+            test.code->inline_caches.keyword_call_caches[0];
+        for(Value receiver: {first, second, first})
+        {
+            Value result =
+                thread->call_clovervm_function(call.value(), receiver);
+            ASSERT_TRUE(has_native_layout<Tuple>(result));
+            auto *tuple = native_cast<Tuple>(result);
+            ASSERT_EQ(5u, tuple->size());
+            EXPECT_EQ(receiver, tuple->item_unchecked(0));
+            EXPECT_EQ(Value::from_smi(7), tuple->item_unchecked(1));
+            EXPECT_EQ(Value::from_smi(8), tuple->item_unchecked(2));
+            EXPECT_EQ(Value::from_smi(13), tuple->item_unchecked(3));
+            EXPECT_EQ(Value::from_smi(test_case.last_value),
+                      tuple->item_unchecked(4));
+            EXPECT_EQ(test_case.adaptation, cache.adaptation);
+            EXPECT_EQ(CallTargetGuardKind::ExactCallable, cache.guard.kind);
+            EXPECT_EQ(ReceiverBinding::None, cache.receiver_binding);
+            EXPECT_EQ(3u, cache.n_pos_args);
+        }
+    }
 }
 
 struct ReturnContinuationSafepointCheck

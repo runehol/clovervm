@@ -788,6 +788,20 @@ namespace cl
                                             body_constant_idx, first_arg_reg);
     }
 
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_load_method(uint32_t source_offset,
+                                        uint32_t base_reg, uint8_t name_idx,
+                                        uint32_t pair_reg)
+    {
+        uint8_t cache_idx = CL_TRY(allocate_attribute_read_cache());
+        uint32_t offset = CL_TRY(emit_opcode_reg_constant_idx_cache_idx(
+            source_offset, Bytecode::LoadMethod, base_reg, name_idx,
+            cache_idx));
+        CL_TRY(emit_opcode_reg(source_offset, Bytecode::FinishLoadMethod,
+                               pair_reg));
+        return Expected<uint32_t>::ok(offset);
+    }
+
     Expected<uint32_t> CodeObjectBuilder::emit_load_attr(uint32_t source_offset,
                                                          uint32_t receiver_reg,
                                                          uint8_t name_idx)
@@ -816,59 +830,6 @@ namespace cl
         return emit_opcode_reg_constant_idx_cache_idx(
             source_offset, Bytecode::DelAttr, receiver_reg, name_idx,
             cache_idx);
-    }
-
-    Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_positional(
-        uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
-        uint8_t argc)
-    {
-        assert_call_args_are_topmost(first_arg_reg, uint32_t(argc) + 1);
-        uint8_t read_cache_idx = CL_TRY(allocate_attribute_read_cache());
-        uint8_t call_cache_idx = CL_TRY(allocate_function_call_cache());
-        return emit_opcode_reg_constant_idx_cache_idx_argc(
-            source_offset, Bytecode::CallMethodAttrPositional, first_arg_reg,
-            name_idx, read_cache_idx, call_cache_idx, argc);
-    }
-
-    Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_expanded(
-        uint32_t source_offset, uint32_t receiver_reg, uint8_t name_idx,
-        uint32_t containers_reg, uint32_t first_arg_reg)
-    {
-        assert_call_args_are_topmost(first_arg_reg, 1);
-        assert(receiver_reg < first_arg_reg);
-        assert(containers_reg + 1 < first_arg_reg);
-        uint8_t read_cache = CL_TRY(allocate_attribute_read_cache());
-        uint8_t call_cache = CL_TRY(allocate_expanded_call_cache());
-        uint32_t result = emplace_back(
-            source_offset, uint8_t(Bytecode::CallMethodAttrExpanded));
-        emplace_back(source_offset, encode_reg(receiver_reg));
-        emplace_back(source_offset, name_idx);
-        emplace_back(source_offset, read_cache);
-        emplace_back(source_offset, call_cache);
-        emplace_back(source_offset, encode_reg(containers_reg));
-        emplace_back(source_offset, encode_reg(first_arg_reg));
-        return Expected<uint32_t>::ok(result);
-    }
-
-    Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_keyword(
-        uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
-        uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,
-        uint8_t keyword_names_idx)
-    {
-        assert_call_args_are_topmost(first_arg_reg, uint32_t(n_pos_args) + 1);
-        uint8_t read_cache_idx = CL_TRY(allocate_attribute_read_cache());
-        uint8_t call_cache_idx = CL_TRY(allocate_keyword_call_cache());
-        uint32_t result = emplace_back(
-            source_offset, uint8_t(Bytecode::CallMethodAttrKeyword));
-        emplace_back(source_offset, encode_reg(first_arg_reg));
-        emplace_back(source_offset, name_idx);
-        emplace_back(source_offset, read_cache_idx);
-        emplace_back(source_offset, call_cache_idx);
-        emplace_back(source_offset, n_pos_args);
-        emplace_back(source_offset, encode_reg(first_kw_value_reg));
-        emplace_back(source_offset, n_kw_args);
-        emplace_back(source_offset, keyword_names_idx);
-        return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_special_method(
@@ -1289,13 +1250,30 @@ namespace cl
         uint32_t source_offset, uint32_t callable_reg, uint32_t containers_reg,
         uint32_t first_arg_reg)
     {
-        assert_call_args_are_topmost(first_arg_reg, 1);
         assert(callable_reg < first_arg_reg);
+        return emit_expanded_call(Bytecode::CallExpanded, source_offset,
+                                  callable_reg, containers_reg, first_arg_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_expanded(
+        uint32_t source_offset, uint32_t pair_reg, uint32_t containers_reg,
+        uint32_t first_arg_reg)
+    {
+        assert(pair_reg + 1 < first_arg_reg);
+        assert(pair_reg + 1 < containers_reg || containers_reg + 1 < pair_reg);
+        return emit_expanded_call(Bytecode::CallMethodExpanded, source_offset,
+                                  pair_reg, containers_reg, first_arg_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_expanded_call(
+        Bytecode opcode, uint32_t source_offset, uint32_t target_reg,
+        uint32_t containers_reg, uint32_t first_arg_reg)
+    {
+        assert_call_args_are_topmost(first_arg_reg, 1);
         assert(containers_reg + 1 < first_arg_reg);
         uint8_t cache_idx = CL_TRY(allocate_expanded_call_cache());
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::CallExpanded));
-        emplace_back(source_offset, encode_reg(callable_reg));
+        uint32_t result = emplace_back(source_offset, uint8_t(opcode));
+        emplace_back(source_offset, encode_reg(target_reg));
         emplace_back(source_offset, encode_reg(containers_reg));
         emplace_back(source_offset, encode_reg(first_arg_reg));
         emplace_back(source_offset, cache_idx);
@@ -1330,6 +1308,38 @@ namespace cl
         uint8_t cache_idx = CL_TRY(allocate_keyword_call_cache());
         emplace_back(source_offset, encode_reg(callable_reg));
         emplace_back(source_offset, encode_reg(first_arg_reg));
+        emplace_back(source_offset, n_pos_args);
+        emplace_back(source_offset, encode_reg(first_kw_value_reg));
+        emplace_back(source_offset, n_kw_args);
+        emplace_back(source_offset, keyword_names_idx);
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_positional(
+        uint32_t source_offset, uint32_t pair_reg, uint8_t n_pos_args)
+    {
+        assert_call_args_are_topmost(pair_reg + 1, uint32_t(n_pos_args) + 1);
+        uint8_t cache_idx = CL_TRY(allocate_function_call_cache());
+        uint32_t result = emplace_back(source_offset,
+                                       uint8_t(Bytecode::CallMethodPositional));
+        emplace_back(source_offset, encode_reg(pair_reg));
+        emplace_back(source_offset, n_pos_args);
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_call_method_keyword(
+        uint32_t source_offset, uint32_t pair_reg, uint8_t n_pos_args,
+        uint32_t first_kw_value_reg, uint8_t n_kw_args,
+        uint8_t keyword_names_idx)
+    {
+        assert_call_args_are_topmost(pair_reg + 1, uint32_t(n_pos_args) + 1);
+        assert(n_kw_args == 0 || first_kw_value_reg + n_kw_args <= pair_reg);
+        uint8_t cache_idx = CL_TRY(allocate_keyword_call_cache());
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::CallMethodKeyword));
+        emplace_back(source_offset, encode_reg(pair_reg));
         emplace_back(source_offset, n_pos_args);
         emplace_back(source_offset, encode_reg(first_kw_value_reg));
         emplace_back(source_offset, n_kw_args);
@@ -1681,21 +1691,6 @@ namespace cl
     }
 
     Expected<uint32_t>
-    CodeObjectBuilder::emit_opcode_reg_constant_idx_cache_idx_argc(
-        uint32_t source_offset, Bytecode c, uint32_t reg, uint8_t constant_idx,
-        uint8_t read_cache_idx, uint8_t call_cache_idx, uint8_t argc)
-    {
-        assert(c != Bytecode::Invalid);
-        uint32_t result = emplace_back(source_offset, uint8_t(c));
-        emplace_back(source_offset, encode_reg(reg));
-        emplace_back(source_offset, constant_idx);
-        emplace_back(source_offset, read_cache_idx);
-        emplace_back(source_offset, call_cache_idx);
-        emplace_back(source_offset, argc);
-        return Expected<uint32_t>::ok(result);
-    }
-
-    Expected<uint32_t>
     CodeObjectBuilder::emit_opcode_reg_reg(uint32_t source_offset, Bytecode c,
                                            uint32_t first_reg,
                                            uint32_t second_reg)
@@ -1810,10 +1805,13 @@ namespace cl
         sync_temporary_reg_base();
         uint32_t allocated_reg = temporary_reg;
         uint32_t semantic_reg = temporary_reg;
-        if(alignment == RegisterAlignment::CallFrame &&
-           !is_call_frame_aligned_register(semantic_reg))
+        if(alignment != RegisterAlignment::None)
         {
-            ++semantic_reg;
+            uint32_t anchor_reg =
+                semantic_reg +
+                (alignment == RegisterAlignment::MethodCallFrame ? 1 : 0);
+            if(!is_call_frame_aligned_register(anchor_reg))
+                ++semantic_reg;
         }
         uint32_t allocated_n_regs = semantic_reg - allocated_reg + n_regs;
         temporary_reg += allocated_n_regs;

@@ -1595,6 +1595,17 @@ namespace cl
             return false;
         }
 
+        Expected<void> codegen_load_method(int32_t attr, uint32_t pair)
+        {
+            uint32_t source_offset = av.source_offsets[attr];
+            uint8_t name =
+                CL_TRY(code_obj->allocate_constant(av.constants[attr]));
+            CL_TRY(codegen_node_into_specific_register(av.children[attr][0],
+                                                       pair));
+            CL_TRY(code_obj->emit_load_method(source_offset, pair, name, pair));
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_expanded_function_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1602,11 +1613,16 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             bool method_call = av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_ATTRIBUTE;
-            TemporaryReg callable(*code_obj);
-            int32_t receiver_node =
-                method_call ? av.children[children[0]][0] : children[0];
-            CL_TRY(
-                codegen_node_into_specific_register(receiver_node, callable));
+            TemporaryReg callable(*code_obj, method_call ? 2 : 1);
+            if(method_call)
+            {
+                CL_TRY(codegen_load_method(children[0], callable));
+            }
+            else
+            {
+                CL_TRY(
+                    codegen_node_into_specific_register(children[0], callable));
+            }
             TemporaryReg containers(*code_obj, 2);
             uint32_t positional = containers;
             uint32_t keywords = containers + 1;
@@ -1739,10 +1755,8 @@ namespace cl
             TemporaryReg outgoing(*code_obj, 1, RegisterAlignment::CallFrame);
             if(method_call)
             {
-                uint8_t name = CL_TRY(code_obj->allocate_constant(
-                    av.constants[children[0]].value()));
-                CL_TRY(code_obj->emit_call_method_attr_expanded(
-                    source_offset, callable, name, containers, outgoing));
+                CL_TRY(code_obj->emit_call_method_expanded(
+                    source_offset, callable, containers, outgoing));
             }
             else
             {
@@ -1771,10 +1785,6 @@ namespace cl
             if(av.kinds[children[0]].node_kind ==
                AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
-                AstChildren method_children = av.children[children[0]];
-                uint8_t constant_idx = CL_TRY(
-                    code_obj->allocate_constant(av.constants[children[0]]));
-
                 uint32_t n_kw_args = n_keyword_call_arguments(args);
                 if(n_kw_args > 0)
                 {
@@ -1783,10 +1793,9 @@ namespace cl
 
                     TemporaryReg keyword_value_regs(
                         *code_obj, std::max<uint32_t>(n_kw_args, 1));
-                    TemporaryReg call_args(*code_obj, n_pos_args + 1,
-                                           RegisterAlignment::CallFrame);
-                    CL_TRY(codegen_node_into_specific_register(
-                        method_children[0], call_args));
+                    TemporaryReg call_args(*code_obj, n_pos_args + 2,
+                                           RegisterAlignment::MethodCallFrame);
+                    CL_TRY(codegen_load_method(children[0], call_args));
                     n_pos_args = 0;
                     for(int32_t arg: args)
                     {
@@ -1794,7 +1803,7 @@ namespace cl
                         {
                             CL_TRY(codegen_node_into_specific_register(
                                 call_argument_value(arg),
-                                call_args + 1 + n_pos_args));
+                                call_args + 2 + n_pos_args));
                             ++n_pos_args;
                         }
                         else
@@ -1822,24 +1831,23 @@ namespace cl
                     assert(kw_arg_idx == n_kw_args);
                     uint8_t keyword_names_idx = CL_TRY(
                         code_obj->allocate_constant(keyword_names.raw_value()));
-                    CL_TRY(code_obj->emit_call_method_attr_keyword(
-                        source_offset, call_args, constant_idx,
-                        uint8_t(n_pos_args), keyword_value_regs,
-                        uint8_t(n_kw_args), keyword_names_idx));
+                    CL_TRY(code_obj->emit_call_method_keyword(
+                        source_offset, call_args, uint8_t(n_pos_args),
+                        keyword_value_regs, uint8_t(n_kw_args),
+                        keyword_names_idx));
                     return Expected<void>::ok();
                 }
 
-                TemporaryReg call_args(*code_obj, args.size() + 1,
-                                       RegisterAlignment::CallFrame);
-                CL_TRY(codegen_node_into_specific_register(method_children[0],
-                                                           call_args));
+                TemporaryReg call_args(*code_obj, args.size() + 2,
+                                       RegisterAlignment::MethodCallFrame);
+                CL_TRY(codegen_load_method(children[0], call_args));
                 for(size_t i = 0; i < args.size(); ++i)
                 {
                     CL_TRY(codegen_node_into_specific_register(
-                        call_argument_value(args[i]), call_args + 1 + i));
+                        call_argument_value(args[i]), call_args + 2 + i));
                 }
-                CL_TRY(code_obj->emit_call_method_attr_positional(
-                    source_offset, call_args, constant_idx, args.size()));
+                CL_TRY(code_obj->emit_call_method_positional(
+                    source_offset, call_args, args.size()));
                 return Expected<void>::ok();
             }
 

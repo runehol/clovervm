@@ -225,6 +225,8 @@ namespace cl
     // Unlike has_native_layout<String>, this excludes string subclasses.
     bool is_exact_string(ThreadState *thread, Value value);
 
+    TValue<String> exact_string_from_contents(ThreadState *thread,
+                                              TValue<String> text);
     uint64_t string_hash(TValue<String> s);
     TValue<SMI> string_hash_normalized(TValue<String> s);
     bool string_eq_slow_path(TValue<String> a, TValue<String> b);

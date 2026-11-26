@@ -1421,7 +1421,7 @@ TEST(Codegen, global_variable_delete_uses_binding_slot)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, direct_method_call_uses_callmethodattr)
+TEST(Codegen, direct_method_call_loads_an_aligned_saved_pair)
 {
     const wchar_t *test_case = L"def invoke(obj, value):\n"
                                "    return obj.method(value)\n";
@@ -1434,13 +1434,14 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
         "    5 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    8 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Enter #2\n"
-        "    3 Mov r0, p0\n"
-        "    6 Mov r1, p1\n"
-        "    9 CallMethodAttrPositional r0, c[0], read_ic[0], call_ic[0], 1\n"
-        "   15 Return\n"
-        "   16 LdaNone\n"
-        "   17 Return\n"
+        "    0 Enter #4\n"
+        "    3 Mov r1, p0\n"
+        "    6 LoadMethod r1, c[0], read_ic[0], r1\n"
+        "   12 Mov r3, p1\n"
+        "   15 CallMethodPositional {r1..r3}, call_ic[0]\n"
+        "   19 Return\n"
+        "   20 LdaNone\n"
+        "   21 Return\n"
         "Constant 0: \"method\"\n"
         "\n"
         "Constant 1: \"invoke\"\n";
@@ -1449,7 +1450,7 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, direct_keyword_method_call_uses_callmethodattrkeyword)
+TEST(Codegen, direct_keyword_method_call_loads_pair_before_arguments)
 {
     const wchar_t *test_case = L"def invoke(obj, value):\n"
                                "    return obj.method(value, scale=3)\n";
@@ -1463,15 +1464,16 @@ TEST(Codegen, direct_keyword_method_call_uses_callmethodattrkeyword)
         "    8 Return\n"
         "Constant 0: Code object:\n"
         "    0 Enter #4\n"
-        "    3 Mov r2, p0\n"
-        "    6 Mov r3, p1\n"
-        "    9 LdaSmi 3\n"
-        "   11 Star0\n"
-        "   12 CallMethodAttrKeyword r2, c[0], read_ic[0], keyword_call_ic[0], "
-        "{r2:1}, kw_values={r0:1}, kw=(\"scale\",)\n"
-        "   21 Return\n"
-        "   22 LdaNone\n"
-        "   23 Return\n"
+        "    3 Mov r1, p0\n"
+        "    6 LoadMethod r1, c[0], read_ic[0], r1\n"
+        "   12 Mov r3, p1\n"
+        "   15 LdaSmi 3\n"
+        "   17 Star0\n"
+        "   18 CallMethodKeyword {r1..r3}, kw_values={r0:1}, kw=(\"scale\",), "
+        "keyword_call_ic[0]\n"
+        "   25 Return\n"
+        "   26 LdaNone\n"
+        "   27 Return\n"
         "Constant 0: \"method\"\n"
         "Constant 1: (\"scale\",)\n"
         "\n"
@@ -2808,42 +2810,45 @@ TEST(Codegen, nested_walrus_counts_as_assignment_before_global_declaration)
     }
 }
 
-TEST(Codegen, expanded_methods_use_fused_lookup_with_adjacent_transport)
+TEST(Codegen, expanded_methods_use_saved_pair_with_adjacent_transport)
 {
     test::VmTestContext context;
     CodeObject *code = context.compile_file(L"obj.method(*source, **keys)");
-    bool found = false;
+    std::optional<uint32_t> pair;
+    bool found_call = false;
     BytecodeDecoder decoder(*code);
     for(const auto &block: decoder.blocks())
     {
         for(const auto &instruction: block.instructions())
         {
             EXPECT_NE(Bytecode::CallExpanded, instruction.semantic_opcode());
-            if(instruction.semantic_opcode() !=
-               Bytecode::CallMethodAttrExpanded)
+            if(instruction.semantic_opcode() == Bytecode::LoadMethod)
+            {
+                pair = instruction.operands()[3].value;
+                EXPECT_NE(nullptr, instruction.attribute_read_cache());
+                EXPECT_TRUE(instruction.continuation_pc_offset().has_value());
+            }
+            if(instruction.semantic_opcode() != Bytecode::CallMethodExpanded)
                 continue;
-            found = true;
-            ASSERT_EQ(6u, instruction.operands().size());
-            EXPECT_EQ(7u,
+            found_call = true;
+            ASSERT_TRUE(pair.has_value());
+            ASSERT_EQ(4u, instruction.operands().size());
+            EXPECT_EQ(5u,
                       instruction.next_pc_offset() - instruction.pc_offset());
-            EXPECT_EQ(BytecodeOperandKind::AttributeReadCache,
-                      instruction.operands()[2].kind);
+            EXPECT_EQ(*pair, instruction.operands()[0].value);
             EXPECT_EQ(BytecodeOperandKind::ExpandedCallCache,
                       instruction.operands()[3].kind);
-            uint32_t containers = instruction.operands()[4].value;
-            uint32_t outgoing = instruction.operands()[5].value;
-            EXPECT_LT(instruction.operands()[0].value, outgoing);
+            uint32_t containers = instruction.operands()[1].value;
+            uint32_t outgoing = instruction.operands()[2].value;
+            EXPECT_LT(*pair + 1, containers);
             EXPECT_LT(containers + 1, outgoing);
-            ASSERT_EQ(3u, instruction.sources().size());
+            ASSERT_EQ(4u, instruction.sources().size());
             EXPECT_EQ(code->encode_reg(containers),
-                      instruction.sources()[1].frame_offset);
-            EXPECT_EQ(code->encode_reg(containers + 1),
                       instruction.sources()[2].frame_offset);
-            EXPECT_NE(nullptr, instruction.attribute_read_cache());
+            EXPECT_EQ(code->encode_reg(containers + 1),
+                      instruction.sources()[3].frame_offset);
             EXPECT_NE(nullptr, instruction.expanded_call_cache());
         }
     }
-    EXPECT_TRUE(found);
-    EXPECT_NE(std::string::npos,
-              fmt::format("{}", *code).find("CallMethodAttrExpanded"));
+    EXPECT_TRUE(found_call);
 }

@@ -428,9 +428,10 @@ integers, bools and integer subclasses for `start`, normalizing the counter to a
 exact integer without invoking subclass overrides. Custom `__index__` inputs
 remain unsupported. Exact `enumerate(...)` calls use CPython's vectorcall
 keyword matching by string payload; inherited and direct `__new__` calls use
-dictionary lookup, including keyword hash/equality behavior and duplicate-argument
-validation. The exact-type entry uses the normal constructor-thunk cache, while
-the public `__new__` method remains independently callable.
+dictionary lookup and duplicate-argument validation. All three paths receive
+exact string names from [expanded keyword preparation](function-call-adaptation.md#keyword-construction).
+The exact-type entry uses the normal constructor-thunk cache, while the public
+`__new__` method remains independently callable.
 
 `zip` consumes sources left to right, supports zero inputs and strict length
 checking, and preserves CPython 3.14.5 mismatch consumption and diagnostics.

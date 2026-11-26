@@ -28,6 +28,7 @@
 #include "object_model/instance.h"
 #include "object_model/refcount.h"
 #include "object_model/slot_dict.h"
+#include "object_model/static_method.h"
 #include "object_model/validity_cell.h"
 #include "object_model/value.h"
 #include "runtime/call_target.h"
@@ -427,17 +428,6 @@ namespace cl
         }                                                                      \
         cl_opcode_try_result.value();                                          \
     })
-
-    NOINLINE INTERP_CC Value method_lookup_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"AttributeError", L"");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
 
     NOINLINE INTERP_CC Value descriptor_dispatch_error(PARAMS)
     {
@@ -1770,8 +1760,14 @@ namespace cl
                              ? ExpandedCallMode::PureCollector
                              : ExpandedCallMode::General;
         }
-        // Capture the target before callbacks: a nested call at this same site
-        // may replace the live cache or invalidate constructor lookup.
+        if(unlikely(keywords.extract()->get_shape() !=
+                    thread->get_exact_dict_string_key_shape()))
+        {
+            return Expected<void>::raise_exception(L"TypeError",
+                                                   L"keywords must be strings");
+        }
+
+        // Keep the target and receiver alive through collector allocation.
         Owned<TValue<Function>> function(
             TValue<Function>::from_oop(cache.function));
         ExpandedCallMode mode = cache.mode;
@@ -1783,33 +1779,26 @@ namespace cl
         Owned<Value> live_prefix(positional.prefix);
         if(mode == ExpandedCallMode::PureCollector && !positional.has_prefix())
         {
-            CL_TRY(validate_expanded_call_keywords(keywords));
             new_fp[target_code->encode_reg(0)] = positional.tuple.raw_value();
             new_fp[target_code->encode_reg(1)] = keywords.raw_value();
         }
         else if(cache.binding_plan != nullptr &&
-                expanded_call_cached_plan_matches(thread, *cache.binding_plan,
-                                                  uint32_t(positional.size()),
-                                                  keywords))
+                expanded_call_cached_plan_matches(
+                    *cache.binding_plan, uint32_t(positional.size()), keywords))
         {
-            CL_TRY(apply_expanded_call_binding_plan(
-                thread, function.value(), positional, keywords,
-                cache.binding_plan->plan, new_fp));
+            apply_expanded_call_binding_plan(thread, function.value(),
+                                             positional, keywords,
+                                             cache.binding_plan->plan, new_fp);
         }
         else
         {
             ExpandedCallBindingPlan plan =
                 CL_TRY(build_expanded_call_binding_plan(
-                    thread, function.value(), uint32_t(positional.size()),
-                    keywords));
-            CL_TRY(apply_expanded_call_binding_plan(
-                thread, function.value(), positional, keywords, plan, new_fp));
-            if(auto cached = convert_to_expanded_call_cache_entry(
-                   thread, uint32_t(positional.size()), keywords,
-                   std::move(plan)))
-            {
-                cache.binding_plan = std::move(cached);
-            }
+                    function.value(), uint32_t(positional.size()), keywords));
+            apply_expanded_call_binding_plan(
+                thread, function.value(), positional, keywords, plan, new_fp);
+            cache.binding_plan = make_expanded_call_cache_entry(
+                uint32_t(positional.size()), keywords, std::move(plan));
         }
         jit_entry = invoke_function_at_new_fp(
             accumulator, thread, fp, pc, dispatch, code_object,
@@ -2707,25 +2696,9 @@ namespace cl
                 }
 
             case AttributeReadPlanKind::BindFunctionReceiver:
-                {
-                    if(unlikely(plan.storage_location.kind !=
-                                StorageKind::Inline))
-                    {
-                        value_out =
-                            read_plan_storage_owner(receiver, plan)
-                                ->read_storage_location(plan.storage_location);
-                        return AttributeLoadPlanStatus::Ready;
-                    }
-                    const Object *storage_owner =
-                        read_plan_storage_owner(receiver, plan);
-                    value_out =
-                        storage_owner->inline_slot_base()[plan.storage_location
-                                                              .physical_idx];
-                    return AttributeLoadPlanStatus::Ready;
-                }
-
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::StaticMethodGet:
             case AttributeReadPlanKind::ExactPropertyGet:
                 value_out = Value::not_present();
                 return AttributeLoadPlanStatus::RequiresDescriptorDispatch;
@@ -2778,9 +2751,59 @@ namespace cl
         return true;
     }
 
+    enum class AttributeReadMode : uint8_t
+    {
+        Value,
+        Method,
+    };
+
+    template <AttributeReadMode Mode>
+    static constexpr uint32_t attribute_read_length =
+        bytecode_length(Mode == AttributeReadMode::Method ? Bytecode::LoadMethod
+                                                          : Bytecode::LoadAttr);
+    static constexpr uint32_t method_load_continuation_offset =
+        bytecode_info(Bytecode::LoadMethod).format_info().continuation_offset;
+    static_assert(method_load_continuation_offset ==
+                  bytecode_length(Bytecode::LoadAttr));
+
+    static ALWAYSINLINE int8_t method_pair_operand(const uint8_t *pc)
+    {
+        return int8_t(pc[method_load_continuation_offset + 1]);
+    }
+
+    static ALWAYSINLINE void write_method_pair(Value *fp, int32_t pair,
+                                               Value callable, Value receiver)
+    {
+        fp[pair] = callable;
+        fp[pair - 1] = receiver;
+    }
+
+    static ALWAYSINLINE bool
+    splits_method_binding(const AttributeReadPlan &plan)
+    {
+        return plan.kind == AttributeReadPlanKind::BindFunctionReceiver ||
+               plan.kind == AttributeReadPlanKind::StaticMethodGet;
+    }
+
+    static ALWAYSINLINE void
+    write_split_method_pair(Value *fp, const uint8_t *pc, Value base,
+                            const AttributeReadPlan &plan, Value selected)
+    {
+        if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
+        {
+            write_method_pair(fp, method_pair_operand(pc), selected, base);
+            return;
+        }
+
+        assert(plan.kind == AttributeReadPlanKind::StaticMethodGet);
+        write_method_pair(fp, method_pair_operand(pc),
+                          native_cast<StaticMethod>(selected)->wrapped(),
+                          Value::not_present());
+    }
+
     NOINLINE static INTERP_CC Value op_load_attr_descriptor_hit(PARAMS)
     {
-        constexpr uint32_t call_instr_len = 4;
+        constexpr uint32_t call_instr_len = bytecode_length(Bytecode::LoadAttr);
         Value receiver = fp[int8_t(pc[1])];
         const AttributeReadPlan &plan =
             code_object->inline_caches.attribute_read_caches[pc[3]].plan;
@@ -2834,9 +2857,10 @@ namespace cl
         COMPLETE();
     }
 
+    template <AttributeReadMode Mode>
     NOINLINE static INTERP_CC Value op_load_attr_cache_miss(PARAMS)
     {
-        START(4);
+        START(attribute_read_length<Mode>);
         int8_t reg = pc[1];
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
@@ -2850,6 +2874,19 @@ namespace cl
         if(!descriptor.is_found())
         {
             MUSTTAIL return attribute_error(ARGS);
+        }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(splits_method_binding(descriptor.plan))
+            {
+                if(descriptor.is_cacheable())
+                {
+                    cache.populate(receiver, descriptor);
+                }
+                write_split_method_pair(fp, pc, receiver, descriptor.plan,
+                                        descriptor.lookup_value);
+                COMPLETE();
+            }
         }
         AttributeLoadPlanStatus plan_status =
             load_attr_from_plan_inline(receiver, descriptor.plan, accumulator);
@@ -2895,7 +2932,8 @@ namespace cl
                     fp[first_arg_reg - 2] = call.owner;
                     auto entry = enter_uncached_resolved_positional_call(
                         thread, fp, pc, dispatch, code_object, accumulator,
-                        call.getter.raw_value(), first_arg_reg, 3, instr_len);
+                        call.getter.raw_value(), first_arg_reg, 3,
+                        bytecode_length(Bytecode::LoadAttr));
                     has_exception = entry.has_exception();
                     if(!has_exception)
                     {
@@ -2919,6 +2957,15 @@ namespace cl
 
             START(0);
             COMPLETE();
+        }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(unlikely(accumulator.is_not_present()))
+            {
+                MUSTTAIL return attribute_error(ARGS);
+            }
+            write_method_pair(fp, method_pair_operand(pc), accumulator,
+                              Value::not_present());
         }
         if(descriptor.is_cacheable())
         {
@@ -3435,9 +3482,10 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_load_attr(PARAMS)
+    template <AttributeReadMode Mode>
+    static ALWAYSINLINE INTERP_CC Value op_load_attribute(PARAMS)
     {
-        START(4);
+        START(attribute_read_length<Mode>);
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
@@ -3445,7 +3493,18 @@ namespace cl
             code_object->inline_caches.attribute_read_caches[cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
-            MUSTTAIL return op_load_attr_cache_miss(ARGS);
+            MUSTTAIL return op_load_attr_cache_miss<Mode>(ARGS);
+        }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(splits_method_binding(cache.plan))
+            {
+                Value selected =
+                    read_plan_storage_owner(receiver, cache.plan)
+                        ->read_storage_location(cache.plan.storage_location);
+                write_split_method_pair(fp, pc, receiver, cache.plan, selected);
+                COMPLETE();
+            }
         }
         AttributeLoadPlanStatus plan_status =
             load_attr_from_plan_inline(receiver, cache.plan, accumulator);
@@ -3456,8 +3515,34 @@ namespace cl
         }
         if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
         {
-            MUSTTAIL return op_load_attr_cache_miss(ARGS);
+            MUSTTAIL return op_load_attr_cache_miss<Mode>(ARGS);
         }
+        if constexpr(Mode == AttributeReadMode::Method)
+        {
+            if(unlikely(accumulator.is_not_present()))
+            {
+                MUSTTAIL return attribute_error(ARGS);
+            }
+            write_method_pair(fp, method_pair_operand(pc), accumulator,
+                              Value::not_present());
+        }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_load_attr(PARAMS)
+    {
+        MUSTTAIL return op_load_attribute<AttributeReadMode::Value>(ARGS);
+    }
+
+    static INTERP_CC Value op_load_method(PARAMS)
+    {
+        MUSTTAIL return op_load_attribute<AttributeReadMode::Method>(ARGS);
+    }
+
+    static INTERP_CC Value op_finish_load_method(PARAMS)
+    {
+        START(2);
+        write_method_pair(fp, int8_t(pc[1]), accumulator, Value::not_present());
         COMPLETE();
     }
 
@@ -5079,8 +5164,28 @@ namespace cl
                            ? accumulator.get_ptr<Object>()->get_shape()
                            : nullptr;
         int8_t callable_reg = pc[1], dict_reg = pc[2];
-        if(shape == thread->get_exact_dict_string_key_shape() ||
-           shape == thread->get_exact_dict_general_shape())
+        const bool exact_general =
+            shape == thread->get_exact_dict_general_shape();
+        bool copy_source = shape == thread->get_exact_dict_string_key_shape();
+        if(exact_general)
+        {
+            // Rebuild valid transports in string-keyed storage. A general
+            // source with non-string keys can still be copied if no string
+            // subclass key needs normalization.
+            for(Dict::EntryView entry: *accumulator.get_ptr<Dict>())
+            {
+                if(!has_native_layout<String>(entry.key))
+                {
+                    copy_source = true;
+                }
+                else if(!is_exact_string(thread, entry.key))
+                {
+                    copy_source = false;
+                    break;
+                }
+            }
+        }
+        if(copy_source)
         {
             fp[dict_reg] = accumulator.get_ptr<Dict>()->copy().raw_value();
             accumulator = Value::None();
@@ -5095,7 +5200,9 @@ namespace cl
         fp[args - 1] = fp[dict_reg];
         fp[args - 2] = accumulator;
         TValue<Function> function =
-            thread->get_machine()->call_keyword_mapping_function();
+            exact_general
+                ? thread->get_machine()->call_keyword_merge_function()
+                : thread->get_machine()->call_keyword_mapping_function();
         DispatchTableEntry target = enter_function_frame_from_positional_args(
             accumulator, thread, fp, pc, dispatch, code_object, function, args,
             3, 3, FunctionCallAdaptation::FixedArity);
@@ -5649,8 +5756,17 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_call_expanded(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 5;
-        Value callable = fp[int8_t(pc[1])];
+        constexpr uint32_t call_instr_len =
+            bytecode_length(Bytecode::CallExpanded);
+        static_assert(call_instr_len ==
+                      bytecode_length(Bytecode::CallMethodExpanded));
+        int32_t target_reg = int8_t(pc[1]);
+        Value callable = fp[target_reg];
+        Value receiver = Value::not_present();
+        if(Bytecode(pc[0]) == Bytecode::CallMethodExpanded)
+        {
+            receiver = fp[target_reg - 1];
+        }
         int32_t containers_reg = int8_t(pc[2]);
         int32_t first_arg_reg = int8_t(pc[3]);
         TValue<Tuple> positional =
@@ -5669,7 +5785,7 @@ namespace cl
         DispatchTableEntry jit_entry = nullptr;
         INTERP_TRY(enter_function_frame_from_expanded_args(
             accumulator, thread, fp, pc, dispatch, code_object, cache, callable,
-            ExpandedCallPositionalArguments{positional}, keywords,
+            ExpandedCallPositionalArguments{positional, receiver}, keywords,
             first_arg_reg, call_instr_len, jit_entry));
         if(jit_entry != nullptr)
         {
@@ -5776,277 +5892,61 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_call_method_attr_expanded(PARAMS)
+    template <Bytecode Op>
+    NOINLINE static INTERP_CC Value op_call_method_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 7;
-        Value receiver = fp[int8_t(pc[1])];
-        TValue<String> name = TValue<String>::from_value_assumed(
-            code_object->constant_table[pc[2]].value());
-        AttributeReadInlineCache &lookup =
-            code_object->inline_caches.attribute_read_caches[pc[3]];
-        Value callable;
-        Value self;
-        MethodCallTargetStatus status;
-        if(lookup.matches(receiver))
-        {
-            status = prepare_method_call_target_from_plan(receiver, lookup.plan,
-                                                          callable, self);
-        }
-        else
-        {
-            AttributeReadDescriptor descriptor =
-                resolve_attr_read_descriptor(receiver, name);
-            status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
-            {
-                lookup.populate(receiver, descriptor);
-            }
-        }
-        if(unlikely(status == MethodCallTargetStatus::Missing))
-        {
-            MUSTTAIL return method_lookup_error(ARGS);
-        }
-        if(unlikely(status ==
-                    MethodCallTargetStatus::RequiresDescriptorDispatch))
-        {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
-        }
-        int32_t containers_reg = int8_t(pc[5]);
-        TValue<Tuple> positional =
-            TValue<Tuple>::from_value_assumed(fp[containers_reg]);
-        TValue<Dict> keywords =
-            TValue<Dict>::from_value_assumed(fp[containers_reg - 1]);
-        assert(positional.extract()->get_shape() ==
-               thread->get_exact_tuple_shape());
-        assert(keywords.extract()->get_shape() ==
-                   thread->get_exact_dict_string_key_shape() ||
-               keywords.extract()->get_shape() ==
-                   thread->get_exact_dict_general_shape());
-        ExpandedCallInlineCache &cache =
-            code_object->inline_caches.expanded_call_caches[pc[4]];
-        set_clover_frame_frontier_for_native_call(thread, fp, code_object);
-        DispatchTableEntry jit_entry = nullptr;
-        INTERP_TRY(enter_function_frame_from_expanded_args(
-            accumulator, thread, fp, pc, dispatch, code_object, cache, callable,
-            ExpandedCallPositionalArguments{positional, self}, keywords,
-            int8_t(pc[6]), call_instr_len, jit_entry));
-        if(jit_entry != nullptr)
-        {
-            MUSTTAIL return jit_entry(ARGS);
-        }
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
-        }
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_call_method_attr_positional_slow(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 6;
-        int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t const_offset = pc[2];
-        uint8_t read_cache_idx = pc[3];
-        uint8_t call_cache_idx = pc[4];
-        uint32_t n_user_args = uint8_t(pc[5]);
-        Value receiver = fp[receiver_reg];
-        TValue<String> attr_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].value());
-
-        AttributeReadInlineCache &cache =
-            code_object->inline_caches.attribute_read_caches[read_cache_idx];
-        Value callable;
-        Value self;
-        MethodCallTargetStatus target_status;
-        if(cache.matches(receiver))
-        {
-            target_status = prepare_method_call_target_from_plan(
-                receiver, cache.plan, callable, self);
-        }
-        else
-        {
-            AttributeReadDescriptor descriptor =
-                resolve_attr_read_descriptor(receiver, attr_name);
-            target_status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
-            {
-                cache.populate(receiver, descriptor);
-            }
-        }
-        if(unlikely(target_status == MethodCallTargetStatus::Missing))
-        {
-            MUSTTAIL return method_lookup_error(ARGS);
-        }
-        if(unlikely(target_status ==
-                    MethodCallTargetStatus::RequiresDescriptorDispatch))
-        {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
-        }
-
+        constexpr uint32_t call_instr_len = bytecode_length(Op);
+        int32_t pair_reg = int8_t(pc[1]);
+        int32_t first_arg_reg = pair_reg - 1;
+        uint32_t n_user_args = pc[2];
+        Value callable = fp[pair_reg];
+        Value self = fp[first_arg_reg];
         uint32_t n_args = n_user_args + !self.is_not_present();
-        FunctionCallInlineCache &call_cache =
-            code_object->inline_caches.function_call_caches[call_cache_idx];
-        if(unlikely(call_cache.n_args != n_args ||
-                    !call_cache.guard.matches(callable)))
-        {
-            INTERP_TRY(populate_positional_call_cache_from_callable(
-                callable, n_args, call_cache));
-        }
 
-        self = call_receiver(callable, call_cache.receiver_binding, self);
-        int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_args, self);
-        DispatchTableEntry jit_entry = enter_positional_call_from_cache(
-            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
-            first_arg_reg, n_user_args + !self.is_not_present(),
-            call_instr_len);
-        if(jit_entry != nullptr)
+        DispatchTableEntry jit_entry;
+        if constexpr(Op == Bytecode::CallMethodPositional)
         {
-            MUSTTAIL return jit_entry(ARGS);
-        }
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
-        }
-
-        START(0);
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_call_method_attr_positional(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 6;
-        int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t read_cache_idx = pc[3];
-        uint8_t call_cache_idx = pc[4];
-        uint32_t n_user_args = uint8_t(pc[5]);
-        Value receiver = fp[receiver_reg];
-        AttributeReadInlineCache &cache =
-            code_object->inline_caches.attribute_read_caches[read_cache_idx];
-        if(unlikely(!cache.matches(receiver)))
-        {
-            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
-        }
-
-        Value callable;
-        Value self;
-        MethodCallFastTargetStatus target_status =
-            prepare_method_call_target_from_plan_fast(receiver, cache.plan,
-                                                      callable, self);
-        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
-        {
-            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
-        }
-
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-        FunctionCallInlineCache &call_cache =
-            code_object->inline_caches.function_call_caches[call_cache_idx];
-
-        if(unlikely(!call_cache.guard.matches_exact(callable, n_args,
-                                                    call_cache.n_args)))
-        {
-            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
-        }
-        if(unlikely(call_cache.adaptation !=
-                    FunctionCallAdaptation::FixedArity))
-        {
-            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
-        }
-        int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_args, self);
-        TValue<Function> function =
-            TValue<Function>::from_oop(call_cache.function);
-        DispatchTableEntry jit_entry =
-            enter_function_frame_from_positional_args(
-                accumulator, thread, fp, pc, dispatch, code_object, function,
-                first_arg_reg, n_args, call_instr_len,
-                FunctionCallAdaptation::FixedArity);
-        if(jit_entry != nullptr)
-        {
-            MUSTTAIL return jit_entry(ARGS);
-        }
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
-        }
-
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_call_method_attr_keyword_slow(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 9;
-        int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t const_offset = pc[2];
-        uint8_t read_cache_idx = pc[3];
-        uint8_t call_cache_idx = pc[4];
-        uint32_t n_user_pos_args = uint8_t(pc[5]);
-        int8_t first_kw_value_reg = pc[6];
-        uint8_t n_kw_args = pc[7];
-        uint8_t keyword_names_idx = pc[8];
-        Value receiver = fp[receiver_reg];
-        TValue<String> attr_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].value());
-        Value keyword_names =
-            code_object->constant_table[keyword_names_idx].value();
-
-        AttributeReadInlineCache &attr_cache =
-            code_object->inline_caches.attribute_read_caches[read_cache_idx];
-        Value callable;
-        Value self;
-        MethodCallTargetStatus target_status;
-        if(attr_cache.matches(receiver))
-        {
-            target_status = prepare_method_call_target_from_plan(
-                receiver, attr_cache.plan, callable, self);
+            FunctionCallInlineCache &cache =
+                code_object->inline_caches.function_call_caches[pc[3]];
+            if(unlikely(cache.n_args != n_args ||
+                        !cache.guard.matches(callable)))
+            {
+                INTERP_TRY(populate_positional_call_cache_from_callable(
+                    callable, n_args, cache));
+            }
+            self = call_receiver(callable, cache.receiver_binding, self);
+            prepare_method_call_argument_slots(fp, first_arg_reg, n_user_args,
+                                               self);
+            jit_entry = enter_positional_call_from_cache(
+                accumulator, thread, fp, pc, dispatch, code_object, cache,
+                first_arg_reg, n_user_args + !self.is_not_present(),
+                call_instr_len);
         }
         else
         {
-            AttributeReadDescriptor descriptor =
-                resolve_attr_read_descriptor(receiver, attr_name);
-            target_status = prepare_method_call_target_from_descriptor(
-                receiver, descriptor, callable, self);
-            if(target_status == MethodCallTargetStatus::Ready &&
-               descriptor.is_cacheable())
+            static_assert(Op == Bytecode::CallMethodKeyword);
+            int32_t first_kw_value_reg = int8_t(pc[3]);
+            uint8_t n_kw_args = pc[4];
+            uint8_t keyword_names_idx = pc[5];
+            KeywordCallInlineCache &cache =
+                code_object->inline_caches.keyword_call_caches[pc[6]];
+            if(unlikely(cache.n_pos_args != n_args ||
+                        !cache.guard.matches(callable)))
             {
-                attr_cache.populate(receiver, descriptor);
+                Value keyword_names =
+                    code_object->constant_table[keyword_names_idx].value();
+                INTERP_TRY(populate_keyword_call_cache_from_callable(
+                    callable, keyword_names, n_args, n_kw_args, cache));
             }
+            self = call_receiver(callable, cache.receiver_binding, self);
+            prepare_method_call_argument_slots(fp, first_arg_reg, n_user_args,
+                                               self);
+            jit_entry = enter_function_frame_from_keyword_args(
+                accumulator, thread, fp, pc, dispatch, code_object, cache,
+                first_arg_reg, n_user_args + !self.is_not_present(),
+                first_kw_value_reg, n_kw_args, keyword_names_idx,
+                call_instr_len);
         }
-        if(unlikely(target_status == MethodCallTargetStatus::Missing))
-        {
-            MUSTTAIL return method_lookup_error(ARGS);
-        }
-        if(unlikely(target_status ==
-                    MethodCallTargetStatus::RequiresDescriptorDispatch))
-        {
-            MUSTTAIL return descriptor_dispatch_error(ARGS);
-        }
-
-        bool has_self = !self.is_not_present();
-        uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
-        KeywordCallInlineCache &call_cache =
-            code_object->inline_caches.keyword_call_caches[call_cache_idx];
-        if(unlikely(call_cache.n_pos_args != n_pos_args ||
-                    !call_cache.guard.matches(callable)))
-        {
-            INTERP_TRY(populate_keyword_call_cache_from_callable(
-                callable, keyword_names, n_pos_args, n_kw_args, call_cache));
-        }
-
-        self = call_receiver(callable, call_cache.receiver_binding, self);
-        int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_pos_args, self);
-        DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
-            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
-            first_arg_reg, n_user_pos_args + !self.is_not_present(),
-            first_kw_value_reg, n_kw_args, keyword_names_idx, call_instr_len);
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
@@ -6060,51 +5960,58 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_method_attr_keyword(PARAMS)
+    static INTERP_CC Value op_call_method_positional(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 9;
-        int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t read_cache_idx = pc[3];
-        uint8_t call_cache_idx = pc[4];
-        uint32_t n_user_pos_args = uint8_t(pc[5]);
-        int8_t first_kw_value_reg = pc[6];
-        uint8_t n_kw_args = pc[7];
-        uint8_t keyword_names_idx = pc[8];
-        Value receiver = fp[receiver_reg];
-        AttributeReadInlineCache &attr_cache =
-            code_object->inline_caches.attribute_read_caches[read_cache_idx];
-        if(unlikely(!attr_cache.matches(receiver)))
+        constexpr Bytecode op = Bytecode::CallMethodPositional;
+        int32_t pair_reg = int8_t(pc[1]);
+        int32_t first_arg_reg = pair_reg - 1;
+        uint32_t n_args = uint32_t(pc[2]) + 1;
+        FunctionCallInlineCache &cache =
+            code_object->inline_caches.function_call_caches[pc[3]];
+        if(unlikely(
+               fp[first_arg_reg].is_not_present() ||
+               !cache.guard.matches_exact(fp[pair_reg], n_args, cache.n_args) ||
+               cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return op_call_method_attr_keyword_slow(ARGS);
+            MUSTTAIL return op_call_method_slow<op>(ARGS);
+        }
+        assert(cache.receiver_binding == ReceiverBinding::None);
+        DispatchTableEntry jit_entry = enter_fixed_positional_call_from_cache(
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, bytecode_length(op));
+        if(jit_entry != nullptr)
+        {
+            MUSTTAIL return jit_entry(ARGS);
+        }
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
         }
 
-        Value callable;
-        Value self;
-        MethodCallFastTargetStatus target_status =
-            prepare_method_call_target_from_plan_fast(receiver, attr_cache.plan,
-                                                      callable, self);
-        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
-        {
-            MUSTTAIL return op_call_method_attr_keyword_slow(ARGS);
-        }
+        START(0);
+        COMPLETE();
+    }
 
-        bool has_self = !self.is_not_present();
-        uint32_t n_pos_args = n_user_pos_args + (has_self ? 1 : 0);
-        KeywordCallInlineCache &call_cache =
-            code_object->inline_caches.keyword_call_caches[call_cache_idx];
-        if(unlikely(!call_cache.guard.matches_exact(
-               callable, n_pos_args, call_cache.n_pos_args,
-               call_cache.function != nullptr)))
+    static INTERP_CC Value op_call_method_keyword(PARAMS)
+    {
+        constexpr Bytecode op = Bytecode::CallMethodKeyword;
+        int32_t pair_reg = int8_t(pc[1]);
+        int32_t first_arg_reg = pair_reg - 1;
+        uint32_t n_pos_args = uint32_t(pc[2]) + 1;
+        KeywordCallInlineCache &cache =
+            code_object->inline_caches.keyword_call_caches[pc[6]];
+        if(unlikely(fp[first_arg_reg].is_not_present() ||
+                    !cache.guard.matches_exact(fp[pair_reg], n_pos_args,
+                                               cache.n_pos_args,
+                                               cache.function != nullptr)))
         {
-            MUSTTAIL return op_call_method_attr_keyword_slow(ARGS);
+            MUSTTAIL return op_call_method_slow<op>(ARGS);
         }
-
-        int32_t first_arg_reg = prepare_method_call_argument_slots(
-            fp, receiver_reg, n_user_pos_args, self);
+        assert(cache.receiver_binding == ReceiverBinding::None);
         DispatchTableEntry jit_entry = enter_function_frame_from_keyword_args(
-            accumulator, thread, fp, pc, dispatch, code_object, call_cache,
-            first_arg_reg, n_pos_args, first_kw_value_reg, n_kw_args,
-            keyword_names_idx, call_instr_len);
+            accumulator, thread, fp, pc, dispatch, code_object, cache,
+            first_arg_reg, n_pos_args, int8_t(pc[3]), pc[4], pc[5],
+            bytecode_length(op));
         if(jit_entry != nullptr)
         {
             MUSTTAIL return jit_entry(ARGS);
@@ -7257,17 +7164,13 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
         SET_TABLE_ENTRY(Bytecode::DelLocal, op_del_local);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
+        SET_TABLE_ENTRY(Bytecode::LoadMethod, op_load_method);
+        SET_TABLE_ENTRY(Bytecode::FinishLoadMethod, op_finish_load_method);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
         SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);
         SET_TABLE_ENTRY(Bytecode::GetItem, op_get_item);
         SET_TABLE_ENTRY(Bytecode::SetItem, op_set_item);
         SET_TABLE_ENTRY(Bytecode::DelItem, op_del_item);
-        SET_TABLE_ENTRY(Bytecode::CallMethodAttrPositional,
-                        op_call_method_attr_positional);
-        SET_TABLE_ENTRY(Bytecode::CallMethodAttrExpanded,
-                        op_call_method_attr_expanded);
-        SET_TABLE_ENTRY(Bytecode::CallMethodAttrKeyword,
-                        op_call_method_attr_keyword);
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod0, op_call_special_method0);
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod1, op_call_special_method1);
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod2, op_call_special_method2);
@@ -7354,7 +7257,11 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::CallPositional, op_call_positional);
         SET_TABLE_ENTRY(Bytecode::CallKeyword, op_call_keyword);
+        SET_TABLE_ENTRY(Bytecode::CallMethodPositional,
+                        op_call_method_positional);
+        SET_TABLE_ENTRY(Bytecode::CallMethodKeyword, op_call_method_keyword);
         SET_TABLE_ENTRY(Bytecode::CallExpanded, op_call_expanded);
+        SET_TABLE_ENTRY(Bytecode::CallMethodExpanded, op_call_expanded);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic2, op_call_intrinsic2);

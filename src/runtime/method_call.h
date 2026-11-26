@@ -18,12 +18,6 @@ namespace cl
         RequiresDescriptorDispatch,
     };
 
-    enum class MethodCallFastTargetStatus : uint8_t
-    {
-        Ready,
-        Slow,
-    };
-
     static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
     {
         return !fun.extract()->has_varargs() && !fun.extract()->has_kwargs() &&
@@ -98,37 +92,13 @@ namespace cl
 
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::StaticMethodGet:
             case AttributeReadPlanKind::ExactPropertyGet:
                 callable_out = Value::not_present();
                 return MethodCallTargetStatus::RequiresDescriptorDispatch;
         }
 
         __builtin_unreachable();
-    }
-
-    static ALWAYSINLINE MethodCallFastTargetStatus
-    prepare_method_call_target_from_plan_fast(Value receiver,
-                                              const AttributeReadPlan &plan,
-                                              Value &callable_out,
-                                              Value &self_out)
-    {
-        if(likely(plan.kind == AttributeReadPlanKind::BindFunctionReceiver))
-        {
-            callable_out = read_plan_storage_owner(receiver, plan)
-                               ->read_storage_location(plan.storage_location);
-            // The plan survives ordinary class contents writes, so the current
-            // slot value decides whether this is still a bound method call
-            // target.
-            if(likely(callable_out.is_ptr() &&
-                      callable_out.get_ptr()->native_layout_id() ==
-                          NativeLayoutId::Function))
-            {
-                self_out = receiver;
-                return MethodCallFastTargetStatus::Ready;
-            }
-        }
-
-        return MethodCallFastTargetStatus::Slow;
     }
 
     static ALWAYSINLINE MethodCallTargetStatus

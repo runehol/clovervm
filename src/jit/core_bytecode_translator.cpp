@@ -410,6 +410,8 @@ namespace cl::jit
             case BytecodeCompoundRole::ConditionalTruthinessContinuation:
             case BytecodeCompoundRole::BinaryOperatorContinuation:
             case BytecodeCompoundRole::TernaryOperatorContinuation:
+            case BytecodeCompoundRole::MethodLoad:
+            case BytecodeCompoundRole::MethodLoadContinuation:
                 emit_unsupported(block, instruction, state);
                 return false;
         }

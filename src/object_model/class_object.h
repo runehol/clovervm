@@ -24,18 +24,6 @@ namespace cl
     class ThreadState;
     class Tuple;
 
-    enum class MroValidityCellInstallMode : uint8_t
-    {
-        IncludeSelf,
-        SkipSelf,
-    };
-
-    enum class MroValidityCellDependency : uint8_t
-    {
-        ShapeOnly,
-        ShapeAndContents,
-    };
-
     struct BuiltinClassMethod
     {
         TValue<String> name;
@@ -212,15 +200,10 @@ namespace cl
             return mro_shape_and_contents_validity_cell.extract();
         }
         ValidityCell *
-        current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell()
-            const
+        current_mro_and_metaclass_mro_shape_and_contents_validity_cell() const
         {
-            return mro_shape_and_metaclass_mro_shape_and_contents_validity_cell
+            return mro_and_metaclass_mro_shape_and_contents_validity_cell
                 .extract();
-        }
-        uint32_t attached_mro_shape_validity_cell_count() const
-        {
-            return attached_mro_shape_validity_cells.size();
         }
         uint32_t attached_mro_shape_and_contents_validity_cell_count() const
         {
@@ -237,20 +220,19 @@ namespace cl
             return create_mro_shape_and_contents_validity_cell_slow();
         }
         ALWAYSINLINE ValidityCell *
-        get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell()
+        get_or_create_mro_and_metaclass_mro_shape_and_contents_validity_cell()
             const
         {
             ValidityCell *cell =
-                mro_shape_and_metaclass_mro_shape_and_contents_validity_cell
+                mro_and_metaclass_mro_shape_and_contents_validity_cell
                     .extract();
             if(likely(cell != nullptr && cell->is_valid()))
             {
                 return cell;
             }
-            return create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_slow();
+            return create_mro_and_metaclass_mro_shape_and_contents_validity_cell_slow();
         }
-        void invalidate_lookup_validity_cells_for_shape_change();
-        void invalidate_lookup_validity_cells_for_contents_change();
+        void invalidate_lookup_validity_cells();
         Function *current_constructor_thunk() const
         {
             return constructor_thunk.extract();
@@ -282,16 +264,12 @@ namespace cl
         NOINLINE ValidityCell *
         create_mro_shape_and_contents_validity_cell_slow() const;
         NOINLINE ValidityCell *
-        create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_slow()
+        create_mro_and_metaclass_mro_shape_and_contents_validity_cell_slow()
             const;
         NOINLINE Expected<ConstructorThunkLookup>
         create_constructor_thunk_slow() const;
-        void install_validity_cell_along_mro(
-            ValidityCell *cell, MroValidityCellInstallMode mode,
-            MroValidityCellDependency dependency) const;
-        void
-        attach_mro_validity_cell(ValidityCell *cell,
-                                 MroValidityCellDependency dependency) const;
+        void attach_validity_cell_to_bases(ValidityCell *cell) const;
+        void attach_mro_validity_cell(ValidityCell *cell) const;
 
         Member<TValue<String>> name;
         Member<Value> bases;
@@ -301,8 +279,7 @@ namespace cl
         mutable MemberHeapPtr<ValidityCell>
             mro_shape_and_contents_validity_cell;
         mutable MemberHeapPtr<ValidityCell>
-            mro_shape_and_metaclass_mro_shape_and_contents_validity_cell;
-        mutable HeapPtrArray<ValidityCell> attached_mro_shape_validity_cells;
+            mro_and_metaclass_mro_shape_and_contents_validity_cell;
         mutable HeapPtrArray<ValidityCell>
             attached_mro_shape_and_contents_validity_cells;
         MemberHeapPtr<Shape> instance_root_shape;
@@ -321,7 +298,7 @@ namespace cl
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
             ClassObject, InlineSlotObject,
             3 + class_extra_inline_attribute_slot_count + 2 +
-                2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
+                HeapPtrArray<ValidityCell>::embedded_value_count + 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ClassObject);
     };
 
@@ -380,7 +357,7 @@ namespace cl
         initialize_shape(initial_shape, native_layout_id);
     }
 
-    bool is_subclass_of(ClassObject *cls, ClassObject *base);
+    bool is_subclass_of(const ClassObject *cls, ClassObject *base);
     bool is_instance_of(Object *obj, ClassObject *cls);
     BuiltinClassDefinition make_type_class(VirtualMachine *vm);
 

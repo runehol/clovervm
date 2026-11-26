@@ -332,6 +332,17 @@ namespace cl
                 effects.source_register(0);
                 break;
 
+            case Bytecode::LoadMethod:
+                effects.source_register(0);
+                effects.destination_register(3, 2);
+                effects.destination_accumulator();
+                break;
+
+            case Bytecode::FinishLoadMethod:
+                effects.source_accumulator();
+                effects.destination_register(0, 2);
+                break;
+
             case Bytecode::LoadAttr:
                 effects.source_register(0);
                 effects.destination_accumulator();
@@ -358,20 +369,6 @@ namespace cl
                 effects.source_register(0);
                 effects.source_register(1);
                 effects.source_accumulator();
-                effects.destination_accumulator();
-                break;
-
-            case Bytecode::CallMethodAttrPositional:
-                effects.source_register(0, effects.operand(4) + 1);
-                effects.destination_accumulator();
-                break;
-
-            case Bytecode::CallMethodAttrKeyword:
-                effects.source_register(0, effects.operand(4) + 1);
-                if(effects.operand(6) != 0)
-                {
-                    effects.source_register(5, effects.operand(6));
-                }
                 effects.destination_accumulator();
                 break;
 
@@ -542,6 +539,20 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
+            case Bytecode::CallMethodPositional:
+                effects.source_register(0, effects.operand(1) + 2);
+                effects.destination_accumulator();
+                break;
+
+            case Bytecode::CallMethodKeyword:
+                effects.source_register(0, effects.operand(1) + 2);
+                if(effects.operand(3) != 0)
+                {
+                    effects.source_register(2, effects.operand(3));
+                }
+                effects.destination_accumulator();
+                break;
+
             case Bytecode::CallPositional:
                 effects.source_register(0);
                 if(effects.operand(2) != 0)
@@ -551,9 +562,9 @@ namespace cl
                 effects.destination_accumulator();
                 break;
 
-            case Bytecode::CallMethodAttrExpanded:
-                effects.source_register(0);
-                effects.source_register(4, 2);
+            case Bytecode::CallMethodExpanded:
+                effects.source_register(0, 2);
+                effects.source_register(1, 2);
                 effects.destination_accumulator();
                 break;
 
@@ -893,6 +904,16 @@ namespace cl
                 {BytecodeOperandKind::Register,
                  code_object.decode_reg(-int8_t(fast_index) -
                                         FrameHeaderSizeBelowFp - 1)});
+        }
+
+        if(info.compound_role == BytecodeCompoundRole::MethodLoad)
+        {
+            instruction.continuation_pc_offset_ =
+                pc_offset + format.continuation_offset;
+            assert(
+                Bytecode(
+                    code_object.code[*instruction.continuation_pc_offset_]) ==
+                Bytecode::FinishLoadMethod);
         }
 
         if(info.compound_role == BytecodeCompoundRole::ConditionalTruthiness)

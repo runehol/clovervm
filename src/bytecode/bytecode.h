@@ -63,9 +63,6 @@ namespace cl
         RegisterOperatorCacheWithContinuation,
         RegisterRegisterOperatorCache,
         RegisterRegisterOperatorCacheWithContinuation,
-        RegisterConstantAttributeReadCacheFunctionCallCacheArgCount,
-        MethodKeywordCall,
-        MethodExpandedCall,
         SpecialMethodCall,
         Smi8OperatorCache,
         Smi8OperatorCacheWithContinuation,
@@ -76,7 +73,10 @@ namespace cl
         SixRegisters,
         PositionalCall,
         KeywordCall,
+        MethodPositionalPairCall,
+        MethodKeywordPairCall,
         ExpandedCall,
+        MethodLoad,
         NativeTarget,
         RuntimeIntrinsic,
         CodeObjectCall,
@@ -107,6 +107,8 @@ namespace cl
         TruthinessContinuation,
         ConditionalTruthiness,
         ConditionalTruthinessContinuation,
+        MethodLoad,
+        MethodLoadContinuation,
     };
 
     enum class Bytecode : uint8_t
@@ -224,6 +226,15 @@ namespace cl
                 return make_bytecode_format_info(Operand::Register,
                                                  Operand::Constant,
                                                  Operand::AttributeReadCache);
+            case BytecodeFormat::MethodLoad:
+                {
+                    BytecodeFormatInfo info = make_bytecode_format_info(
+                        Operand::Register, Operand::Constant,
+                        Operand::AttributeReadCache, Operand::Register);
+                    info.continuation_offset = info.operand_offset(3);
+                    ++info.byte_length;
+                    return info;
+                }
             case BytecodeFormat::RegisterConstantAttributeMutationCache:
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Constant,
@@ -268,23 +279,6 @@ namespace cl
                     ++info.byte_length;
                     return info;
                 }
-            case BytecodeFormat::
-                RegisterConstantAttributeReadCacheFunctionCallCacheArgCount:
-                return make_bytecode_format_info(
-                    Operand::Register, Operand::Constant,
-                    Operand::AttributeReadCache, Operand::FunctionCallCache,
-                    Operand::ArgumentCount);
-            case BytecodeFormat::MethodExpandedCall:
-                return make_bytecode_format_info(
-                    Operand::Register, Operand::Constant,
-                    Operand::AttributeReadCache, Operand::ExpandedCallCache,
-                    Operand::Register, Operand::Register);
-            case BytecodeFormat::MethodKeywordCall:
-                return make_bytecode_format_info(
-                    Operand::Register, Operand::Constant,
-                    Operand::AttributeReadCache, Operand::KeywordCallCache,
-                    Operand::ArgumentCount, Operand::Register,
-                    Operand::KeywordCount, Operand::Constant);
             case BytecodeFormat::SpecialMethodCall:
                 return make_bytecode_format_info(
                     Operand::Register, Operand::Constant,
@@ -331,6 +325,15 @@ namespace cl
                     Operand::Register, Operand::Register,
                     Operand::ArgumentCount, Operand::Register,
                     Operand::KeywordCount, Operand::Constant,
+                    Operand::KeywordCallCache);
+            case BytecodeFormat::MethodPositionalPairCall:
+                return make_bytecode_format_info(Operand::Register,
+                                                 Operand::ArgumentCount,
+                                                 Operand::FunctionCallCache);
+            case BytecodeFormat::MethodKeywordPairCall:
+                return make_bytecode_format_info(
+                    Operand::Register, Operand::ArgumentCount,
+                    Operand::Register, Operand::KeywordCount, Operand::Constant,
                     Operand::KeywordCallCache);
             case BytecodeFormat::NativeTarget:
                 return make_bytecode_format_info(Operand::NativeTarget);

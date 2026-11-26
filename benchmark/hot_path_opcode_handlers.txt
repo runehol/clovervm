@@ -6,7 +6,7 @@ op_add_smi
 op_call_positional
 op_call_positional_shape
 op_call_keyword_shape
-op_call_method_attr_positional
+op_call_method_positional
 op_call_special_method0
 op_call_special_method1
 op_call_special_method2
@@ -58,6 +58,7 @@ op_ldar15
 op_lshift
 op_lshift_smi
 op_load_attr
+op_load_method
 op_load_local_checked
 op_load_cell_checked
 op_mul
