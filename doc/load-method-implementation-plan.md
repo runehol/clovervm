@@ -29,13 +29,23 @@ managed getter call path. Direct lookup writes the pair and skips the
 continuation. A getter returns to the continuation, which commits the result
 to `S` and the absent receiver to `S+1`.
 
+Reuse the combined MRO validity cell for cached class-object reads,
+including plain-slot reads. It guards shape and contents on the class and
+metaclass MROs.
+At one warmed load site, replace an inherited plain function with a
+`classmethod`, then restore the plain function. Verify invalidation on the
+same-shape writes and check the pair after each lookup. The receiver should
+be absent for the plain function and the accessed derived class for the
+`classmethod`.
+
 Use hand-built bytecode to inspect the pair for direct binding, absent
 receivers, and inherited classmethods. Check base aliasing with `S+1`, the
 compound instruction length, and the standalone continuation's operands.
-Exercise getter exceptions and recursive entry. Force a safepoint at getter
-return and verify that the continuation sees the rooted accumulator and
-commits the pair once. Check that the initial JIT fallback resumes at the
-start of the load with the base available.
+Exercise recursive getter entry and verify that a getter failure reaches the
+caller's handler for a protected load. On successful return, assert the exact
+`FinishLoadMethod` PC. Force a safepoint there with a fresh heap result rooted
+only in the accumulator and verify that the continuation commits the pair
+once.
 
 ## 2. Add positional and keyword method calls
 
@@ -60,8 +70,6 @@ callback-capable binding.
 Verify reentry, including a nested call that replaces the site's live cache.
 Check that supplying a receiver uses the positional view without allocating a
 prefix tuple, and that a callee collector still packs its suffix when needed.
-Verify that the interpreter fallback snapshot makes the pair and the tuple
-and dict transport available at the call PC.
 
 ## 4. Switch source lowering and retire fused calls
 
@@ -86,11 +94,13 @@ architecture docs to describe the shipped behavior.
 Pin the fused benchmark baseline before the first code slice. Run
 `ninja -C build-debug all check` for each slice. As hot handlers land, update
 the required-handler list and inspect Release `check_opcode_frames` diagnostics.
-After the codegen switch, verify actual JIT handoff on AArch64 and run the
-matched JIT-off and JIT-on Release comparison under the repository's shared
-build and timing lock. Use the workloads in the
+After the codegen switch, run the interpreter-only Release comparison under
+the repository's shared build and timing lock. Use the workloads in the
 [design's verification section](call-argument-temporaries-and-lazy-tracebacks.md#lifetimes-and-verification).
 The quantitative regression budget remains proposed.
+
+The bytecode follows the existing interpreter fallback contract. Dedicated
+JIT tests and the JIT-on performance comparison are follow-up work.
 
 The first implementation review covers slice 1. Native-origin descriptor
 callbacks, arbitrary callable descriptor hooks, the callee-owned frame

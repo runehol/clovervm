@@ -133,12 +133,18 @@ callable returned by lookup is handled as an ordinary callable by the call
 stage. A value read such as `f = obj.m` still exposes the bound method when
 the descriptor requires one.
 
-Reuse attribute read plans and their existing cacheability rules. Reload
-the selected slot and, for exact instance properties, the current accessor.
-Keep class-object descriptor shortcuts uncached where the existing guards
-cannot prove the binding after a slot write. The lookup cache carries the
-guarded plan. The pair carries the result of this invocation. Getter
-execution uses the managed return described in the call temporary design.
+Reuse attribute read plans and their descriptor cacheability rules.
+Class-object `LoadMethod` entries use the same combined validity cell as
+`LoadAttr`, covering shape and contents on both the accessed class's MRO and
+its metaclass's MRO. This includes a cached plain-slot read. A
+same-shape write that replaces an inherited plain function with a
+`classmethod` must invalidate the plan before replay, so the next lookup
+can select the new binding and supply the accessed class as owner.
+
+Reload the selected slot and, for exact instance properties, the current
+accessor. The lookup cache carries the guarded plan. The pair carries the
+result of this invocation. Getter execution uses the managed return
+described in the call temporary design.
 
 A present saved receiver implies an exact function, whose call target has
 `ReceiverBinding::None`. With an absent saved receiver, the ordinary
