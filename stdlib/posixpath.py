@@ -61,14 +61,18 @@ def _is_var_char(ch):
 
 
 def join(path, *paths):
+    if not isinstance(path, str):
+        raise TypeError("join requires string paths")
     result = path
     for item in paths:
-        if item.startswith(sep):
+        if not isinstance(item, str):
+            raise TypeError("join requires string paths")
+        if item.startswith(sep) or not result:
             result = item
-        elif result == "" or result.endswith(sep):
-            result = result + item
+        elif result.endswith(sep):
+            result += item
         else:
-            result = result + sep + item
+            result += sep + item
     return result
 
 
@@ -110,7 +114,7 @@ def dirname(path):
 
 
 def basename(path):
-    return split(path)[1]
+    return path[path.rfind(sep) + 1:]
 
 
 def commonprefix(paths):
