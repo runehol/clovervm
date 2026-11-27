@@ -10,6 +10,20 @@ def _suffix_start(name):
     return len(name)
 
 
+def _replacement_text(value, argument):
+    if not isinstance(value, str):
+        raise TypeError(argument + " must be a str")
+    return str.__str__(value)
+
+
+def _common_prefix_length(tail, base_tail):
+    limit = min(len(tail), len(base_tail))
+    for index in range(limit):
+        if tail[index] != base_tail[index]:
+            return index
+    return limit
+
+
 class PurePosixPath:
     """A POSIX path supporting lexical operations without filesystem I/O."""
 
@@ -115,3 +129,69 @@ class PurePosixPath:
     def stem(self):
         name = self.name
         return name[:_suffix_start(name)]
+
+    def with_name(self, name):
+        name = _replacement_text(name, "name")
+        if not name or name == "." or "/" in name:
+            raise ValueError("Invalid name " + repr(name))
+        if not self._tail:
+            raise ValueError(repr(self._path) + " has an empty name")
+        parts = self._tail[:-1] + (name,)
+        return self.__class__(self._root + "/".join(parts))
+
+    def with_stem(self, stem):
+        suffix = self.suffix
+        stem = _replacement_text(stem, "stem")
+        if not suffix:
+            return self.with_name(stem)
+        if not stem:
+            raise ValueError(repr(self._path) + " has a non-empty suffix")
+        return self.with_name(stem + suffix)
+
+    def with_suffix(self, suffix):
+        stem = self.stem
+        if not stem:
+            raise ValueError(repr(self._path) + " has an empty name")
+        suffix = _replacement_text(suffix, "suffix")
+        if suffix and not suffix.startswith("."):
+            raise ValueError("Invalid suffix " + repr(suffix))
+        return self.with_name(stem + suffix)
+
+    def is_relative_to(self, other):
+        if not isinstance(other, PurePosixPath):
+            other = PurePosixPath(other)
+        if self._root != other._root:
+            return False
+        tail = self._tail
+        base_tail = other._tail
+        base_length = len(base_tail)
+        return base_length <= len(tail) and _common_prefix_length(tail, base_tail) == base_length
+
+    def relative_to(self, other, *, walk_up=False):
+        if not isinstance(other, PurePosixPath):
+            other = PurePosixPath(other)
+        # Retain the original components and spelling across walk_up truth calls.
+        tail = self._tail
+        base_tail = other._tail
+        path_text = self._path
+        base_text = other._path
+        common = -1
+        if self._root == other._root:
+            common = _common_prefix_length(tail, base_tail)
+        parts = []
+        # A mismatched root also leaves the anchor itself unmatched.
+        for level in range(len(base_tail), common, -1):
+            if not walk_up:
+                raise ValueError(
+                    repr(path_text) + " is not in the subpath of " + repr(base_text)
+                )
+            if not level:
+                raise ValueError(
+                    repr(path_text) + " and " + repr(base_text) + " have different anchors"
+                )
+            if base_tail[level - 1] == "..":
+                raise ValueError("'..' segment in " + repr(base_text) + " cannot be walked")
+            if common >= 0:
+                parts.append("..")
+        parts.extend(tail[common:])
+        return self.__class__("/".join(parts))
