@@ -6825,14 +6825,12 @@ namespace cl
         }
         else
         {
-            int64_t next_smi = 0;
-            if(unlikely(
-                   __builtin_add_overflow(current_smi, step_smi, &next_smi)))
-            {
-                MUSTTAIL return overflow_path(ARGS);
-            }
             accumulator = current;
-            iterator->current = TValue<SMI>::from_smi(next_smi);
+            TValue<SMI> next =
+                advance_range_cursor(TValue<SMI>::from_value_assumed(current),
+                                     TValue<SMI>::from_value_assumed(stop),
+                                     TValue<SMI>::from_value_assumed(step));
+            iterator->current = next;
         }
 
         START(0);
@@ -6982,14 +6980,12 @@ namespace cl
         }
         else
         {
-            int64_t next_smi = 0;
-            if(unlikely(
-                   __builtin_add_overflow(current_smi, step_smi, &next_smi)))
-            {
-                MUSTTAIL return overflow_path(ARGS);
-            }
             accumulator = current;
-            fp[reg] = Value::from_smi(next_smi);
+            TValue<SMI> next =
+                advance_range_cursor(TValue<SMI>::from_value_assumed(current),
+                                     TValue<SMI>::from_value_assumed(stop),
+                                     TValue<SMI>::from_value_assumed(step));
+            fp[reg] = next.raw_value();
         }
 
         START(0);
