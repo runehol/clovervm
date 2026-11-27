@@ -141,6 +141,16 @@ TEST(HeavyPythonSourceFiles, CsvSurvivesEverySafepointReclamation)
     EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
 }
 
+TEST(HeavyPythonSourceFiles, CollectionsDequeSurvivesEverySafepointReclamation)
+{
+    std::wstring source =
+        read_source_file("tests/python/test_collections_deque.py");
+    cl::test::VmTestContext context;
+    context.vm().set_fire_every_safepoint_for_testing(true);
+    context.vm().request_safepoint();
+    EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+}
+
 TEST(HeavyPythonSourceFiles,
      StatisticsQuantilesSurvivesEverySafepointReclamation)
 {
