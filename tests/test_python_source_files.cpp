@@ -184,6 +184,20 @@ TEST(HeavyPythonSourceFiles,
     }
 }
 
+TEST(HeavyPythonSourceFiles, StatisticsSpreadSurvivesEverySafepointReclamation)
+{
+    for(const char *path: {"tests/python/test_statistics_spread.py",
+                           "tests/python/test_statistics_spread_payloads.py"})
+    {
+        SCOPED_TRACE(path);
+        std::wstring source = read_source_file(path);
+        cl::test::VmTestContext context;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().request_safepoint();
+        EXPECT_FALSE(context.run_file(source.c_str()).is_exception_marker());
+    }
+}
+
 TEST(HeavyPythonSourceFiles, FloatIntegerRatioSurvivesEverySafepointReclamation)
 {
     std::wstring source =

@@ -9,6 +9,9 @@ binary64 arithmetic; weighted float operations can overflow or yield NaNs.
 The number of intervals inherits the existing range/index conversion limits.
 Geometric mean streams logarithms with compensated summation and inherits
 platform log/exp accuracy and builtin numeric payload conversion limits.
+Variance and standard deviation stream builtin numeric payloads with exact
+integer accumulation. A supplied center uses ordinary subtraction and
+multiplication before accumulation.
 """
 
 # Median algorithms adapted from CPython's Lib/statistics.py at v3.14.5.
@@ -20,7 +23,7 @@ from math import exp as _exp, fsum as _fsum, log as _log
 
 __all__ = (
     "StatisticsError", "median", "median_low", "median_high", "mode", "multimode",
-    "quantiles", "geometric_mean"
+    "quantiles", "geometric_mean", "variance", "pvariance", "stdev", "pstdev"
 )
 
 
@@ -97,6 +100,134 @@ def geometric_mean(data):
     if logs.found_zero:
         return _math.nan if total == _math.inf else 0.0
     return _exp(total / logs.count)
+
+
+def _spread_payload(value):
+    if isinstance(value, int):
+        return int.__int__(value)
+    if isinstance(value, float):
+        return float.__float__(value)
+    raise TypeError("statistics requires an int or float")
+
+
+# The supplied-center evaluation order and scaled rational square-root
+# algorithm are adapted from CPython Lib/statistics.py at v3.14.10.
+# Copyright (c) Python Software Foundation.
+# The derived portions are licensed under the PSF License Agreement.
+def _spread(data, center, correction, root, name):
+    centered = center is not None
+    count = 0
+    scale = 1
+    total = 0
+    squares = 0
+    has_float = False
+    special = None
+    for value in data:
+        value = _spread_payload(value)
+        if centered:
+            if count == 0:
+                center = _spread_payload(center)
+            delta = value - center
+            value = delta * delta
+        count += 1
+        term_is_float = isinstance(value, float)
+        if term_is_float:
+            has_float = True
+            if not _math.isfinite(value):
+                if special is None:
+                    special = 0.0
+                special += value
+                continue
+        # Keep consuming and evaluating terms so later errors still surface.
+        if special is not None:
+            continue
+        if term_is_float:
+            ratio = float.as_integer_ratio(value)
+            numerator = ratio[0]
+            denominator = ratio[1]
+        else:
+            numerator = value
+            denominator = 1
+
+        # All denominators are powers of two. Rescale only when a new
+        # denominator exceeds the largest one seen so far.
+        if denominator > scale:
+            factor = denominator // scale
+            if centered:
+                squares *= factor
+            else:
+                total *= factor
+                squares *= factor * factor
+            scale = denominator
+        elif denominator < scale:
+            numerator *= scale // denominator
+        if centered:
+            squares += numerator
+        else:
+            total += numerator
+            squares += numerator * numerator
+
+    divisor = count - correction
+    if divisor < 1:
+        if correction == 0:
+            raise StatisticsError(name + " requires at least one data point")
+        raise StatisticsError(name + " requires at least two data points")
+    if special is not None:
+        if root:
+            raise ValueError("inf or nan encountered in data")
+        return special
+
+    if centered:
+        numerator = squares
+        denominator = divisor * scale
+    else:
+        # The cancellation here is exact because both terms are integers.
+        numerator = count * squares - total * total
+        denominator = count * divisor * scale * scale
+    if root:
+        return _sqrt_spread_ratio(numerator, denominator)
+    if not has_float and numerator % denominator == 0:
+        return numerator // denominator
+    return numerator / denominator
+
+
+def _sqrt_spread_ratio(numerator, denominator):
+    if numerator == 0:
+        return 0.0
+    # Scale the ratio by 2**(-2*shift). With 109 = 2*53 + 3,
+    # the integer root retains guard bits for the final binary64 rounding.
+    shift = (numerator.bit_length() - denominator.bit_length() - 109) // 2
+    if shift >= 0:
+        denominator <<= 2 * shift
+    else:
+        numerator <<= -2 * shift
+    root = _math.isqrt(numerator // denominator)
+    # Preserve exact roots. For inexact roots, make the low bit sticky.
+    if root % 2 == 0 and root * root * denominator != numerator:
+        root += 1
+    if shift >= 0:
+        return (root << shift) / 1
+    return root / (1 << -shift)
+
+
+def variance(data, xbar=None):
+    """Return the sample variance about the optional mean xbar."""
+    return _spread(data, xbar, 1, False, "variance")
+
+
+def pvariance(data, mu=None):
+    """Return the population variance about the optional mean mu."""
+    return _spread(data, mu, 0, False, "pvariance")
+
+
+def stdev(data, xbar=None):
+    """Return the sample standard deviation about the optional mean xbar."""
+    return _spread(data, xbar, 1, True, "stdev")
+
+
+def pstdev(data, mu=None):
+    """Return the population standard deviation about the optional mean mu."""
+    return _spread(data, mu, 0, True, "pstdev")
 
 
 def median(data):
