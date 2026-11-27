@@ -126,6 +126,133 @@ for text in (">9223372036854775808", ">9223372036854775808z",
              ">1152921504606846976q", ">9223372036854775807Bx"):
     assert raises(struct.error, struct.calcsize, text) == "total struct size too long"
 
+
+def buffer_fixture(pack_into, unpack_from, iter_unpack):
+    original = b"abcdef"
+    expected = b"a\x2a\x00\x00\x07f"
+    for offset in (1, -5, True, Number(-5)):
+        buf = bytearray(original)
+        assert pack_into(buf, offset, 42, 7) is None
+        assert buf == expected
+        assert unpack_from(buf, offset) == (42, 7)
+        assert unpack_from(Payload(expected), offset) == (42, 7)
+    assert unpack_from(b"\x2a@@\x07extra") == (42, 7)
+    assert raises(struct.error, pack_into) == "pack_into expected buffer argument"
+    assert raises(struct.error, pack_into, None) == "pack_into expected offset argument"
+    assert raises(struct.error, pack_into, None, None, 1) == (
+        "pack_into expected 2 items for packing (got 1)")
+    raises(TypeError, pack_into, original, None, 1, 2)
+    raises(TypeError, pack_into, bytearray(), None, 1, 2)
+    raises(TypeError, unpack_from, [])
+    raises(TypeError, unpack_from, original, 1.0)
+    raises(TypeError, pack_into, original, max_size + 1, 1, 2)
+    raises(TypeError, unpack_from, [], max_size + 1)
+    for offset in (-max_size - 2, max_size + 1):
+        raises(IndexError, pack_into, bytearray(), offset, 1, 2)
+        raises(OverflowError, unpack_from, original, offset)
+    assert raises(struct.error, pack_into, bytearray(b"x"), -2, 1, 2) == (
+        "no space to pack 4 bytes at offset -2")
+    assert raises(struct.error, unpack_from, b"x", -2) == (
+        "not enough data to unpack 4 bytes at offset -2")
+    for offset in (-7, -max_size - 1):
+        message = "offset " + str(offset) + " out of range for 6-byte buffer"
+        assert raises(struct.error, pack_into, bytearray(original), offset, 1, 2) == message
+        assert raises(struct.error, unpack_from, original, offset) == message
+    buf = bytearray(original)
+    assert raises(struct.error, pack_into, buf, max_size, "bad", -1) == (
+        "pack_into requires a buffer of at least 9223372036854775811 bytes " +
+        "for packing 4 bytes at offset 9223372036854775807 (actual buffer size is 6)")
+    assert buf == original
+    assert raises(struct.error, pack_into, buf, 1, 42, 256) == (
+        "'B' format requires 0 <= number <= 255")
+    assert buf == b"a\x2a\x00\x00\x00f"
+    assert raises(struct.error, pack_into, buf, 1, "bad", 7) == (
+        "required argument is not an integer")
+    assert buf == b"a\x00\x00\x00\x00f"
+
+    records = iter_unpack(Payload(b"\x01ab\x02\x03cd\x04"))
+    assert iter(records) is records and records.__length_hint__() == 2
+    assert next(records) == (1, 2) and records.__length_hint__() == 1
+    assert next(records) == (3, 4) and records.__length_hint__() == 0
+    raises(StopIteration, next, records)
+    assert records.__length_hint__() == 0
+    raises(StopIteration, next, records)
+    assert list(iter_unpack(b"")) == []
+    assert raises(struct.error, iter_unpack, b"abcde") == (
+        "iterative unpacking requires a buffer of a multiple of 4 bytes")
+
+
+def check_buffer_operations():
+    def pack_record(*args):
+        return struct.pack_into(">B2xB", *args)
+
+
+    def unpack_record(*args):
+        return struct.unpack_from(">B2xB", *args)
+
+
+    def iter_records(*args):
+        return struct.iter_unpack(">B2xB", *args)
+
+
+    spec = struct.Struct(">B2xB")
+    buffer_fixture(pack_record, unpack_record, iter_records)
+    buffer_fixture(spec.pack_into, spec.unpack_from, spec.iter_unpack)
+    assert spec.unpack_from(buffer=b"0\x01ab\x02", offset=1) == (1, 2)
+    assert struct.unpack_from(">B2xB", buffer=b"0\x01ab\x02", offset=1) == (1, 2)
+    raises(TypeError, struct.unpack_from, format=">B", buffer=b"x")
+    raises(TypeError, struct.pack_into, ">B", buffer=bytearray(1), offset=0)
+    raises(TypeError, spec.pack_into, buffer=bytearray(1), offset=0)
+    raises(TypeError, struct.iter_unpack, ">B", buffer=b"x")
+    raises(TypeError, spec.iter_unpack, buffer=b"")
+    assert raises(struct.error, struct.pack_into, ">z", None, None) == "bad char in struct format"
+    assert raises(struct.error, struct.unpack_from, ">z", None) == "bad char in struct format"
+    assert raises(struct.error, struct.iter_unpack, ">z", None) == "bad char in struct format"
+    assert raises(struct.error, struct.iter_unpack, ">0H", b"") == (
+        "cannot iteratively unpack with a struct of length 0")
+    zero = bytearray(b"x")
+    assert struct.pack_into("", zero, len(zero)) is None
+    assert struct.unpack_from("", zero, len(zero)) == ()
+    assert struct.unpack_from("", zero, -len(zero)) == ()
+    raises(struct.error, struct.pack_into, "", zero, len(zero) + 1)
+    raises(struct.error, struct.unpack_from, "", zero, -len(zero) - 1)
+    assert zero == b"x"
+
+    # CPython's opposite-endian 64-bit encoder can write the truncated
+    # failing field. CloverVM leaves it zero after the shared encoder fails.
+    if sys.byteorder == "little":
+        foreign = ">"
+        truncated = b"\x80\x00\x00\x00\x00\x00\x00\x00"
+    else:
+        foreign = "<"
+        truncated = b"\x00\x00\x00\x00\x00\x00\x00\x80"
+    buf = bytearray(b"abcdefghij")
+    raises(struct.error, struct.pack_into, foreign + "Bq", buf, 1, 42, 1 << 63)
+    if sys.implementation.name == "clovervm":
+        assert buf == b"a*" + bytes(8)
+    else:
+        assert buf == b"a*" + truncated
+
+    if sys.implementation.name == "clovervm":
+        class Index:
+            def __index__(self):
+                raise AssertionError
+
+        raises(TypeError, struct.pack_into, ">B", zero, Index(), 1)
+        raises(TypeError, struct.unpack_from, ">B", zero, Index())
+        raises(TypeError, struct.iter_unpack, ">B", zero)
+        assert zero == b"x"
+
+        spec = struct.Struct(">H")
+        records = spec.iter_unpack(b"\x00\x01\x00\x02")
+        assert next(records) == (1,)
+        spec.__init__(">B")
+        assert list(records) == [(2,)]
+        assert list(spec.iter_unpack(b"\x00\x01")) == [(0,), (1,)]
+
+
+check_buffer_operations()
+
 if sys.implementation.name == "clovervm":
     over_storage = sys.maxsize + 1
     pad_format = ">" + str(over_storage) + "x"

@@ -2,7 +2,10 @@
 
 import sys as _sys
 
-__all__ = ["Struct", "calcsize", "error", "pack", "unpack"]
+__all__ = [
+    "Struct", "calcsize", "error", "iter_unpack", "pack", "pack_into",
+    "unpack", "unpack_from",
+]
 
 
 class error(Exception):
@@ -146,22 +149,19 @@ def _pack(plan, values):
     return b"".join(chunks)
 
 
-def _unpack(plan, buffer):
-    order = plan[1]
-    size = plan[2]
-    fields = plan[4]
+def _buffer_type(buffer, operation):
     if isinstance(buffer, bytes):
-        container = bytes
-    elif isinstance(buffer, bytearray):
-        container = bytearray
-    else:
-        raise TypeError("unpack requires a bytes-like object")
-    if container.__len__(buffer) != size:
-        raise error("unpack requires a buffer of " + str(size) + " bytes")
+        return bytes
+    if isinstance(buffer, bytearray):
+        return bytearray
+    raise TypeError(operation + " requires a bytes-like object")
 
+
+def _unpack_record(plan, buffer, container, start):
+    order = plan[1]
     values = []
-    for field in fields:
-        offset = field[0]
+    for field in plan[4]:
+        offset = start + field[0]
         width = field[1]
         code = field[2]
         count = field[3]
@@ -172,6 +172,124 @@ def _unpack(plan, buffer):
             values.append(int.from_bytes(chunk, order, signed=signed))
             offset = end
     return tuple(values)
+
+
+def _unpack(plan, buffer):
+    container = _buffer_type(buffer, "unpack")
+    size = plan[2]
+    if container.__len__(buffer) != size:
+        raise error("unpack requires a buffer of " + str(size) + " bytes")
+    return _unpack_record(plan, buffer, container, 0)
+
+
+def _buffer_offset(offset, length, size, operation):
+    if not isinstance(offset, int):
+        raise TypeError(operation + " offset must be an integer")
+    offset = int.__index__(offset)
+    packing = operation == "pack_into"
+    if offset < -_SIZE_MAX - 1 or offset > _SIZE_MAX:
+        if packing:
+            raise IndexError("cannot fit integer into an index-sized integer")
+        raise OverflowError("Python int too large to convert to C ssize_t")
+
+    if offset < 0:
+        if offset + size > 0:
+            message = "no space to pack " if packing else "not enough data to unpack "
+            raise error(message + str(size) + " bytes at offset " + str(offset))
+        if offset < -length:
+            raise error("offset " + str(offset) + " out of range for " +
+                        str(length) + "-byte buffer")
+        offset += length
+    if length - offset < size:
+        action = "packing" if packing else "unpacking"
+        raise error(operation + " requires a buffer of at least " +
+                    str(size + offset) + " bytes for " + action + " " +
+                    str(size) + " bytes at offset " + str(offset) +
+                    " (actual buffer size is " + str(length) + ")")
+    return offset
+
+
+def _pack_into(plan, args):
+    count = len(args)
+    if count == 0:
+        raise error("pack_into expected buffer argument")
+    if count == 1:
+        raise error("pack_into expected offset argument")
+    arity = plan[3]
+    if count - 2 != arity:
+        raise error("pack_into expected " + str(arity) +
+                    " items for packing (got " + str(count - 2) + ")")
+    buffer = args[0]
+    if not isinstance(buffer, bytearray):
+        raise TypeError("pack_into requires a writable bytearray")
+    size = plan[2]
+    start = _buffer_offset(args[1], bytearray.__len__(buffer), size, "pack_into")
+
+    # Clear the record before converting fields. Only successfully encoded
+    # fields replace their zeros, and earlier writes survive a later error.
+    for offset in range(start, start + size):
+        buffer[offset] = 0
+
+    order = plan[1]
+    arg = 2
+    for field in plan[4]:
+        offset = start + field[0]
+        width = field[1]
+        code = field[2]
+        count = field[3]
+        signed = code in "bhilq"
+        for _ in range(count):
+            chunk = _pack_integer(args[arg], code, width, order, signed)
+            for octet in chunk:
+                buffer[offset] = octet
+                offset += 1
+            arg += 1
+
+
+def _unpack_from(plan, buffer, offset):
+    container = _buffer_type(buffer, "unpack_from")
+    start = _buffer_offset(offset, container.__len__(buffer), plan[2],
+                           "unpack_from")
+    return _unpack_record(plan, buffer, container, start)
+
+
+class _UnpackIterator:
+    def __init__(self, plan, buffer, length):
+        self._plan = plan
+        self._buffer = buffer
+        self._length = length
+        self._offset = 0
+
+    def __iter__(self):
+        return self
+
+    def __length_hint__(self):
+        if self._buffer is None:
+            return 0
+        return (self._length - self._offset) // self._plan[2]
+
+    def __next__(self):
+        offset = self._offset
+        if offset == self._length:
+            self._buffer = None
+            self._plan = None
+            raise StopIteration
+        record = _unpack_record(self._plan, self._buffer, bytes, offset)
+        self._offset = offset + self._plan[2]
+        return record
+
+
+def _iter_unpack(plan, buffer):
+    size = plan[2]
+    if size == 0:
+        raise error("cannot iteratively unpack with a struct of length 0")
+    if not isinstance(buffer, bytes):
+        raise TypeError("iter_unpack requires immutable bytes")
+    length = bytes.__len__(buffer)
+    if length % size:
+        raise error("iterative unpacking requires a buffer of a multiple of " +
+                    str(size) + " bytes")
+    return _UnpackIterator(plan, buffer, length)
 
 
 class Struct:
@@ -191,8 +309,18 @@ class Struct:
     def pack(self, /, *values):
         return _pack(self._plan, values)
 
+    def pack_into(self, /, *args):
+        """Pack values into a bytearray at the required offset."""
+        return _pack_into(self._plan, args)
+
     def unpack(self, buffer, /):
         return _unpack(self._plan, buffer)
+
+    def unpack_from(self, /, buffer, offset=0):
+        return _unpack_from(self._plan, buffer, offset)
+
+    def iter_unpack(self, buffer, /):
+        return _iter_unpack(self._plan, buffer)
 
 
 def pack(format, /, *values):
@@ -200,9 +328,24 @@ def pack(format, /, *values):
     return _pack(_compile(format), values)
 
 
+def pack_into(format, /, *args):
+    """Pack values into a bytearray at the required offset."""
+    return _pack_into(_compile(format), args)
+
+
 def unpack(format, buffer, /):
     """Unpack an exactly sized buffer into a tuple."""
     return _unpack(_compile(format), buffer)
+
+
+def unpack_from(format, /, buffer, offset=0):
+    """Unpack one record from a buffer at offset."""
+    return _unpack_from(_compile(format), buffer, offset)
+
+
+def iter_unpack(format, buffer, /):
+    """Iterate over the fixed-size records in immutable bytes."""
+    return _iter_unpack(_compile(format), buffer)
 
 
 def calcsize(format, /):
