@@ -12,6 +12,21 @@ namespace cl
     class ClassObject;
     class VirtualMachine;
 
+    // A non-exhausted cursor that steps outside the SMI range has
+    // already passed the representable stop. Store stop as the cursor.
+    inline TValue<SMI> advance_range_cursor(TValue<SMI> current,
+                                            TValue<SMI> stop, TValue<SMI> step)
+    {
+        Value next;
+        if(__builtin_add_overflow(current.raw_value().as.integer,
+                                  step.raw_value().as.integer,
+                                  &next.as.integer))
+        {
+            return stop;
+        }
+        return TValue<SMI>::from_value_assumed(next);
+    }
+
     class RangeIterator : public Object
     {
     public:

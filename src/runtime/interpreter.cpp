@@ -3837,7 +3837,9 @@ namespace cl
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
         {
-            accumulator.as.integer -= b.as.integer;
+            accumulator.as.integer = static_cast<int64_t>(
+                static_cast<uint64_t>(accumulator.as.integer) -
+                static_cast<uint64_t>(b.as.integer));
             MUSTTAIL return op_add_smi_dispatch(ARGS);
         }
 
@@ -3857,7 +3859,9 @@ namespace cl
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
         {
-            accumulator.as.integer -= a.as.integer;
+            accumulator.as.integer = static_cast<int64_t>(
+                static_cast<uint64_t>(accumulator.as.integer) -
+                static_cast<uint64_t>(a.as.integer));
             MUSTTAIL return op_add_dispatch(ARGS);
         }
 
@@ -3876,7 +3880,9 @@ namespace cl
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
         {
-            accumulator.as.integer += b.as.integer;
+            accumulator.as.integer = static_cast<int64_t>(
+                static_cast<uint64_t>(accumulator.as.integer) +
+                static_cast<uint64_t>(b.as.integer));
             MUSTTAIL return op_sub_smi_dispatch(ARGS);
         }
 
@@ -4348,7 +4354,8 @@ namespace cl
         if(unlikely(__builtin_sub_overflow(0, a.as.integer,
                                            &accumulator.as.integer)))
         {
-            accumulator.as.integer = -accumulator.as.integer;
+            accumulator.as.integer = static_cast<int64_t>(
+                uint64_t{0} - static_cast<uint64_t>(accumulator.as.integer));
             MUSTTAIL return op_negate_dispatch(ARGS);
         }
 
@@ -6818,14 +6825,12 @@ namespace cl
         }
         else
         {
-            int64_t next_smi = 0;
-            if(unlikely(
-                   __builtin_add_overflow(current_smi, step_smi, &next_smi)))
-            {
-                MUSTTAIL return overflow_path(ARGS);
-            }
             accumulator = current;
-            iterator->current = TValue<SMI>::from_smi(next_smi);
+            TValue<SMI> next =
+                advance_range_cursor(TValue<SMI>::from_value_assumed(current),
+                                     TValue<SMI>::from_value_assumed(stop),
+                                     TValue<SMI>::from_value_assumed(step));
+            iterator->current = next;
         }
 
         START(0);
@@ -6975,14 +6980,12 @@ namespace cl
         }
         else
         {
-            int64_t next_smi = 0;
-            if(unlikely(
-                   __builtin_add_overflow(current_smi, step_smi, &next_smi)))
-            {
-                MUSTTAIL return overflow_path(ARGS);
-            }
             accumulator = current;
-            fp[reg] = Value::from_smi(next_smi);
+            TValue<SMI> next =
+                advance_range_cursor(TValue<SMI>::from_value_assumed(current),
+                                     TValue<SMI>::from_value_assumed(stop),
+                                     TValue<SMI>::from_value_assumed(step));
+            fp[reg] = next.raw_value();
         }
 
         START(0);

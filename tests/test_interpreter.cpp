@@ -9487,6 +9487,95 @@ TEST(Interpreter, exhausted_for_iter_opcodes_set_accumulator_to_none)
               run_exhausted_for_iter(test_context, Bytecode::ForIterRangeStep));
 }
 
+TEST(Interpreter, negative_immediate_arithmetic_promotes_on_smi_overflow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"<smi-overflow>");
+    auto module =
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value()));
+
+    // The frontend currently emits register operands for negative literals.
+    const struct
+    {
+        Bytecode opcode;
+        int64_t lhs;
+        int8_t rhs;
+        int64_t expected;
+    } cases[] = {
+        {Bytecode::AddSmi, value_smi_min, -1, value_smi_min - 1},
+        {Bytecode::InPlaceAddSmi, value_smi_min, -1, value_smi_min - 1},
+        {Bytecode::SubSmi, value_smi_max, -2, value_smi_max + 2},
+        {Bytecode::InPlaceSubSmi, value_smi_max, -2, value_smi_max + 2},
+        {Bytecode::FloorDivSmi, value_smi_min, -1, -value_smi_min},
+        {Bytecode::InPlaceFloorDivSmi, value_smi_min, -1, -value_smi_min},
+    };
+    for(const auto &test_case: cases)
+    {
+        SCOPED_TRACE(static_cast<int>(test_case.opcode));
+        CodeObjectBuilder builder(&context.vm(), nullptr, module, nullptr,
+                                  name);
+        uint8_t constant = static_cast<uint8_t>(
+            builder.allocate_constant(Value::from_smi(test_case.lhs)).value());
+        builder.emit_lda_constant(0, constant).value();
+        builder
+            .emit_operator_smi(
+                0, test_case.opcode, test_case.rhs,
+                OperatorBytecodeFormat::WithCacheAndNotImplementedCheck)
+            .value();
+        builder.emit_return(0).value();
+        Value result = context.thread()->run_clovervm_code_object(
+            builder.finalize().value());
+        ASSERT_TRUE(has_native_layout<BigInt>(result));
+        EXPECT_EQ(test_case.expected,
+                  bigint_to_int64(result.get_ptr<BigInt>()->view()).value());
+    }
+}
+
+TEST(Interpreter, for_iter_exhausts_when_step_overshoots_smi_range)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"<range-overflow>");
+    auto module =
+        TValue<ModuleObject>::from_oop(context.make_test_module_object(
+            name, context.vm().global_builtins_module().raw_value()));
+
+    for(int64_t step: {2, -2})
+    {
+        SCOPED_TRACE(step);
+        int64_t stop = step > 0 ? value_smi_max : value_smi_min;
+        int64_t start = stop - step / 2;
+        CodeObjectBuilder builder(&context.vm(), nullptr, module, nullptr,
+                                  name);
+        JumpTarget premature(&builder);
+        JumpTarget exhausted(&builder);
+        {
+            CodeObjectBuilder::TemporaryReg reg(builder);
+            auto *iterator = context.thread()->make_object_raw<RangeIterator>(
+                TValue<SMI>::from_smi(start), TValue<SMI>::from_smi(stop),
+                TValue<SMI>::from_smi(step));
+            uint8_t constant = static_cast<uint8_t>(
+                builder.allocate_constant(Value::from_oop(iterator)).value());
+            builder.emit_lda_constant(0, constant).value();
+            builder.emit_star(0, reg).value();
+            builder.emit_for_iter(0, reg, premature).value();
+            builder.emit_for_iter(0, reg, exhausted).value();
+        }
+        exhausted.resolve().value();
+        builder.emit_return(0).value();
+        premature.resolve().value();
+        builder.emit_lda_smi(0, 0).value();
+        builder.emit_return(0).value();
+
+        EXPECT_EQ(Value::None(), context.thread()->run_clovervm_code_object(
+                                     builder.finalize().value()));
+    }
+}
+
 TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
 {
     expect_python_error(L"for x in range('bad'):\n"

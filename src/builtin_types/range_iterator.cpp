@@ -39,13 +39,9 @@ namespace cl
             return active_thread()->set_pending_stop_iteration_no_value();
         }
 
-        int64_t next_smi = 0;
-        if(__builtin_add_overflow(current_smi, step_smi, &next_smi))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"NotImplementedError", L"integer overflow");
-        }
-        iterator->current = TValue<SMI>::from_smi(next_smi);
+        iterator->current = advance_range_cursor(iterator->current.value(),
+                                                 iterator->stop.value(),
+                                                 iterator->step.value());
         return current;
     }
 
