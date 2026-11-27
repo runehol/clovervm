@@ -121,6 +121,17 @@ def test_big_integer_operations():
     # Integer arithmetic and direct dunder calls promote overflowing results.
     assert str(288230376151711743 + 1) == "288230376151711744"
     assert str(-288230376151711743 - 2) == "-288230376151711745"
+
+    # A variable right operand exercises the register forms of - and -=.
+    for case in ((288230376151711743, -2, 288230376151711745),
+                 (-288230376151711744, 1, -288230376151711745)):
+        left = case[0]
+        right = case[1]
+        expected = case[2]
+        assert left - right == expected
+        left -= right
+        assert left == expected
+
     assert str(288230376151711743 * 2) == "576460752303423486"
     assert str(+large_int) == "288230376151711744"
     assert +True == 1
