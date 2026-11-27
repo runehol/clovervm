@@ -16,6 +16,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/module_spec_object.h"
 #include "builtin_types/property.h"
+#include "builtin_types/random_engine.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/str.h"
@@ -92,6 +93,7 @@
     V(ValueArrayBacking);                                                      \
     V(HeapPtrArrayBacking);                                                    \
     V(HandleChunk);                                                            \
+    V(RandomEngine);                                                           \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

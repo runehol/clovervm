@@ -21,6 +21,7 @@
 #include "builtin_types/none_type.h"
 #include "builtin_types/not_implemented_type.h"
 #include "builtin_types/property.h"
+#include "builtin_types/random_engine.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/slice.h"
 #include "builtin_types/string_iterator.h"
@@ -204,7 +205,7 @@ namespace cl
                              make_string_list(vm, {}));
         install_module_value(
             vm, sys_module, L"builtin_module_names",
-            make_string_tuple(vm, {L"builtins", L"sys", L"_io"}));
+            make_string_tuple(vm, {L"builtins", L"sys", L"_io", L"_random"}));
         install_module_value(vm, sys_module, L"byteorder",
                              make_string_value(vm, sys_byteorder_name()));
         install_module_value(vm, sys_module, L"copyright",
@@ -1349,6 +1350,7 @@ namespace cl
         register_builtin_class(make_raw_io_base_class(this));
         register_builtin_class(make_buffered_io_base_class(this));
         register_builtin_class(make_file_io_class(this));
+        register_builtin_class(make_random_engine_class(this));
         register_builtin_class(make_unsupported_operation_class(this));
 
         install_object_class_methods(this);
