@@ -1,4 +1,4 @@
-"""A CloverVM collections subset with UserDict and ChainMap.
+"""A CloverVM collections subset with UserDict, ChainMap, and deque.
 
 Mapping ABCs, view set operations, and subclass-preserving copies
 are deferred. See doc/stdlib-module-bringup-checklist.md for dependencies.
@@ -392,4 +392,164 @@ class ChainMap:
     parents = property(_get_parents)
 
 
-__all__ = ["UserDict", "ChainMap"]
+class deque:
+    """A double-ended queue with an optional length limit."""
+
+    __hash__ = None
+
+    def __init__(self, /, iterable=_sentinel, maxlen=None):
+        if maxlen is not None:
+            if not isinstance(maxlen, int):
+                raise TypeError("an integer is required")
+            maxlen = int.__index__(maxlen)
+            # Current CloverVM targets have 64-bit platform sizes. sys.maxsize
+            # is the narrower SMI limit.
+            if maxlen < -(2**63) or maxlen >= 2**63:
+                raise OverflowError("Python int too large to convert to C ssize_t")
+            if maxlen < 0:
+                raise ValueError("maxlen must be non-negative")
+
+        self._deque_maxlen = maxlen
+        size = getattr(self, "_deque_size", None)
+        if size is None:
+            self._deque_slots = []
+            self._deque_head = 0
+            self._deque_size = 0
+            self._deque_version = 0
+        elif size:
+            # Release the old contents after publishing the empty state.
+            old_slots = self._deque_slots
+            self._deque_slots = []
+            self._deque_head = 0
+            self._deque_size = 0
+            self._deque_version += 1
+            old_slots = None
+        if iterable is not _sentinel:
+            _deque_type._extend(self, iterable, left=False)
+
+    def _get_maxlen(self):
+        return self._deque_maxlen
+
+    maxlen = property(_get_maxlen)
+
+    def __len__(self):
+        return self._deque_size
+
+    def __iter__(self):
+        return _DequeIterator(self)
+
+    def append(self, item, /):
+        _deque_type._push(self, item, self._deque_maxlen, left=False)
+
+    def appendleft(self, item, /):
+        _deque_type._push(self, item, self._deque_maxlen, left=True)
+
+    def pop(self, /):
+        return _deque_type._pop(self, left=False)
+
+    def popleft(self, /):
+        return _deque_type._pop(self, left=True)
+
+    def extend(self, iterable, /):
+        _deque_type._extend(self, iterable, left=False)
+
+    def extendleft(self, iterable, /):
+        _deque_type._extend(self, iterable, left=True)
+
+    def _grow(self):
+        # Copy live entries in logical order before replacing the ring.
+        slots = self._deque_slots
+        capacity = len(slots)
+        head = self._deque_head
+        new_slots = []
+        for offset in range(self._deque_size):
+            new_slots.append(slots[(head + offset) % capacity])
+        new_capacity = 2 * capacity if capacity else 4
+        for offset in range(self._deque_size, new_capacity):
+            new_slots.append(None)
+        self._deque_slots = new_slots
+        self._deque_head = 0
+
+    def _push(self, item, limit, *, left):
+        size = self._deque_size
+        if limit == 0 and size == 0:
+            self._deque_version += 1
+            return
+        if size == len(self._deque_slots):
+            _deque_type._grow(self)
+        slots = self._deque_slots
+        capacity = len(slots)
+        if left:
+            index = (self._deque_head - 1) % capacity
+            slots[index] = item
+            self._deque_head = index
+        else:
+            slots[(self._deque_head + size) % capacity] = item
+        self._deque_size = size + 1
+        if limit is not None and self._deque_size > limit:
+            # Trimming publishes the same single iterator invalidation as push.
+            _deque_type._pop(self, left=not left)
+        else:
+            self._deque_version += 1
+
+    def _pop(self, *, left):
+        size = self._deque_size
+        if size == 0:
+            raise IndexError("pop from an empty deque")
+        slots = self._deque_slots
+        head = self._deque_head
+        capacity = len(slots)
+        index = head if left else (head + size - 1) % capacity
+        item = slots[index]
+        if left:
+            self._deque_head = (head + 1) % capacity
+        self._deque_size = size - 1
+        self._deque_version += 1
+        slots[index] = None
+        return item
+
+    def _extend(self, iterable, *, left):
+        # Iterator callbacks can reinitialize this deque. Each extension uses
+        # the limit captured before acquiring its source iterator.
+        limit = self._deque_maxlen
+        if iterable is self:
+            iterable = list(iterable)
+            limit = self._deque_maxlen
+        iterator = iter(iterable)
+        while True:
+            try:
+                item = next(iterator)
+            except StopIteration:
+                return
+            if limit != 0:
+                _deque_type._push(self, item, limit, left=left)
+            item = None
+
+
+# Keep internal method calls independent of the public export.
+_deque_type = deque
+
+
+class _DequeIterator:
+    def __init__(self, source):
+        self._source = source
+        self._version = source._deque_version
+        self._offset = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        source = self._source
+        if self._version != source._deque_version:
+            raise RuntimeError("deque mutated during iteration")
+        offset = self._offset
+        if offset == source._deque_size:
+            raise StopIteration
+        slots = source._deque_slots
+        item = slots[(source._deque_head + offset) % len(slots)]
+        self._offset = offset + 1
+        return item
+
+
+__all__ = ["UserDict", "ChainMap", "deque"]
