@@ -11,6 +11,7 @@ import tempfile
 
 
 PRELUDE = """import struct
+import sys
 
 def show(call, *args):
     try:
@@ -19,6 +20,12 @@ def show(call, *args):
         print("error", str(exc))
     else:
         print("ok", result.hex() if isinstance(result, bytes) else repr(result))
+
+def check_pack_into(call, prefix, values, wire):
+    for offset in (1, -len(wire) - 1):
+        target = bytearray(b"<" + bytes(len(wire)) + b">")
+        show(call, *(prefix + (target, offset) + values))
+        print(target.hex())
 
 def check(format, values, wire):
     spec = struct.Struct(format)
@@ -29,10 +36,29 @@ def check(format, values, wire):
     show(struct.unpack, format, bytearray(wire))
     show(spec.unpack, wire + b"x")
     show(struct.unpack, format, wire + b"x")
+    framed = b"<" + wire + b">"
+    check_pack_into(spec.pack_into, (), values, wire)
+    check_pack_into(struct.pack_into, (format,), values, wire)
+    show(spec.unpack_from, framed, 1)
+    show(struct.unpack_from, format, bytearray(framed), -len(wire) - 1)
+    if wire:
+        print(list(spec.iter_unpack(wire + wire)))
+        print(list(struct.iter_unpack(format, wire + wire)))
 
 def check_overflow(format, value):
     show(struct.Struct(format).pack, value)
     show(struct.pack, format, value)
+    target = bytearray(b"************")
+    show(struct.pack_into, format, target, 1, value)
+    end = 1 + struct.calcsize(format)
+    foreign_prefixes = ">!" if sys.byteorder == "little" else "<"
+    if format[0] in foreign_prefixes and format[-1] in "qQ":
+        # CPython's opposite-endian encoder can write bytes before overflow.
+        if sys.implementation.name == "clovervm":
+            assert target[1:end] == bytes(end - 1)
+        print(target[:1].hex(), target[end:].hex())
+    else:
+        print(target.hex())
 """
 WIDTHS = {"b": 1, "h": 2, "i": 4, "l": 4, "q": 8}
 OPTIONS = tuple(WIDTHS) + tuple(code.upper() for code in WIDTHS)
