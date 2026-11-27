@@ -22,9 +22,6 @@ refcounting, and an opt-in AArch64 baseline JIT.
 For current major-work sequencing, see
 [Development Priorities](development-priorities.md).
 
-For the completed repository-wide correctness campaign and its durable
-findings, see the [Review Findings Ledger](review-findings-ledger.md).
-
 ## Design Goals
 
 - Execute a growing Python subset with semantics close to CPython where that is
