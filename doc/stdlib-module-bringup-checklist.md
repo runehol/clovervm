@@ -100,7 +100,7 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `traceback` | Human-readable exception reports. | Depends on frame/code metadata and exception chaining fidelity. |
 | [ ] | `warnings` | Deprecation and runtime warning machinery. | Not started / not assessed. |
 | [ ] | `inspect` | Function/class/module introspection used by tooling and decorators. | Depends on rich code objects, signatures, frames, and attributes. |
-| [ ] | `pprint` | Debug printing for containers and data structures. | Not started / not assessed. |
+| [~] | `pprint` | Debug printing for containers and data structures. | Managed `PrettyPrinter`, `pformat`, and `pprint` lay out lists, tuples, dicts, and plain subclasses inheriting their builtin repr, with width, indent, depth, compact sequences, and stable sorting for mutually orderable dict keys. Incomparable keys require `sort_dicts=False` to retain insertion order. Cycles use identity-based tracking and type-name markers without CPython's object ID. Custom repr and other leaf types use ordinary repr without specialized wrapping. Output uses the stream captured at construction, falls back to the VM console when `sys.stdout` is absent, and skips output when it is `None`. Deferred: `pp`, recursion/readability queries, the `PrettyPrinter.format` hook, `underscore_numbers`, and specialized layouts for other types. |
 | [ ] | `logging` | Common application diagnostics. | Depends on time, traceback, threading/process features eventually. |
 | [ ] | `doctest` | Documentation examples and some package tests. | Depends on parsing, traceback, and output capture. |
 
