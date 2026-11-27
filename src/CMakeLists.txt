@@ -113,6 +113,8 @@ add_library(libclovervm_objects OBJECT
     builtin_types/io_base.h
     builtin_types/file_io.cpp
     builtin_types/file_io.h
+    builtin_types/random_engine.cpp
+    builtin_types/random_engine.h
     platform/file_io.h
     builtin_types/float.cpp
     builtin_types/float.h
@@ -469,6 +471,8 @@ add_dependencies(clovervm-jit-dump clovervm_native_module__json
                                    clovervm_native_module__time)
 
 install(TARGETS clovervm DESTINATION bin)
+install(FILES "${PROJECT_SOURCE_DIR}/dependencies/mt19937-LICENSE"
+        DESTINATION share/licenses/clovervm)
 
 enable_sanitizers(clovervm)
 enable_sanitizers(clovervm-jit-dump)

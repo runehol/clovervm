@@ -63,6 +63,8 @@ namespace cl
         StaticMethod,
         ClassMethod,
 
+        RandomEngine,
+
         Count,
     };
 

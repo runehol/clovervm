@@ -153,7 +153,7 @@ namespace cl
         find_builtin_module_spec(const std::wstring &full_name)
         {
             if(full_name == L"sys" || full_name == L"builtins" ||
-               full_name == L"_io")
+               full_name == L"_io" || full_name == L"_random")
             {
                 return ModuleSpec{
                     ModuleSpecKind::Builtin,

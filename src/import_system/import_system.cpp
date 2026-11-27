@@ -6,6 +6,7 @@
 #include "builtin_types/module_loader_object.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/module_spec_object.h"
+#include "builtin_types/random_engine.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object.h"
@@ -351,6 +352,18 @@ namespace cl
             else if(spec.name == L"builtins")
             {
                 module = machine->global_builtins_module().raw_value();
+            }
+            else if(spec.name == L"_random")
+            {
+                Owned<TValue<ModuleObject>> random(
+                    create_module_from_spec(thread, spec, name));
+                (void)random.extract()->delete_own_property(
+                    interned_string(thread, L"__file__"));
+                CL_PROPAGATE_EXCEPTION(
+                    install_random_engine_functions(thread, random.extract()));
+                CL_TRY(machine->imported_modules().extract()->set_item_for_str(
+                    thread, name, random.raw_value()));
+                return random.raw_value();
             }
             else if(spec.name == L"_io")
             {

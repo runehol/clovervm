@@ -3896,7 +3896,10 @@ namespace cl
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
         {
-            accumulator.as.integer += a.as.integer;
+            // Recover b as a - (a - b) modulo the machine word size.
+            accumulator.as.integer = static_cast<int64_t>(
+                static_cast<uint64_t>(a.as.integer) -
+                static_cast<uint64_t>(accumulator.as.integer));
             MUSTTAIL return op_sub_dispatch(ARGS);
         }
 
