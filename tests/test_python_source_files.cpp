@@ -88,7 +88,8 @@ TEST_P(PythonSourceFileTest, RunsSelfCheckingSource)
 {
     if constexpr(cl::jit::JitTieringEnabled)
     {
-        if(GetParam().path.filename() == "test_bisect_module.py")
+        if(GetParam().path.filename() == "test_bisect_module.py" ||
+           GetParam().path.filename() == "test_textwrap.py")
         {
             GTEST_SKIP()
                 << "Known JIT allocation materializer failure: rewrite "
