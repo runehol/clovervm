@@ -16,6 +16,10 @@ thunks, native boundary adapters, and compiled managed code. Opcode
 inventories, copied implementation snippets, and helper signatures are not part
 of the contract.
 
+The exploratory [callee-owned frame convention](callee-owned-frame-convention.md)
+records a proposed evolution toward deferred JIT frame construction and a single
+physical stack. It does not replace the current contract below.
+
 CloverVM uses register/accumulator bytecode over managed frame slots:
 
 - parameters, locals, temporaries, and call argument windows live in managed
